@@ -1113,6 +1113,19 @@ class WorkoutGeneratorService: ObservableObject {
                 #endif
             }
             
+            // 🛡️ METADATA-DRIVEN SAFETY PENALTY - Uses the comprehensive rule system
+            // This applies penalties/boosts for ALL limitation areas, not just lower back
+            let safetyPenalty = LimitationsService.shared.getSafetyPenalty(for: exercise)
+            if safetyPenalty != 0 {
+                score -= safetyPenalty  // Subtract penalty (positive penalty = decrease score)
+                #if DEBUG
+                if abs(safetyPenalty) > 50 {
+                    let direction = safetyPenalty > 0 ? "🚫" : "✅"
+                    print("   \(direction) [SAFETY] '\(exercise.name ?? "")': \(safetyPenalty > 0 ? "-" : "+")\(Int(abs(safetyPenalty)))")
+                }
+                #endif
+            }
+            
             // 🏋️ BEGINNER EQUIPMENT PREFERENCE - Machines > Cables > Dumbbells > Barbells
             // New gym users are often intimidated by free weights
             // Prioritize machines and cables for their first few workouts

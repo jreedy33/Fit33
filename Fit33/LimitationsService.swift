@@ -709,7 +709,7 @@ class LimitationsService: ObservableObject {
 extension LimitationsService {
     
     /// Filter a list of exercises to only include safe ones
-    /// Filter a list of exercises to only include safe ones (nonisolated)
+    /// Uses the new metadata-driven filtering system for comprehensive safety checks
     nonisolated func filterSafeExercises(_ exercises: [Exercise]) -> [Exercise] {
         guard hasActiveLimitationsSync else { 
             print("🛡️ [LIMITATIONS] No active limitations - all exercises safe")
@@ -725,8 +725,32 @@ extension LimitationsService {
             }
         }
         
+        // Use metadata-driven filtering for more comprehensive checks
         let filtered = exercises.filter { exercise in
-            isExerciseSafe(exercise.name ?? "")
+            let exerciseName = exercise.name ?? ""
+            
+            // Quick check using legacy system
+            if !isExerciseSafe(exerciseName) {
+                return false
+            }
+            
+            // Enhanced check using metadata classifier
+            let metadata = ExerciseMetadataClassifier.shared.classify(exercise: exercise)
+            
+            for limitation in activeLimitations {
+                let area = mapToLimitationArea(limitation.affectedArea)
+                let severity = mapToLimitationSeverity(limitation.severity)
+                
+                // Check if exercise should be excluded based on metadata
+                if shouldExcludeBasedOnMetadata(metadata: metadata, area: area, severity: severity) {
+                    #if DEBUG
+                    print("   🚫 [METADATA] Excluding '\(exerciseName)' for \(area.displayName)")
+                    #endif
+                    return false
+                }
+            }
+            
+            return true
         }
         
         let removedCount = exercises.count - filtered.count
@@ -735,6 +759,102 @@ extension LimitationsService {
         }
         
         return filtered
+    }
+    
+    /// Check if exercise should be excluded based on metadata and limitation
+    nonisolated private func shouldExcludeBasedOnMetadata(
+        metadata: ExerciseRiskMetadata,
+        area: LimitationArea,
+        severity: LimitationSeverity
+    ) -> Bool {
+        // For skip completely, use rule tables
+        if severity == .skipCompletely {
+            let rules = LimitationRuleTables.getSkipCompletelyRules(for: area)
+            for rule in rules {
+                if rule.matches(metadata) {
+                    return true
+                }
+            }
+        }
+        
+        // For stretching only, exclude non-stretch exercises
+        if severity == .stretchingOnly {
+            // Only check if the exercise affects the area
+            if doesMetadataAffectArea(metadata: metadata, area: area) {
+                return !metadata.isStretchOrMobility
+            }
+        }
+        
+        // For light work only, check exclusion rules
+        if severity == .lightWorkOnly {
+            let exclusionRules = LimitationRuleTables.getLightWorkExclusionRules(for: area)
+            for rule in exclusionRules {
+                if rule.matches(metadata) {
+                    return true
+                }
+            }
+        }
+        
+        // Be careful doesn't exclude, just penalizes during scoring
+        return false
+    }
+    
+    /// Check if metadata indicates the exercise affects a body area
+    nonisolated private func doesMetadataAffectArea(metadata: ExerciseRiskMetadata, area: LimitationArea) -> Bool {
+        switch area {
+        case .lowerBack:
+            return metadata.spinalLoad >= .moderate ||
+                   metadata.axialLoading >= .low ||
+                   metadata.unsupportedTorso ||
+                   metadata.hipHingeDemand
+        case .upperBack:
+            return metadata.movementPatterns.contains(.pull)
+        case .shoulders:
+            return !metadata.shoulderStressFlags.isEmpty ||
+                   metadata.overheadWork != .none ||
+                   metadata.movementPatterns.contains(.push)
+        case .knees:
+            return metadata.kneeFlexionDepth >= .moderate ||
+                   metadata.impactLevel >= .moderate
+        case .hips:
+            return metadata.hipHingeDemand
+        case .neck:
+            return metadata.neckStress || metadata.axialLoading >= .high
+        case .wrists:
+            return metadata.wristExtensionDemand != .low
+        case .elbows:
+            return metadata.elbowStress
+        case .ankles:
+            return metadata.impactLevel >= .moderate || metadata.balanceDemand == .high
+        case .other:
+            return false
+        }
+    }
+    
+    /// Map AffectedArea to LimitationArea
+    nonisolated private func mapToLimitationArea(_ area: AffectedArea) -> LimitationArea {
+        switch area {
+        case .lowerBack: return .lowerBack
+        case .upperBack: return .upperBack
+        case .neck: return .neck
+        case .leftShoulder, .rightShoulder, .shoulders: return .shoulders
+        case .leftKnee, .rightKnee, .knees: return .knees
+        case .leftHip, .rightHip, .hips: return .hips
+        case .leftWrist, .rightWrist, .wrists: return .wrists
+        case .leftElbow, .rightElbow, .elbows: return .elbows
+        case .leftAnkle, .rightAnkle, .ankles: return .ankles
+        case .core, .chest, .other: return .other
+        }
+    }
+    
+    /// Map AccommodationLevel to LimitationSeverity
+    nonisolated private func mapToLimitationSeverity(_ severity: AccommodationLevel) -> LimitationSeverity {
+        switch severity {
+        case .avoidCompletely: return .skipCompletely
+        case .lightOnly: return .lightWorkOnly
+        case .stretchingOnly: return .stretchingOnly
+        case .beCareful: return .beCareful
+        }
     }
     
     /// Filter exercise names (nonisolated)
@@ -755,6 +875,92 @@ extension LimitationsService {
             let area = limitation.affectedArea.rawValue.lowercased()
             return area.contains("lower back") || area.contains("low back") || area == "back"
         }
+    }
+    
+    /// Get the safety penalty/boost for an exercise based on all active limitations
+    /// Returns: negative = penalty (risky), positive = boost (safe), zero = neutral
+    nonisolated func getSafetyPenalty(for exercise: Exercise) -> Double {
+        guard hasActiveLimitationsSync else { return 0 }
+        
+        let metadata = ExerciseMetadataClassifier.shared.classify(exercise: exercise)
+        var totalPenalty: Double = 0
+        
+        for limitation in cachedLimitationsSnapshot where limitation.isActive {
+            let area = mapToLimitationArea(limitation.affectedArea)
+            let severity = mapToLimitationSeverity(limitation.severity)
+            
+            // Only apply penalty if exercise affects the limitation area
+            guard doesMetadataAffectArea(metadata: metadata, area: area) else { continue }
+            
+            // Get rules based on severity
+            let rules: [LimitationRule]
+            switch severity {
+            case .skipCompletely:
+                // Should have been filtered out already - but add heavy penalty just in case
+                rules = LimitationRuleTables.getSkipCompletelyRules(for: area)
+                for rule in rules where rule.matches(metadata) {
+                    totalPenalty += 500
+                }
+                
+            case .stretchingOnly:
+                if !metadata.isStretchOrMobility {
+                    totalPenalty += 300
+                }
+                
+            case .lightWorkOnly:
+                let exclusionRules = LimitationRuleTables.getLightWorkExclusionRules(for: area)
+                for rule in exclusionRules where rule.matches(metadata) {
+                    totalPenalty += 200
+                }
+                
+                let preferenceRules = LimitationRuleTables.getLightWorkPreferenceRules(for: area)
+                for rule in preferenceRules where rule.matches(metadata) {
+                    if rule.isNegative {
+                        totalPenalty += rule.penalty
+                    } else {
+                        totalPenalty -= rule.penalty  // Boost (negative penalty)
+                    }
+                }
+                
+            case .beCareful:
+                let beCarefulRules = LimitationRuleTables.getBeCarefulRules(for: area)
+                for rule in beCarefulRules where rule.matches(metadata) {
+                    if rule.isNegative {
+                        totalPenalty += rule.penalty
+                    } else {
+                        totalPenalty -= rule.penalty  // Boost
+                    }
+                }
+            }
+        }
+        
+        return totalPenalty
+    }
+    
+    /// Get warning tags for an exercise based on limitations
+    nonisolated func getWarningTags(for exercise: Exercise) -> [String] {
+        guard hasActiveLimitationsSync else { return [] }
+        
+        let metadata = ExerciseMetadataClassifier.shared.classify(exercise: exercise)
+        var warnings: [String] = []
+        
+        for limitation in cachedLimitationsSnapshot where limitation.isActive {
+            let area = mapToLimitationArea(limitation.affectedArea)
+            let severity = mapToLimitationSeverity(limitation.severity)
+            
+            guard doesMetadataAffectArea(metadata: metadata, area: area) else { continue }
+            
+            if severity == .beCareful || severity == .lightWorkOnly {
+                // Add appropriate warning
+                if metadata.isMachineSupported || metadata.isChestSupported {
+                    warnings.append("✅ Safe for \(area.displayName)")
+                } else {
+                    warnings.append("⚠️ Use caution for \(area.displayName)")
+                }
+            }
+        }
+        
+        return warnings
     }
 }
 

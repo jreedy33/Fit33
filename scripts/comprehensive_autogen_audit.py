@@ -87,11 +87,83 @@ class Gender(Enum):
     FEMALE = "Female"
     OTHER = "Other"
 
+class LimitationSeverity(Enum):
+    """Severity levels for limitations - mirrors Swift LimitationSeverity"""
+    SKIP_COMPLETELY = "skip_completely"       # Hard exclusion
+    STRETCHING_ONLY = "stretching_only"       # Only stretch/mobility exercises
+    LIGHT_WORK_ONLY = "light_only"            # No heavy compounds
+    BE_CAREFUL = "be_careful"                 # Penalize risky, boost safe
+
+class LimitationArea(Enum):
+    """Body areas that can have limitations - mirrors Swift LimitationArea"""
+    LOWER_BACK = "Lower Back"
+    UPPER_BACK = "Upper Back"
+    SHOULDERS = "Shoulders"
+    KNEES = "Knees"
+    HIPS = "Hips"
+    NECK = "Neck"
+    WRISTS = "Wrists"
+    ELBOWS = "Elbows"
+    ANKLES = "Ankles"
+    OTHER = "Other"
+
+class SpinalLoad(Enum):
+    """Spinal loading level - mirrors Swift"""
+    NONE = "none"
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+class ImpactLevel(Enum):
+    """Impact level - mirrors Swift"""
+    NONE = "none"
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+class OverheadWork(Enum):
+    """Overhead work intensity - mirrors Swift"""
+    NONE = "none"
+    PARTIAL = "partial"
+    FULL = "full"
+
+class KneeFlexionDepth(Enum):
+    """Knee flexion depth - mirrors Swift"""
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+@dataclass
+class ExerciseRiskMetadata:
+    """Exercise risk metadata - mirrors Swift ExerciseRiskMetadata
+    Used for metadata-driven limitation filtering instead of hardcoded exercise names"""
+    spinal_load: SpinalLoad = SpinalLoad.NONE
+    unsupported_torso: bool = False
+    hip_hinge_demand: bool = False
+    overhead_work: OverheadWork = OverheadWork.NONE
+    knee_flexion_depth: KneeFlexionDepth = KneeFlexionDepth.LOW
+    impact_level: ImpactLevel = ImpactLevel.NONE
+    is_machine_supported: bool = False
+    is_chest_supported: bool = False
+    is_stretch_or_mobility: bool = False
+    is_seated: bool = False
+    is_lying: bool = False
+    # Shoulder stress flags
+    upright_row_like: bool = False
+    behind_neck: bool = False
+    guillotine: bool = False
+    heavy_dip: bool = False
+    # Other flags
+    neck_stress: bool = False
+    elbow_stress: bool = False
+    high_balance_demand: bool = False
+    high_wrist_extension: bool = False
+
 @dataclass
 class Injury:
     """Represents a user's physical limitation"""
     area: str  # e.g., "Shoulder", "Lower Back", "Knee"
-    severity: str  # "avoid_completely", "light_only", "be_careful"
+    severity: str  # "skip_completely", "light_only", "stretching_only", "be_careful"
     description: str
 
 @dataclass
@@ -877,6 +949,439 @@ def is_lower_back_safe_exercise(exercise_name: str) -> bool:
     name_lower = exercise_name.lower()
     return any(safe.lower() in name_lower for safe in LOWER_BACK_SAFE_ALTERNATIVES)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# METADATA-DRIVEN LIMITATION FILTERING SYSTEM
+# Mirrors Swift LimitationFilterEngine.swift, ExerciseMetadataClassifier.swift,
+# and LimitationRuleTables.swift
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def classify_exercise_metadata(exercise_name: str, equipment: str = "") -> ExerciseRiskMetadata:
+    """
+    Classify an exercise and return its risk metadata.
+    Mirrors Swift ExerciseMetadataClassifier.shared.classify()
+    NO HARDCODED EXERCISE NAMES - uses keyword patterns
+    """
+    name = exercise_name.lower()
+    equip = equipment.lower()
+    
+    def contains_any(text: str, keywords: List[str]) -> bool:
+        return any(kw in text for kw in keywords)
+    
+    # Spinal Load
+    if contains_any(name, ["deadlift", "good morning", "back squat", "front squat", 
+                          "barbell row", "bent over row", "barbell bent", "renegade", "atlas"]):
+        spinal_load = SpinalLoad.HIGH
+    elif contains_any(name, ["squat", "rdl", "romanian", "row", "lunge", "overhead press", "military press"]):
+        if contains_any(name, ["machine", "seated", "lying", "chest supported", "incline"]):
+            spinal_load = SpinalLoad.LOW
+        else:
+            spinal_load = SpinalLoad.MODERATE
+    elif contains_any(name, ["seated", "lying", "machine", "cable", "incline", "chest supported"]):
+        spinal_load = SpinalLoad.LOW
+    elif contains_any(equip, ["machine", "cable", "smith"]):
+        spinal_load = SpinalLoad.LOW
+    else:
+        spinal_load = SpinalLoad.NONE
+    
+    # Unsupported torso
+    unsupported_torso = (contains_any(name, ["bent over", "bent-over", "renegade", "pendlay", "barbell row"]) and 
+                        not contains_any(name, ["chest supported", "seal row", "incline bench row"]))
+    if contains_any(name, ["good morning", "stiff leg", "romanian"]) and "machine" not in name:
+        unsupported_torso = True
+    
+    # Hip hinge
+    hip_hinge = contains_any(name, ["deadlift", "rdl", "romanian", "good morning", "hip hinge", 
+                                     "swing", "bent over", "bent-over", "stiff leg", "pull through"])
+    
+    # Overhead work
+    if contains_any(name, ["overhead press", "military press", "shoulder press", "push press", "jerk", 
+                          "snatch", "pull-up", "pullup", "chin-up", "chinup"]):
+        if contains_any(name, ["pulldown", "lat pull"]):
+            overhead_work = OverheadWork.PARTIAL
+        else:
+            overhead_work = OverheadWork.FULL
+    elif contains_any(name, ["incline press", "high incline", "arnold"]):
+        overhead_work = OverheadWork.PARTIAL
+    else:
+        overhead_work = OverheadWork.NONE
+    
+    # Knee flexion depth
+    if contains_any(name, ["deep squat", "atg", "ass to grass", "full squat", "pistol", "sissy squat"]):
+        knee_flexion = KneeFlexionDepth.HIGH
+    elif contains_any(name, ["squat", "lunge", "leg press", "hack squat", "split squat"]):
+        knee_flexion = KneeFlexionDepth.MODERATE
+    else:
+        knee_flexion = KneeFlexionDepth.LOW
+    
+    # Impact level
+    if contains_any(name, ["jump", "plyo", "box jump", "burpee", "clap pushup", "depth jump", "bound"]):
+        impact = ImpactLevel.HIGH
+    elif contains_any(name, ["step up", "split jump", "lunge jump", "skater"]):
+        impact = ImpactLevel.MODERATE
+    else:
+        impact = ImpactLevel.NONE
+    
+    # Machine support
+    is_machine = contains_any(name, ["machine", "cable", "smith", "assisted"]) or \
+                 contains_any(equip, ["machine", "cable", "smith"])
+    
+    # Chest support
+    is_chest_supported = contains_any(name, ["chest supported", "chest-supported", "seal row", 
+                                             "prone row", "incline bench row", "t-bar row chest"])
+    
+    # Seated/lying
+    is_seated = contains_any(name, ["seated", "sitting"])
+    is_lying = contains_any(name, ["lying", "prone", "supine", "bench press", "floor press", 
+                                   "leg curl machine", "leg extension"])
+    
+    # Stretch/mobility
+    is_stretch = contains_any(name, ["stretch", "mobility", "foam roll", "flexibility", "yoga"])
+    
+    # Shoulder stress flags
+    upright_row = contains_any(name, ["upright row", "high pull", "face pull to external"])
+    behind_neck = contains_any(name, ["behind neck", "behind-neck", "btn"])
+    guillotine = contains_any(name, ["guillotine", "neck press"])
+    heavy_dip = contains_any(name, ["dip", "chest dip"]) and "tricep dip machine" not in name
+    
+    # Other stress flags
+    neck_stress = contains_any(name, ["shrug", "neck", "wrestler bridge", "neck curl"])
+    elbow_stress = contains_any(name, ["skullcrusher", "skull crusher", "jm press", "close grip bench"])
+    high_balance = contains_any(name, ["single leg", "pistol", "one leg", "bulgarian", "bosu", "single-leg"])
+    high_wrist = contains_any(name, ["front squat clean grip", "push-up", "pushup", "handstand", "planche"])
+    
+    return ExerciseRiskMetadata(
+        spinal_load=spinal_load,
+        unsupported_torso=unsupported_torso,
+        hip_hinge_demand=hip_hinge,
+        overhead_work=overhead_work,
+        knee_flexion_depth=knee_flexion,
+        impact_level=impact,
+        is_machine_supported=is_machine,
+        is_chest_supported=is_chest_supported,
+        is_stretch_or_mobility=is_stretch,
+        is_seated=is_seated,
+        is_lying=is_lying,
+        upright_row_like=upright_row,
+        behind_neck=behind_neck,
+        guillotine=guillotine,
+        heavy_dip=heavy_dip,
+        neck_stress=neck_stress,
+        elbow_stress=elbow_stress,
+        high_balance_demand=high_balance,
+        high_wrist_extension=high_wrist
+    )
+
+def get_limitation_area(area_str: str) -> LimitationArea:
+    """Map string to LimitationArea enum"""
+    area = area_str.lower()
+    if "lower back" in area or "low back" in area:
+        return LimitationArea.LOWER_BACK
+    if "upper back" in area:
+        return LimitationArea.UPPER_BACK
+    if "shoulder" in area:
+        return LimitationArea.SHOULDERS
+    if "knee" in area:
+        return LimitationArea.KNEES
+    if "hip" in area:
+        return LimitationArea.HIPS
+    if "neck" in area:
+        return LimitationArea.NECK
+    if "wrist" in area:
+        return LimitationArea.WRISTS
+    if "elbow" in area:
+        return LimitationArea.ELBOWS
+    if "ankle" in area:
+        return LimitationArea.ANKLES
+    return LimitationArea.OTHER
+
+def get_limitation_severity(severity_str: str) -> LimitationSeverity:
+    """Map string to LimitationSeverity enum"""
+    severity = severity_str.lower()
+    if "skip" in severity or "avoid" in severity:
+        return LimitationSeverity.SKIP_COMPLETELY
+    if "stretch" in severity:
+        return LimitationSeverity.STRETCHING_ONLY
+    if "light" in severity:
+        return LimitationSeverity.LIGHT_WORK_ONLY
+    return LimitationSeverity.BE_CAREFUL
+
+def does_metadata_affect_area(metadata: ExerciseRiskMetadata, area: LimitationArea) -> bool:
+    """Check if exercise metadata indicates it affects a body area"""
+    if area == LimitationArea.LOWER_BACK:
+        return (metadata.spinal_load in [SpinalLoad.MODERATE, SpinalLoad.HIGH] or
+                metadata.unsupported_torso or
+                metadata.hip_hinge_demand)
+    if area == LimitationArea.UPPER_BACK:
+        return metadata.unsupported_torso
+    if area == LimitationArea.SHOULDERS:
+        return (metadata.upright_row_like or metadata.behind_neck or 
+                metadata.guillotine or metadata.heavy_dip or
+                metadata.overhead_work != OverheadWork.NONE)
+    if area == LimitationArea.KNEES:
+        return (metadata.knee_flexion_depth in [KneeFlexionDepth.MODERATE, KneeFlexionDepth.HIGH] or
+                metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH])
+    if area == LimitationArea.HIPS:
+        return metadata.hip_hinge_demand
+    if area == LimitationArea.NECK:
+        return metadata.neck_stress
+    if area == LimitationArea.WRISTS:
+        return metadata.high_wrist_extension
+    if area == LimitationArea.ELBOWS:
+        return metadata.elbow_stress
+    if area == LimitationArea.ANKLES:
+        return metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH] or metadata.high_balance_demand
+    return False
+
+def evaluate_skip_completely(metadata: ExerciseRiskMetadata, area: LimitationArea) -> Tuple[bool, str]:
+    """Evaluate if exercise should be excluded for Skip Completely severity"""
+    if area == LimitationArea.LOWER_BACK:
+        if metadata.spinal_load == SpinalLoad.HIGH:
+            return True, "High spinal load"
+        if metadata.unsupported_torso and metadata.hip_hinge_demand:
+            return True, "Unsupported hinge movement"
+        if metadata.unsupported_torso:
+            return True, "Unsupported bent-over position"
+    if area == LimitationArea.SHOULDERS:
+        if metadata.overhead_work == OverheadWork.FULL:
+            return True, "Full overhead work"
+        if metadata.upright_row_like:
+            return True, "Upright row pattern"
+        if metadata.behind_neck:
+            return True, "Behind neck movement"
+        if metadata.guillotine:
+            return True, "Guillotine/extreme ROM"
+        if metadata.heavy_dip:
+            return True, "Heavy dip (shoulder extension)"
+    if area == LimitationArea.KNEES:
+        if metadata.knee_flexion_depth == KneeFlexionDepth.HIGH:
+            return True, "Deep knee flexion"
+        if metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH]:
+            return True, "High impact"
+    if area == LimitationArea.HIPS:
+        if metadata.hip_hinge_demand and metadata.spinal_load in [SpinalLoad.MODERATE, SpinalLoad.HIGH]:
+            return True, "Deep hip hinge"
+    if area == LimitationArea.NECK:
+        if metadata.neck_stress:
+            return True, "Direct neck stress"
+    if area == LimitationArea.WRISTS:
+        if metadata.high_wrist_extension:
+            return True, "High wrist extension"
+    if area == LimitationArea.ELBOWS:
+        if metadata.elbow_stress:
+            return True, "Direct elbow stress"
+    if area == LimitationArea.ANKLES:
+        if metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH]:
+            return True, "High impact"
+        if metadata.high_balance_demand:
+            return True, "High balance demand"
+    return False, ""
+
+def evaluate_light_work_only(metadata: ExerciseRiskMetadata, area: LimitationArea) -> Tuple[bool, int, str]:
+    """Evaluate for Light Work Only: returns (should_exclude, penalty, reason)"""
+    # Check for hard exclusions first
+    if area == LimitationArea.LOWER_BACK:
+        if metadata.spinal_load == SpinalLoad.HIGH:
+            return True, 0, "Spinal load too high for light work"
+        if metadata.unsupported_torso and metadata.hip_hinge_demand:
+            return True, 0, "Unsupported hinge too risky"
+    if area == LimitationArea.SHOULDERS:
+        if metadata.overhead_work == OverheadWork.FULL:
+            return True, 0, "Full overhead too stressful"
+        if metadata.heavy_dip or metadata.behind_neck or metadata.guillotine or metadata.upright_row_like:
+            return True, 0, "High-risk shoulder position"
+    if area == LimitationArea.KNEES:
+        if metadata.knee_flexion_depth == KneeFlexionDepth.HIGH and not metadata.is_machine_supported:
+            return True, 0, "Deep flexion under load"
+        if metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH]:
+            return True, 0, "Impact too high"
+    
+    # Calculate penalty/boost for allowed exercises
+    penalty = 0
+    reason = ""
+    
+    if area == LimitationArea.LOWER_BACK:
+        if metadata.is_machine_supported:
+            penalty -= 50
+            reason = "Machine-supported (back-friendly)"
+        if metadata.is_chest_supported:
+            penalty -= 80
+            reason = "Chest-supported position"
+        if metadata.is_seated and metadata.spinal_load in [SpinalLoad.NONE, SpinalLoad.LOW]:
+            penalty -= 40
+            reason = "Seated position"
+        if metadata.is_lying:
+            penalty -= 60
+            reason = "Lying position"
+        if metadata.spinal_load == SpinalLoad.MODERATE:
+            penalty += 100
+            reason = "Moderate spinal load - careful"
+        if metadata.unsupported_torso:
+            penalty += 150
+            reason = "Unsupported torso"
+    elif area == LimitationArea.SHOULDERS:
+        if metadata.is_machine_supported:
+            penalty -= 50
+            reason = "Machine-supported"
+        if metadata.overhead_work == OverheadWork.PARTIAL:
+            penalty += 80
+            reason = "Partial overhead work"
+    elif area == LimitationArea.KNEES:
+        if metadata.is_machine_supported:
+            penalty -= 60
+            reason = "Machine-supported"
+        if metadata.knee_flexion_depth == KneeFlexionDepth.LOW:
+            penalty -= 40
+            reason = "Low knee flexion"
+        if metadata.is_lying:
+            penalty -= 50
+            reason = "Lying position"
+        if metadata.knee_flexion_depth == KneeFlexionDepth.MODERATE and not metadata.is_machine_supported:
+            penalty += 80
+            reason = "Moderate flexion without support"
+        if metadata.high_balance_demand:
+            penalty += 100
+            reason = "High balance demand"
+    
+    return False, penalty, reason
+
+def evaluate_be_careful(metadata: ExerciseRiskMetadata, area: LimitationArea) -> Tuple[int, str]:
+    """Evaluate for Be Careful: returns (penalty, reason) - positive = bad, negative = good"""
+    penalty = 0
+    reason = ""
+    
+    if area == LimitationArea.LOWER_BACK:
+        if metadata.is_machine_supported:
+            penalty -= 30
+            reason = "Machine-supported"
+        if metadata.is_chest_supported:
+            penalty -= 50
+            reason = "Chest-supported"
+        if metadata.is_lying:
+            penalty -= 40
+            reason = "Lying position"
+        if metadata.spinal_load == SpinalLoad.MODERATE:
+            penalty += 40
+            reason = "Moderate spinal load"
+        if metadata.spinal_load == SpinalLoad.HIGH:
+            penalty += 150
+            reason = "High spinal load"
+        if metadata.unsupported_torso:
+            penalty += 80
+            reason = "Unsupported torso"
+        if metadata.hip_hinge_demand and not metadata.is_machine_supported and not metadata.is_chest_supported:
+            penalty += 60
+            reason = "Hip hinge (free weight)"
+    elif area == LimitationArea.SHOULDERS:
+        if metadata.is_machine_supported:
+            penalty -= 30
+            reason = "Machine-supported"
+        if metadata.upright_row_like:
+            penalty += 100
+            reason = "Upright row pattern"
+        if metadata.behind_neck:
+            penalty += 150
+            reason = "Behind neck"
+        if metadata.guillotine:
+            penalty += 150
+            reason = "Guillotine press"
+        if metadata.heavy_dip:
+            penalty += 80
+            reason = "Heavy dip"
+        if metadata.overhead_work != OverheadWork.NONE:
+            penalty += 60
+            reason = "Overhead work"
+    elif area == LimitationArea.KNEES:
+        if metadata.is_machine_supported:
+            penalty -= 40
+            reason = "Machine-supported"
+        if metadata.knee_flexion_depth == KneeFlexionDepth.LOW:
+            penalty -= 30
+            reason = "Low knee flexion"
+        if metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH]:
+            penalty += 120
+            reason = "Impact/plyometric"
+        if metadata.knee_flexion_depth == KneeFlexionDepth.HIGH:
+            penalty += 80
+            reason = "Deep knee flexion"
+        if metadata.high_balance_demand:
+            penalty += 60
+            reason = "High balance demand"
+    elif area == LimitationArea.HIPS:
+        if metadata.is_machine_supported:
+            penalty -= 30
+            reason = "Machine-supported"
+        if metadata.hip_hinge_demand and metadata.spinal_load in [SpinalLoad.MODERATE, SpinalLoad.HIGH]:
+            penalty += 80
+            reason = "Deep hip hinge"
+    elif area == LimitationArea.NECK:
+        if metadata.neck_stress:
+            penalty += 100
+            reason = "Direct neck stress"
+    elif area == LimitationArea.ANKLES:
+        if metadata.is_seated:
+            penalty -= 30
+            reason = "Seated position"
+        if metadata.impact_level in [ImpactLevel.MODERATE, ImpactLevel.HIGH]:
+            penalty += 80
+            reason = "Impact"
+        if metadata.high_balance_demand:
+            penalty += 50
+            reason = "High balance demand"
+    
+    return penalty, reason
+
+def apply_metadata_limitation_filter(exercise_name: str, equipment: str, 
+                                     injuries: List[Injury]) -> Tuple[bool, int, str]:
+    """
+    Apply metadata-driven limitation filtering.
+    Returns: (should_exclude, penalty, reason)
+    This is the main entry point for the new metadata-driven system.
+    Mirrors Swift WorkoutLimitationFilter.shared.filterForWorkout()
+    """
+    if not injuries:
+        return False, 0, ""
+    
+    metadata = classify_exercise_metadata(exercise_name, equipment)
+    total_penalty = 0
+    reasons = []
+    
+    for injury in injuries:
+        area = get_limitation_area(injury.area)
+        severity = get_limitation_severity(injury.severity)
+        
+        # Check if exercise affects this area
+        if not does_metadata_affect_area(metadata, area):
+            continue
+        
+        # Apply severity-specific rules
+        if severity == LimitationSeverity.SKIP_COMPLETELY:
+            should_exclude, reason = evaluate_skip_completely(metadata, area)
+            if should_exclude:
+                return True, 0, f"[SKIP] {area.value}: {reason}"
+            # Even if not excluded, heavy penalty for skip-completely areas
+            total_penalty += 300
+            reasons.append(f"Exercise stresses {area.value}")
+            
+        elif severity == LimitationSeverity.STRETCHING_ONLY:
+            if not metadata.is_stretch_or_mobility:
+                return True, 0, f"[STRETCH ONLY] Only stretching allowed for {area.value}"
+            
+        elif severity == LimitationSeverity.LIGHT_WORK_ONLY:
+            should_exclude, penalty, reason = evaluate_light_work_only(metadata, area)
+            if should_exclude:
+                return True, 0, f"[LIGHT] {area.value}: {reason}"
+            total_penalty += penalty
+            if reason:
+                reasons.append(reason)
+                
+        elif severity == LimitationSeverity.BE_CAREFUL:
+            penalty, reason = evaluate_be_careful(metadata, area)
+            total_penalty += penalty
+            if reason:
+                reasons.append(reason)
+    
+    return False, total_penalty, "; ".join(reasons) if reasons else ""
+
 def expand_target_muscles(target_muscles: List[str]) -> Set[str]:
     """Expand target muscles to include sub-muscles"""
     expanded = set(m.lower() for m in target_muscles)
@@ -886,18 +1391,32 @@ def expand_target_muscles(target_muscles: List[str]) -> Set[str]:
             expanded.update(MUSCLE_GROUP_EXPANSION[target_lower])
     return expanded
 
-def get_injury_exercise_penalties(exercise_name: str, injuries: List[Injury]) -> int:
+def get_injury_exercise_penalties(exercise_name: str, injuries: List[Injury], equipment: str = "") -> int:
     """
     Get score penalty for exercises based on user's injuries.
     Returns a penalty score (negative number) or 0 if no penalty.
-    This is SEPARATE from the hard block - allows mild injuries to still use exercises but deprioritized.
+    
+    NOW USES METADATA-DRIVEN FILTERING: This function delegates to the new
+    apply_metadata_limitation_filter() system for comprehensive, tag-based filtering.
+    
+    Legacy keyword-based checks are kept as fallback for edge cases.
     """
+    # Use new metadata-driven system first
+    _, metadata_penalty, _ = apply_metadata_limitation_filter(exercise_name, equipment, injuries)
+    
+    # Return as negative (our scoring system expects negative penalties)
+    if metadata_penalty > 0:
+        return -metadata_penalty
+    elif metadata_penalty < 0:  # Boost (safe exercise)
+        return -metadata_penalty  # Return as positive boost
+    
+    # Legacy fallback for edge cases not caught by metadata
     name_lower = exercise_name.lower()
     penalty = 0
     
     for injury in injuries:
         area_lower = injury.area.lower()
-        severity = injury.severity.lower() if hasattr(injury, 'severity') else 'mild'
+        severity = injury.severity.lower() if hasattr(injury, 'severity') else 'be_careful'
         
         # SHOULDER INJURIES - Avoid dips, upright rows, high pulls, stacked overhead pressing
         if "shoulder" in area_lower:
@@ -1023,18 +1542,38 @@ def get_injury_exercise_penalties(exercise_name: str, injuries: List[Injury]) ->
 
 def is_exercise_safe_for_injury(exercise_name: str, exercise_equipment: str, 
                                  exercise_muscles: List[str], injuries: List[Injury]) -> Tuple[bool, str]:
-    """Check if an exercise is safe given user's injuries - HARD BLOCKS for severe injuries"""
+    """
+    Check if an exercise is safe given user's injuries - HARD BLOCKS for severe injuries.
+    
+    NOW USES METADATA-DRIVEN FILTERING: This function uses the new
+    apply_metadata_limitation_filter() system for comprehensive tag-based filtering.
+    
+    Legacy keyword-based checks are kept as fallback for edge cases.
+    Mirrors Swift LimitationsService.filterSafeExercises()
+    """
+    # Use new metadata-driven system for hard exclusions
+    should_exclude, _, reason = apply_metadata_limitation_filter(exercise_name, exercise_equipment, injuries)
+    if should_exclude:
+        return False, reason
+    
+    # Legacy fallback checks for edge cases
     name_lower = exercise_name.lower()
     equip_lower = exercise_equipment.lower()
     muscles_lower = [m.lower() for m in exercise_muscles if m]
     
     for injury in injuries:
         area_lower = injury.area.lower()
-        severity = injury.severity.lower() if hasattr(injury, 'severity') else 'mild'
+        severity = injury.severity.lower() if hasattr(injury, 'severity') else 'be_careful'
         
-        # For MILD injuries, we use penalties (in scoring) not hard blocks
-        # Only block for severe injuries or obvious contraindications
+        # Map old severity names to new system
         if severity == 'mild':
+            severity = 'be_careful'
+        if severity == 'avoid_completely':
+            severity = 'skip_completely'
+        
+        # For BE_CAREFUL, we use penalties (in scoring) not hard blocks
+        # Only block for severe injuries or obvious contraindications
+        if severity == 'be_careful':
             # Still block obvious contraindications even for mild
             if "shoulder" in area_lower and "behind neck" in name_lower:
                 return False, f"Behind neck press contraindicated for shoulder issues"
@@ -1043,7 +1582,7 @@ def is_exercise_safe_for_injury(exercise_name: str, exercise_equipment: str,
             # Let penalties handle the rest for mild injuries
             continue
         
-        # Define exercise patterns to avoid for each injury area (SEVERE)
+        # Define exercise patterns to avoid for each injury area (SEVERE - kept as fallback)
         injury_patterns = {
             "shoulders": ["overhead", "behind neck", "upright row"],
             "shoulder": ["overhead", "behind neck", "upright row"],

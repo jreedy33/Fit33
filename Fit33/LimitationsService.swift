@@ -747,5 +747,14 @@ extension LimitationsService {
     nonisolated var hasActiveLimitationsSync: Bool {
         !cachedLimitationsSnapshot.isEmpty
     }
+    
+    /// Check if user has a lower back limitation (nonisolated for thread-safe access)
+    /// Used by SmartExerciseSelectionEngine to apply lower back safety filtering
+    nonisolated var hasLowerBackLimitation: Bool {
+        cachedLimitationsSnapshot.contains { limitation in
+            let area = limitation.affectedArea.rawValue.lowercased()
+            return area.contains("lower back") || area.contains("low back") || area == "back"
+        }
+    }
 }
 

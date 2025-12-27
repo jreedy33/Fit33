@@ -244,9 +244,9 @@ class SmartExerciseSelectionEngine {
         
         // ═══════════════════════════════════════════════════════════════════════════
         // EQUIPMENT DIVERSITY LIMITS
-        // Even if user prefers barbells, ensure variety by limiting max of each type
+        // For foundational users: allow MORE repetition (focus on progression, not variety)
+        // For experienced users: enforce diversity
         // ═══════════════════════════════════════════════════════════════════════════
-        let maxPerEquipmentType = max(2, exerciseCount / 2)  // Max 50% of workout can be same equipment
         
         // Get progressive unlock status (from thread-safe cache)
         let progressiveCache = ProgressiveUnlockCache.shared
@@ -254,6 +254,20 @@ class SmartExerciseSelectionEngine {
         let currentTier = progressiveCache.currentTier
         let restrictToFoundational = progressiveCache.shouldRestrictToFoundational
         let varietyPercentage = progressiveCache.varietyPercentage
+        
+        // 🔧 FIX: Relax equipment diversity for foundational users
+        // Foundational = prioritize progression + safety, NOT variety
+        let maxPerEquipmentType: Int
+        if restrictToFoundational || userWorkoutCount < 10 {
+            maxPerEquipmentType = max(3, exerciseCount / 2 + 1)  // Allow 3 per equipment type for foundational
+        } else {
+            maxPerEquipmentType = max(2, exerciseCount / 2)  // Standard diversity for experienced users
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CHECK FOR LOWER BACK LIMITATION
+        // ═══════════════════════════════════════════════════════════════════════════
+        let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
         
         print("╔══════════════════════════════════════════════════════════════╗")
         print("║         🧠 SMART EXERCISE SELECTION ENGINE                   ║")
@@ -434,6 +448,30 @@ class SmartExerciseSelectionEngine {
             guard !isStretch else { continue }
             
             // ═══════════════════════════════════════════════════════════════
+            // FILTER 3.5: 🚫 PRE-FILTER RISKY EXERCISES FOR FOUNDATIONAL USERS
+            // Block complex/dangerous exercises before they even get scored
+            // ═══════════════════════════════════════════════════════════════
+            if restrictToFoundational || userWorkoutCount < 10 {
+                let foundationalDB = FoundationalExerciseDatabase.shared
+                if foundationalDB.isRiskyExercise(nameLower) {
+                    print("   🚫 [RISKY] Excluding '\(exerciseName)' - risky exercise blocked for foundational user")
+                    continue
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════
+            // FILTER 3.6: 🚫 PRE-FILTER LOWER BACK STRESS EXERCISES
+            // If user has lower back limitation, block stressful exercises
+            // ═══════════════════════════════════════════════════════════════
+            if hasLowerBackIssue {
+                let foundationalDB = FoundationalExerciseDatabase.shared
+                if foundationalDB.isLowerBackStressExercise(nameLower) {
+                    print("   🚫 [BACK SAFETY] Excluding '\(exerciseName)' - lower back stress exercise blocked for user with back limitation")
+                    continue
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════
             // FILTER 4: PRACTICALITY FILTER - Use database score if available
             // ═══════════════════════════════════════════════════════════════
             let dbPracticalityScore = Int(exercise.practicalityScore)  // From database (0-100)
@@ -489,9 +527,36 @@ class SmartExerciseSelectionEngine {
             
             // Check if user should be restricted to foundational exercises only
             if restrictToFoundational && foundationalBoost < 0 {
-                // New user + non-foundational exercise = skip it
-                print("   🚫 [BEGINNER] Excluding '\(exerciseName)': User restricted to foundational exercises")
-                continue
+                // New user + non-foundational exercise = heavy penalty (but don't always skip)
+                print("   🚫 [BEGINNER] Heavy penalty for '\(exerciseName)': non-foundational for new user")
+                score -= 200  // Heavy penalty instead of hard skip to allow some flexibility
+            }
+            
+            // ┌─────────────────────────────────────────────────────────────┐
+            // │ 🚫 RISKY EXERCISE PENALTY (For exercises that passed filter)│
+            // │ Even if not pre-filtered, risky exercises get heavy penalty │
+            // └─────────────────────────────────────────────────────────────┘
+            let foundationalDB = FoundationalExerciseDatabase.shared
+            let riskyPenalty = foundationalDB.getRiskyExercisePenalty(
+                exerciseName: nameLower,
+                userWorkoutCount: userWorkoutCount,
+                restrictToFoundational: restrictToFoundational,
+                hasLowerBackIssue: hasLowerBackIssue
+            )
+            if riskyPenalty != 0 {
+                score += riskyPenalty
+                if riskyPenalty < -100 {
+                    print("   ⚠️ [SAFETY] '\(exerciseName)' penalty: \(Int(riskyPenalty))")
+                }
+            }
+            
+            // ┌─────────────────────────────────────────────────────────────┐
+            // │ ✅ LOWER BACK SAFE ALTERNATIVE BOOST                        │
+            // │ If user has back issues, boost chest-supported/machine rows │
+            // └─────────────────────────────────────────────────────────────┘
+            if hasLowerBackIssue && foundationalDB.isLowerBackSafeAlternative(nameLower) {
+                score += 100
+                print("   ✅ [BACK SAFE] '\(exerciseName)' boosted +100 (safe for lower back)")
             }
             
             // ┌─────────────────────────────────────────────────────────────┐

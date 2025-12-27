@@ -478,7 +478,29 @@ class SmartDayGenerator {
         // ═══════════════════════════════════════════════════════════════════
         // SAFETY FILTER: Remove exercises that could aggravate user's limitations
         // ═══════════════════════════════════════════════════════════════════
-        let safeExercises = LimitationsService.shared.filterSafeExercises(allExercises)
+        var safeExercises = LimitationsService.shared.filterSafeExercises(allExercises)
+        
+        // 🚫 PRE-FILTER: Remove risky/complex exercises
+        // Mirrors Python script's RISKY_EXERCISES filtering
+        let foundationalDB = FoundationalExerciseDatabase.shared
+        let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
+        let userWorkoutCount = ProgressiveUnlockCache.shared.workoutCount
+        let restrictToFoundational = ProgressiveUnlockCache.shared.shouldRestrictToFoundational
+        
+        if restrictToFoundational || userWorkoutCount < 10 {
+            safeExercises = safeExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                return !foundationalDB.isRiskyExercise(name)
+            }
+        }
+        
+        // 🚫 PRE-FILTER: Remove lower back stress exercises if user has back issues
+        if hasLowerBackIssue {
+            safeExercises = safeExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                return !foundationalDB.isLowerBackStressExercise(name)
+            }
+        }
         
         let normalizedEquipment = Set(equipment.map { $0.lowercased() })
         let normalizedMuscle = muscle.lowercased()
@@ -688,7 +710,29 @@ class SmartDayGenerator {
         // ═══════════════════════════════════════════════════════════════════
         // SAFETY FILTER: Remove exercises that could aggravate user's limitations
         // ═══════════════════════════════════════════════════════════════════
-        let safeExercises = LimitationsService.shared.filterSafeExercises(allExercises)
+        var safeExercises = LimitationsService.shared.filterSafeExercises(allExercises)
+        
+        // 🚫 PRE-FILTER: Remove risky/complex exercises
+        // Mirrors Python script's RISKY_EXERCISES filtering
+        let foundationalDB = FoundationalExerciseDatabase.shared
+        let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
+        let userWorkoutCount = ProgressiveUnlockCache.shared.workoutCount
+        let restrictToFoundational = ProgressiveUnlockCache.shared.shouldRestrictToFoundational
+        
+        if restrictToFoundational || userWorkoutCount < 10 {
+            safeExercises = safeExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                return !foundationalDB.isRiskyExercise(name)
+            }
+        }
+        
+        // 🚫 PRE-FILTER: Remove lower back stress exercises if user has back issues
+        if hasLowerBackIssue {
+            safeExercises = safeExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                return !foundationalDB.isLowerBackStressExercise(name)
+            }
+        }
         
         let normalizedEquipment = Set(equipment.map { $0.lowercased() })
         

@@ -564,6 +564,55 @@ class WorkoutGeneratorService: ObservableObject {
         }
         #endif
         
+        // 🚫 PRE-FILTER: Remove risky exercises for foundational users
+        // This mirrors the Python script's risky exercise filtering
+        let foundationalDB = FoundationalExerciseDatabase.shared
+        let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
+        
+        if restrictToFoundational || userWorkoutCount < 10 {
+            let beforeRiskyFilter = allExercises.count
+            allExercises = allExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                
+                // Pre-filter risky exercises for foundational users
+                if foundationalDB.isRiskyExercise(name) {
+                    #if DEBUG
+                    print("   🚫 [RISKY] Pre-filtering '\(exercise.name ?? "")' - risky for foundational user")
+                    #endif
+                    return false
+                }
+                return true
+            }
+            let filteredRisky = beforeRiskyFilter - allExercises.count
+            #if DEBUG
+            if filteredRisky > 0 {
+                print("🚫 [RISKY] Pre-filtered \(filteredRisky) risky exercises for foundational user")
+            }
+            #endif
+        }
+        
+        // 🚫 PRE-FILTER: Remove lower back stress exercises if user has back issues
+        if hasLowerBackIssue {
+            let beforeBackFilter = allExercises.count
+            allExercises = allExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                
+                if foundationalDB.isLowerBackStressExercise(name) {
+                    #if DEBUG
+                    print("   🚫 [BACK SAFETY] Pre-filtering '\(exercise.name ?? "")' - stresses lower back")
+                    #endif
+                    return false
+                }
+                return true
+            }
+            let filteredBack = beforeBackFilter - allExercises.count
+            #if DEBUG
+            if filteredBack > 0 {
+                print("🚫 [BACK SAFETY] Pre-filtered \(filteredBack) lower back stress exercises")
+            }
+            #endif
+        }
+        
         guard !allExercises.isEmpty else {
             print("⚠️ No exercises in Core Data library (or all filtered for safety)")
             return []
@@ -1033,6 +1082,34 @@ class WorkoutGeneratorService: ObservableObject {
                 score -= 500  // Massive penalty to ensure non-foundational rarely appears
                 #if DEBUG
                 print("   🚫 [BEGINNER] Heavy penalty for '\(exercise.name ?? "")': non-foundational for new user")
+                #endif
+            }
+            
+            // 🚫 RISKY EXERCISE PENALTY - Block complex/dangerous exercises for foundational users
+            // Mirrors the Python script's RISKY_EXERCISES filtering
+            let foundationalDB = FoundationalExerciseDatabase.shared
+            let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
+            
+            let riskyPenalty = foundationalDB.getRiskyExercisePenalty(
+                exerciseName: name,
+                userWorkoutCount: userWorkoutCount,
+                restrictToFoundational: restrictToFoundational,
+                hasLowerBackIssue: hasLowerBackIssue
+            )
+            if riskyPenalty != 0 {
+                score += riskyPenalty
+                #if DEBUG
+                if riskyPenalty < -100 {
+                    print("   ⚠️ [SAFETY] '\(exercise.name ?? "")' penalty: \(Int(riskyPenalty))")
+                }
+                #endif
+            }
+            
+            // ✅ LOWER BACK SAFE ALTERNATIVE BOOST - Promote chest-supported/machine rows
+            if hasLowerBackIssue && foundationalDB.isLowerBackSafeAlternative(name) {
+                score += 100
+                #if DEBUG
+                print("   ✅ [BACK SAFE] '\(exercise.name ?? "")' boosted +100 (safe for lower back)")
                 #endif
             }
             

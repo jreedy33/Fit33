@@ -130,12 +130,105 @@ enum FoundationalMuscleGroup: String, CaseIterable {
     }
 }
 
+// MARK: - Risky Exercise Lists (for Safety Filtering)
+
+/// Exercises that are too risky/complex for foundational users - should be hard blocked
+/// These involve high skill, instability, or injury risk that beginners shouldn't face
+let RISKY_EXERCISES: Set<String> = [
+    // Complex Olympic lifts
+    "clean", "snatch", "jerk", "power clean", "hang clean",
+    // Advanced gymnastics
+    "guillotine bench press", "deep push up and renegade row", "pullover to press",
+    "jm bench press", "reverse grip decline press", "hollow back press",
+    "one arm pull", "one arm push", "pistol squat", "dragon flag",
+    "maltese", "victorian", "planche", "muscle up",
+    // Complex combination movements
+    "renegade row", "plank row", "plank lateral raise", "plank front raise",
+    // High injury risk
+    "behind the neck press", "behind neck pulldown", "upright row",
+    "good morning"
+]
+
+/// Exercises that stress the lower back - should be blocked/penalized for users with back issues
+let LOWER_BACK_STRESS_EXERCISES: Set<String> = [
+    // Direct lower back stress
+    "renegade row", "plank row",  // Anti-rotation under load
+    "bent over row", "bent-over row", "pendlay row",  // Unsupported bent position
+    "deadlift", "romanian deadlift", "stiff leg deadlift", "rdl",
+    "good morning",
+    "hyperextension", "back extension",
+    // These put the lower back in a compromised position
+    "t-bar row"  // Can be okay with chest support but often not
+]
+
+/// Exercises that are SAFE alternatives for users with lower back issues
+let LOWER_BACK_SAFE_ALTERNATIVES: Set<String> = [
+    "chest supported row", "chest-supported row",
+    "machine row", "lever row", "seated machine row",
+    "seated cable row", "cable row",
+    "lat pulldown",
+    "leg press",  // vs squats
+    "leg curl", "leg extension"  // Isolation instead of compounds
+]
+
 // MARK: - Foundational Exercise Database
 
 class FoundationalExerciseDatabase {
     static let shared = FoundationalExerciseDatabase()
     
     private init() {}
+    
+    // MARK: - Risky Exercise Checks
+    
+    /// Check if an exercise is risky for foundational/beginner users
+    func isRiskyExercise(_ exerciseName: String) -> Bool {
+        let nameLower = exerciseName.lowercased()
+        return RISKY_EXERCISES.contains { nameLower.contains($0) }
+    }
+    
+    /// Check if an exercise stresses the lower back
+    func isLowerBackStressExercise(_ exerciseName: String) -> Bool {
+        let nameLower = exerciseName.lowercased()
+        return LOWER_BACK_STRESS_EXERCISES.contains { nameLower.contains($0) }
+    }
+    
+    /// Check if an exercise is a safe alternative for lower back issues
+    func isLowerBackSafeAlternative(_ exerciseName: String) -> Bool {
+        let nameLower = exerciseName.lowercased()
+        return LOWER_BACK_SAFE_ALTERNATIVES.contains { nameLower.contains($0) }
+    }
+    
+    /// Get penalty for risky exercises based on user context
+    func getRiskyExercisePenalty(
+        exerciseName: String,
+        userWorkoutCount: Int,
+        restrictToFoundational: Bool,
+        hasLowerBackIssue: Bool
+    ) -> Double {
+        let nameLower = exerciseName.lowercased()
+        var penalty: Double = 0
+        
+        // RISKY EXERCISE PENALTY - Block for foundational users
+        if isRiskyExercise(nameLower) {
+            if restrictToFoundational || userWorkoutCount < 10 {
+                penalty -= 400  // Effectively blocks the exercise
+            } else {
+                penalty -= 150  // Heavy penalty even for experienced users
+            }
+        }
+        
+        // LOWER BACK STRESS PENALTY - Block if user has back issues
+        if hasLowerBackIssue && isLowerBackStressExercise(nameLower) {
+            penalty -= 400  // Block completely for back issues
+        }
+        
+        // LOWER BACK SAFE ALTERNATIVE BOOST - Promote safer options
+        if hasLowerBackIssue && isLowerBackSafeAlternative(nameLower) {
+            penalty += 120  // Boost safe alternatives
+        }
+        
+        return penalty
+    }
     
     // MARK: - 🏋️ BARBELL EXERCISES (Top 15)
     

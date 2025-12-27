@@ -1,0 +1,392 @@
+import SwiftUI
+import CoreData
+import UserNotifications
+
+// MARK: - Debug Helper
+#if DEBUG
+// ⚠️ DEVELOPMENT MODE BEHAVIOR ⚠️
+// When SKIP_ONBOARDING_FOR_DEVELOPMENT = true:
+//   - App rebuilds will keep you logged in (no onboarding shown)
+//   - Manual sign-outs WILL show onboarding (respects user action)
+//   - Deleted accounts WILL show onboarding (respects server state)
+// When SKIP_ONBOARDING_FOR_DEVELOPMENT = false:
+//   - Every app launch will show onboarding (for testing the flow)
+private let SKIP_ONBOARDING_FOR_DEVELOPMENT = false
+
+// 🚀 FAST STARTUP MODE - Skip heavy cloud syncs during development
+// PRODUCTION: Set to FALSE for full cloud sync behavior
+// DEBUG ONLY: Set to TRUE for fast rebuilds (uses cached data)
+#if DEBUG
+private let FAST_STARTUP_MODE = false  // Set to true only for fast local testing
+#else
+private let FAST_STARTUP_MODE = false  // Always false in production
+#endif
+
+private func resetOnboardingForTesting() {
+    // Check if user manually signed out - always respect this
+    let userManuallySignedOut = UserDefaults.standard.bool(forKey: "user_manually_signed_out")
+    
+    if userManuallySignedOut {
+        print("🔐 [DEBUG] User manually signed out - will show onboarding")
+        // Clear the flag so it doesn't persist forever
+        // The flag will be set again if they sign out again
+        return  // Don't override - let the normal flow show onboarding
+    }
+    
+    // Skip reset if we want to stay logged in during development
+    if SKIP_ONBOARDING_FOR_DEVELOPMENT {
+        print("⏭️ [DEBUG] Development mode - keeping existing session")
+        return
+    }
+    
+    // For testing onboarding flow - reset onboarding state
+    let context = PersistenceController.shared.container.viewContext
+    let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
+    
+    do {
+        let users = try context.fetch(fetchRequest)
+        for user in users {
+            user.hasCompletedOnboarding = false
+        }
+        try context.save()
+        print("🔄 [DEBUG] Onboarding reset - will show onboarding flow")
+    } catch {
+        print("⚠️ [DEBUG] Could not reset onboarding: \(error)")
+    }
+}
+#endif
+
+@main
+struct Fit33App: App {
+    let persistenceController = PersistenceController.shared
+    let premiumManager = PremiumManager.shared
+    @StateObject private var supabaseManager = SupabaseManager.shared
+    @StateObject private var appearanceManager = AppearanceManager.shared
+    @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var shakeManager = ShakeDetectionManager.shared
+    @StateObject private var sessionLogManager = SessionLogManager.shared
+    
+    @Environment(\.scenePhase) private var scenePhase
+    
+    init() {
+        // 🔧 DEV: Check for crash from previous session
+        #if DEBUG
+        SessionLogManager.shared.checkForCrashLog()
+        #endif
+        
+        // Start session logging
+        SessionLogManager.shared.startSession()
+        SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
+        
+        // Track app version for update detection
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let currentBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        let lastVersion = UserDefaults.standard.string(forKey: "last_app_version")
+        let lastBuild = UserDefaults.standard.string(forKey: "last_app_build")
+        
+        if lastVersion == nil {
+            // First launch ever
+            SessionLogManager.shared.logAppFirstLaunch(version: currentVersion, build: currentBuild)
+        } else if lastVersion != currentVersion || lastBuild != currentBuild {
+            // App was updated
+            SessionLogManager.shared.logAppUpdated(
+                previousVersion: lastVersion ?? "unknown",
+                newVersion: currentVersion,
+                previousBuild: lastBuild ?? "unknown",
+                newBuild: currentBuild
+            )
+        }
+        
+        // Save current version
+        UserDefaults.standard.set(currentVersion, forKey: "last_app_version")
+        UserDefaults.standard.set(currentBuild, forKey: "last_app_build")
+        
+        // Track session count for retention metrics
+        let sessionCount = UserDefaults.standard.integer(forKey: "total_session_count") + 1
+        UserDefaults.standard.set(sessionCount, forKey: "total_session_count")
+        
+        let lastSessionTimestamp = UserDefaults.standard.double(forKey: "last_session_timestamp")
+        var daysSinceLastSession: Int? = nil
+        if lastSessionTimestamp > 0 {
+            let lastDate = Date(timeIntervalSince1970: lastSessionTimestamp)
+            daysSinceLastSession = Calendar.current.dateComponents([.day], from: lastDate, to: Date()).day
+        }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "last_session_timestamp")
+        
+        // Log session with retention metrics (totalWorkouts will be updated once user data loads)
+        SessionLogManager.shared.logSessionStart(
+            sessionNumber: sessionCount,
+            daysSinceLastSession: daysSinceLastSession,
+            totalWorkoutsCompleted: UserDefaults.standard.integer(forKey: "cached_total_workouts")
+        )
+        
+        // Register the custom value transformer for Core Data array handling
+        StringArrayValueTransformer.register()
+        
+        // DEBUG: Reset onboarding on every launch to test the flow
+        // Use the Skip button in the onboarding to bypass during development
+        #if DEBUG
+        resetOnboardingForTesting()
+        
+        // 🚀 Set fast startup mode flag for SupabaseManager
+        UserDefaults.standard.set(FAST_STARTUP_MODE, forKey: "FAST_STARTUP_MODE")
+        if FAST_STARTUP_MODE {
+            print("⚡ [FAST STARTUP] Enabled - skipping heavy cloud syncs")
+        }
+        #endif
+        
+        // Make navigation bars completely transparent
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundColor = UIColor.clear
+        appearance.shadowColor = UIColor.clear
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().compactAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        UINavigationBar.appearance().backgroundColor = UIColor.clear
+        UINavigationBar.appearance().isTranslucent = true
+        
+        // Remove any system backgrounds and make status bar transparent
+        UIView.appearance(whenContainedInInstancesOf: [UIWindow.self]).backgroundColor = UIColor.clear
+        
+        // Apply saved appearance setting on launch
+        AppearanceManager.shared.applyAppearance()
+        
+        // Set up notification center delegate
+        UNUserNotificationCenter.current().delegate = NotificationManager.shared
+        
+        // 🚀 Clear video prefetch cache on memory warning
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            VideoStreamingService.shared.clearPreloadCache()
+            VideoPreloadManager.shared.reduceCache()
+            print("⚠️ Memory warning - cleared video prefetch cache")
+        }
+        
+        // 📺 Pre-warm AdMob SDK after a short delay (doesn't block UI)
+        // This gives ads more time to load before user starts a workout
+        #if DEBUG
+        if !FAST_STARTUP_MODE {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if AdManager.shared.adsEnabled {
+                    print("📺 Pre-warming AdMob SDK...")
+                    AdManager.shared.prepareForWorkout()
+                }
+            }
+        } else {
+            print("⚡ [FAST STARTUP] Skipping AdMob pre-warm")
+        }
+        #else
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if AdManager.shared.adsEnabled {
+                print("📺 Pre-warming AdMob SDK...")
+                AdManager.shared.prepareForWorkout()
+            }
+        }
+        #endif
+        
+        // 🧠 Initialize Exercise Intelligence Engine and Mapping Service
+        // DELAYED: Don't block app startup - initialize after a delay
+        #if DEBUG
+        if !FAST_STARTUP_MODE {
+            scheduleIntelligenceInit()
+        } else {
+            print("⚡ [FAST STARTUP] Skipping intelligence engine initialization")
+        }
+        #else
+        scheduleIntelligenceInit()
+        #endif
+    }
+    
+    private func scheduleIntelligenceInit() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { // Increased delay
+            Task(priority: .background) {
+                print("🧠 [INIT] Starting background intelligence initialization...")
+                ExerciseIntelligenceEngine.shared.loadExerciseData()
+                print("🧠 [INIT] Intelligence engine data loading started")
+                
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                await ExerciseMappingService.shared.buildMaps()
+                print("🧠 [INIT] Exercise mapping service initialized")
+                
+                // Initialize smart pairing engine for exercise substitutions
+                SmartExercisePairingEngine.shared.initialize()
+                print("🧠 [INIT] Smart exercise pairing engine initialized")
+                
+                // Refresh exercise popularity data from cloud
+                await ExercisePopularityService.shared.refreshFromServer()
+                print("📊 [INIT] Exercise popularity data loaded")
+                
+                // Sync collaborative learning data (cross-user intelligence)
+                await CollaborativeLearningEngine.shared.syncGlobalData()
+                print("🌐 [INIT] Collaborative learning engine synced")
+                
+                // 🧠 Analyze user behavior to build personalized recommendations
+                // This learns from workout history, favorites, and exercise completion patterns
+                let context = PersistenceController.shared.container.viewContext
+                await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
+                print("🧠 [INIT] User behavior learning engine initialized")
+                
+                print("🧠 [INIT] Exercise intelligence systems fully initialized")
+            }
+        }
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            // New onboarding flow includes auth, so always show ContentView
+            // ContentView will show NewOnboardingView (with auth) if not completed
+            ShakeDetectingView {
+                ContentView()
+                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                    .environmentObject(premiumManager)
+                    .environmentObject(supabaseManager)
+                    .environmentObject(appearanceManager)
+                    .environmentObject(notificationManager)
+                    .preferredColorScheme(appearanceManager.colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
+            }
+            .sheet(isPresented: $shakeManager.showBugReportSheet) {
+                BugReportView()
+            }
+                .task {
+                    await supabaseManager.checkAuth()
+
+                    // Load user limitations for safety filtering
+                    if supabaseManager.isAuthenticated {
+                        await LimitationsService.shared.fetchUserLimitations()
+                        print("🛡️ [SAFETY] User limitations loaded")
+                        
+                        // Update session log with user info
+                        SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
+                            "user_id": supabaseManager.currentUser?.id ?? "unknown"
+                        ])
+                    }
+                    
+                    // Check notification authorization and schedule if authorized
+                    notificationManager.checkAuthorizationStatus()
+                    if notificationManager.isAuthorized {
+                        notificationManager.scheduleAllNotifications()
+                    }
+                    
+                    // Check for comeback reminder (if user hasn't worked out in a while)
+                    await checkForComebackReminder()
+                    
+                    // Refresh community insights in background (non-blocking)
+                    // Only if stale (> 1 hour old)
+                    #if DEBUG
+                    if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
+                        if SmartRecommendationEngine.shared.communityInsights.needsRefresh {
+                            Task.detached(priority: .background) {
+                                await SmartRecommendationEngine.shared.communityInsights.refreshInsights()
+                            }
+                        }
+                    }
+                    #else
+                    if SmartRecommendationEngine.shared.communityInsights.needsRefresh {
+                        Task.detached(priority: .background) {
+                            await SmartRecommendationEngine.shared.communityInsights.refreshInsights()
+                        }
+                    }
+                    #endif
+                }
+                .onReceive(appearanceManager.$appearanceMode) { _ in
+                    // Re-apply appearance when mode changes
+                    appearanceManager.applyAppearance()
+                }
+                .onOpenURL { url in
+                    // Handle deep link URLs
+                    print("🔗 App opened with URL: \(url.absoluteString)")
+                    print("🔗 URL scheme: \(url.scheme ?? "none")")
+                    print("🔗 URL host: \(url.host ?? "none")")
+                    
+                    // Only handle our custom scheme
+                    guard url.scheme == "gofit" else {
+                        print("⚠️ Ignoring URL with different scheme")
+                        return
+                    }
+                    
+                    // Handle different deep link paths
+                    if url.host == "running" {
+                        // Deep link from Live Activity - navigate to running view
+                        print("🏃 Deep link to running workout")
+                        DeepLinkManager.shared.pendingDestination = .running
+                        return
+                    }
+                    
+                    // Handle OAuth callback
+                    Task {
+                        do {
+                            try await supabaseManager.handleOAuthCallback(url: url)
+                            print("✅ OAuth callback handled successfully")
+                            
+                            // Force UI update after successful OAuth
+                            await MainActor.run {
+                                UserManager.shared.reloadCurrentUser()
+                            }
+                        } catch {
+                            print("❌ OAuth callback error: \(error)")
+                        }
+                    }
+                }
+                .onChange(of: scenePhase) { oldPhase, newPhase in
+                    switch newPhase {
+                    case .active:
+                        SessionLogManager.shared.log(.info, category: .session, message: "App became active")
+                        
+                        // Smart notification check - cancel unnecessary reminders
+                        NotificationManager.shared.performSmartCheck()
+                    case .inactive:
+                        SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")
+                        // 🔧 DEV: Persist logs on inactive (in case of crash)
+                        #if DEBUG
+                        SessionLogManager.shared.persistLogsForCrashRecovery()
+                        #endif
+                    case .background:
+                        SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
+                        // 🔧 DEV: Mark clean shutdown before going to background
+                        #if DEBUG
+                        SessionLogManager.shared.markCleanShutdown()
+                        #endif
+                        // End session when app goes to background (logs cleared unless bug report pending)
+                        SessionLogManager.shared.endSession()
+                    @unknown default:
+                        break
+                    }
+                }
+        }
+    }
+    
+    // Check if user should receive a comeback reminder
+    private func checkForComebackReminder() async {
+        let context = persistenceController.container.viewContext
+        let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
+        fetchRequest.fetchLimit = 1
+        
+        do {
+            let users = try context.fetch(fetchRequest)
+            if let user = users.first, let lastWorkout = user.lastWorkoutDate {
+                let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
+                
+                // Send comeback reminder if it's been 2+ days
+                if daysSinceLastWorkout >= 2 {
+                    // Only send once per day max
+                    let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
+                    if let lastReminder = lastComebackReminder {
+                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                        if daysSinceReminder < 1 { return }
+                    }
+                    
+                    notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)
+                    UserDefaults.standard.set(Date(), forKey: "last_comeback_reminder")
+                }
+            }
+        } catch {
+            print("❌ Error checking for comeback reminder: \(error)")
+        }
+    }
+}
+

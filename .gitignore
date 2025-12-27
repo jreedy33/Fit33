@@ -1,0 +1,111 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+!*.xcworkspace/xcshareddata/
+
+# User settings
+xcuserdata/
+*.perspectivev3
+*.xcuserdatad
+
+# Build products
+build/
+DerivedData/
+*.ipa
+*.app
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.pins
+Package.resolved
+
+# CocoaPods
+Pods/
+*.podspec
+
+# Carthage
+Carthage/Build/
+
+# Backup files
+*.backup
+*.old
+*.bak
+*~
+
+# Logs and temporary files
+*.log
+*.txt
+!README.txt
+*.tmp
+*.temp
+
+# Progress/upload tracking files
+*_progress.json
+*_log.txt
+upload_*.json
+r2_*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Secrets
+*.p8
+!DO\ NOT\ DELETE/*.p8
+*.pem
+*.key
+.env
+.env.local
+secrets.json
+
+# Large files (videos should be in cloud storage)
+All Workout Videos/
+*.mp4
+*.mov
+*.wav
+1201-CLASSIC-GYM-videos*/
+BuiltSimple_Backups/
+.git_backup*/
+
+# Temporary SQL files (keep schema/migration files)
+temp_*.sql
+test_*.sql
+
+# Node modules (if using any JS tools)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Deployment artifacts
+*.zip
+*.tar.gz

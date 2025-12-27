@@ -1,0 +1,2250 @@
+{
+  "summary": {
+    "total_tests": 40,
+    "grades": {
+      "A": 40
+    },
+    "avg_scores": {
+      "equipment_accuracy": 100.0,
+      "muscle_accuracy": 100.0,
+      "variety": 100.0,
+      "quality": 94.625,
+      "overall": 99.19500000000001
+    },
+    "overall_grade": "A"
+  },
+  "recommendations": [],
+  "results": [
+    {
+      "test_id": 1,
+      "profile": "Home Beginner",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Back"
+      ],
+      "matching_pool": 257,
+      "workout_count": 2,
+      "workout_exercises": [
+        {
+          "name": "Neutral Grip Chin Up",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Weighted Bag Good Morning",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Lower Back"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 50,
+        "overall": 92.5
+      },
+      "issues": [
+        "\u26a0\ufe0f Too few exercises: 2"
+      ],
+      "grade": "A"
+    },
+    {
+      "test_id": 2,
+      "profile": "Home Beginner",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Triceps"
+      ],
+      "matching_pool": 298,
+      "workout_count": 2,
+      "workout_exercises": [
+        {
+          "name": "Roll Triceps Side Lying On Floor",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Kneeling One Side Archer Push Up",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 50,
+        "overall": 92.5
+      },
+      "issues": [
+        "\u26a0\ufe0f Too few exercises: 2"
+      ],
+      "grade": "A"
+    },
+    {
+      "test_id": 3,
+      "profile": "Home Beginner",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Upper Chest"
+      ],
+      "matching_pool": 231,
+      "workout_count": 2,
+      "workout_exercises": [
+        {
+          "name": "Glute Bridge Chest Press (Bodyweight)",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Chest Out Hands Behind (hold)",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 50,
+        "overall": 92.5
+      },
+      "issues": [
+        "\u26a0\ufe0f Too few exercises: 2"
+      ],
+      "grade": "A"
+    },
+    {
+      "test_id": 4,
+      "profile": "Home Beginner",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Legs",
+        "Glutes"
+      ],
+      "matching_pool": 795,
+      "workout_count": 4,
+      "workout_exercises": [
+        {
+          "name": "Sumo Crab Walk",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Circles Knee Stretch",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Alternating Hamstring Curl With Punches",
+          "equipment": null,
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Standing Forward Leg Swings",
+          "equipment": null,
+          "muscles": [
+            "Legs"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 85,
+        "overall": 97.8
+      },
+      "issues": [
+        "\u26a0\ufe0f Only 1/4 are strength exercises for Build Muscle goal"
+      ],
+      "grade": "A"
+    },
+    {
+      "test_id": 5,
+      "profile": "Home Intermediate",
+      "equipment": [
+        "Bodyweight",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Arms",
+        "Shoulders"
+      ],
+      "matching_pool": 615,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Standing Military Press (Bodyweight)",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Lying One Arm Supinated Triceps Extension (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Standing Butt Kick Kickback",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Standing Bent Over Two Arm Triceps Extens (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Seated Bench Extension (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 6,
+      "profile": "Home Intermediate",
+      "equipment": [
+        "Bodyweight",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Legs"
+      ],
+      "matching_pool": 913,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Lying Single Leg Extension",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Pulsing Side Squat",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Goblet Squat With Calf Raise (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Goblet Side Lunge Stretch (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Bench Squat (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Quads"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 7,
+      "profile": "Home Intermediate",
+      "equipment": [
+        "Bodyweight",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Triceps"
+      ],
+      "matching_pool": 437,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Pike Push Up",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline One Arm Hammer Press On Exercise (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Glute Bridge Chest Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Front Plank With Arm And Leg Lift (push Up Positio",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Decline Triceps Extension (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 8,
+      "profile": "Home Intermediate",
+      "equipment": [
+        "Bodyweight",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Biceps"
+      ],
+      "matching_pool": 122,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Bottle Weighted Alternate Hammer Curl",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Biceps Curl (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Donkey Kick Glute Curl",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Standing Single Arm Biceps Curl (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Incline Hammer Curl (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Biceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 9,
+      "profile": "Home Advanced (Dumbbells Only)",
+      "equipment": [
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Quads",
+        "Glutes"
+      ],
+      "matching_pool": 97,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Plyo Squat (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Curtsey Lunge (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Bench Squat (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Single Leg Split Squat With The Ring (Dumbbell)",
+          "equipment": "Dumbbell, Rings",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Single Leg Split Squat With Low Box (Dumbbell)",
+          "equipment": "Dumbbell, Box",
+          "muscles": [
+            "Quads"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 10,
+      "profile": "Home Advanced (Dumbbells Only)",
+      "equipment": [
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Lower Chest"
+      ],
+      "matching_pool": 85,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Seated Upright Alternate Squeeze Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Hammer Press (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Straight Arm Pullover (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Fly (stability Ball) (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Opposite 2 Point Bench Press (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 11,
+      "profile": "Home Advanced (Dumbbells Only)",
+      "equipment": [
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Abs"
+      ],
+      "matching_pool": 33,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Seated Military Hold Alternate Leg Raise On Floor (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Lower Abs"
+          ]
+        },
+        {
+          "name": "Weighted Dumbbell Lying Knee Raise",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Lower Abs"
+          ]
+        },
+        {
+          "name": "Decline Overhead Sit Up (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Overhead Sit Up With Legs On Bench (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Overhead Crunch (on Stability Ball) (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell",
+          "muscles": [
+            "Abs"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 12,
+      "profile": "Home Advanced (Dumbbells Only)",
+      "equipment": [
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Chest"
+      ],
+      "matching_pool": 89,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "One Arm Bench Fly (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Decline Fly (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Hyght Dumbbell Fly",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Press On Exercise Ball (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell, Bench",
+          "muscles": [
+            "Upper Chest"
+          ]
+        },
+        {
+          "name": "Squeeze Press On Floor (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 13,
+      "profile": "Gym Beginner",
+      "equipment": [
+        "Dumbbells",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Glutes"
+      ],
+      "matching_pool": 40,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Single Leg Glute Bridge (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Contralateral Glute Bridge Single Arm Che (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Lever Seated Hip Abduction",
+          "equipment": "Machine, Bench",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Lever Side Hip Abduction",
+          "equipment": "Machine",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Banded Hip Thrust (Dumbbell)",
+          "equipment": "Dumbbell, Resistance Band",
+          "muscles": [
+            "Glutes"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 14,
+      "profile": "Gym Beginner",
+      "equipment": [
+        "Dumbbells",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Biceps"
+      ],
+      "matching_pool": 91,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Standing Biceps Curl (Twisting) (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Close Grip Curl (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Incline Biceps Curl (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Lever Biceps Curl",
+          "equipment": "Machine",
+          "muscles": [
+            "Biceps"
+          ]
+        },
+        {
+          "name": "Incline Curl (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Biceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 15,
+      "profile": "Gym Beginner",
+      "equipment": [
+        "Dumbbells",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Lower Back"
+      ],
+      "matching_pool": 22,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Lever Deadlift (plate Loaded)",
+          "equipment": "Machine",
+          "muscles": [
+            "Lower Back"
+          ]
+        },
+        {
+          "name": "Lever Reverse Hyperextension (plate Loaded)",
+          "equipment": "Hyperextension Bench, Machine",
+          "muscles": [
+            "Lower Back"
+          ]
+        },
+        {
+          "name": "Single Leg Hyperextension (Dumbbell)",
+          "equipment": "Hyperextension Bench, Dumbbell",
+          "muscles": [
+            "Lower Back"
+          ]
+        },
+        {
+          "name": "Straight Leg Deadlift (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Lower Back"
+          ]
+        },
+        {
+          "name": "Lever Back Extension",
+          "equipment": "Machine",
+          "muscles": [
+            "Lower Back"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 16,
+      "profile": "Gym Beginner",
+      "equipment": [
+        "Dumbbells",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Triceps"
+      ],
+      "matching_pool": 195,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Dumbell One Arm Side Lying Bench Press",
+          "equipment": "Bench, Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Lever Triceps Dip (plate Loaded)",
+          "equipment": "Machine",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Lying One Arm Supinated Triceps Extension (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Lying Extension (across Face) (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Smith Machine Reverse Decline Close Grip Bench Pre",
+          "equipment": "Smith Machine, Machine, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 17,
+      "profile": "Gym Intermediate",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables"
+      ],
+      "target_muscles": [
+        "Arms",
+        "Shoulders"
+      ],
+      "matching_pool": 562,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "High Pulley Straight Bar Overhead Triceps Extension (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "EZ (Barbell) Seated Triceps Extension",
+          "equipment": "Barbell, EZ Bar",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Seated High Triceps Extension (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Standing Alternate Overhead Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Incline Pushdown (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 18,
+      "profile": "Gym Intermediate",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables"
+      ],
+      "target_muscles": [
+        "Shoulders"
+      ],
+      "matching_pool": 222,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "EZ (Barbell) Anti Gravity Press",
+          "equipment": "Barbell, EZ Bar",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Rear Delt Row (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Rear Delts"
+          ]
+        },
+        {
+          "name": "Kneeling Opposite Shoulder Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Standing Y Raise (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Rear Delts"
+          ]
+        },
+        {
+          "name": "Standing Military Press (without Rack) (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 19,
+      "profile": "Gym Intermediate",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables"
+      ],
+      "target_muscles": [
+        "Abs"
+      ],
+      "matching_pool": 67,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Hanging Leg Raise (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Lower Abs"
+          ]
+        },
+        {
+          "name": "Decline Sit Up (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Front Plank Arm Leg Raise (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Plank Pass Through (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Standing Backhand (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Abs"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 20,
+      "profile": "Gym Intermediate",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables"
+      ],
+      "target_muscles": [
+        "Lower Chest"
+      ],
+      "matching_pool": 162,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Lying Fly On Floor (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Fly With Chest Supported (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline One Arm Press On Exercise Ball (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Lying On Floor Chest Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Hammer Press On Exercise Ball (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 21,
+      "profile": "Gym Advanced (Full Equipment)",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Triceps"
+      ],
+      "matching_pool": 362,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Incline Bench Press (Dumbbell)",
+          "equipment": "Incline Bench, Dumbbell, Bench",
+          "muscles": [
+            "Upper Chest"
+          ]
+        },
+        {
+          "name": "Lying Straight Arms Pullover (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Squeeze Press (Dumbbell)",
+          "equipment": "Dumbbell, Bench",
+          "muscles": [
+            "Upper Chest"
+          ]
+        },
+        {
+          "name": "Hammer Press On Exercise Ball (Dumbbell)",
+          "equipment": "Stability Ball, Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Lever Push Up With Towels",
+          "equipment": "Machine, Towel",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 22,
+      "profile": "Gym Advanced (Full Equipment)",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Chest"
+      ],
+      "matching_pool": 216,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Reverse Grip Incline Bench Press (Barbell)",
+          "equipment": "Incline Bench, Barbell, Bench",
+          "muscles": [
+            "Upper Chest"
+          ]
+        },
+        {
+          "name": "Lying Hammer Press (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Decline Bench Press (Barbell)",
+          "equipment": "Decline Bench, Barbell",
+          "muscles": [
+            "Lower Chest"
+          ]
+        },
+        {
+          "name": "Lever Push Up With Towels",
+          "equipment": "Machine, Towel",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Plank Pass Through Push Up (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 23,
+      "profile": "Gym Advanced (Full Equipment)",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Hamstrings",
+        "Glutes"
+      ],
+      "matching_pool": 98,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Lever Seated Leg Curl (plate Loaded)",
+          "equipment": "Machine, Bench",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Romanian Deadlift To Row (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Stiff Leg Deadlift On Bench (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Standing Hip Extension (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Hip Thrust (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Glutes"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 24,
+      "profile": "Gym Advanced (Full Equipment)",
+      "equipment": [
+        "Barbell",
+        "Dumbbells",
+        "Cables",
+        "Machines"
+      ],
+      "target_muscles": [
+        "Calves"
+      ],
+      "matching_pool": 26,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Single Leg Calf Raise (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Calves"
+          ]
+        },
+        {
+          "name": "Standing Calf Raise (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Calves"
+          ]
+        },
+        {
+          "name": "Lever Rotary Calf",
+          "equipment": "Machine",
+          "muscles": [
+            "Calves"
+          ]
+        },
+        {
+          "name": "Pilates Machine Lying Calf Raise",
+          "equipment": "Machine",
+          "muscles": [
+            "Calves"
+          ]
+        },
+        {
+          "name": "Seated Calf Raise (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Calves"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 25,
+      "profile": "Gym Barbell Focus",
+      "equipment": [
+        "Barbell"
+      ],
+      "target_muscles": [
+        "Legs",
+        "Glutes"
+      ],
+      "matching_pool": 81,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Zercher Squat Hold (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Squat Knees End Position (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Banded Bench Squat (Barbell)",
+          "equipment": "Barbell, Bench, Resistance Band",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Hip Thrust (Bench) (Barbell)",
+          "equipment": "Barbell, Bench ",
+          "muscles": [
+            "Glutes"
+          ]
+        },
+        {
+          "name": "Stiff Leg Deadlift On Bench (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Hamstrings"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 26,
+      "profile": "Gym Barbell Focus",
+      "equipment": [
+        "Barbell"
+      ],
+      "target_muscles": [
+        "Core"
+      ],
+      "matching_pool": 13,
+      "workout_count": 3,
+      "workout_exercises": [
+        {
+          "name": "Side Hip Rollout (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Abs"
+          ]
+        },
+        {
+          "name": "Standing Twist (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Obliques"
+          ]
+        },
+        {
+          "name": "Seated Twist (stability Ball) (Barbell)",
+          "equipment": "Stability Ball, Barbell",
+          "muscles": [
+            "Obliques"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 27,
+      "profile": "Gym Barbell Focus",
+      "equipment": [
+        "Barbell"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Triceps"
+      ],
+      "matching_pool": 56,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Chest Press On Stability Ball (Barbell)",
+          "equipment": "Stability Ball, Barbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Bent Arm Pullover (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Pin Chest Press (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "EZ (Barbell) JM Bench Press",
+          "equipment": "Barbell, EZ Bar, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Close Grip Bench Press (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 28,
+      "profile": "Gym Barbell Focus",
+      "equipment": [
+        "Barbell"
+      ],
+      "target_muscles": [
+        "Triceps"
+      ],
+      "matching_pool": 21,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Lying Triceps Extension (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Olympic (Barbell) Triceps Extension",
+          "equipment": "Barbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "EZ (Barbell) Lying Triceps Extension",
+          "equipment": "Barbell, EZ Bar",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Incline Triceps Extension Skull Crusher (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Decline Close Grip To Skull Press (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 29,
+      "profile": "Gym Cable Focus",
+      "equipment": [
+        "Cables"
+      ],
+      "target_muscles": [
+        "Arms",
+        "Shoulders"
+      ],
+      "matching_pool": 157,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Two Arm Triceps Kickback (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Donkey Diagonal Kickback (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Lying Incline Single Leg Kickback (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Bent Over Neutral Grip Kickback With Rope Attachment (Cable)",
+          "equipment": "Cable, Rope",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Incline Skull Crusher (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 30,
+      "profile": "Gym Cable Focus",
+      "equipment": [
+        "Cables"
+      ],
+      "target_muscles": [
+        "Chest",
+        "Shoulders"
+      ],
+      "matching_pool": 99,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "One Arm Incline Fly On Exercise Ball (Cable)",
+          "equipment": "Stability Ball, Cable, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Seated Single Arm Chest Press (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Standing Single Arm Chest Press (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Bench Press (Cable)",
+          "equipment": "Incline Bench, Cable, Bench",
+          "muscles": [
+            "Upper Chest"
+          ]
+        },
+        {
+          "name": "Decline Press (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Lower Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 31,
+      "profile": "Gym Cable Focus",
+      "equipment": [
+        "Cables"
+      ],
+      "target_muscles": [
+        "Chest"
+      ],
+      "matching_pool": 47,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Standing Single Arm Fly (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Standing Chest Press (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Seated Chest Fly (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Incline Fly (stability Ball) (Cable)",
+          "equipment": "Stability Ball, Cable, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        },
+        {
+          "name": "Seated Chest Press (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Chest"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 32,
+      "profile": "Gym Cable Focus",
+      "equipment": [
+        "Cables"
+      ],
+      "target_muscles": [
+        "Lats"
+      ],
+      "matching_pool": 33,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Standing Pulldown (Rope) (Cable)",
+          "equipment": "Cable, Rope",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Straight Arm Pulldown (Rope) (Cable)",
+          "equipment": "Cable, Rope",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Bar Lateral Pulldown (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Cross Over Lateral Pulldown (Cable)",
+          "equipment": "Cable",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Incline Single Arm Lat Pulldown (Cable)",
+          "equipment": "Cable, Bench",
+          "muscles": [
+            "Lats"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 33,
+      "profile": "Fat Loss at Home",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Arms",
+        "Shoulders"
+      ],
+      "matching_pool": 312,
+      "workout_count": 3,
+      "workout_exercises": [
+        {
+          "name": "Front Crossover Foot Tap",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Shoulders"
+          ]
+        },
+        {
+          "name": "Rear Lunge Kickback",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Arm Double Crossover",
+          "equipment": null,
+          "muscles": [
+            "Shoulders"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 34,
+      "profile": "Fat Loss at Home",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Lats"
+      ],
+      "matching_pool": 119,
+      "workout_count": 2,
+      "workout_exercises": [
+        {
+          "name": "Neutral Grip Chin Up",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Lats"
+          ]
+        },
+        {
+          "name": "Single Arm Side Straight Arm Lat Pulldown",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Lats"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 50,
+        "overall": 92.5
+      },
+      "issues": [
+        "\u26a0\ufe0f Too few exercises: 2"
+      ],
+      "grade": "A"
+    },
+    {
+      "test_id": 35,
+      "profile": "Fat Loss at Home",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Shoulders",
+        "Arms"
+      ],
+      "matching_pool": 312,
+      "workout_count": 3,
+      "workout_exercises": [
+        {
+          "name": "Triceps Dip",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Arms Lift Leg Kickback",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Arm Double Crossover",
+          "equipment": null,
+          "muscles": [
+            "Shoulders"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 36,
+      "profile": "Fat Loss at Home",
+      "equipment": [
+        "Bodyweight"
+      ],
+      "target_muscles": [
+        "Hamstrings"
+      ],
+      "matching_pool": 31,
+      "workout_count": 3,
+      "workout_exercises": [
+        {
+          "name": "Hands Up Butt Kick",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Butt Kick Single Fly",
+          "equipment": "Bodyweight",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Alternating Hamstring Curl With Punches",
+          "equipment": null,
+          "muscles": [
+            "Hamstrings"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 37,
+      "profile": "Strength Athlete",
+      "equipment": [
+        "Barbell",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Legs",
+        "Glutes"
+      ],
+      "matching_pool": 199,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Staggered Stance Romanian Deadlift (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Hamstrings"
+          ]
+        },
+        {
+          "name": "Squat Hips (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Zercher Squat Hold (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Goblet Split Squat Front Foot Elevanted (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Banded Hip Thrust (Dumbbell)",
+          "equipment": "Dumbbell, Resistance Band",
+          "muscles": [
+            "Glutes"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 38,
+      "profile": "Strength Athlete",
+      "equipment": [
+        "Barbell",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Triceps"
+      ],
+      "matching_pool": 71,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Seated Triceps Extension (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "One Arm Kickback (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Lying Extension (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "EZ (Barbell) Seated Triceps Extension",
+          "equipment": "Barbell, EZ Bar",
+          "muscles": [
+            "Triceps"
+          ]
+        },
+        {
+          "name": "Lying Triceps Extension Skull Crusher (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Triceps"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 39,
+      "profile": "Strength Athlete",
+      "equipment": [
+        "Barbell",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Shoulders"
+      ],
+      "matching_pool": 170,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Super Rom Lateral Raise (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Side Delts"
+          ]
+        },
+        {
+          "name": "Standing Front Raise Above Head (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Seated Military Press (inside Squat Cage) (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Seated Behind Head Military Press (Barbell)",
+          "equipment": "Barbell, Bench",
+          "muscles": [
+            "Front Delts"
+          ]
+        },
+        {
+          "name": "Front Raise And Pullover (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Front Delts"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    },
+    {
+      "test_id": 40,
+      "profile": "Strength Athlete",
+      "equipment": [
+        "Barbell",
+        "Dumbbells"
+      ],
+      "target_muscles": [
+        "Legs"
+      ],
+      "matching_pool": 199,
+      "workout_count": 5,
+      "workout_exercises": [
+        {
+          "name": "Elevated Heel Goblet Squat (Dumbbell)",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Dumbell Glute Dominant Bulgarian Split Squat",
+          "equipment": "Dumbbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Jefferson Squat (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Goblet Wall Sit (Dumbbell)",
+          "equipment": "Dumbbell, Wall",
+          "muscles": [
+            "Quads"
+          ]
+        },
+        {
+          "name": "Full Squat (Barbell)",
+          "equipment": "Barbell",
+          "muscles": [
+            "Quads"
+          ]
+        }
+      ],
+      "scores": {
+        "equipment_accuracy": 100.0,
+        "muscle_accuracy": 100.0,
+        "variety": 100,
+        "quality": 100,
+        "overall": 100.0
+      },
+      "issues": [],
+      "grade": "A"
+    }
+  ]
+}

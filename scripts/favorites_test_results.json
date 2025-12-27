@@ -1,0 +1,3076 @@
+{
+  "test_date": "2025-12-08T22:27:24.410538",
+  "num_users": 100,
+  "total_favorites": 290,
+  "avg_favorites_per_user": 2.9,
+  "grade_distribution": {
+    "A": 100,
+    "B": 0,
+    "C": 0,
+    "D": 0,
+    "F": 0
+  },
+  "overall_gpa": 4.0,
+  "overall_letter": "A",
+  "composition_averages": {
+    "favorites": 1.74,
+    "variants": 0.0,
+    "discoveries": 0.93,
+    "fresh": 2.33
+  },
+  "expected_composition": {
+    "favorites": 1.75,
+    "variants": 2.0,
+    "discoveries": 1.25
+  },
+  "issues_breakdown": {},
+  "detailed_results": [
+    {
+      "user_id": 1,
+      "user_summary": "Tony #1: 44yo Male, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Machine Shoulder Press",
+        "Deadlift",
+        "Tricep Pushdown",
+        "Dumbbell Bench Press",
+        "Dumbbell Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 2,
+      "user_summary": "Rachel #2: 27yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Hammer Curl",
+        "Sit Up",
+        "Pull Up",
+        "Dumbbell Squat",
+        "Crunch"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 3,
+      "user_summary": "Charles #3: 32yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Glute Kickback",
+        "Dumbbell Row",
+        "Hip Thrust",
+        "Plank",
+        "Calf Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 4,
+      "user_summary": "Samantha #4: 23yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Leg Raise",
+        "Tricep Pushdown",
+        "Calf Raise",
+        "Dumbbell Row",
+        "Bulgarian Split Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 5,
+      "user_summary": "David #5: 32yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Machine Calf Raise",
+        "Dumbbell Bench Press",
+        "Barbell Squat",
+        "Shoulder Press",
+        "Tricep Extension"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 6,
+      "user_summary": "Michelle #6: 56yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Lateral Raise",
+        "Lunges",
+        "Calf Raise",
+        "Leg Curl",
+        "Glute Kickback"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 7,
+      "user_summary": "Tyler #7: 31yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Lat Pulldown Machine",
+        "Deadlift",
+        "Lat Pulldown",
+        "Dead Bug",
+        "Glute Kickback"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 8,
+      "user_summary": "Michael #8: 29yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Barbell Row",
+        "Leg Press",
+        "Bulgarian Split Squat",
+        "Dumbbell Fly",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 9,
+      "user_summary": "Kevin #9: 20yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Standing Calf Raise",
+        "Dumbbell Squat",
+        "Smith Machine Squat",
+        "Tricep Pushdown",
+        "Goblet Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 10,
+      "user_summary": "John #10: 27yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Hammer Curl",
+        "Lunges",
+        "Glute Bridge",
+        "Plank",
+        "Tricep Extension"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 11,
+      "user_summary": "Jordan #11: 45yo Other, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Dumbbell Fly",
+        "Lunges",
+        "Cable Fly",
+        "Dumbbell Bicep Curl",
+        "Rear Delt Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 12,
+      "user_summary": "Jessica #12: 30yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Romanian Deadlift",
+        "Machine Calf Raise",
+        "Russian Twist",
+        "Cable Fly",
+        "Overhead Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 13,
+      "user_summary": "Brian #13: 53yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Dumbbell Bicep Curl",
+        "Smith Machine Squat",
+        "Goblet Squat",
+        "Tricep Extension",
+        "Pec Deck"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 14,
+      "user_summary": "Chris #14: 38yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Cable Row",
+        "Shoulder Press",
+        "Russian Twist",
+        "Pec Deck",
+        "Machine Chest Press"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 15,
+      "user_summary": "Kevin #15: 36yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Leg Curl",
+        "Incline Bench Press",
+        "Cable Row",
+        "Glute Bridge",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 16,
+      "user_summary": "Skyler #16: 19yo Other, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Hammer Curl",
+        "Russian Twist",
+        "Overhead Press",
+        "Machine Leg Extension",
+        "Dumbbell Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 17,
+      "user_summary": "John #17: 76yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Dumbbell Squat",
+        "Tricep Extension",
+        "Lat Pulldown",
+        "Bulgarian Split Squat",
+        "Goblet Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 18,
+      "user_summary": "Robert #18: 25yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Mountain Climber",
+        "Dumbbell Fly",
+        "Overhead Press",
+        "Dumbbell Row",
+        "Glute Bridge"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 19,
+      "user_summary": "David #19: 34yo Male, Advanced, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Goblet Squat",
+        "Mountain Climber",
+        "Rear Delt Fly",
+        "Incline Bench Press",
+        "Barbell Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 20,
+      "user_summary": "Jake #20: 64yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Romanian Deadlift",
+        "Dumbbell Row",
+        "Leg Extension",
+        "Bulgarian Split Squat",
+        "Tricep Pushdown"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 21,
+      "user_summary": "Emily #21: 25yo Female, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Leg Curl",
+        "Goblet Squat",
+        "Leg Raise",
+        "Bulgarian Split Squat",
+        "Mountain Climber"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 22,
+      "user_summary": "Alex #22: 54yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Push Up",
+        "Romanian Deadlift",
+        "Machine Leg Extension",
+        "Standing Calf Raise",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 23,
+      "user_summary": "Nicole #23: 38yo Female, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Machine Shoulder Press",
+        "Russian Twist",
+        "Dumbbell Bicep Curl",
+        "Lunges",
+        "Lateral Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 24,
+      "user_summary": "Morgan #24: 52yo Other, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Pull Up",
+        "Mountain Climber",
+        "Tricep Extension",
+        "Pec Deck",
+        "Hammer Curl"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 25,
+      "user_summary": "Jennifer #25: 56yo Female, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Crunch",
+        "Hip Thrust",
+        "Shoulder Press",
+        "Calf Raise",
+        "Pull Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 26,
+      "user_summary": "Nicole #26: 35yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Machine Leg Curl",
+        "Shoulder Press",
+        "Crunch",
+        "Leg Press",
+        "Machine Chest Press"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 27,
+      "user_summary": "Joseph #27: 24yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Pull Up",
+        "Bulgarian Split Squat",
+        "Dumbbell Bicep Curl",
+        "Dumbbell Squat",
+        "Deadlift"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 28,
+      "user_summary": "Marcus #28: 24yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Dumbbell Fly",
+        "Glute Bridge",
+        "Dumbbell Squat",
+        "Bulgarian Split Squat",
+        "Rear Delt Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 29,
+      "user_summary": "Jake #29: 26yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Lateral Raise",
+        "Cable Row",
+        "Deadlift",
+        "Machine Calf Raise",
+        "Sit Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 30,
+      "user_summary": "John #30: 64yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Shoulder Press",
+        "Calf Raise",
+        "Hammer Curl",
+        "Pec Deck",
+        "Crunch"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 31,
+      "user_summary": "James #31: 16yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Tricep Extension",
+        "Pec Deck",
+        "Machine Calf Raise",
+        "Goblet Squat",
+        "Crunch"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 32,
+      "user_summary": "Ryan #32: 18yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Hammer Curl",
+        "Barbell Squat",
+        "Smith Machine Squat",
+        "Lat Pulldown",
+        "Goblet Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 33,
+      "user_summary": "Linda #33: 23yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Dumbbell Squat",
+        "Lateral Raise",
+        "Leg Curl",
+        "Tricep Extension",
+        "Glute Bridge"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 34,
+      "user_summary": "James #34: 79yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Incline Bench Press",
+        "Mountain Climber",
+        "Bulgarian Split Squat",
+        "Lateral Raise",
+        "Tricep Pushdown"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 35,
+      "user_summary": "Steve #35: 36yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Leg Extension",
+        "Romanian Deadlift",
+        "Shoulder Press",
+        "Crunch",
+        "Tricep Pushdown"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 36,
+      "user_summary": "Michael #36: 45yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Pec Deck",
+        "Push Up",
+        "Lateral Raise",
+        "Cable Row",
+        "Glute Bridge"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 37,
+      "user_summary": "Robert #37: 21yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Bulgarian Split Squat",
+        "Pull Up",
+        "Machine Leg Curl",
+        "Tricep Pushdown",
+        "Rear Delt Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 38,
+      "user_summary": "Brittany #38: 24yo Female, Advanced, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Leg Raise",
+        "Glute Kickback",
+        "Lunges",
+        "Shoulder Press",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 39,
+      "user_summary": "Ashley #39: 31yo Female, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Leg Press",
+        "Sit Up",
+        "Hip Thrust",
+        "Bulgarian Split Squat",
+        "Mountain Climber"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 40,
+      "user_summary": "Brian #40: 44yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Barbell Row",
+        "Russian Twist",
+        "Tricep Extension",
+        "Leg Press",
+        "Rear Delt Fly"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 41,
+      "user_summary": "Robert #41: 25yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Pull Up",
+        "Dumbbell Squat",
+        "Plank",
+        "Bulgarian Split Squat",
+        "Incline Bench Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 42,
+      "user_summary": "Sarah #42: 27yo Female, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Dumbbell Bicep Curl",
+        "Leg Curl",
+        "Barbell Bench Press",
+        "Machine Calf Raise",
+        "Lat Pulldown Machine"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 43,
+      "user_summary": "Jake #43: 27yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Calf Raise",
+        "Goblet Squat",
+        "Pull Up",
+        "Crunch",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 44,
+      "user_summary": "Rachel #44: 24yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Tricep Extension",
+        "Hip Thrust",
+        "Sit Up",
+        "Standing Calf Raise",
+        "Rear Delt Fly"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 45,
+      "user_summary": "William #45: 26yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Lat Pulldown Machine",
+        "Lunges",
+        "Push Up",
+        "Lat Pulldown",
+        "Cable Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 46,
+      "user_summary": "Brandon #46: 59yo Male, Advanced, 6 favorites",
+      "num_favorites": 6,
+      "workout": [
+        "Dumbbell Bicep Curl",
+        "Dead Bug",
+        "Lunges",
+        "Goblet Squat",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 47,
+      "user_summary": "Samantha #47: 55yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Dumbbell Row",
+        "Lunges",
+        "Standing Calf Raise",
+        "Crunch",
+        "Lateral Raise"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 48,
+      "user_summary": "Robert #48: 17yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Machine Leg Curl",
+        "Dead Bug",
+        "Deadlift",
+        "Cable Fly",
+        "Standing Calf Raise"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 49,
+      "user_summary": "Charles #49: 27yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Tricep Extension",
+        "Standing Calf Raise",
+        "Dead Bug",
+        "Hip Thrust",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 50,
+      "user_summary": "Tony #50: 26yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Dead Bug",
+        "Front Raise",
+        "Calf Raise",
+        "Shoulder Press",
+        "Glute Kickback"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 51,
+      "user_summary": "Michael #51: 25yo Male, Advanced, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Overhead Press",
+        "Sit Up",
+        "Hammer Curl",
+        "Pull Up",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 52,
+      "user_summary": "Michael #52: 59yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Front Raise",
+        "Plank",
+        "Cable Row",
+        "Shoulder Press",
+        "Barbell Row"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 53,
+      "user_summary": "Brittany #53: 38yo Female, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Leg Curl",
+        "Sit Up",
+        "Overhead Press",
+        "Cable Fly",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 54,
+      "user_summary": "Brittany #54: 26yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Tricep Extension",
+        "Machine Chest Press",
+        "Standing Calf Raise",
+        "Dumbbell Bicep Curl",
+        "Deadlift"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 55,
+      "user_summary": "Riley #55: 63yo Other, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Overhead Press",
+        "Machine Chest Press",
+        "Glute Bridge",
+        "Lat Pulldown Machine",
+        "Standing Calf Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 56,
+      "user_summary": "Amanda #56: 57yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Leg Extension",
+        "Overhead Press",
+        "Lunges",
+        "Hip Thrust",
+        "Lat Pulldown"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 57,
+      "user_summary": "Kevin #57: 30yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Sit Up",
+        "Rear Delt Fly",
+        "Romanian Deadlift",
+        "Dumbbell Bench Press",
+        "Calf Raise"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 58,
+      "user_summary": "Robert #58: 54yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Glute Kickback",
+        "Hammer Curl",
+        "Deadlift",
+        "Crunch",
+        "Leg Curl"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 59,
+      "user_summary": "Robert #59: 45yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Leg Extension",
+        "Dumbbell Bicep Curl",
+        "Plank",
+        "Lat Pulldown",
+        "Glute Bridge"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 60,
+      "user_summary": "Nicole #60: 27yo Female, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Dumbbell Row",
+        "Mountain Climber",
+        "Glute Kickback",
+        "Glute Bridge",
+        "Leg Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 61,
+      "user_summary": "Michelle #61: 71yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Plank",
+        "Smith Machine Squat",
+        "Bulgarian Split Squat",
+        "Hip Thrust",
+        "Goblet Squat"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 62,
+      "user_summary": "Joseph #62: 59yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Deadlift",
+        "Russian Twist",
+        "Lat Pulldown",
+        "Cable Row",
+        "Bulgarian Split Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 63,
+      "user_summary": "Tiffany #63: 49yo Female, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Hip Thrust",
+        "Pec Deck",
+        "Hammer Curl",
+        "Push Up",
+        "Mountain Climber"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 64,
+      "user_summary": "Brian #64: 78yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Glute Kickback",
+        "Barbell Squat",
+        "Tricep Extension",
+        "Standing Calf Raise",
+        "Russian Twist"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 65,
+      "user_summary": "Robert #65: 29yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Mountain Climber",
+        "Standing Calf Raise",
+        "Dumbbell Squat",
+        "Romanian Deadlift",
+        "Goblet Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 66,
+      "user_summary": "David #66: 20yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Glute Kickback",
+        "Lunges",
+        "Plank",
+        "Pull Up",
+        "Hip Thrust"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 67,
+      "user_summary": "Steve #67: 30yo Male, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Standing Calf Raise",
+        "Goblet Squat",
+        "Dumbbell Bicep Curl",
+        "Barbell Row",
+        "Cable Row"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 68,
+      "user_summary": "Samantha #68: 61yo Female, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Russian Twist",
+        "Rear Delt Fly",
+        "Hip Thrust",
+        "Machine Chest Press",
+        "Push Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 69,
+      "user_summary": "Christina #69: 42yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Pull Up",
+        "Tricep Pushdown",
+        "Leg Press",
+        "Lunges",
+        "Pec Deck"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 70,
+      "user_summary": "Ashley #70: 20yo Female, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Lateral Raise",
+        "Goblet Squat",
+        "Overhead Press",
+        "Machine Chest Press",
+        "Machine Leg Curl"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 71,
+      "user_summary": "Riley #71: 21yo Other, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Russian Twist",
+        "Shoulder Press",
+        "Deadlift",
+        "Hammer Curl",
+        "Leg Curl"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 72,
+      "user_summary": "Rachel #72: 20yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Machine Calf Raise",
+        "Bulgarian Split Squat",
+        "Leg Extension",
+        "Romanian Deadlift",
+        "Barbell Squat"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 73,
+      "user_summary": "Tony #73: 22yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Leg Raise",
+        "Dumbbell Bench Press",
+        "Glute Bridge",
+        "Bulgarian Split Squat",
+        "Standing Calf Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 74,
+      "user_summary": "Chris #74: 73yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Lat Pulldown",
+        "Romanian Deadlift",
+        "Crunch",
+        "Tricep Pushdown",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 75,
+      "user_summary": "Amanda #75: 37yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Dead Bug",
+        "Leg Extension",
+        "Barbell Row",
+        "Goblet Squat",
+        "Lunges"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 76,
+      "user_summary": "Sarah #76: 21yo Female, Advanced, 8 favorites",
+      "num_favorites": 8,
+      "workout": [
+        "Lat Pulldown Machine",
+        "Leg Press",
+        "Hammer Curl",
+        "Lat Pulldown",
+        "Sit Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 77,
+      "user_summary": "Joseph #77: 20yo Male, Advanced, 8 favorites",
+      "num_favorites": 8,
+      "workout": [
+        "Glute Kickback",
+        "Tricep Extension",
+        "Lunges",
+        "Calf Raise",
+        "Dumbbell Bench Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 78,
+      "user_summary": "Alex #78: 26yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Front Raise",
+        "Dumbbell Bench Press",
+        "Leg Press",
+        "Overhead Press",
+        "Russian Twist"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 79,
+      "user_summary": "Patricia #79: 41yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Glute Bridge",
+        "Push Up",
+        "Goblet Squat",
+        "Dead Bug",
+        "Crunch"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 80,
+      "user_summary": "Chris #80: 32yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Lat Pulldown",
+        "Standing Calf Raise",
+        "Rear Delt Fly",
+        "Cable Fly",
+        "Machine Calf Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 81,
+      "user_summary": "Jake #81: 39yo Male, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Tricep Pushdown",
+        "Cable Fly",
+        "Standing Calf Raise",
+        "Sit Up",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 82,
+      "user_summary": "Brandon #82: 54yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Leg Raise",
+        "Hammer Curl",
+        "Shoulder Press",
+        "Glute Bridge",
+        "Tricep Pushdown"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 83,
+      "user_summary": "Michelle #83: 36yo Female, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Calf Raise",
+        "Crunch",
+        "Bulgarian Split Squat",
+        "Leg Press",
+        "Sit Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 84,
+      "user_summary": "Thomas #84: 20yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Barbell Curl",
+        "Goblet Squat",
+        "Leg Curl",
+        "Bulgarian Split Squat",
+        "Hammer Curl"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 85,
+      "user_summary": "Joseph #85: 17yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Glute Bridge",
+        "Goblet Squat",
+        "Sit Up",
+        "Overhead Press",
+        "Russian Twist"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 86,
+      "user_summary": "Ashley #86: 53yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Calf Raise",
+        "Dead Bug",
+        "Pull Up",
+        "Shoulder Press",
+        "Pec Deck"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 87,
+      "user_summary": "Charles #87: 45yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Hip Thrust",
+        "Leg Extension",
+        "Dumbbell Row",
+        "Mountain Climber",
+        "Lat Pulldown"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 88,
+      "user_summary": "Jake #88: 26yo Male, Advanced, 7 favorites",
+      "num_favorites": 7,
+      "workout": [
+        "Leg Curl",
+        "Bulgarian Split Squat",
+        "Dumbbell Bench Press",
+        "Dead Bug",
+        "Leg Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 89,
+      "user_summary": "Tyler #89: 50yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Deadlift",
+        "Leg Raise",
+        "Leg Curl",
+        "Shoulder Press",
+        "Dumbbell Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 90,
+      "user_summary": "Steve #90: 21yo Male, Beginner, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Pec Deck",
+        "Hammer Curl",
+        "Glute Bridge",
+        "Barbell Squat",
+        "Goblet Squat"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 91,
+      "user_summary": "Avery #91: 76yo Other, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Lateral Raise",
+        "Pec Deck",
+        "Lunges",
+        "Incline Bench Press",
+        "Barbell Bench Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 92,
+      "user_summary": "Charles #92: 51yo Male, Intermediate, 5 favorites",
+      "num_favorites": 5,
+      "workout": [
+        "Sit Up",
+        "Dumbbell Squat",
+        "Smith Machine Squat",
+        "Bulgarian Split Squat",
+        "Plank"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 93,
+      "user_summary": "John #93: 31yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Leg Press",
+        "Bulgarian Split Squat",
+        "Tricep Pushdown",
+        "Lat Pulldown",
+        "Push Up"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 94,
+      "user_summary": "Morgan #94: 58yo Other, Intermediate, 3 favorites",
+      "num_favorites": 3,
+      "workout": [
+        "Glute Bridge",
+        "Overhead Press",
+        "Plank",
+        "Tricep Extension",
+        "Dumbbell Fly"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 1,
+      "fresh_exercises": 2,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 95,
+      "user_summary": "Kevin #95: 51yo Male, Advanced, 7 favorites",
+      "num_favorites": 7,
+      "workout": [
+        "Russian Twist",
+        "Dumbbell Bench Press",
+        "Goblet Squat",
+        "Smith Machine Squat",
+        "Leg Raise"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 96,
+      "user_summary": "Michelle #96: 38yo Female, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Cable Row",
+        "Lateral Raise",
+        "Incline Bench Press",
+        "Crunch",
+        "Tricep Extension"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 97,
+      "user_summary": "John #97: 38yo Male, Beginner, 1 favorites",
+      "num_favorites": 1,
+      "workout": [
+        "Deadlift",
+        "Barbell Bench Press",
+        "Machine Shoulder Press",
+        "Front Raise",
+        "Barbell Row"
+      ],
+      "favorites_included": 1,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 4,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 4 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 98,
+      "user_summary": "Tony #98: 40yo Male, Intermediate, 4 favorites",
+      "num_favorites": 4,
+      "workout": [
+        "Glute Bridge",
+        "Hammer Curl",
+        "Bulgarian Split Squat",
+        "Dumbbell Squat",
+        "Leg Curl"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 99,
+      "user_summary": "Alex #99: 40yo Male, Beginner, 2 favorites",
+      "num_favorites": 2,
+      "workout": [
+        "Dumbbell Bicep Curl",
+        "Calf Raise",
+        "Deadlift",
+        "Barbell Row",
+        "Shoulder Press"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 0,
+      "fresh_exercises": 3,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    },
+    {
+      "user_id": 100,
+      "user_summary": "Chris #100: 22yo Male, Advanced, 6 favorites",
+      "num_favorites": 6,
+      "workout": [
+        "Dumbbell Bench Press",
+        "Bulgarian Split Squat",
+        "Tricep Extension",
+        "Glute Bridge",
+        "Pull Up"
+      ],
+      "favorites_included": 2,
+      "variants_included": 0,
+      "discoveries_included": 3,
+      "fresh_exercises": 0,
+      "grades": {
+        "favorites_considered": "A",
+        "variety": "A",
+        "freshness": "A",
+        "discovery": "A",
+        "overall": "A"
+      },
+      "issues": [],
+      "passed_checks": [
+        "\u2705 Favorites/variants included",
+        "\u2705 Good variety maintained",
+        "\u2705 3 fresh/discovery exercises",
+        "\u2705 Good discovery/new exercise balance"
+      ]
+    }
+  ],
+  "progressive_learning": [
+    {
+      "workout_num": 1,
+      "favorites_used": 35,
+      "variants_used": 0,
+      "discoveries_used": 25,
+      "fresh_used": 40,
+      "repeat_exercises": 0,
+      "unique_count": 44
+    },
+    {
+      "workout_num": 2,
+      "favorites_used": 23,
+      "variants_used": 2,
+      "discoveries_used": 29,
+      "fresh_used": 46,
+      "repeat_exercises": 7,
+      "unique_count": 41
+    },
+    {
+      "workout_num": 3,
+      "favorites_used": 8,
+      "variants_used": 16,
+      "discoveries_used": 29,
+      "fresh_used": 47,
+      "repeat_exercises": 28,
+      "unique_count": 47
+    },
+    {
+      "workout_num": 4,
+      "favorites_used": 1,
+      "variants_used": 24,
+      "discoveries_used": 22,
+      "fresh_used": 53,
+      "repeat_exercises": 44,
+      "unique_count": 42
+    },
+    {
+      "workout_num": 5,
+      "favorites_used": 25,
+      "variants_used": 13,
+      "discoveries_used": 13,
+      "fresh_used": 49,
+      "repeat_exercises": 32,
+      "unique_count": 45
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+
+# Videos (stored on Supabase, not bundled)
+Videos/
+Videos_backup/
+*.zip
+*.mp4
+*.mov
+
+# Sensitive files
+upload_videos*.py
+*.service_key*
+uploaded_videos.json
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# CocoaPods
+Pods/
+
+# Temporary files
+*.tmp
+*.temp
+

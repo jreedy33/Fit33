@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help Center - Fit33</title>
+  <meta name="description" content="Get help with Fit33. Find answers to common questions, tutorials, and support resources.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav" id="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-logo">
+        <img src="app-icon.png" alt="Fit33">
+        <span>Fit33</span>
+      </a>
+      
+      <ul class="nav-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="help-center.html" class="active">Help Center</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+      
+      <div class="nav-cta">
+        <a href="https://apps.apple.com/app/fit33" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+          </svg>
+          Download Free
+        </a>
+      </div>
+      
+      <div class="nav-toggle" id="navToggle" onclick="toggleNav()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Help Center Hero -->
+  <section class="hero" style="padding-bottom: 60px;">
+    <div class="hero-content">
+      <h1 class="animate-in">
+        How can we <span class="gradient-text">help you?</span>
+      </h1>
+      <p class="animate-in">
+        Find answers, tutorials, and support for everything Fit33.
+      </p>
+    </div>
+  </section>
+
+  <!-- Help Center Content -->
+  <section class="help-center">
+    <div class="help-container">
+      
+      <!-- Search -->
+      <div class="help-search animate-in">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" placeholder="Search for help articles..." id="helpSearch">
+      </div>
+      
+      <!-- Help Categories -->
+      <div class="help-categories">
+        <a href="help/getting-started.html" class="help-category animate-in">
+          <div class="help-category-icon">🚀</div>
+          <h3>Getting Started</h3>
+          <p>New to Fit33? Start here to learn the basics.</p>
+          <span class="article-count">8 articles</span>
+        </a>
+        
+        <a href="help/workouts.html" class="help-category animate-in">
+          <div class="help-category-icon">💪</div>
+          <h3>Workouts & Exercises</h3>
+          <p>Learn how to create, customize, and track workouts.</p>
+          <span class="article-count">12 articles</span>
+        </a>
+        
+        <a href="help/programs.html" class="help-category animate-in">
+          <div class="help-category-icon">📋</div>
+          <h3>Smart Programs</h3>
+          <p>Everything about AI-powered training programs.</p>
+          <span class="article-count">6 articles</span>
+        </a>
+        
+        <a href="help/tracking.html" class="help-category animate-in">
+          <div class="help-category-icon">📊</div>
+          <h3>Progress & Stats</h3>
+          <p>Track your gains and understand your data.</p>
+          <span class="article-count">9 articles</span>
+        </a>
+        
+        <a href="help/account.html" class="help-category animate-in">
+          <div class="help-category-icon">👤</div>
+          <h3>Account & Settings</h3>
+          <p>Manage your profile, preferences, and data.</p>
+          <span class="article-count">7 articles</span>
+        </a>
+        
+        <a href="help/troubleshooting.html" class="help-category animate-in">
+          <div class="help-category-icon">🔧</div>
+          <h3>Troubleshooting</h3>
+          <p>Having issues? Find solutions here.</p>
+          <span class="article-count">10 articles</span>
+        </a>
+      </div>
+      
+      <!-- FAQ Section -->
+      <div class="faq-section">
+        <h2>Frequently Asked Questions</h2>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            How do I create a custom workout?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>Creating a custom workout is easy! Here's how:</p>
+              <ol>
+                <li>Go to the <strong>Workout</strong> tab</li>
+                <li>Tap <strong>"Build Custom"</strong> or the <strong>+</strong> button</li>
+                <li>Search and add exercises from our 7,000+ library</li>
+                <li>Set your reps, sets, and rest times</li>
+                <li>Tap <strong>"GO!"</strong> to start your workout</li>
+              </ol>
+              <p>You can also save your custom workouts for future use!</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            What is the "Surprise Me" feature?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>The <strong>Surprise Me</strong> feature instantly generates a personalized workout based on:</p>
+              <ul>
+                <li>Your fitness goals (build muscle, lose fat, etc.)</li>
+                <li>Your experience level</li>
+                <li>Your available equipment</li>
+                <li>Your workout history (to ensure variety)</li>
+              </ul>
+              <p>It's perfect when you want a quick, effective workout without planning. Just tap and go!</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            How do Smart Programs work?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>Smart Programs are AI-powered training plans that adapt to you:</p>
+              <ol>
+                <li>Choose a program based on your goal (strength, hypertrophy, etc.)</li>
+                <li>The AI generates your daily workouts based on your profile</li>
+                <li>As you complete workouts, the program adapts to your progress</li>
+                <li>Progressive overload is automatically built in</li>
+              </ol>
+              <p>Programs typically run 4-12 weeks and include periodization for optimal results.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            Can I use Fit33 for home workouts?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>Absolutely! Fit33 works great for home workouts:</p>
+              <ul>
+                <li>Set your workout location to <strong>"Home"</strong> in your profile</li>
+                <li>Select the equipment you have (or just bodyweight)</li>
+                <li>All workout generation will use only your available equipment</li>
+                <li>We have 1,000+ bodyweight exercises alone!</li>
+              </ul>
+              <p>You can switch between home and gym modes anytime.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            How do I track my personal records?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>Fit33 automatically tracks your personal records (PRs):</p>
+              <ul>
+                <li>Every completed set is recorded</li>
+                <li>When you beat a previous best, you'll see a <strong>🏆 PR!</strong> badge</li>
+                <li>View all PRs in the <strong>Stats</strong> section</li>
+                <li>See 1RM estimates for strength exercises</li>
+              </ul>
+              <p>We track both weight PRs and volume PRs (total weight × reps).</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            Is my data synced across devices?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>Yes! Your data is automatically synced to the cloud:</p>
+              <ul>
+                <li>All workouts are backed up in real-time</li>
+                <li>Sign in on any device to access your data</li>
+                <li>Your workout history, stats, and programs sync automatically</li>
+                <li>Even if you lose your phone, your data is safe</li>
+              </ul>
+              <p>Just make sure you're signed in with your account.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            How do I cancel my subscription?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>You can manage your subscription through Apple:</p>
+              <ol>
+                <li>Open the <strong>Settings</strong> app on your iPhone</li>
+                <li>Tap your name at the top</li>
+                <li>Tap <strong>Subscriptions</strong></li>
+                <li>Find <strong>Fit33</strong> and tap it</li>
+                <li>Tap <strong>Cancel Subscription</strong></li>
+              </ol>
+              <p>Your access continues until the end of your billing period. You can resubscribe anytime.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <button class="faq-question">
+            How do I report a bug or request a feature?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-content">
+              <p>We love hearing from you! Here's how:</p>
+              <ul>
+                <li><strong>In-app:</strong> Go to Settings → Report a Bug</li>
+                <li><strong>Email:</strong> <a href="mailto:info@doublethr33s.com">info@doublethr33s.com</a></li>
+                <li><strong>Feature requests:</strong> Same email! We read every message.</li>
+              </ul>
+              <p>When reporting bugs, screenshots and steps to reproduce are super helpful!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </section>
+
+  <!-- Contact CTA -->
+  <section class="contact-section">
+    <div class="contact-card animate-in">
+      <h2>Still need help?</h2>
+      <p>Our support team is here to help. Reach out and we'll get back to you as soon as possible.</p>
+      <a href="mailto:info@doublethr33s.com" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        Contact Support
+      </a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <h3>Fit33</h3>
+          <p>AI-powered fitness that adapts to you. Build strength, track progress, and achieve your goals with personalized workouts.</p>
+        </div>
+        
+        <div class="footer-links">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="screenshots.html">Screenshots</a></li>
+            <li><a href="https://apps.apple.com/app/fit33">Download</a></li>
+          </ul>
+        </div>
+        
+        <div class="footer-links">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="help-center.html">Help Center</a></li>
+            <li><a href="contact.html">Contact Us</a></li>
+            <li><a href="faq.html">FAQ</a></li>
+          </ul>
+        </div>
+        
+        <div class="footer-links">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="footer-bottom">
+        <p>&copy; 2025 DoubleThr33s. All rights reserved.</p>
+        <div class="social-links">
+          <a href="https://instagram.com/fit33app" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+            </svg>
+          </a>
+          <a href="https://twitter.com/fit33app" aria-label="Twitter">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
+

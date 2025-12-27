@@ -1,0 +1,651 @@
+import SwiftUI
+import UserNotifications
+
+struct NotificationSettingsView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var notificationManager = NotificationManager.shared
+    @State private var showingPermissionAlert = false
+    @State private var expandedCategories: Set<String> = []
+    
+    // Clean gradient card background matching app style
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color.white
+    }
+    
+    var body: some View {
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                gradient: Gradient(colors: colorScheme == .dark
+                    ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
+                    : [Color(red: 0.85, green: 0.92, blue: 1.0), Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header Card
+                    headerCard
+                    
+                    // Permission Warning (if not authorized)
+                    if !notificationManager.isAuthorized {
+                        permissionWarningCard
+                    }
+                    
+                    // Master Toggle Section
+                    masterToggleSection
+                    
+                    // Quick Settings
+                    if notificationManager.masterNotificationsEnabled && notificationManager.isAuthorized {
+                        quickSettingsSection
+                        
+                        // Notification Categories
+                        ForEach(NotificationCategory.allCases) { category in
+                            categorySection(category)
+                        }
+                        
+                        // Quiet Hours Section
+                        quietHoursSection
+                        
+                        // Test Notifications (Debug)
+                        #if DEBUG
+                        testNotificationsSection
+                        #endif
+                    }
+                }
+                .padding()
+                .padding(.bottom, 60)
+            }
+        }
+        .navigationTitle("Notifications")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            notificationManager.checkAuthorizationStatus()
+        }
+        .alert("Notifications Disabled", isPresented: $showingPermissionAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Enable notifications in Settings to receive workout reminders and updates.")
+        }
+    }
+    
+    // MARK: - Header Card
+    
+    private var headerCard: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.orange, Color.red],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 70, height: 70)
+                    .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 4)
+                
+                Image(systemName: "bell.badge.fill")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            
+            VStack(spacing: 8) {
+                Text("Smart Notifications")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text("Get personalized reminders, celebrate achievements, and stay motivated on your fitness journey.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(cardBackground)
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 4)
+        )
+    }
+    
+    // MARK: - Permission Warning
+    
+    private var permissionWarningCard: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.1))
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notifications Disabled")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("Enable notifications to receive reminders and updates")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            
+            Button(action: {
+                Task {
+                    let granted = await notificationManager.requestAuthorization()
+                    if !granted {
+                        showingPermissionAlert = true
+                    }
+                }
+            }) {
+                HStack {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Enable Notifications")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(12)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(cardBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Master Toggle
+    
+    private var masterToggleSection: some View {
+        settingsSection(title: "General") {
+            VStack(spacing: 0) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: notificationManager.masterNotificationsEnabled
+                                        ? [Color.green, Color.mint]
+                                        : [Color.gray, Color.gray.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 40, height: 40)
+                        
+                        Image(systemName: notificationManager.masterNotificationsEnabled ? "bell.fill" : "bell.slash.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("All Notifications")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        Text(notificationManager.masterNotificationsEnabled ? "Notifications are active" : "All notifications are paused")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: $notificationManager.masterNotificationsEnabled)
+                        .labelsHidden()
+                        .tint(.green)
+                }
+                .padding(16)
+            }
+        }
+    }
+    
+    // MARK: - Quick Settings
+    
+    private var quickSettingsSection: some View {
+        settingsSection(title: "Workout Reminder") {
+            VStack(spacing: 0) {
+                // Daily Reminder Toggle
+                HStack(spacing: 16) {
+                    Image(systemName: "clock.fill")
+                        .font(.title3)
+                        .foregroundColor(.blue)
+                        .frame(width: 28)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Daily Reminder")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Text("Get reminded to work out")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: Binding(
+                        get: { notificationManager.isNotificationEnabled(.dailyWorkoutReminder) },
+                        set: { notificationManager.toggleNotification(.dailyWorkoutReminder, enabled: $0) }
+                    ))
+                    .labelsHidden()
+                    .tint(.blue)
+                }
+                .padding(16)
+                
+                // Time Picker (only show if daily reminder is enabled)
+                if notificationManager.isNotificationEnabled(.dailyWorkoutReminder) {
+                    Divider()
+                        .padding(.leading, 52)
+                    
+                    HStack(spacing: 16) {
+                        Image(systemName: "alarm.fill")
+                            .font(.title3)
+                            .foregroundColor(.orange)
+                            .frame(width: 28)
+                        
+                        Text("Reminder Time")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        DatePicker(
+                            "",
+                            selection: $notificationManager.dailyReminderTime,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .labelsHidden()
+                        .tint(.orange)
+                    }
+                    .padding(16)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Category Section
+    
+    private func categorySection(_ category: NotificationCategory) -> some View {
+        let isExpanded = expandedCategories.contains(category.id)
+        
+        return settingsSection(title: category.rawValue) {
+            VStack(spacing: 0) {
+                // Category Header with expand/collapse
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        if isExpanded {
+                            expandedCategories.remove(category.id)
+                        } else {
+                            expandedCategories.insert(category.id)
+                        }
+                    }
+                }) {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(category.color.opacity(0.15))
+                                .frame(width: 40, height: 40)
+                            
+                            Image(systemName: category.icon)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(category.color)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(enabledCount(for: category)) of \(category.notifications.count) enabled")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                            
+                            Text("Tap to customize")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                    .padding(16)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                // Expanded notification list
+                if isExpanded {
+                    ForEach(category.notifications) { type in
+                        Divider()
+                            .padding(.leading, 52)
+                        
+                        notificationToggleRow(type)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func enabledCount(for category: NotificationCategory) -> Int {
+        category.notifications.filter { notificationManager.isNotificationEnabled($0) }.count
+    }
+    
+    private func notificationToggleRow(_ type: NotificationType) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: type.icon)
+                .font(.system(size: 16))
+                .foregroundColor(type.color)
+                .frame(width: 28)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(type.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Text(type.description)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: Binding(
+                get: { notificationManager.isNotificationEnabled(type) },
+                set: { notificationManager.toggleNotification(type, enabled: $0) }
+            ))
+            .labelsHidden()
+            .tint(type.color)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+    
+    // MARK: - Quiet Hours
+    
+    private var quietHoursSection: some View {
+        settingsSection(title: "Quiet Hours") {
+            VStack(spacing: 0) {
+                // Toggle
+                HStack(spacing: 16) {
+                    Image(systemName: "moon.fill")
+                        .font(.title3)
+                        .foregroundColor(.purple)
+                        .frame(width: 28)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Do Not Disturb")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Text("Pause notifications during sleep hours")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: $notificationManager.quietHoursEnabled)
+                        .labelsHidden()
+                        .tint(.purple)
+                }
+                .padding(16)
+                
+                if notificationManager.quietHoursEnabled {
+                    Divider()
+                        .padding(.leading, 52)
+                    
+                    // Start time
+                    HStack(spacing: 16) {
+                        Image(systemName: "bed.double.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.indigo)
+                            .frame(width: 28)
+                        
+                        Text("From")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        DatePicker(
+                            "",
+                            selection: $notificationManager.quietHoursStart,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .labelsHidden()
+                    }
+                    .padding(16)
+                    
+                    Divider()
+                        .padding(.leading, 52)
+                    
+                    // End time
+                    HStack(spacing: 16) {
+                        Image(systemName: "sunrise.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.yellow)
+                            .frame(width: 28)
+                        
+                        Text("Until")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        DatePicker(
+                            "",
+                            selection: $notificationManager.quietHoursEnd,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .labelsHidden()
+                    }
+                    .padding(16)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Test Notifications (Debug)
+    
+    #if DEBUG
+    private var testNotificationsSection: some View {
+        settingsSection(title: "🧪 Test Notifications") {
+            VStack(spacing: 12) {
+                testButton(
+                    title: "Test Streak Celebration",
+                    icon: "flame.fill",
+                    color: .orange
+                ) {
+                    notificationManager.sendStreakCelebration(streakCount: 7)
+                }
+                
+                testButton(
+                    title: "Test Comeback Reminder",
+                    icon: "arrow.counterclockwise",
+                    color: .blue
+                ) {
+                    notificationManager.sendComebackReminder(daysAway: 5)
+                }
+                
+                testButton(
+                    title: "Test Personal Record",
+                    icon: "trophy.fill",
+                    color: .yellow
+                ) {
+                    notificationManager.sendPersonalRecordNotification(
+                        exercise: "Bench Press",
+                        weight: 185,
+                        previousBest: 175
+                    )
+                }
+                
+                testButton(
+                    title: "Test Level Up",
+                    icon: "star.fill",
+                    color: .purple
+                ) {
+                    notificationManager.sendLevelUpNotification(newLevel: 5, title: "Warrior")
+                }
+                
+                testButton(
+                    title: "Test Steps Goal",
+                    icon: "figure.walk",
+                    color: .green
+                ) {
+                    notificationManager.sendStepsGoalAchieved(steps: 10000)
+                }
+            }
+            .padding(16)
+        }
+    }
+    
+    private func testButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(color)
+                    .frame(width: 24)
+                
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Image(systemName: "paperplane.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(color.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    #endif
+    
+    // MARK: - Section Container
+    
+    private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 4)
+            
+            content()
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(cardBackground)
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
+                )
+        }
+    }
+}
+
+// MARK: - Notification Preview Card
+struct NotificationPreviewCard: View {
+    let type: NotificationType
+    let title: String
+    let message: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(type.color.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    
+                    Image(systemName: type.icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(type.color)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("BUILTSIMPLE")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        Text("now")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+            }
+            
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        )
+    }
+}
+
+#Preview {
+    NavigationView {
+        NotificationSettingsView()
+    }
+}
+

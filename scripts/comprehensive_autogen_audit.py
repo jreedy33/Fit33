@@ -729,6 +729,154 @@ ESSENTIAL_FOUNDATIONAL = [
     "kettlebell swing", "kettlebell goblet squat"
 ]
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FOUNDATIONAL EXERCISE WHITELIST - Safe, repeatable, progressive exercises
+# These are the exercises that should be prioritized for "foundational" mode
+# ═══════════════════════════════════════════════════════════════════════════════
+FOUNDATIONAL_CHEST_EXERCISES = [
+    "bench press", "dumbbell bench press", "smith bench press", 
+    "decline bench press", "smith decline bench press", "decline dumbbell press",
+    "incline bench press", "incline dumbbell press", "smith incline bench press",
+    "machine chest press", "lever chest press", "seated chest press",
+    "cable fly", "cable crossover", "pec deck", "machine fly", "lever pec deck fly",
+    "dumbbell fly", "decline fly", "incline fly",
+    "assisted dip", "dip", "lever graviton assisted dip", "lever seated dip",
+    "push up", "incline push up", "decline push up",
+]
+
+FOUNDATIONAL_BACK_EXERCISES = [
+    "lat pulldown", "wide grip lat pulldown", "close grip pulldown",
+    "seated cable row", "machine row", "lever row", "chest supported row",
+    "barbell row", "dumbbell row", "one arm dumbbell row", "t-bar row",
+    "pull up", "chin up", "assisted pull up", "assisted chin up",
+    "cable straight arm pulldown", "pullover",
+]
+
+FOUNDATIONAL_SHOULDER_EXERCISES = [
+    "machine shoulder press", "smith shoulder press", "lever shoulder press",
+    "dumbbell shoulder press", "seated dumbbell press",
+    "lateral raise", "dumbbell lateral raise", "cable lateral raise", "machine lateral raise",
+    "front raise", "cable front raise",
+    "face pull", "rear delt fly", "reverse fly", "rear delt machine",
+]
+
+FOUNDATIONAL_LEG_EXERCISES = [
+    "leg press", "hack squat", "smith squat", "machine squat",
+    "barbell squat", "goblet squat", "front squat",
+    "leg extension", "machine leg extension", "lever leg extension",
+    "leg curl", "lying leg curl", "seated leg curl", "machine leg curl",
+    "hip thrust", "barbell hip thrust", "machine hip thrust",
+    "walking lunge", "reverse lunge", "split squat", "bulgarian split squat",
+    "romanian deadlift", "stiff leg deadlift",
+    "calf raise", "standing calf raise", "seated calf raise", "machine calf raise",
+    "glute bridge", "cable pull through",
+]
+
+FOUNDATIONAL_ARM_EXERCISES = [
+    "barbell curl", "dumbbell curl", "ez bar curl", "preacher curl", "cable curl",
+    "hammer curl", "incline dumbbell curl", "machine curl",
+    "tricep pushdown", "cable pushdown", "rope pushdown", "v-bar pushdown",
+    "skull crusher", "lying tricep extension", "overhead tricep extension",
+    "dip", "close grip bench press", "machine dip",
+]
+
+# Combine all foundational exercises
+ALL_FOUNDATIONAL_EXERCISES = (
+    FOUNDATIONAL_CHEST_EXERCISES + 
+    FOUNDATIONAL_BACK_EXERCISES + 
+    FOUNDATIONAL_SHOULDER_EXERCISES + 
+    FOUNDATIONAL_LEG_EXERCISES + 
+    FOUNDATIONAL_ARM_EXERCISES
+)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RISKY EXERCISE BLACKLIST - Exercises to avoid or heavily penalize
+# These exercises are risky, complex, or impractical for foundational training
+# ═══════════════════════════════════════════════════════════════════════════════
+RISKY_EXERCISES = [
+    # Shoulder-risky pressing variations
+    "guillotine", "behind neck", "behind the neck", "wide grip overhead",
+    
+    # Complex combination movements (bad for tracking/progression)
+    "renegade row", "push up row", "push up and row", "row push up",
+    "pullover to press", "pullover press", "press to pullover",
+    "curl to press", "press to curl", "squat to press", "press squat",
+    "lunge curl", "curl lunge", "deadlift to row", "row deadlift",
+    "burpee", "man maker", "devil press",
+    
+    # Anti-rotation under load (lower back stress)
+    "plank row", "plank with row", "bird dog row", 
+    
+    # Unstable/coordination-heavy (hard to progress)
+    "single arm push up", "archer push up", "typewriter push up",
+    "pistol squat", "single leg squat",
+    
+    # Grip variations that add complexity without benefit for beginners
+    "reverse grip decline", "reverse grip incline", 
+    "jm bench press", "jm press",
+    
+    # Complex plank variations
+    "plank lateral raise", "plank front raise", "plank reach",
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOWER BACK STRESS EXERCISES - Exercises to avoid/penalize for back issues
+# These exercises put significant stress on the lower back
+# ═══════════════════════════════════════════════════════════════════════════════
+LOWER_BACK_STRESS_EXERCISES = [
+    # High stress - avoid completely
+    "renegade row", "bird dog row", "plank row",  # Anti-rotation under load
+    "bent over row", "barbell row", "pendlay row",  # Unsupported bent position
+    "deadlift", "conventional deadlift", "sumo deadlift",  # Heavy hip hinge
+    "good morning", "seated good morning",  # Direct lower back load
+    "back extension", "hyperextension", "45 degree back extension",
+    "snatch", "clean", "clean and jerk",  # Olympic lifts
+    
+    # Moderate stress - penalize but allow with caution
+    "t-bar row", "dumbbell row",  # Can be done with support
+    "romanian deadlift", "rdl", "stiff leg deadlift",  # Lighter hinge
+]
+
+# Exercises that are SAFE alternatives for lower back issues
+LOWER_BACK_SAFE_ALTERNATIVES = [
+    # Supported rows (chest/machine support)
+    "chest supported row", "chest-supported row", "machine row", 
+    "lever row", "seated cable row", "seated row",
+    
+    # Machine leg work (takes back out of equation)
+    "leg press", "hack squat", "machine squat",
+    "leg extension", "leg curl", "machine leg curl",
+    
+    # Supported pressing
+    "machine chest press", "smith bench press", "cable press",
+    
+    # Core work that doesn't stress lower back
+    "dead bug", "pallof press", "bird dog", "plank",
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTION: Check if exercise is foundational
+# ═══════════════════════════════════════════════════════════════════════════════
+def is_foundational_exercise(exercise_name: str) -> bool:
+    """Check if exercise is in the foundational whitelist"""
+    name_lower = exercise_name.lower()
+    return any(found.lower() in name_lower for found in ALL_FOUNDATIONAL_EXERCISES)
+
+def is_risky_exercise(exercise_name: str) -> bool:
+    """Check if exercise is in the risky blacklist"""
+    name_lower = exercise_name.lower()
+    return any(risky.lower() in name_lower for risky in RISKY_EXERCISES)
+
+def is_lower_back_stress_exercise(exercise_name: str) -> bool:
+    """Check if exercise puts significant stress on lower back"""
+    name_lower = exercise_name.lower()
+    return any(stress.lower() in name_lower for stress in LOWER_BACK_STRESS_EXERCISES)
+
+def is_lower_back_safe_exercise(exercise_name: str) -> bool:
+    """Check if exercise is a safe alternative for lower back issues"""
+    name_lower = exercise_name.lower()
+    return any(safe.lower() in name_lower for safe in LOWER_BACK_SAFE_ALTERNATIVES)
+
 def expand_target_muscles(target_muscles: List[str]) -> Set[str]:
     """Expand target muscles to include sub-muscles"""
     expanded = set(m.lower() for m in target_muscles)
@@ -800,15 +948,76 @@ def get_injury_exercise_penalties(exercise_name: str, injuries: List[Injury]) ->
             if "split squat" in name_lower:
                 penalty += 20
         
-        # LOW BACK INJURIES - Reduce bent-over exposure
-        if "lower back" in area_lower or "low back" in area_lower:
-            if "bent over" in name_lower or "bent-over" in name_lower:
-                penalty -= 150
-            if "good morning" in name_lower:
-                penalty -= 200
-            # Boost chest-supported options
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # LOW BACK INJURIES - COMPREHENSIVE handling
+        # This is critical: lower back issues are common and need strict enforcement
+        # ═══════════════════════════════════════════════════════════════════════════════
+        if "lower back" in area_lower or "low back" in area_lower or "back" in area_lower:
+            # CRITICAL: Anti-rotation exercises under load - VERY BAD for lower back
+            # Renegade rows, plank rows, etc. require heavy core bracing under fatigue
+            anti_rotation_patterns = [
+                "renegade row", "renegade", "plank row", "plank with row",
+                "bird dog row", "push up row", "push up and row", "row push up",
+                "plank lateral raise", "plank front raise", "plank reach"
+            ]
+            if any(p in name_lower for p in anti_rotation_patterns):
+                penalty -= 400  # BLOCK these for any back issues
+            
+            # Heavy bent-over positions - high lower back stress
+            bent_over_patterns = [
+                "bent over", "bent-over", "pendlay row", "barbell row",
+                "t-bar row", "meadows row"
+            ]
+            if any(p in name_lower for p in bent_over_patterns):
+                penalty -= 250  # Heavy penalty - prefer supported rows
+            
+            # Deadlifts and hinges - significant lower back load
+            hinge_patterns = [
+                "deadlift", "dead lift", "rdl", "romanian",
+                "stiff leg", "good morning", "hyperextension", "back extension"
+            ]
+            if any(p in name_lower for p in hinge_patterns):
+                penalty -= 300  # Block heavy hinges for back issues
+            
+            # Olympic lifts - too dynamic for back issues
+            olympic_patterns = ["clean", "snatch", "jerk", "power clean"]
+            if any(p in name_lower for p in olympic_patterns):
+                penalty -= 350  # Block olympic lifts
+            
+            # Unsupported core work that loads the spine
+            if "sit up" in name_lower or "situp" in name_lower:
+                penalty -= 150  # Penalize crunching movements
+            if "crunch" in name_lower and "reverse" not in name_lower:
+                penalty -= 100  # Regular crunches stress lower back
+            
+            # ═══════════════════════════════════════════════════════════════════════════════
+            # BOOST safe alternatives for lower back issues
+            # ═══════════════════════════════════════════════════════════════════════════════
+            
+            # Chest-supported rows are ideal
             if "chest supported" in name_lower or "chest-supported" in name_lower:
+                penalty += 120  # Strong boost for supported rows
+            
+            # Machine rows remove lower back from equation
+            if "machine row" in name_lower or "lever row" in name_lower:
+                penalty += 100
+            
+            # Seated cable rows are safe
+            if "seated" in name_lower and "row" in name_lower:
                 penalty += 80
+            
+            # Machine work in general is safer
+            if "machine" in name_lower or "lever" in name_lower:
+                penalty += 50
+            
+            # Leg press instead of squats
+            if "leg press" in name_lower or "hack squat" in name_lower:
+                penalty += 70
+            
+            # Core exercises that don't stress lower back
+            safe_core = ["dead bug", "pallof", "bird dog", "plank"]
+            if any(p in name_lower for p in safe_core) and "row" not in name_lower:
+                penalty += 40
     
     return penalty
 
@@ -1200,13 +1409,72 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
     if any(kw in name_lower for kw in compound_keywords):
         score += 25
     
-    # FOUNDATIONAL EXERCISE BOOST (especially for beginners)
-    is_foundational = any(found in name_lower for found in ESSENTIAL_FOUNDATIONAL)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # FOUNDATIONAL EXERCISE SCORING - Comprehensive system
+    # When user has low workout count (<10), prioritize safe, repeatable exercises
+    # ═══════════════════════════════════════════════════════════════════════════════
+    
+    # Determine if we should restrict to foundational exercises
+    # Based on user's workout history and experience
+    restrict_to_foundational = (
+        user.workouts_completed < 10 or 
+        user.experience_level == ExperienceLevel.BEGINNER
+    )
+    
+    # Check using our new comprehensive lists
+    is_foundational = is_foundational_exercise(name)
+    is_risky = is_risky_exercise(name)
+    
+    # FOUNDATIONAL BOOST - Stronger when restricting
     if is_foundational:
-        if user.experience_level == ExperienceLevel.BEGINNER:
-            score += 100  # Big boost for beginners
+        if restrict_to_foundational:
+            score += 150  # Very strong boost for foundational when restricted
+        elif user.experience_level == ExperienceLevel.BEGINNER:
+            score += 100  # Strong boost for beginners
         else:
-            score += 30
+            score += 40   # Moderate boost for everyone else
+    
+    # RISKY EXERCISE PENALTY - Always apply, stronger when restricted
+    if is_risky:
+        if restrict_to_foundational:
+            score -= 400  # BLOCK risky exercises for foundational mode
+        else:
+            score -= 150  # Still penalize risky exercises for advanced users
+    
+    # NON-FOUNDATIONAL PENALTY when restricted
+    if restrict_to_foundational and not is_foundational:
+        # Penalize exercises that aren't on the foundational list
+        score -= 100  # Moderate penalty to prefer foundational
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # LOWER BACK SAFETY SCORING - Apply injury-based penalties
+    # ═══════════════════════════════════════════════════════════════════════════════
+    has_lower_back_issue = any(
+        "lower back" in injury.area.lower() or "low back" in injury.area.lower() or "back" in injury.area.lower()
+        for injury in user.injuries
+    )
+    
+    if has_lower_back_issue:
+        # Use our specialized functions
+        if is_lower_back_stress_exercise(name):
+            score -= 350  # Heavy penalty for back-stressing exercises
+        
+        if is_lower_back_safe_exercise(name):
+            score += 100  # Boost safe alternatives
+    
+    # Apply general injury penalties
+    injury_penalty = get_injury_exercise_penalties(name, user.injuries)
+    score += injury_penalty  # This function returns negative values for penalties
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # LEGACY FOUNDATIONAL CHECK (keep for compatibility)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    is_essential_foundational = any(found in name_lower for found in ESSENTIAL_FOUNDATIONAL)
+    if is_essential_foundational:
+        if user.experience_level == ExperienceLevel.BEGINNER:
+            score += 50  # Additional boost for essential movements
+        else:
+            score += 20
     
     # VARIETY PENALTY - avoid similar exercises
     for selected in already_selected:
@@ -1727,6 +1995,30 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
             filter_reasons["stretching"] += 1
             continue
         
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # FOUNDATIONAL MODE PRE-FILTER - Block risky exercises at filter stage
+        # This is more efficient than penalizing them during scoring
+        # ═══════════════════════════════════════════════════════════════════════════════
+        restrict_to_foundational = (
+            user.workouts_completed < 10 or 
+            user.experience_level == ExperienceLevel.BEGINNER
+        )
+        
+        if restrict_to_foundational:
+            # Block risky exercises for foundational users
+            if is_risky_exercise(name):
+                filter_reasons["risky_for_foundational"] += 1
+                continue
+            
+            # Block lower back stress exercises for users with back issues
+            has_lower_back_issue = any(
+                "lower back" in injury.area.lower() or "low back" in injury.area.lower() or "back" in injury.area.lower()
+                for injury in user.injuries
+            )
+            if has_lower_back_issue and is_lower_back_stress_exercise(name):
+                filter_reasons["lower_back_unsafe"] += 1
+                continue
+        
         filtered.append(ex)
     
     print(f"Filtered: {len(exercises)} -> {len(filtered)} exercises")
@@ -1884,9 +2176,32 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
             if unsupported_row_count >= 1 and not is_supported_row:
                 continue  # Skip this unsupported row
         
-        # Equipment diversity (max 50% same equipment)
-        max_per_equipment = max(2, count // 2)
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # EQUIPMENT DIVERSITY - MODIFIED for foundational mode
+        # When foundational: LESS strict - allow repeating good equipment for progression
+        # When advanced: NORMAL diversity enforcement
+        # ═══════════════════════════════════════════════════════════════════════════════
+        restrict_to_foundational = (
+            user.workouts_completed < 10 or 
+            user.experience_level == ExperienceLevel.BEGINNER
+        )
+        
         equip_category = categorize_equipment(equipment)
+        
+        if restrict_to_foundational:
+            # FOUNDATIONAL MODE: Allow more same-equipment exercises for better progression
+            # User feedback: "Equipment diversity is being gamed - using 6 different equipment
+            # types for 6 exercises is not a win. For hypertrophy, you want repeatable, loadable staples."
+            max_per_equipment = max(3, count // 2 + 1)  # More lenient - allow 3 of same equipment
+            
+            # Additionally, PRIORITIZE repeating proven equipment (barbell, machine)
+            # Don't skip high-scoring exercises just because we've used the same equipment
+            if score > 200 and equip_category in ['barbell', 'machine', 'cable']:
+                max_per_equipment = count  # Don't limit top-scoring compound equipment
+        else:
+            # ADVANCED MODE: Normal diversity (max 50% same equipment)
+            max_per_equipment = max(2, count // 2)
+        
         if used_equipment[equip_category] >= max_per_equipment:
             continue
         

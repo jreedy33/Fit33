@@ -4,6 +4,43 @@ import MapKit
 import Combine
 import ActivityKit
 
+// MARK: - GPS Accuracy Level
+enum GPSAccuracy: String {
+    case acquiring = "Acquiring GPS..."
+    case excellent = "GPS Excellent"
+    case good = "GPS Good"
+    case fair = "GPS Fair"
+    case weak = "GPS Weak"
+    
+    var color: String {
+        switch self {
+        case .acquiring: return "gray"
+        case .excellent: return "green"
+        case .good: return "green"
+        case .fair: return "yellow"
+        case .weak: return "red"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .acquiring: return "location.slash"
+        case .excellent: return "location.fill"
+        case .good: return "location.fill"
+        case .fair: return "location"
+        case .weak: return "location.slash.fill"
+        }
+    }
+}
+
+// MARK: - Pace History Point (for chart)
+struct PaceHistoryPoint: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let pace: Double // seconds per km
+    let distance: Double // meters at this point
+}
+
 // MARK: - Running Manager
 /// Manages outdoor running workouts with GPS tracking, pace, distance, and route recording
 @MainActor
@@ -13,6 +50,7 @@ class RunningManager: NSObject, ObservableObject {
     // MARK: - Published Properties
     @Published var isRunning = false
     @Published var isPaused = false
+    @Published var isAutoPaused = false
     @Published var elapsedTime: TimeInterval = 0
     @Published var distance: Double = 0 // meters
     @Published var currentPace: Double = 0 // seconds per kilometer
@@ -21,8 +59,24 @@ class RunningManager: NSObject, ObservableObject {
     @Published var calories: Double = 0
     @Published var routeCoordinates: [CLLocationCoordinate2D] = []
     @Published var currentLocation: CLLocationCoordinate2D?
+    @Published var currentHeading: Double = 0 // degrees
     @Published var locationAuthStatus: CLAuthorizationStatus = .notDetermined
-    @Published var splits: [RunSplit] = [] // Per-kilometer splits
+    @Published var splits: [RunSplit] = [] // Per-kilometer/mile splits
+    @Published var gpsAccuracy: GPSAccuracy = .acquiring
+    @Published var paceHistory: [PaceHistoryPoint] = [] // For pace trend chart
+    @Published var isMapFollowing = true // Auto-follow user location
+    @Published var elevationGain: Double = 0 // meters
+    @Published var currentElevation: Double = 0 // meters
+    
+    // MARK: - Goal Properties
+    @Published var goalType: RunGoalType = .none
+    @Published var goalValue: Double = 0 // distance in meters or time in seconds
+    @Published var targetPaceMin: Double = 0 // seconds per km (lower bound)
+    @Published var targetPaceMax: Double = 0 // seconds per km (upper bound)
+    
+    // MARK: - Audio Cue Properties
+    @Published var audioCuesEnabled = true
+    @Published var audioCueInterval: Double = 1609.34 // Every 1 mile by default
     
     // MARK: - Private Properties
     private let locationManager = CLLocationManager()
@@ -32,6 +86,10 @@ class RunningManager: NSObject, ObservableObject {
     private var lastLocation: CLLocation?
     private var lastSplitDistance: Double = 0
     private var lastSplitTime: TimeInterval = 0
+    private var lastPaceRecordTime: Date?
+    private var lastElevation: Double?
+    private var autoPauseTimer: Timer?
+    private var stationaryStartTime: Date?
     
     // MARK: - Live Activity
     private var liveActivity: Activity<RunningActivityAttributes>?
@@ -43,6 +101,10 @@ class RunningManager: NSObject, ObservableObject {
     
     var distanceInMiles: Double {
         distance / 1609.34
+    }
+    
+    var formattedDistanceMiles: String {
+        String(format: "%.2f", distanceInMiles)
     }
     
     var formattedDistance: String {
@@ -61,6 +123,15 @@ class RunningManager: NSObject, ObservableObject {
         formatPace(currentPace)
     }
     
+    /// Format pace for miles (US default)
+    var formattedPacePerMile: String {
+        formatPacePerMile(averagePace)
+    }
+    
+    var formattedCurrentPacePerMile: String {
+        formatPacePerMile(currentPace)
+    }
+    
     var formattedElapsedTime: String {
         let hours = Int(elapsedTime) / 3600
         let minutes = (Int(elapsedTime) % 3600) / 60
@@ -71,6 +142,76 @@ class RunningManager: NSObject, ObservableObject {
         } else {
             return String(format: "%02d:%02d", minutes, seconds)
         }
+    }
+    
+    /// Best split pace (fastest mile/km)
+    var bestSplitPace: Double? {
+        splits.map { $0.pace }.min()
+    }
+    
+    var formattedBestSplit: String? {
+        guard let best = bestSplitPace else { return nil }
+        return formatPacePerMile(best)
+    }
+    
+    /// Last completed split
+    var lastSplit: RunSplit? {
+        splits.last
+    }
+    
+    var formattedLastSplitPace: String? {
+        guard let last = lastSplit else { return nil }
+        return formatPacePerMile(last.pace)
+    }
+    
+    /// Goal progress (0.0 to 1.0)
+    var goalProgress: Double {
+        guard goalValue > 0 else { return 0 }
+        switch goalType {
+        case .distance:
+            return min(distance / goalValue, 1.0)
+        case .time:
+            return min(elapsedTime / goalValue, 1.0)
+        case .none:
+            return 0
+        }
+    }
+    
+    /// Remaining goal value
+    var goalRemaining: Double {
+        guard goalValue > 0 else { return 0 }
+        switch goalType {
+        case .distance:
+            return max(goalValue - distance, 0)
+        case .time:
+            return max(goalValue - elapsedTime, 0)
+        case .none:
+            return 0
+        }
+    }
+    
+    var formattedGoalRemaining: String {
+        switch goalType {
+        case .distance:
+            let miles = goalRemaining / 1609.34
+            return String(format: "%.2f mi left", miles)
+        case .time:
+            let minutes = Int(goalRemaining) / 60
+            let seconds = Int(goalRemaining) % 60
+            return String(format: "%d:%02d left", minutes, seconds)
+        case .none:
+            return ""
+        }
+    }
+    
+    /// Recent pace history (last 10 minutes) for chart
+    var recentPaceHistory: [PaceHistoryPoint] {
+        let cutoff = Date().addingTimeInterval(-600) // Last 10 minutes
+        return paceHistory.filter { $0.timestamp > cutoff }
+    }
+    
+    var formattedElevationGain: String {
+        String(format: "%.0f ft", elevationGain * 3.28084) // Convert to feet
     }
     
     // MARK: - Initialization
@@ -101,7 +242,7 @@ class RunningManager: NSObject, ObservableObject {
     }
     
     // MARK: - Run Control
-    func startRun() {
+    func startRun(goal: RunGoalType = .none, goalValue: Double = 0, targetPaceRange: (min: Double, max: Double)? = nil) {
         guard isLocationAuthorized else {
             requestLocationPermission()
             return
@@ -116,10 +257,29 @@ class RunningManager: NSObject, ObservableObject {
         calories = 0
         routeCoordinates = []
         splits = []
+        paceHistory = []
         lastLocation = nil
         lastSplitDistance = 0
         lastSplitTime = 0
         pausedTime = 0
+        lastPaceRecordTime = nil
+        lastElevation = nil
+        elevationGain = 0
+        currentElevation = 0
+        gpsAccuracy = .acquiring
+        isAutoPaused = false
+        isMapFollowing = true
+        
+        // Set goal
+        self.goalType = goal
+        self.goalValue = goalValue
+        if let range = targetPaceRange {
+            self.targetPaceMin = range.min
+            self.targetPaceMax = range.max
+        } else {
+            self.targetPaceMin = 0
+            self.targetPaceMax = 0
+        }
         
         // Start tracking
         isRunning = true
@@ -127,6 +287,7 @@ class RunningManager: NSObject, ObservableObject {
         startTime = Date()
         
         locationManager.startUpdatingLocation()
+        locationManager.startUpdatingHeading()
         startTimer()
         startLiveActivity()
         
@@ -230,6 +391,96 @@ class RunningManager: NSObject, ObservableObject {
         let minutes = Int(paceInSecondsPerKm) / 60
         let seconds = Int(paceInSecondsPerKm) % 60
         return String(format: "%d:%02d /km", minutes, seconds)
+    }
+    
+    private func formatPacePerMile(_ paceInSecondsPerKm: Double) -> String {
+        // Convert pace from /km to /mi
+        let pacePerMile = paceInSecondsPerKm * 1.60934
+        guard pacePerMile > 0 && pacePerMile < 3600 else {
+            return "--:--"
+        }
+        let minutes = Int(pacePerMile) / 60
+        let seconds = Int(pacePerMile) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    /// Record pace for history chart
+    private func recordPaceHistory() {
+        guard currentPace > 0 && currentPace < 1800 else { return } // Valid pace under 30 min/km
+        
+        let now = Date()
+        // Record every 10 seconds
+        if lastPaceRecordTime == nil || now.timeIntervalSince(lastPaceRecordTime!) >= 10 {
+            let point = PaceHistoryPoint(timestamp: now, pace: currentPace, distance: distance)
+            paceHistory.append(point)
+            lastPaceRecordTime = now
+            
+            // Keep only last 30 minutes of data
+            let cutoff = now.addingTimeInterval(-1800)
+            paceHistory = paceHistory.filter { $0.timestamp > cutoff }
+        }
+    }
+    
+    /// Update GPS accuracy based on horizontal accuracy
+    private func updateGPSAccuracy(_ horizontalAccuracy: Double) {
+        if horizontalAccuracy < 0 {
+            gpsAccuracy = .acquiring
+        } else if horizontalAccuracy <= 5 {
+            gpsAccuracy = .excellent
+        } else if horizontalAccuracy <= 10 {
+            gpsAccuracy = .good
+        } else if horizontalAccuracy <= 20 {
+            gpsAccuracy = .fair
+        } else {
+            gpsAccuracy = .weak
+        }
+    }
+    
+    /// Manual lap/split
+    func recordManualLap() {
+        guard isRunning && distance > 0 else { return }
+        
+        let splitTime = elapsedTime - lastSplitTime
+        let splitDistance = distance - lastSplitDistance
+        
+        guard splitDistance > 0 else { return }
+        
+        let splitPace = (splitTime / splitDistance) * 1000
+        
+        let split = RunSplit(
+            kilometer: splits.count + 1,
+            time: splitTime,
+            pace: splitPace,
+            isManual: true
+        )
+        splits.append(split)
+        
+        lastSplitDistance = distance
+        lastSplitTime = elapsedTime
+        
+        HapticManager.notification(.success)
+        print("📍 [RUNNING] Manual lap recorded: \(formatPacePerMile(splitPace))")
+    }
+    
+    /// Toggle map following
+    func toggleMapFollowing() {
+        isMapFollowing.toggle()
+    }
+    
+    /// Set run goal
+    func setGoal(type: RunGoalType, value: Double) {
+        self.goalType = type
+        self.goalValue = value
+    }
+    
+    /// Toggle audio cues
+    func toggleAudioCues() {
+        audioCuesEnabled.toggle()
+    }
+    
+    /// Set audio cue interval
+    func setAudioCueInterval(_ interval: Double) {
+        audioCueInterval = interval
     }
     
     private func checkForSplit() {
@@ -346,11 +597,26 @@ extension RunningManager: CLLocationManagerDelegate {
             guard isRunning && !isPaused else { return }
             
             for location in locations {
-                // Filter out inaccurate readings
-                guard location.horizontalAccuracy < 20 else { continue }
+                // Update GPS accuracy
+                updateGPSAccuracy(location.horizontalAccuracy)
+                
+                // Filter out very inaccurate readings
+                guard location.horizontalAccuracy < 30 else { continue }
                 
                 currentLocation = location.coordinate
                 routeCoordinates.append(location.coordinate)
+                
+                // Track elevation
+                if location.verticalAccuracy >= 0 {
+                    currentElevation = location.altitude
+                    if let lastElev = lastElevation {
+                        let elevDelta = location.altitude - lastElev
+                        if elevDelta > 0 {
+                            elevationGain += elevDelta
+                        }
+                    }
+                    lastElevation = location.altitude
+                }
                 
                 // Calculate distance
                 if let last = lastLocation {
@@ -369,6 +635,9 @@ extension RunningManager: CLLocationManagerDelegate {
                                 currentPace = 1000 / speed // seconds per km
                             }
                             
+                            // Record pace history
+                            recordPaceHistory()
+                            
                             checkForSplit()
                         }
                     }
@@ -376,6 +645,12 @@ extension RunningManager: CLLocationManagerDelegate {
                 
                 lastLocation = location
             }
+        }
+    }
+    
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        Task { @MainActor in
+            currentHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
         }
     }
     
@@ -391,16 +666,32 @@ extension RunningManager: CLLocationManagerDelegate {
     }
 }
 
+// MARK: - Run Goal Type
+enum RunGoalType {
+    case none
+    case distance // in meters
+    case time // in seconds
+}
+
 // MARK: - Data Models
 struct RunSplit: Identifiable {
     let id = UUID()
     let kilometer: Int
     let time: TimeInterval
     let pace: Double // seconds per km
+    var isManual: Bool = false
     
     var formattedPace: String {
         let minutes = Int(pace) / 60
         let seconds = Int(pace) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    /// Format pace per mile (US default)
+    var formattedPacePerMile: String {
+        let pacePerMile = pace * 1.60934
+        let minutes = Int(pacePerMile) / 60
+        let seconds = Int(pacePerMile) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
     

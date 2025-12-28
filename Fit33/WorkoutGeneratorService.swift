@@ -564,6 +564,11 @@ class WorkoutGeneratorService: ObservableObject {
         }
         #endif
         
+        // 🌟 Get progressive unlock status early for pre-filtering
+        let progressiveUnlock = await ProgressiveExerciseUnlockService.shared
+        let userWorkoutCount = progressiveUnlock.workoutCount
+        let restrictToFoundational = progressiveUnlock.shouldRestrictToFoundational
+        
         // 🚫 PRE-FILTER: Remove risky exercises for foundational users
         // This mirrors the Python script's risky exercise filtering
         let foundationalDB = FoundationalExerciseDatabase.shared
@@ -613,6 +618,60 @@ class WorkoutGeneratorService: ObservableObject {
             #endif
         }
         
+        // 🆕 PRE-FILTER: Block combo/core moves for foundational users when goal is hypertrophy
+        // These are not foundational and add unnecessary complexity
+        // COMBO = any "X to Y" pattern where two distinct movements are combined
+        if restrictToFoundational || userWorkoutCount < 10 {
+            let beforeComboFilter = allExercises.count
+            allExercises = allExercises.filter { exercise in
+                let name = exercise.name?.lowercased() ?? ""
+                
+                // ═══════════════════════════════════════════════════════════════════════════
+                // 🚫 CRITICAL: Block ALL "X to Y" combo exercises
+                // These are hard to load/progress and reduce hypertrophy quality
+                // Pattern: "Bent Over Reverse Fly to Hammer Curl", "Squat to Press", etc.
+                // ═══════════════════════════════════════════════════════════════════════════
+                
+                // Match any " to " pattern (word boundary), excluding cable movement terms
+                if name.contains(" to ") {
+                    // Allow cable fly positioning terms
+                    let allowedToPatterns = ["low to high", "high to low", "low-to-high", "high-to-low"]
+                    let isAllowedPattern = allowedToPatterns.contains { name.contains($0) }
+                    
+                    if !isAllowedPattern {
+                        #if DEBUG
+                        print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - combo exercise (X to Y pattern)")
+                        #endif
+                        return false
+                    }
+                }
+                
+                // Block plank-based combo moves
+                if name.contains("plank") && (name.contains("push") || name.contains("row") || name.contains("pass") || name.contains("jack") || name.contains("through")) {
+                    #if DEBUG
+                    print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - combo/core move not foundational")
+                    #endif
+                    return false
+                }
+                
+                // Block bear crawl, renegade, man maker, burpee
+                if name.contains("bear crawl") || name.contains("renegade") || name.contains("man maker") || name.contains("burpee") {
+                    #if DEBUG
+                    print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - complex combo move")
+                    #endif
+                    return false
+                }
+                
+                return true
+            }
+            let filteredCombo = beforeComboFilter - allExercises.count
+            #if DEBUG
+            if filteredCombo > 0 {
+                print("🚫 [COMBO] Pre-filtered \(filteredCombo) combo/core exercises for foundational user")
+            }
+            #endif
+        }
+        
         guard !allExercises.isEmpty else {
             print("⚠️ No exercises in Core Data library (or all filtered for safety)")
             return []
@@ -626,10 +685,8 @@ class WorkoutGeneratorService: ObservableObject {
         let hasLearnedPreferences = await learningEngine.userPreferences != nil
         
         // 🌟 Get progressive unlock status for foundational exercise prioritization
-        let progressiveUnlock = await ProgressiveExerciseUnlockService.shared
-        let userWorkoutCount = progressiveUnlock.workoutCount
+        // (progressiveUnlock, userWorkoutCount, restrictToFoundational already declared earlier for pre-filtering)
         let currentTier = progressiveUnlock.currentTier
-        let restrictToFoundational = progressiveUnlock.shouldRestrictToFoundational
         let varietyPercentage = progressiveUnlock.varietyPercentage
         
         #if DEBUG
@@ -1126,23 +1183,43 @@ class WorkoutGeneratorService: ObservableObject {
                 #endif
             }
             
-            // 🏋️ BEGINNER EQUIPMENT PREFERENCE - Machines > Cables > Dumbbells > Barbells
-            // New gym users are often intimidated by free weights
-            // Prioritize machines and cables for their first few workouts
-            let beginnerEquipBoost = FoundationalExerciseDatabase.shared.getBeginnerEquipmentBoost(
+            // 🏋️ EQUIPMENT QUALITY BOOST - Based on hypertrophy effectiveness (not difficulty)
+            // Machines/cables aren't "beginner" - they're effective tools for all levels
+            // Advanced = intensity/volume, not equipment type
+            let equipQualityBoost = FoundationalExerciseDatabase.shared.getEquipmentQualityBoost(
                 equipment: exercise.equipment ?? "",
+                exerciseName: name,
                 userWorkoutCount: userWorkoutCount,
-                experienceLevel: userLevel,
                 userEquipment: Array(userEquipmentLower)
             )
-            score += beginnerEquipBoost
+            score += equipQualityBoost
             
             #if DEBUG
-            if beginnerEquipBoost != 0 && userWorkoutCount < 5 {
+            if equipQualityBoost > 0 {
                 let equipType = exercise.equipment ?? "unknown"
-                print("   🏋️ [BEGINNER EQUIP] '\(exercise.name ?? "")' (\(equipType)): \(beginnerEquipBoost > 0 ? "+" : "")\(Int(beginnerEquipBoost))")
+                print("   🏋️ [EQUIP QUALITY] '\(exercise.name ?? "")' (\(equipType)): +\(Int(equipQualityBoost))")
             }
             #endif
+            
+            // 🪑 FOUNDATIONAL SUPPORTED ROW BONUS - Safer for new users
+            // Promote supported rows (chest-supported, machine, seated) over bent-over rows
+            // for foundational users to reduce lower back fatigue
+            if restrictToFoundational && name.contains("row") {
+                let isSupported = ["chest supported", "chest-supported", "machine", "lever", "seated", "cable row"].contains { name.contains($0) }
+                let isBentOver = name.contains("bent over") || name.contains("bent-over")
+                
+                if isSupported {
+                    score += 80  // Bonus for supported rows
+                    #if DEBUG
+                    print("   🪑 [FOUNDATIONAL] '\(exercise.name ?? "")' +80 (supported row for new user)")
+                    #endif
+                } else if isBentOver {
+                    score -= 60  // Penalty for bent-over rows (not banned, just discouraged)
+                    #if DEBUG
+                    print("   🪑 [FOUNDATIONAL] '\(exercise.name ?? "")' -60 (bent-over row - prefer supported)")
+                    #endif
+                }
+            }
             
             // 🧠 LEARNED USER PREFERENCES - GENTLE INFLUENCE (not dominant)
             // Favorites/history should be a HINT, not a guarantee
@@ -1409,6 +1486,127 @@ class WorkoutGeneratorService: ObservableObject {
                 score += 5
             }
             
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 UPPER CHEST FOCUS - Boost incline exercises when "upper chest" is targeted
+            // ═══════════════════════════════════════════════════════════════════════════════
+            let isUpperChestFocus = normalizedMuscles.contains { $0.contains("upper chest") }
+            
+            if isUpperChestFocus {
+                // BOOST incline exercises - these actually hit upper chest
+                let inclinePatterns = ["incline press", "incline bench", "incline db", "incline dumbbell",
+                                       "low to high", "low-to-high", "low cable fly",
+                                       "incline fly", "incline hammer", "incline smith"]
+                if inclinePatterns.contains(where: { name.contains($0) }) {
+                    score += 150  // Very strong boost for incline work when upper chest is targeted
+                    #if DEBUG
+                    print("   📐 [UPPER CHEST] '\(exercise.name ?? "")' +150 (incline for upper chest)")
+                    #endif
+                }
+                
+                // PENALIZE flat/decline exercises that don't hit upper chest well
+                if name.contains("decline") {
+                    score -= 100  // Decline hits lower chest, not upper
+                }
+                
+                // Flat bench is okay but incline is better for upper chest
+                if name.contains("flat bench") || (name.contains("bench press") && !name.contains("incline") && !name.contains("decline")) {
+                    score -= 30  // Slight penalty - flat hits mid chest more
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 FRONT DELT REDUNDANCY - Penalize front raises when chest pressing is in workout
+            // Chest pressing already hits front delts heavily - front raises are redundant
+            // ═══════════════════════════════════════════════════════════════════════════════
+            let isChestDay = normalizedMuscles.contains { $0.contains("chest") }
+            let isShoulderDay = normalizedMuscles.contains { $0.contains("shoulder") || $0.contains("delt") }
+            let isPressingDay = isChestDay || isShoulderDay
+            
+            if isPressingDay && name.contains("front raise") {
+                score -= 100  // Front delts get hit by pressing - use lateral raises instead
+                #if DEBUG
+                print("   🔄 [REDUNDANT] '\(exercise.name ?? "")' -100 (front delts already hit by pressing)")
+                #endif
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 LATERAL > FRONT RAISE - Prefer lateral raises over front raises for shoulders
+            // Side delts are harder to develop and need direct work, front delts get hit by pressing
+            // ═══════════════════════════════════════════════════════════════════════════════
+            if isShoulderDay {
+                // Boost lateral/side work
+                if name.contains("lateral raise") || name.contains("side raise") || name.contains("side delt") {
+                    score += 80  // Lateral delts need direct work
+                    #if DEBUG
+                    print("   💪 [LATERAL] '\(exercise.name ?? "")' +80 (lateral delt focus)")
+                    #endif
+                }
+                
+                // Penalize front raises (redundant with pressing)
+                if name.contains("front raise") {
+                    score -= 80  // Front delts already hit by pressing - low ROI
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 SEATED OVERHEAD PREFERENCE FOR BACK ISSUES - Safer for lower back
+            // Standing overhead work can stress lower back; seated is safer
+            // ═══════════════════════════════════════════════════════════════════════════════
+            if hasLowerBackIssue {
+                let isOverhead = name.contains("overhead") || name.contains("shoulder press") ||
+                                 name.contains("military press") || name.contains("ohp")
+                
+                if isOverhead {
+                    // BOOST seated variations - no spinal load
+                    let equipLower = exerciseEquipment.lowercased()
+                    if name.contains("seated") || equipLower.contains("machine") || equipLower.contains("lever") {
+                        score += 100  // Much safer for lower back
+                        #if DEBUG
+                        print("   🪑 [BACK SAFE] '\(exercise.name ?? "")' +100 (seated overhead for back safety)")
+                        #endif
+                    }
+                    // PENALIZE standing variations - potential back stress
+                    else if name.contains("standing") || (!name.contains("seated") && !equipLower.contains("machine")) {
+                        score -= 80  // Standing overhead can stress lower back
+                    }
+                }
+                
+                // Also penalize any "twisting" under load - risky for back
+                if name.contains("twist") || name.contains("rotating") {
+                    score -= 120  // Rotational load is risky for back issues
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 REAR DELT BALANCE - Boost rear delt/face pull when workout is anterior-heavy
+            // Pushing workouts (chest/shoulders) should include some rear delt for balance
+            // ═══════════════════════════════════════════════════════════════════════════════
+            let isPushDay = isChestDay && !normalizedMuscles.contains { $0.contains("back") }
+            let isAnteriorHeavy = isChestDay || isPushDay
+            
+            if isAnteriorHeavy {
+                // BOOST rear delt and face pulls for shoulder health/balance
+                let rearDeltPatterns = ["face pull", "rear delt", "reverse fly", "posterior delt",
+                                        "bent over fly", "bent-over fly", "reverse cable fly"]
+                if rearDeltPatterns.contains(where: { name.contains($0) }) {
+                    score += 120  // Very important for shoulder health on pressing days
+                    #if DEBUG
+                    print("   ⚖️ [BALANCE] '\(exercise.name ?? "")' +120 (rear delt for shoulder health)")
+                    #endif
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🎯 BENCH DIP PENALTY FOR FOUNDATIONAL USERS - Shoulder impingement risk
+            // Bench dips put shoulders in a compromised position; prefer dip machine or pushdowns
+            // ═══════════════════════════════════════════════════════════════════════════════
+            if restrictToFoundational && name.contains("bench dip") {
+                score -= 200  // Bench dips are shoulder-risky for beginners - prefer assisted dip or pushdowns
+                #if DEBUG
+                print("   🚫 [RISKY] '\(exercise.name ?? "")' -200 (bench dip shoulder risk for beginners)")
+                #endif
+            }
+            
             // 🏢 LOCATION CONTEXT PENALTIES
             // Deprioritize exercises that don't fit the user's workout context:
             // - Chair/wall exercises should NOT appear in gym workouts
@@ -1480,6 +1678,26 @@ class WorkoutGeneratorService: ObservableObject {
         print("   📊 Target ~\(exercisesPerMuscle) exercises per muscle group")
         #endif
         
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🎯 EQUIPMENT MIX TARGETS - Declare BEFORE scoring (used in closure)
+        // ═══════════════════════════════════════════════════════════════════════════
+        // Default mix for 6-exercise workout:
+        //   - 2 machine/cable (stable, constant tension)
+        //   - 2 dumbbell/barbell (free weight compound work)
+        //   - 2 flexible (fill based on focus area)
+        // Hard cap: No more than 3 free-weight exercises (DB+BB) for fatigue management
+        
+        let targetMachineOrCable = count >= 6 ? 2 : max(1, count / 3)
+        let targetFreeWeight = count >= 6 ? 2 : max(1, count / 3)
+        let maxFreeWeight = count >= 6 ? 3 : max(2, count / 2)
+        
+        var machineOrCableCount = 0
+        var freeWeightCount = 0  // Dumbbell + Barbell combined
+        
+        #if DEBUG
+        print("   🎯 [EQUIP MIX] Targets - Machine/Cable: \(targetMachineOrCable), Free-weight: \(targetFreeWeight), Max Free-weight: \(maxFreeWeight)")
+        #endif
+        
         // Select exercises with MAXIMUM VARIETY (avoid duplicates and repetitive patterns)
         var result: [GeneratedExercise] = []
         var usedNames: Set<String> = []
@@ -1491,7 +1709,192 @@ class WorkoutGeneratorService: ObservableObject {
         var usedNormalizedMuscles: [String: Int] = [:]  // Track muscle group diversity
         var usedExerciseFamilies: [String: Int] = [:]  // 🆕 Track exercise families (bench press, curl, fly, etc.)
         var usedBaseMovements: Set<String> = []  // 🆕 Track base movements (prevents Barbell + Smith Machine of same exercise)
+        var totalPressCount: Int = 0  // 🆕 Global press cap (max 2 for multi-muscle workouts)
+        var hasShoulderExercise: Bool = false  // 🆕 Track if we have at least 1 shoulder exercise when requested
+        
+        // 🆕 Determine if user wants shoulders (for minimum enforcement)
+        let wantsShoulders = normalizedTargetMuscles.contains("shoulders")
+        let wantsChestAndShoulders = normalizedTargetMuscles.contains("chest") && wantsShoulders
+        
+        // 🆕 Global press cap: Max 2 presses for multi-muscle workouts (prevents 3+ press variations)
+        let globalPressCapEnabled = normalizedTargetMuscles.count > 1
+        let maxGlobalPresses = 2
+        
+        // 🆕 ROW CAP - Max 2 rows, prefer at least one supported
+        var rowCount: Int = 0
+        var hasSupportedRow: Bool = false
+        let maxRows = 2
+        
+        // 🆕 HINGE CAP - Max 1 hinge per workout (deadlift/RDL/back extension family)
+        var hingeCount: Int = 0
+        let maxHinges = 1
+        
+        // 🆕 ARM ISOLATION CAP - If primary isn't "Arms", cap arm isolations
+        let isArmsDay = normalizedTargetMuscles.contains("biceps") || normalizedTargetMuscles.contains("triceps") ||
+                        normalizedMuscles.contains { $0.lowercased().contains("arm") }
+        var bicepIsolationCount: Int = 0
+        var tricepIsolationCount: Int = 0
+        let maxArmIsolations = isArmsDay ? 2 : 1
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 FOREARM CAP - Max 1 forearm exercise unless explicitly selected
+        // ═══════════════════════════════════════════════════════════════════════════
+        let explicitlyWantsForearms = normalizedMuscles.contains { $0.lowercased().contains("forearm") } ||
+                                      targetMuscles.contains { $0.lowercased().contains("forearm") }
+        var forearmIsolationCount: Int = 0
+        let maxForearmIsolations = explicitlyWantsForearms ? 2 : 1
+        
+        #if DEBUG
+        print("   🏋️ [ARM CAPS] Biceps/Triceps max: \(maxArmIsolations), Forearms max: \(maxForearmIsolations) (explicit: \(explicitlyWantsForearms))")
+        #endif
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 BACK MAJORITY SLOTS - When Back is primary, back exercises ≥3 of 6
+        // ═══════════════════════════════════════════════════════════════════════════
+        let backIsPrimary = normalizedTargetMuscles.contains("back") || normalizedTargetMuscles.contains("lats") ||
+                           normalizedMuscles.contains { $0.lowercased().contains("back") || $0.lowercased().contains("lat") }
+        var backPatternCount: Int = 0  // row/pull/rear-delt count
+        let minBackExercises = backIsPrimary ? max(3, (count / 2)) : 0  // Back gets majority slots
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 TRICEPS GATING - Block triceps unless explicitly selected
+        // ═══════════════════════════════════════════════════════════════════════════
+        let explicitlyWantsTriceps = normalizedMuscles.contains { $0.lowercased().contains("tricep") } ||
+                                     targetMuscles.contains { $0.lowercased().contains("tricep") }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 BICEPS GATING - Block biceps unless explicitly selected (for Push days)
+        // ═══════════════════════════════════════════════════════════════════════════
+        let explicitlyWantsBiceps = normalizedMuscles.contains { $0.lowercased().contains("bicep") } ||
+                                    targetMuscles.contains { $0.lowercased().contains("bicep") }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 PRIMARY MUSCLE MINIMUM SLOTS - Enforce minimum exercises per selected group
+        // ═══════════════════════════════════════════════════════════════════════════
+        let wantsChest = normalizedTargetMuscles.contains("chest") || normalizedMuscles.contains { $0.lowercased().contains("chest") }
+        let wantsCore = normalizedTargetMuscles.contains("core") || normalizedMuscles.contains { $0.lowercased().contains("core") || $0.lowercased().contains("abs") }
+        let wantsLegs = normalizedTargetMuscles.contains("legs") || normalizedMuscles.contains { muscle in
+            let m = muscle.lowercased()
+            return m.contains("quad") || m.contains("ham") || m.contains("glute") || m.contains("leg") || m.contains("calf")
+        }
+        let wantsGlutes = normalizedMuscles.contains { $0.lowercased().contains("glute") }
+        let wantsCalves = normalizedMuscles.contains { $0.lowercased().contains("calf") || $0.lowercased().contains("calves") }
+        let wantsTraps = normalizedMuscles.contains { $0.lowercased().contains("trap") }
+        
+        var chestExerciseCount: Int = 0
+        var coreExerciseCount: Int = 0
+        var gluteExerciseCount: Int = 0
+        var calfExerciseCount: Int = 0
+        var shrugCount: Int = 0
+        var stretchCount: Int = 0
+        var verticalPullCount: Int = 0
+        var verticalPullFamilies: Set<String> = []  // Track pulldown vs chin-up vs straight-arm
+        
+        // 🆕 NEW CAPS from user feedback
+        var pulloverCount: Int = 0
+        var legPressCount: Int = 0
+        var verticalPressCount: Int = 0  // Shoulder/overhead presses
+        var tricepsPatternCount: Int = 0  // Track triceps exercises
+        var plyoCount: Int = 0
+        
+        // Determine if user explicitly wants lats/serratus (for pullover allowance)
+        let wantsLats = normalizedMuscles.contains { $0.lowercased().contains("lat") }
+        let wantsSerratus = normalizedMuscles.contains { $0.lowercased().contains("serratus") }
+        
+        // Core-only day detection (for blocking squat/hinge/press)
+        let isCoreOnlyDay = wantsCore && !wantsChest && !wantsShoulders && !wantsLegs && !backIsPrimary
+        
+        // Chest+Triceps combo detection (needs 2 triceps patterns)
+        let isChestTricepsDay = wantsChest && explicitlyWantsTriceps && !wantsShoulders
+        
+        // Minimum requirements based on selection
+        let minChestExercises = wantsChest ? 2 : 0
+        let minCoreExercises = wantsCore ? 2 : 0
+        let minGluteExercises = wantsGlutes ? 1 : 0
+        let maxCalfExercises = wantsCalves ? 2 : 1
+        let maxShrugExercises = wantsTraps ? 2 : 1
+        let maxStretchExercises = 0  // Stretches should NOT be in main workout slots
+        
+        // 🆕 NEW CAPS
+        let maxPullovers = (wantsLats || wantsSerratus) ? 2 : 1  // Max 1 pullover unless lats/serratus focus
+        let maxLegPress = 1  // Max 1 leg press variant per workout
+        let maxVerticalPress = 1  // Max 1 shoulder/overhead press unless front delts focus
+        let minTricepsPatterns = isChestTricepsDay ? 2 : 0  // Chest+Triceps needs 2 triceps exercises
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 HARD FAMILY CAPS - Max 1 per specific family (user feedback)
+        // These families are prone to "template spam" when duplicated
+        // ═══════════════════════════════════════════════════════════════════════════
+        var horizontalRowCount: Int = 0
+        var tbarRowCount: Int = 0
+        var hammerCurlCount: Int = 0
+        var preacherCurlCount: Int = 0
+        var otherPatternCount: Int = 0  // Unknown/unclassified patterns
+        
+        // Hard caps: These families should be MAX 1 unless user explicitly wants more
+        let maxHorizontalRow = 1  // No 2 bent-over rows or 2 T-bar rows
+        let maxVerticalPull = 1   // No 2 pulldowns or 2 chin-ups (enforced via family)
+        let maxTbarRow = 1
+        let maxHammerCurl = 1     // No 2 hammer curls
+        let maxPreacherCurl = 1   // No 2 preacher curls
+        let maxOtherPattern = 1   // Max 1 unknown pattern per workout
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 HINGE GATING - Block hinges for Back/Biceps, Pull unless lower_back selected
+        // ═══════════════════════════════════════════════════════════════════════════
+        let wantsLowerBack = normalizedMuscles.contains { $0.lowercased().contains("lower back") || $0.lowercased().contains("erector") }
+        let wantsPosteriorChain = normalizedMuscles.contains { $0.lowercased().contains("posterior") }
+        let isFullBody = normalizedTargetMuscles.contains("full body") || (wantsChest && wantsLegs && backIsPrimary)
+        
+        // Back/Biceps, Back/Rear Delts, Pull days: NO HINGE unless explicitly requested
+        let isBackPullDay = backIsPrimary && !wantsChest && !wantsLegs
+        let allowHinges = wantsLowerBack || wantsPosteriorChain || isFullBody || wantsLegs
+        let shouldBlockHinges = isBackPullDay && !allowHinges
+        
+        #if DEBUG
+        if shouldBlockHinges {
+            print("   🚫 [HINGE GATE] Blocking hinges for Back/Pull day (no lower_back/posterior_chain/full_body selected)")
+        }
+        #endif
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 RISKY PATTERN PENALTIES - These should be heavily penalized or blocked
+        // ═══════════════════════════════════════════════════════════════════════════
+        let riskyPatterns = ["upright row", "high pull", "behind neck", "behind the neck", "guillotine"]
+        
+        #if DEBUG
+        if backIsPrimary {
+            print("   💪 [BACK PRIMARY] Minimum back exercises: \(minBackExercises)")
+        }
+        if wantsChest {
+            print("   💪 [CHEST PRIMARY] Minimum chest exercises: \(minChestExercises)")
+        }
+        if wantsCore {
+            print("   💪 [CORE PRIMARY] Minimum core exercises: \(minCoreExercises)")
+        }
+        print("   🎯 [TRICEPS GATE] Explicitly wants triceps: \(explicitlyWantsTriceps)")
+        print("   🎯 [BICEPS GATE] Explicitly wants biceps: \(explicitlyWantsBiceps)")
+        #endif
+        
+        // 🆕 COMBO RULES - Get applicable combo rule for this workout
+        let comboRule = WorkoutComboRules.getComboRule(Array(normalizedTargetMuscles))
+        let balanceSlot = WorkoutComboRules.getBalanceSlot(Array(normalizedTargetMuscles))
+        var hasBalanceExercise: Bool = false
+        
+        #if DEBUG
+        if let rule = comboRule {
+            print("📋 [COMBO RULES] Detected combo: \(rule.comboName)")
+            print("   Must include: \(rule.mustInclude)")
+            print("   Avoid: \(rule.avoid)")
+        }
+        if let balance = balanceSlot {
+            print("   ⚖️ Balance slot: \(balance)")
+        }
+        #endif
         var equipmentTypesRepresented: Set<String> = []  // Which equipment types have at least 1 exercise
+        
+        // Track which required patterns have been fulfilled
+        var requiredPatternsFulfilled: Set<String> = []
         
         // 🆕 Helper to extract exercise family from name
         // Helper to get base movement name (strips equipment prefix)
@@ -1515,6 +1918,8 @@ class WorkoutGeneratorService: ObservableObject {
             
             // 🎯 ALL CHEST PRESSES grouped together (bench, incline, decline, chest press = same family!)
             // This prevents workouts with 5 different press variations
+            // 🆕 REVERSE GRIP PRESSES are ALL grouped together to prevent stacking
+            if n.contains("reverse grip") && n.contains("press") { return "reverse_grip_press" }
             if n.contains("close grip") && n.contains("press") { return "chest_press" }
             if n.contains("bench press") { return "chest_press" }
             if n.contains("incline press") && !n.contains("shoulder") { return "chest_press" }
@@ -1526,11 +1931,16 @@ class WorkoutGeneratorService: ObservableObject {
             // JM Press and Skull Crushers are tricep-focused bench variants
             if n.contains("jm press") || n.contains("jm bench") { return "skull_crusher" }
             if n.contains("lying") && n.contains("extension") && n.contains("tricep") { return "skull_crusher" }
-            if n.contains("bicep curl") || n.contains("biceps curl") { return "bicep_curl" }
+            // Specific curl variations BEFORE generic bicep_curl
+            if n.contains("concentration curl") { return "concentration_curl" }
             if n.contains("hammer curl") { return "hammer_curl" }
             if n.contains("preacher curl") { return "preacher_curl" }
+            if n.contains("incline") && n.contains("curl") { return "incline_curl" }
+            if n.contains("cable") && n.contains("curl") && !n.contains("preacher") { return "cable_curl" }
+            // Generic bicep curl (standing curl, etc.)
+            if n.contains("bicep curl") || n.contains("biceps curl") { return "bicep_curl" }
             if n.contains("tricep extension") || n.contains("triceps extension") { return "tricep_extension" }
-            if n.contains("tricep pushdown") || n.contains("triceps pushdown") { return "tricep_pushdown" }
+            if n.contains("tricep pushdown") || n.contains("triceps pushdown") || n.contains("rope press") { return "tricep_pushdown" }
             if n.contains("skull crusher") { return "skull_crusher" }
             if n.contains("cable fly") || n.contains("cable flye") { return "cable_fly" }
             if n.contains("dumbbell fly") || n.contains("dumbbell flye") { return "dumbbell_fly" }
@@ -1538,14 +1948,15 @@ class WorkoutGeneratorService: ObservableObject {
             if n.contains("lat pulldown") { return "lat_pulldown" }
             if n.contains("pull up") || n.contains("pullup") || n.contains("chin up") || n.contains("chinup") { return "pullup" }
             if n.contains("seated row") { return "seated_row" }
-            if n.contains("bent over row") { return "bent_row" }
+            // Group ALL bent-over row variations together (paused, regular, wide, etc.)
+            if n.contains("bent over") && n.contains("row") { return "bent_row" }
             if n.contains("cable row") { return "cable_row" }
-            if n.contains("lateral raise") { return "lateral_raise" }
+            if n.contains("lateral raise") || n.contains("side raise") { return "lateral_raise" }
             if n.contains("front raise") { return "front_raise" }
-            if n.contains("rear delt") { return "rear_delt" }
+            if n.contains("rear delt") || n.contains("reverse fly") || n.contains("face pull") { return "rear_delt" }
             if n.contains("squat") { return "squat" }
             if n.contains("leg press") { return "leg_press" }
-            if n.contains("leg curl") { return "leg_curl" }
+            if n.contains("leg curl") || n.contains("hamstring curl") { return "leg_curl" }
             if n.contains("leg extension") { return "leg_extension" }
             if n.contains("deadlift") { return "deadlift" }
             if n.contains("lunge") { return "lunge" }
@@ -1563,7 +1974,591 @@ class WorkoutGeneratorService: ObservableObject {
             return "other"
         }
         
+        // 🆕 Helper: Check if exercise is a combo/core/plank move (not foundational)
+        func isComboOrCoreFocusedExercise(_ name: String) -> Bool {
+            let n = name.lowercased()
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 COMBO EXERCISE DETECTION - Any "X to Y" two-movement mashup
+            // These are hard to load/progress and reduce hypertrophy quality
+            // ═══════════════════════════════════════════════════════════════════════════
+            
+            // Match any " to " pattern, excluding cable fly positioning
+            if n.contains(" to ") {
+                let allowedToPatterns = ["low to high", "high to low", "low-to-high", "high-to-low"]
+                let isAllowedPattern = allowedToPatterns.contains { n.contains($0) }
+                if !isAllowedPattern {
+                    return true  // This is a combo exercise
+                }
+            }
+            
+            // Plank-based combo moves
+            if n.contains("plank") && (n.contains("push") || n.contains("row") || n.contains("pass") || n.contains("jack")) { return true }
+            // Bear crawl variations
+            if n.contains("bear crawl") { return true }
+            // Renegade rows
+            if n.contains("renegade") { return true }
+            // Man makers, burpees, etc.
+            if n.contains("man maker") || n.contains("manmaker") { return true }
+            if n.contains("burpee") { return true }
+            // Pass through / thread the needle
+            if n.contains("pass through") || n.contains("thread") { return true }
+            return false
+        }
+        
+        // 🆕 Helper: Check if exercise is off-target for the requested muscles
+        func isOffTargetIsolation(_ exerciseName: String, primaryMuscle: String, targetMuscles: [String]) -> Bool {
+            let n = exerciseName.lowercased()
+            let pm = primaryMuscle.lowercased()
+            
+            // CRITICAL: Block PRESS variations when Back+Arms/Biceps selected (no chest/shoulders)
+            let targetHasBack = targetMuscles.contains { $0.lowercased().contains("back") || $0.lowercased().contains("lat") }
+            let targetHasBiceps = targetMuscles.contains { $0.lowercased().contains("bicep") }
+            let targetHasTriceps = targetMuscles.contains { $0.lowercased().contains("tricep") }
+            let targetHasForearms = targetMuscles.contains { $0.lowercased().contains("forearm") }
+            let targetHasArms = targetHasBiceps || targetHasTriceps || targetMuscles.contains { $0.lowercased().contains("arm") }
+            let targetHasChest = targetMuscles.contains { $0.lowercased().contains("chest") || $0.lowercased().contains("pec") }
+            let targetHasShoulders = targetMuscles.contains { $0.lowercased().contains("shoulder") || $0.lowercased().contains("delt") }
+            let targetHasLegs = targetMuscles.contains { muscle in
+                let m = muscle.lowercased()
+                return m.contains("quad") || m.contains("ham") || m.contains("glute") || m.contains("leg") || m.contains("calf")
+            }
+            let targetHasCore = targetMuscles.contains { $0.lowercased().contains("core") || $0.lowercased().contains("abs") }
+            let targetHasLowerBack = targetMuscles.contains { $0.lowercased().contains("lower back") || $0.lowercased().contains("erector") }
+            let targetHasTraps = targetMuscles.contains { $0.lowercased().contains("trap") }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 STRETCH/MOBILITY GATING - Stretches are NOT main workout exercises
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isStretch = n.contains("stretch") || n.contains("mobility") || n.contains("foam roll") ||
+                           n.contains("static hold") || n.contains("suspension back stretch")
+            if isStretch {
+                #if DEBUG
+                print("   🚫 [STRETCH GATE] Blocking '\(exerciseName)' - Stretches not counted as main exercises")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 RISKY PATTERN BLOCKING - Upright row, high pull, behind neck are risky
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isRiskyPattern = n.contains("upright row") || n.contains("high pull") || 
+                                n.contains("behind neck") || n.contains("behind the neck") ||
+                                n.contains("guillotine") || n.contains("smith high pull")
+            if isRiskyPattern {
+                #if DEBUG
+                print("   🚫 [RISKY PATTERN] Blocking '\(exerciseName)' - Shoulder-risky movement pattern")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 CRITICAL: Block ALL triceps exercises unless explicitly selected
+            // ═══════════════════════════════════════════════════════════════════════════
+            if !targetHasTriceps {
+                let isTricepsExercise = pm.contains("tricep") ||
+                    n.contains("tricep") ||
+                    n.contains("pushdown") ||
+                    n.contains("press down") ||
+                    n.contains("skull crusher") ||
+                    (n.contains("extension") && !n.contains("leg extension") && !n.contains("back extension") && !n.contains("hip extension")) ||
+                    (n.contains("dip") && !n.contains("assist") && !n.contains("chip")) ||
+                    (n.contains("kickback") && !n.contains("glute") && !n.contains("leg"))
+                
+                if isTricepsExercise {
+                    #if DEBUG
+                    print("   🚫 [TRICEPS GATE] Blocking '\(exerciseName)' - Triceps NOT in target muscles")
+                    #endif
+                    return true
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 CRITICAL: Block ALL biceps exercises unless explicitly selected
+            // (Prevents biceps leaking into Push days or Chest+Shoulders)
+            // ═══════════════════════════════════════════════════════════════════════════
+            if !targetHasBiceps && !targetHasBack {
+                let isBicepsExercise = pm.contains("bicep") || pm.contains("brachialis") ||
+                    (n.contains("curl") && !n.contains("leg curl") && !n.contains("hamstring") && !n.contains("wrist"))
+                
+                if isBicepsExercise {
+                    #if DEBUG
+                    print("   🚫 [BICEPS GATE] Blocking '\(exerciseName)' - Biceps NOT in target muscles")
+                    #endif
+                    return true
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 FOREARM BLOCKING: Block forearm exercises unless explicitly selected
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isForearmExercise = pm.contains("forearm") ||
+                n.contains("forearm") ||
+                n.contains("wrist curl") ||
+                n.contains("wrist extension") ||
+                n.contains("wrist roller") ||
+                n.contains("finger curl") ||
+                n.contains("reverse curl") ||
+                n.contains("behind back curl") ||
+                n.contains("farmers") ||
+                n.contains("gripper") ||
+                n.contains("forearm pronation") ||
+                n.contains("forearm supination")
+            
+            if isForearmExercise && !targetHasForearms {
+                #if DEBUG
+                print("   🚫 [FOREARM GATE] Blocking '\(exerciseName)' - Forearms NOT explicitly selected")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 CORE DAY LEAK BLOCKING - Block squat/hinge/press on Core/Abs only days
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isCoreOnlyWorkout = targetHasCore && !targetHasChest && !targetHasShoulders && !targetHasLegs && !targetHasBack
+            if isCoreOnlyWorkout {
+                // Block squats
+                let isSquat = n.contains("squat") || n.contains("front squat") || n.contains("goblet")
+                if isSquat {
+                    #if DEBUG
+                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Squat not for Core/Abs day")
+                    #endif
+                    return true
+                }
+                // Block hinges
+                let isHinge = n.contains("deadlift") || n.contains("rdl") || n.contains("romanian") || 
+                             n.contains("good morning") || n.contains("hip hinge")
+                if isHinge {
+                    #if DEBUG
+                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Hinge not for Core/Abs day")
+                    #endif
+                    return true
+                }
+                // Block presses (shoulder/chest)
+                let isPress = (n.contains("press") && !n.contains("pallof press")) || n.contains("push up")
+                if isPress {
+                    #if DEBUG
+                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Press not for Core/Abs day")
+                    #endif
+                    return true
+                }
+                // Block lateral raise planks for shoulder-limited users or on core days
+                let isLateralRaisePlank = n.contains("lateral raise plank") || n.contains("plank lateral raise")
+                if isLateralRaisePlank {
+                    #if DEBUG
+                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Lateral raise plank is shoulder-y, not core")
+                    #endif
+                    return true
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 PLYO BLOCKING - Only allow plyometrics if explicitly requested
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isPlyoExercise = n.contains("plyo") || n.contains("jump") || n.contains("bound") ||
+                                n.contains("hop") || n.contains("explosive") || n.contains("box jump") ||
+                                n.contains("change plyo") || n.contains("shuffle")
+            // For now, block plyo exercises by default (can be enabled via specific goal later)
+            if isPlyoExercise && !n.contains("step up") {
+                #if DEBUG
+                print("   🚫 [PLYO GATE] Blocking '\(exerciseName)' - Plyo/jump exercises not in default mode")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 HINGE BLOCKING for Back/Biceps, Back/Rear Delts, Pull days
+            // Hinges (deadlifts, RDLs, back extensions) are NOT allowed unless user selected:
+            // - lower_back / posterior_chain / full_body / legs
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isHingeExercise = n.contains("deadlift") || n.contains("rdl") || n.contains("romanian") ||
+                n.contains("good morning") || n.contains("back extension") || n.contains("hyperextension") ||
+                n.contains("hip hinge") || pm.contains("erector") || pm.contains("lower back")
+            
+            // Detect Back/Pull day (without legs or chest)
+            let isBackPullWorkout = targetHasBack && !targetHasChest && !targetHasLegs
+            
+            // Check if user explicitly wants lower back / posterior chain / full body
+            let wantsLowerBackExplicit = targetMuscles.contains { $0.lowercased().contains("lower back") || $0.lowercased().contains("erector") }
+            let wantsPosteriorChainExplicit = targetMuscles.contains { $0.lowercased().contains("posterior") }
+            let isFullBodyWorkout = targetMuscles.contains { $0.lowercased().contains("full body") } || (targetHasChest && targetHasLegs && targetHasBack)
+            
+            // Block hinges on Back/Pull days unless explicitly requested
+            let shouldBlockHingesInFilter = isBackPullWorkout && !wantsLowerBackExplicit && !wantsPosteriorChainExplicit && !isFullBodyWorkout && !targetHasLegs
+            
+            if isHingeExercise && shouldBlockHingesInFilter {
+                #if DEBUG
+                print("   🚫 [HINGE GATE] Blocking '\(exerciseName)' - Hinge not allowed on Back/Pull day (no lower_back/posterior/full_body selected)")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 BACK EXTENSION / HINGE BLOCKING for Arms-only day
+            // Arms day should NOT have back extensions or hinge movements
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isArmsOnlyDay = targetHasArms && !targetHasBack && !targetHasChest && !targetHasShoulders && !targetHasLegs
+            if isArmsOnlyDay && isHingeExercise {
+                #if DEBUG
+                print("   🚫 [ARMS DAY] Blocking '\(exerciseName)' - Hinge/back extension not for Arms-only day")
+                #endif
+                return true
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 MUSCLE GROUP LEAK BLOCKING - Back+Arms blocks chest press/fly
+            // ═══════════════════════════════════════════════════════════════════════════
+            if targetHasBack && targetHasArms && !targetHasChest && !targetHasShoulders {
+                // Block chest press/fly
+                if n.contains("press") && !n.contains("leg press") {
+                    #if DEBUG
+                    print("   🚫 [LEAK BLOCK] Blocking press '\(exerciseName)' in Back+Arms workout")
+                    #endif
+                    return true
+                }
+                if n.contains("fly") && !n.contains("reverse fly") && !n.contains("rear delt fly") {
+                    #if DEBUG
+                    print("   🚫 [LEAK BLOCK] Blocking fly '\(exerciseName)' in Back+Arms workout")
+                    #endif
+                    return true
+                }
+                if n.contains("dip") && !pm.contains("back") {
+                    #if DEBUG
+                    print("   🚫 [LEAK BLOCK] Blocking dip '\(exerciseName)' in Back+Arms workout")
+                    #endif
+                    return true
+                }
+                // Block lateral raises (shoulder, not back)
+                if n.contains("lateral raise") && !n.contains("rear") {
+                    #if DEBUG
+                    print("   🚫 [LEAK BLOCK] Blocking lateral raise '\(exerciseName)' in Back+Arms workout")
+                    #endif
+                    return true
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 HINGE/BACK EXTENSION GATING for non-Lower Back days
+            // Only allow if user selected Lower Back, Full Body, or Posterior Chain
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isBackHinge = n.contains("deadlift") || n.contains("back extension") || n.contains("hyperextension") ||
+                             n.contains("good morning") || (n.contains("rdl") && !n.contains("curl"))
+            if isBackHinge && !targetHasLowerBack && !targetHasLegs {
+                // For Back+Arms, only allow if focus includes lower back
+                if targetHasBack && targetHasArms {
+                    #if DEBUG
+                    print("   🚫 [HINGE GATE] Blocking '\(exerciseName)' - Hinge/extension not for Back+Arms (no lower back selected)")
+                    #endif
+                    return true
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════════════
+            // 🚫 SHRUG GATING - Only include if traps selected or as low-priority filler
+            // ═══════════════════════════════════════════════════════════════════════════
+            let isShrug = n.contains("shrug")
+            if isShrug && !targetHasTraps && !targetHasBack {
+                #if DEBUG
+                print("   🚫 [SHRUG GATE] Blocking '\(exerciseName)' - Traps NOT explicitly selected")
+                #endif
+                return true
+            }
+            
+            // If targets include "shoulders" or "chest" but NOT "biceps/triceps/arms"
+            let targetHasChestOrShoulders = targetHasChest || targetHasShoulders
+            
+            // STRICT: If user wants chest/shoulders but not arms, filter out arm isolation
+            if targetHasChestOrShoulders && !targetHasArms {
+                // Block bicep isolation
+                if (n.contains("curl") && !n.contains("leg curl") && !n.contains("hamstring")) ||
+                   pm.contains("bicep") {
+                    if n.contains("curl") && !n.contains("press") && !n.contains("row") {
+                        return true  // Pure curl isolation - off target
+                    }
+                }
+            }
+            return false
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🎯 PHASE 0: ENFORCE MUST_INCLUDE COMBO RULE PATTERNS
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CRITICAL: Reserve slots for required patterns BEFORE equipment diversity
+        // Example: Back + Biceps MUST have vertical_pull + horizontal_row + bicep_curl
+        
+        if let rule = comboRule, !rule.mustInclude.isEmpty {
+            #if DEBUG
+            print("   🎯 [PHASE 0] Enforcing required patterns: \(rule.mustInclude)")
+            #endif
+            
+            // Try to fulfill each required pattern
+            for requiredPattern in rule.mustInclude {
+                // Check if we already have this pattern
+                var hasPattern = false
+                for existing in result {
+                    let existingPattern = WorkoutComboRules.detectExercisePattern(existing.name ?? "", equipment: existing.equipment ?? "")
+                    if existingPattern == requiredPattern {
+                        hasPattern = true
+                        break
+                    }
+                    // Handle aliases (horizontal_row can be chest_supported_row)
+                    if requiredPattern == "horizontal_row" && existingPattern == "chest_supported_row" {
+                        hasPattern = true
+                        break
+                    }
+                    // Handle aliases (bicep_curl can be any curl variant)
+                    if requiredPattern == "bicep_curl" && ["bicep_curl", "bicep_neutral", "bicep_preacher"].contains(existingPattern) {
+                        hasPattern = true
+                        break
+                    }
+                }
+                
+                if hasPattern {
+                    #if DEBUG
+                    print("   ✅ [PHASE 0] Already have \(requiredPattern)")
+                    #endif
+                    continue
+                }
+                
+                // Find best exercise matching this pattern
+                for scored in scoredExercises {
+                    guard result.count < count else { break }
+                    
+                    let exercise = scored.exercise
+                    let name = exercise.name ?? ""
+                    let nameLower = name.lowercased()
+                    let equipment = exercise.equipment ?? ""
+                    
+                    // Skip if already used
+                    guard !usedNames.contains(nameLower) else { continue }
+                    
+                    // Check pattern match
+                    let pattern = WorkoutComboRules.detectExercisePattern(name, equipment: equipment)
+                    
+                    // Match required pattern (with aliases)
+                    var matchesRequired = false
+                    if pattern == requiredPattern {
+                        matchesRequired = true
+                    } else if requiredPattern == "horizontal_row" && pattern == "chest_supported_row" {
+                        matchesRequired = true
+                    } else if requiredPattern == "bicep_curl" && ["bicep_curl", "bicep_neutral", "bicep_preacher"].contains(pattern) {
+                        matchesRequired = true
+                    }
+                    
+                    guard matchesRequired else { continue }
+                    
+                    // Check if exercise is off-target
+                    let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
+                    let primaryMuscle = muscleGroups.first?.lowercased() ?? "unknown"
+                    if isOffTargetIsolation(name, primaryMuscle: primaryMuscle, targetMuscles: Array(normalizedMuscles)) {
+                        continue
+                    }
+                    
+                    // Check avoid rules
+                    let (shouldAvoid, avoidReason) = WorkoutComboRules.shouldAvoidExercise(name, comboRule: rule, focusAreas: nil)
+                    if shouldAvoid {
+                        #if DEBUG
+                        print("   🚫 [PHASE 0] Skipping '\(name)': \(avoidReason)")
+                        #endif
+                        continue
+                    }
+                    
+                    // Get exercise family and base movement
+                    let exerciseFamily = getExerciseFamily(nameLower)
+                    let baseMovement = getBaseMovement(nameLower)
+                    
+                    // Skip if already have this base movement
+                    if usedBaseMovements.contains(baseMovement) {
+                        continue
+                    }
+                    
+                    // Skip if already have from this family
+                    if exerciseFamily != "other" && (usedExerciseFamilies[exerciseFamily] ?? 0) >= 1 {
+                        continue
+                    }
+                    
+                    // SELECT THIS EXERCISE for required pattern
+                    let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
+                    let generated = GeneratedExercise(
+                        id: exercise.id?.uuidString ?? UUID().uuidString,
+                        name: name,
+                        category: exercise.category ?? "Unknown",
+                        primaryBodyRegion: exercise.category ?? "Unknown",
+                        primaryMuscle: muscleGroups.first ?? "Unknown",
+                        secondaryMuscles: secondaryMuscles,
+                        equipment: equipment,
+                        difficulty: "Intermediate",
+                        videoUrl: nil,
+                        instructions: exercise.instructions
+                    )
+                    result.append(generated)
+                    usedNames.insert(nameLower)
+                    usedBaseMovements.insert(baseMovement)
+                    usedExerciseFamilies[exerciseFamily, default: 0] += 1
+                    requiredPatternsFulfilled.insert(requiredPattern)
+                    
+                    // Track equipment type
+                    let equipLower = equipment.lowercased()
+                    if equipLower.contains("barbell") { equipmentTypesRepresented.insert("barbell") }
+                    else if equipLower.contains("dumbbell") { equipmentTypesRepresented.insert("dumbbell") }
+                    else if equipLower.contains("cable") { equipmentTypesRepresented.insert("cable") }
+                    else if equipLower.contains("machine") || equipLower.contains("lever") || equipLower.contains("smith") {
+                        equipmentTypesRepresented.insert("machine")
+                    }
+                    
+                    // 🆕 Track equipment mix for targets
+                    let phase0EquipType = ExerciseFilterService.normalizeEquipment(equipment)
+                    if ["cable", "machine", "smith", "lever"].contains(where: { phase0EquipType.contains($0) }) {
+                        machineOrCableCount += 1
+                    } else if ["barbell", "dumbbell"].contains(where: { phase0EquipType.contains($0) }) {
+                        freeWeightCount += 1
+                    }
+                    
+                    // Track if this is row
+                    if pattern == "horizontal_row" || pattern == "chest_supported_row" {
+                        rowCount += 1
+                        if ["chest supported", "chest-supported", "seated", "lever", "machine"].contains(where: { nameLower.contains($0) }) {
+                            hasSupportedRow = true
+                        }
+                    }
+                    
+                    // Track if this is hinge
+                    let isHinge = ["deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension"].contains { nameLower.contains($0) }
+                    if isHinge {
+                        hingeCount += 1
+                    }
+                    
+                    // 🆕 Track back pattern count (row/pull/rear-delt)
+                    let backPatterns = ["horizontal_row", "chest_supported_row", "vertical_pull", "rear_delt", "lat_isolation", "shrug"]
+                    if backPatterns.contains(pattern) {
+                        backPatternCount += 1
+                    }
+                    
+                    // Track normalized muscle
+                    let normalizedMuscle = normalizeMuscleName(primaryMuscle)
+                    usedNormalizedMuscles[normalizedMuscle, default: 0] += 1
+                    usedMuscles[primaryMuscle, default: 0] += 1
+                    
+                    #if DEBUG
+                    print("   ✅ [PHASE 0] Reserved \(requiredPattern): \(name) (score: \(Int(scored.score)))")
+                    #endif
+                    break
+                }
+            }
+            
+            // Validate we got all required patterns
+            let missing = rule.mustInclude.filter { !requiredPatternsFulfilled.contains($0) }
+            if !missing.isEmpty {
+                #if DEBUG
+                print("   ⚠️ [PHASE 0] Could not find exercises for: \(missing)")
+                print("   🔧 [AUTO-REPAIR] Attempting to find missing patterns...")
+                #endif
+                
+                // 🆕 AUTO-REPAIR: Force-find missing required patterns
+                // This ensures we NEVER show a workout that violates combo rules
+                for missingPattern in missing {
+                    // If we're at count, remove the LOWEST scored non-required exercise to make room
+                    if result.count >= count {
+                        // Find the lowest scored exercise that isn't a required pattern
+                        if let lowestIndex = result.indices.min(by: { i1, i2 in
+                            let e1 = result[i1]
+                            let e2 = result[i2]
+                            let p1 = WorkoutComboRules.detectExercisePattern(e1.name ?? "", equipment: e1.equipment ?? "")
+                            let p2 = WorkoutComboRules.detectExercisePattern(e2.name ?? "", equipment: e2.equipment ?? "")
+                            let isRequired1 = rule.mustInclude.contains(p1) || requiredPatternsFulfilled.contains(p1)
+                            let isRequired2 = rule.mustInclude.contains(p2) || requiredPatternsFulfilled.contains(p2)
+                            // If both required or both not required, compare scores
+                            if isRequired1 == isRequired2 {
+                                return (scoredExercises.first(where: { $0.exercise.name == e1.name })?.score ?? 0) < (scoredExercises.first(where: { $0.exercise.name == e2.name })?.score ?? 0)
+                            }
+                            // Prefer to remove non-required
+                            return !isRequired1 && isRequired2
+                        }) {
+                            let removed = result[lowestIndex]
+                            result.remove(at: lowestIndex)
+                            usedNames.remove(removed.name.lowercased())
+                            #if DEBUG
+                            print("   🔧 [AUTO-REPAIR] Removing '\(removed.name)' to make room for \(missingPattern)")
+                            #endif
+                        }
+                    }
+                    
+                    // Search ALL exercises for this pattern (ignore strict scoring)
+                    for scored in scoredExercises {
+                        let exercise = scored.exercise
+                        let name = exercise.name ?? ""
+                        let nameLower = name.lowercased()
+                        let equipment = exercise.equipment ?? ""
+                        
+                        // Skip if already used
+                        guard !usedNames.contains(nameLower) else { continue }
+                        
+                        // Check if this matches the missing pattern
+                        let pattern = WorkoutComboRules.detectExercisePattern(name, equipment: equipment)
+                        
+                        var matches = false
+                        if pattern == missingPattern {
+                            matches = true
+                        } else if missingPattern == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("reverse fly") || nameLower.contains("rear delt")) {
+                            matches = true
+                        } else if missingPattern == "horizontal_row" && pattern == "chest_supported_row" {
+                            matches = true
+                        } else if missingPattern == "bicep_curl" && ["bicep_curl", "bicep_neutral", "bicep_preacher"].contains(pattern) {
+                            matches = true
+                        }
+                        
+                        guard matches else { continue }
+                        
+                        // Check family limits (don't add duplicate families during auto-repair)
+                        let exerciseFamily = getExerciseFamily(nameLower)
+                        if exerciseFamily != "other" && (usedExerciseFamilies[exerciseFamily] ?? 0) >= 1 {
+                            continue  // Already have one from this family
+                        }
+                        
+                        // Found it - add it to results
+                        let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
+                        let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
+                        let generated = GeneratedExercise(
+                            id: exercise.id?.uuidString ?? UUID().uuidString,
+                            name: name,
+                            category: exercise.category ?? "Unknown",
+                            primaryBodyRegion: exercise.category ?? "Unknown",
+                            primaryMuscle: muscleGroups.first ?? "Unknown",
+                            secondaryMuscles: secondaryMuscles,
+                            equipment: equipment,
+                            difficulty: "Intermediate",
+                            videoUrl: nil,
+                            instructions: exercise.instructions
+                        )
+                        result.append(generated)
+                        usedNames.insert(nameLower)
+                        
+                        // Track base movement and family
+                        let baseMovement = getBaseMovement(nameLower)
+                        usedBaseMovements.insert(baseMovement)
+                        usedExerciseFamilies[exerciseFamily, default: 0] += 1
+                        requiredPatternsFulfilled.insert(missingPattern)
+                        
+                        #if DEBUG
+                        print("   ✅ [AUTO-REPAIR] Added '\(name)' to fulfill \(missingPattern)")
+                        #endif
+                        break
+                    }
+                }
+            } else {
+                #if DEBUG
+                print("   ✅ [PHASE 0] All required patterns fulfilled: \(requiredPatternsFulfilled.sorted())")
+                #endif
+            }
+        }
+        
+        // NOTE: Duplicate Phase 0 was removed - the original Phase 0 above already handles
+        // required pattern enforcement INCLUDING auto-repair. Having two Phase 0s was causing
+        // auto-repair additions to be lost.
+        
+        // ═══════════════════════════════════════════════════════════════════════════
         // 🎯 PHASE 1: ROUND-ROBIN equipment diversity allocation
+        // ═══════════════════════════════════════════════════════════════════════════
         // Ensures FAIR distribution across ALL selected equipment types
         // Rather than filling one type completely before moving to next
         if selectedEquipmentTypes.count > 1 {
@@ -1641,11 +2636,31 @@ class WorkoutGeneratorService: ObservableObject {
                             continue
                         }
                         
-                        // 🆕 EXERCISE FAMILY CHECK: Only 1 exercise per family (no 3 bench press variations!)
+                        // 🆕 EXERCISE FAMILY CHECK: Max 2 exercises per family (allows some variety, prevents 3+ of same)
                         let exerciseFamily = getExerciseFamily(nameLower)
                         let familyCount = usedExerciseFamilies[exerciseFamily] ?? 0
-                        if exerciseFamily != "other" && familyCount >= 1 {
-                            continue  // Already have one from this family
+                        let maxPerFamily = 2  // Updated: allow up to 2 from same family (e.g., 2 curls OK, 3 not)
+                        if exerciseFamily != "other" && familyCount >= maxPerFamily {
+                            #if DEBUG
+                            print("   🚫 [FAMILY CAP] Skipping '\(name)': family '\(exerciseFamily)' already has \(familyCount) exercises (max: \(maxPerFamily))")
+                            #endif
+                            continue  // Already have max from this family
+                        }
+                        
+                        // 🆕 EQUIPMENT MIX CHECK: Enforce balanced mix (machines, cables, free weights)
+                        let exerciseEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        let isMachineOrCable = ["cable", "machine", "smith", "lever"].contains { exerciseEquipType.contains($0) }
+                        let isFreeWeight = ["barbell", "dumbbell"].contains { exerciseEquipType.contains($0) }
+                        
+                        // Check if we're exceeding free-weight cap (max 3 for fatigue management)
+                        if isFreeWeight && freeWeightCount >= maxFreeWeight {
+                            continue  // Too many free weights already
+                        }
+                        
+                        // Prefer machine/cable if we haven't hit target yet
+                        if machineOrCableCount < targetMachineOrCable && !isMachineOrCable {
+                            // Need more machine/cable exercises - deprioritize but don't block
+                            // (Will be handled by scoring below)
                         }
                         
                         // 🆕 MOVEMENT KEYWORD CHECK in Phase 1: Limit presses, curls, etc.
@@ -1665,6 +2680,260 @@ class WorkoutGeneratorService: ObservableObject {
                         let maxPerMovement = count <= 6 ? 2 : 3  // Allow 2 presses for variety (e.g., bench + shoulder)
                         if movementKeyword != "other" && movementKeywordCount >= maxPerMovement {
                             continue  // Too many of this movement type
+                        }
+                        
+                        // 🆕 GLOBAL PRESS CAP: Max 2 total presses for multi-muscle workouts
+                        if globalPressCapEnabled && movementKeyword == "press" && totalPressCount >= maxGlobalPresses {
+                            #if DEBUG
+                            print("   🚫 [PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 ROW CAP: Max 2 rows, prefer at least one supported
+                        let isRow = nameLower.contains(" row") || nameLower.hasPrefix("row")
+                        if isRow {
+                            if rowCount >= maxRows {
+                                continue
+                            }
+                            let isSupported = ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"].contains { nameLower.contains($0) }
+                            if rowCount == 1 && !hasSupportedRow && !isSupported {
+                                continue  // Second row should be supported if first wasn't
+                            }
+                        }
+                        
+                        // 🆕 HINGE CAP: Max 1 hinge per workout
+                        let isHinge = ["deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension"].contains { nameLower.contains($0) }
+                        if isHinge && hingeCount >= maxHinges {
+                            continue
+                        }
+                        
+                        // 🆕 ARM ISOLATION CAP
+                        let isBicepIsolation = exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl"
+                        let isTricepIsolation = exerciseFamily == "tricep_extension" || exerciseFamily == "tricep_pushdown" || nameLower.contains("skull crusher")
+                        
+                        if !isArmsDay {
+                            if isBicepIsolation && bicepIsolationCount >= maxArmIsolations {
+                                continue
+                            }
+                            if isTricepIsolation && tricepIsolationCount >= maxArmIsolations {
+                                continue
+                            }
+                        }
+                        
+                        // 🆕 FOREARM ISOLATION CAP - Max 1 unless explicitly selected
+                        let isForearmIsolation = nameLower.contains("wrist") || nameLower.contains("forearm") ||
+                                                 nameLower.contains("finger curl") || nameLower.contains("reverse curl") ||
+                                                 nameLower.contains("gripper")
+                        if isForearmIsolation && forearmIsolationCount >= maxForearmIsolations {
+                            #if DEBUG
+                            print("   🚫 [FOREARM CAP] Skipping '\(name)': already have \(forearmIsolationCount) forearm exercises (max: \(maxForearmIsolations))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 CALF CAP - Max 1 calf raise unless calves explicitly selected
+                        let isCalfExercise = nameLower.contains("calf") || nameLower.contains("gastrocnemius") ||
+                                            nameLower.contains("soleus") || nameLower.contains("toe raise")
+                        if isCalfExercise && calfExerciseCount >= maxCalfExercises {
+                            #if DEBUG
+                            print("   🚫 [CALF CAP] Skipping '\(name)': already have \(calfExerciseCount) calf exercises (max: \(maxCalfExercises))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 SHRUG CAP - Max 1 shrug unless traps explicitly selected
+                        let isShrug = nameLower.contains("shrug")
+                        if isShrug && shrugCount >= maxShrugExercises {
+                            #if DEBUG
+                            print("   🚫 [SHRUG CAP] Skipping '\(name)': already have \(shrugCount) shrug exercises (max: \(maxShrugExercises))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 VERTICAL PULL FAMILY DUPLICATE CHECK - Second vertical pull must be different family
+                        let isVerticalPull = nameLower.contains("pulldown") || nameLower.contains("pull down") || 
+                                            nameLower.contains("chin up") || nameLower.contains("chin-up") ||
+                                            nameLower.contains("pull up") || nameLower.contains("pull-up") ||
+                                            nameLower.contains("lat pull")
+                        if isVerticalPull && verticalPullCount >= 1 {
+                            // Determine family of this vertical pull
+                            let vpFamily: String = {
+                                if nameLower.contains("chin up") || nameLower.contains("chin-up") { return "chin_up" }
+                                if nameLower.contains("pull up") || nameLower.contains("pull-up") { return "pull_up" }
+                                if nameLower.contains("straight arm") { return "straight_arm_pulldown" }
+                                if nameLower.contains("pulldown") || nameLower.contains("pull down") { return "pulldown" }
+                                return "other_vertical_pull"
+                            }()
+                            
+                            if verticalPullFamilies.contains(vpFamily) {
+                                #if DEBUG
+                                print("   🚫 [VERTICAL PULL DUP] Skipping '\(name)': family '\(vpFamily)' already used")
+                                #endif
+                                continue  // Already have this family of vertical pull
+                            }
+                        }
+                        
+                        // 🆕 PULLOVER CAP - Max 1 pullover unless lats/serratus focus
+                        let isPullover = nameLower.contains("pullover")
+                        if isPullover && pulloverCount >= maxPullovers {
+                            #if DEBUG
+                            print("   🚫 [PULLOVER CAP] Skipping '\(name)': already have \(pulloverCount) pullovers (max: \(maxPullovers))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 LEG PRESS CAP - Max 1 leg press variant per workout
+                        let isLegPress = nameLower.contains("leg press") || nameLower.contains("press (plate loaded)") ||
+                                        (nameLower.contains("press") && nameLower.contains("leg"))
+                        if isLegPress && legPressCount >= maxLegPress {
+                            #if DEBUG
+                            print("   🚫 [LEG PRESS CAP] Skipping '\(name)': already have \(legPressCount) leg press (max: \(maxLegPress))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 VERTICAL PRESS CAP - Max 1 shoulder/overhead press unless front delts focus
+                        let isVerticalPress = (nameLower.contains("shoulder press") || nameLower.contains("overhead press") ||
+                                              nameLower.contains("military press") || nameLower.contains("viking press")) &&
+                                             !nameLower.contains("leg")
+                        if isVerticalPress && verticalPressCount >= maxVerticalPress {
+                            #if DEBUG
+                            print("   🚫 [VERTICAL PRESS CAP] Skipping '\(name)': already have \(verticalPressCount) vertical press (max: \(maxVerticalPress))")
+                            #endif
+                            continue
+                        }
+                        
+                        // ═══════════════════════════════════════════════════════════════════════════
+                        // 🆕 HARD FAMILY CAPS - Max 1 per specific family (user feedback Dec 27)
+                        // ═══════════════════════════════════════════════════════════════════════════
+                        
+                        // HORIZONTAL ROW CAP - Max 1 (no 2 bent-over rows or 2 cable rows)
+                        let isHorizontalRow = (nameLower.contains("row") && !nameLower.contains("upright row")) ||
+                                             nameLower.contains("bent over") || nameLower.contains("bent-over")
+                        let isTbarRow = nameLower.contains("t bar") || nameLower.contains("t-bar") || nameLower.contains("tbar")
+                        
+                        if isHorizontalRow && !isTbarRow && horizontalRowCount >= maxHorizontalRow {
+                            #if DEBUG
+                            print("   🚫 [ROW CAP] Skipping '\(name)': already have \(horizontalRowCount) horizontal rows (max: \(maxHorizontalRow))")
+                            #endif
+                            continue
+                        }
+                        
+                        if isTbarRow && tbarRowCount >= maxTbarRow {
+                            #if DEBUG
+                            print("   🚫 [TBAR CAP] Skipping '\(name)': already have \(tbarRowCount) T-bar rows (max: \(maxTbarRow))")
+                            #endif
+                            continue
+                        }
+                        
+                        // HAMMER CURL CAP - Max 1 (no 2 hammer curls)
+                        let isHammerCurl = nameLower.contains("hammer") && nameLower.contains("curl")
+                        if isHammerCurl && hammerCurlCount >= maxHammerCurl {
+                            #if DEBUG
+                            print("   🚫 [HAMMER CURL CAP] Skipping '\(name)': already have \(hammerCurlCount) hammer curls (max: \(maxHammerCurl))")
+                            #endif
+                            continue
+                        }
+                        
+                        // PREACHER CURL CAP - Max 1 (no 2 preacher curls)
+                        let isPreacherCurl = nameLower.contains("preacher") && nameLower.contains("curl")
+                        if isPreacherCurl && preacherCurlCount >= maxPreacherCurl {
+                            #if DEBUG
+                            print("   🚫 [PREACHER CURL CAP] Skipping '\(name)': already have \(preacherCurlCount) preacher curls (max: \(maxPreacherCurl))")
+                            #endif
+                            continue
+                        }
+                        
+                        // UNKNOWN PATTERN CAP - Max 1 exercise with "other" pattern
+                        let detectedPatternForCap = WorkoutComboRules.detectExercisePattern(name, equipment: exercise.equipment ?? "")
+                        let isOtherPattern = detectedPatternForCap == "other" || detectedPatternForCap.isEmpty
+                        if isOtherPattern && otherPatternCount >= maxOtherPattern {
+                            #if DEBUG
+                            print("   🚫 [OTHER PATTERN CAP] Skipping '\(name)': already have \(otherPatternCount) unknown-pattern exercises (max: \(maxOtherPattern))")
+                            #endif
+                            continue
+                        }
+                        if isVerticalPress && verticalPressCount >= maxVerticalPress {
+                            #if DEBUG
+                            print("   🚫 [VERTICAL PRESS CAP] Skipping '\(name)': already have \(verticalPressCount) vertical press (max: \(maxVerticalPress))")
+                            #endif
+                            continue
+                        }
+                        
+                        // 🆕 BACK PRIORITY - If back is primary and we need more back exercises
+                        let detectedPatternCheck = WorkoutComboRules.detectExercisePattern(name, equipment: exercise.equipment ?? "")
+                        let backPatternsCheck = ["horizontal_row", "chest_supported_row", "vertical_pull", "rear_delt", "lat_isolation", "shrug"]
+                        let isBackExercise = backPatternsCheck.contains(detectedPatternCheck) || primaryMuscle.contains("back") || primaryMuscle.contains("lat")
+                        
+                        // If back is primary and we haven't hit minimum back exercises, prefer back moves
+                        if backIsPrimary && backPatternCount < minBackExercises && !isBackExercise {
+                            // Deprioritize non-back exercises until we hit minimum
+                            // But don't skip entirely - just prefer back exercises first
+                            let remainingSlots = count - result.count
+                            let neededBackExercises = minBackExercises - backPatternCount
+                            if remainingSlots <= neededBackExercises {
+                                #if DEBUG
+                                print("   🚫 [BACK PRIORITY] Skipping '\(name)': need \(neededBackExercises) more back exercises, only \(remainingSlots) slots left")
+                                #endif
+                                continue
+                            }
+                        }
+                        
+                        // 🆕 EQUIPMENT MIX CAP: Max 3 free-weight exercises for fatigue management
+                        let exerciseEquipTypeCheck = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        let isFreeWeightCheck = ["barbell", "dumbbell"].contains { exerciseEquipTypeCheck.contains($0) }
+                        if isFreeWeightCheck && freeWeightCount >= maxFreeWeight {
+                            continue  // At free-weight cap, skip
+                        }
+                        
+                        // 🆕 COMBO RULE AVOIDANCE
+                        if let rule = comboRule {
+                            let (shouldAvoid, _) = WorkoutComboRules.shouldAvoidExercise(name, comboRule: rule)
+                            if shouldAvoid {
+                                continue
+                            }
+                        }
+                        
+                        // 🆕 MUSCLE GROUP VALIDATION: Block wrong exercise types for this combo
+                        let detectedPattern = WorkoutComboRules.detectExercisePattern(name, equipment: exercise.equipment ?? "")
+                        
+                        // Back+Biceps: NO presses or tricep work
+                        if let rule = comboRule, rule.comboName == "Back + Biceps" {
+                            if detectedPattern == "press" || detectedPattern == "chest_press" || detectedPattern == "incline_press" || 
+                               detectedPattern == "decline_press" || detectedPattern == "shoulder_press" {
+                                #if DEBUG
+                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': press exercise in Back+Biceps workout")
+                                #endif
+                                continue
+                            }
+                            if detectedPattern == "tricep_pressdown" || detectedPattern == "tricep_overhead" || detectedPattern == "dip" {
+                                #if DEBUG
+                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': tricep exercise in Back+Biceps workout")
+                                #endif
+                                continue
+                            }
+                        }
+                        
+                        // Chest/Shoulders: NO back rows or bicep work (unless it's actually a Chest+Back combo)
+                        if wantsChestAndShoulders && !normalizedTargetMuscles.contains("back") {
+                            if detectedPattern == "horizontal_row" || detectedPattern == "vertical_pull" {
+                                #if DEBUG
+                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': back exercise in Chest/Shoulder workout")
+                                #endif
+                                continue
+                            }
+                        }
+                        
+                        // 🆕 OFF-TARGET ISOLATION: Block curls in chest/shoulder workouts (unless arms were requested)
+                        let targetHasArms = normalizedTargetMuscles.contains("biceps") || normalizedTargetMuscles.contains("triceps")
+                        if !targetHasArms && wantsChestAndShoulders {
+                            if movementKeyword == "curl" || exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl" {
+                                #if DEBUG
+                                print("   🚫 [OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout")
+                                #endif
+                                continue
+                            }
                         }
                         
                         let generated = GeneratedExercise(
@@ -1691,6 +2960,161 @@ class WorkoutGeneratorService: ObservableObject {
                         equipmentTypesRepresented.insert(equipType)
                         takenPerType[equipType] = currentCount + 1
                         addedThisRound = true
+                        
+                        // 🆕 Track equipment mix for targets
+                        let selectedEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        if ["cable", "machine", "smith", "lever"].contains(where: { selectedEquipType.contains($0) }) {
+                            machineOrCableCount += 1
+                        } else if ["barbell", "dumbbell"].contains(where: { selectedEquipType.contains($0) }) {
+                            freeWeightCount += 1
+                        }
+                        
+                        // 🆕 Track global press count
+                        if movementKeyword == "press" {
+                            totalPressCount += 1
+                        }
+                        
+                        // 🆕 Track row count and supported status
+                        if isRow {
+                            rowCount += 1
+                            let isSupported = ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"].contains { nameLower.contains($0) }
+                            if isSupported {
+                                hasSupportedRow = true
+                            }
+                        }
+                        
+                        // 🆕 Track hinge count
+                        if isHinge {
+                            hingeCount += 1
+                        }
+                        
+                        // 🆕 Track arm isolation counts
+                        if isBicepIsolation {
+                            bicepIsolationCount += 1
+                        }
+                        if isTricepIsolation {
+                            tricepIsolationCount += 1
+                        }
+                        
+                        // 🆕 Track forearm isolation count (uses isForearmIsolation from cap check above)
+                        if isForearmIsolation {
+                            forearmIsolationCount += 1
+                        }
+                        
+                        // 🆕 Track calf exercise count
+                        if isCalfExercise {
+                            calfExerciseCount += 1
+                        }
+                        
+                        // 🆕 Track shrug count
+                        if isShrug {
+                            shrugCount += 1
+                        }
+                        
+                        // 🆕 Track vertical pull families
+                        if isVerticalPull {
+                            verticalPullCount += 1
+                            let vpFamily: String = {
+                                if nameLower.contains("chin up") || nameLower.contains("chin-up") { return "chin_up" }
+                                if nameLower.contains("pull up") || nameLower.contains("pull-up") { return "pull_up" }
+                                if nameLower.contains("straight arm") { return "straight_arm_pulldown" }
+                                if nameLower.contains("pulldown") || nameLower.contains("pull down") { return "pulldown" }
+                                return "other_vertical_pull"
+                            }()
+                            verticalPullFamilies.insert(vpFamily)
+                        }
+                        
+                        // 🆕 Track pullover count
+                        if isPullover {
+                            pulloverCount += 1
+                        }
+                        
+                        // 🆕 Track leg press count
+                        if isLegPress {
+                            legPressCount += 1
+                        }
+                        
+                        // 🆕 Track vertical press count
+                        if isVerticalPress {
+                            verticalPressCount += 1
+                        }
+                        
+                        // 🆕 Track triceps pattern count (for Chest+Triceps minimum)
+                        if isTricepIsolation || nameLower.contains("tricep") || nameLower.contains("pushdown") || 
+                           nameLower.contains("skull crusher") {
+                            tricepsPatternCount += 1
+                        }
+                        
+                        // 🆕 Track horizontal row count
+                        if isHorizontalRow && !isTbarRow {
+                            horizontalRowCount += 1
+                        }
+                        
+                        // 🆕 Track T-bar row count
+                        if isTbarRow {
+                            tbarRowCount += 1
+                        }
+                        
+                        // 🆕 Track hammer curl count
+                        if isHammerCurl {
+                            hammerCurlCount += 1
+                        }
+                        
+                        // 🆕 Track preacher curl count
+                        if isPreacherCurl {
+                            preacherCurlCount += 1
+                        }
+                        
+                        // 🆕 Track "other" pattern count
+                        if isOtherPattern {
+                            otherPatternCount += 1
+                        }
+                        
+                        // 🆕 Track chest exercise count
+                        let isChestExercise = primaryMuscle.contains("chest") || primaryMuscle.contains("pec") ||
+                                             nameLower.contains("bench press") || nameLower.contains("chest press") ||
+                                             (nameLower.contains("fly") && !nameLower.contains("reverse fly") && !nameLower.contains("rear"))
+                        if isChestExercise {
+                            chestExerciseCount += 1
+                        }
+                        
+                        // 🆕 Track core exercise count
+                        let isCoreExercise = primaryMuscle.contains("ab") || primaryMuscle.contains("core") ||
+                                            primaryMuscle.contains("oblique") || nameLower.contains("plank") ||
+                                            nameLower.contains("crunch") || nameLower.contains("pallof")
+                        if isCoreExercise {
+                            coreExerciseCount += 1
+                        }
+                        
+                        // 🆕 Track glute exercise count
+                        let isGluteExercise = primaryMuscle.contains("glute") || nameLower.contains("hip thrust") ||
+                                             nameLower.contains("kickback") || nameLower.contains("glute bridge") ||
+                                             nameLower.contains("pull through") || nameLower.contains("abduction")
+                        if isGluteExercise {
+                            gluteExerciseCount += 1
+                        }
+                        
+                        // 🆕 Track back pattern count (row/pull/rear-delt)
+                        let detectedPatternForBack = WorkoutComboRules.detectExercisePattern(name, equipment: exercise.equipment ?? "")
+                        let backPatterns = ["horizontal_row", "chest_supported_row", "vertical_pull", "rear_delt", "lat_isolation", "shrug"]
+                        if backPatterns.contains(detectedPatternForBack) {
+                            backPatternCount += 1
+                        }
+                        
+                        // 🆕 Track if this is a shoulder exercise
+                        if normalizedMuscle == "shoulders" || exerciseFamily == "shoulder_press" || exerciseFamily == "lateral_raise" || exerciseFamily == "rear_delt" {
+                            hasShoulderExercise = true
+                        }
+                        
+                        // 🆕 Track balance slot
+                        if let balance = balanceSlot {
+                            if balance == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("rear delt") || nameLower.contains("reverse fly")) {
+                                hasBalanceExercise = true
+                            }
+                            if balance == "core_stability" && (nameLower.contains("pallof") || nameLower.contains("dead bug") || nameLower.contains("plank")) {
+                                hasBalanceExercise = true
+                            }
+                        }
                         
                         #if DEBUG
                         print("   🎯 [ROUND \(round)] \(equipType): \(name) (\(normalizedMuscle), family: \(exerciseFamily), move: \(movementKeyword)) - slot \(currentCount + 1)/\(slotsPerType)")
@@ -1773,6 +3197,14 @@ class WorkoutGeneratorService: ObservableObject {
                     usedNormalizedMuscles[normalizedMuscle] = (usedNormalizedMuscles[normalizedMuscle] ?? 0) + 1
                     usedEquipmentTypes[exerciseEquipType] = (usedEquipmentTypes[exerciseEquipType] ?? 0) + 1
                     usedExerciseFamilies[exerciseFamily] = (usedExerciseFamilies[exerciseFamily] ?? 0) + 1
+                    
+                    // 🆕 Track global press count and shoulder exercises
+                    if nameLower.contains("press") {
+                        totalPressCount += 1
+                    }
+                    if normalizedMuscle == "shoulders" || exerciseFamily == "shoulder_press" || exerciseFamily == "lateral_raise" || exerciseFamily == "rear_delt" {
+                        hasShoulderExercise = true
+                    }
                     
                     #if DEBUG
                     print("   💪 [MUSCLE DIVERSITY] Reserved slot for \(targetMuscle): \(name) (\(exerciseEquipType), family: \(exerciseFamily), base: \(baseMovement))")
@@ -1867,6 +3299,64 @@ class WorkoutGeneratorService: ObservableObject {
                 continue
             }
             
+            // 🆕 GLOBAL PRESS CAP: Max 2 total presses for multi-muscle workouts
+            if globalPressCapEnabled && movementKeyword == "press" && totalPressCount >= maxGlobalPresses {
+                #if DEBUG
+                print("   🚫 [PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))")
+                #endif
+                continue
+            }
+            
+            // 🆕 ROW CAP: Max 2 rows, prefer at least one supported
+            let isRow = nameLower.contains(" row") || nameLower.hasPrefix("row")
+            if isRow {
+                if rowCount >= maxRows {
+                    continue
+                }
+                let isSupported = ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"].contains { nameLower.contains($0) }
+                if rowCount == 1 && !hasSupportedRow && !isSupported {
+                    continue
+                }
+            }
+            
+            // 🆕 HINGE CAP: Max 1 hinge per workout
+            let isHinge = ["deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension"].contains { nameLower.contains($0) }
+            if isHinge && hingeCount >= maxHinges {
+                continue
+            }
+            
+            // 🆕 ARM ISOLATION CAP
+            let isBicepIsolation = exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl"
+            let isTricepIsolation = exerciseFamily == "tricep_extension" || exerciseFamily == "tricep_pushdown" || nameLower.contains("skull crusher")
+            
+            if !isArmsDay {
+                if isBicepIsolation && bicepIsolationCount >= maxArmIsolations {
+                    continue
+                }
+                if isTricepIsolation && tricepIsolationCount >= maxArmIsolations {
+                    continue
+                }
+            }
+            
+            // 🆕 COMBO RULE AVOIDANCE
+            if let rule = comboRule {
+                let (shouldAvoid, _) = WorkoutComboRules.shouldAvoidExercise(name, comboRule: rule)
+                if shouldAvoid {
+                    continue
+                }
+            }
+            
+            // 🆕 OFF-TARGET ISOLATION: Block curls in chest/shoulder workouts (unless arms were requested)
+            let targetHasArms = normalizedTargetMuscles.contains("biceps") || normalizedTargetMuscles.contains("triceps")
+            if !targetHasArms && wantsChestAndShoulders {
+                if movementKeyword == "curl" || exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl" {
+                    #if DEBUG
+                    print("   🚫 [OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout")
+                    #endif
+                    continue
+                }
+            }
+            
             // 🆕 DIVERSITY CHECK: Movement pattern from database
             if let pattern = exercise.movementPattern?.lowercased() {
                 let patternCount = usedMovementPatterns[pattern] ?? 0
@@ -1933,6 +3423,149 @@ class WorkoutGeneratorService: ObservableObject {
             if let pattern = exercise.movementPattern?.lowercased() {
                 usedMovementPatterns[pattern] = (usedMovementPatterns[pattern] ?? 0) + 1
             }
+            
+            // 🆕 Track global press count and shoulder exercises
+            if movementKeyword == "press" {
+                totalPressCount += 1
+            }
+            
+            // 🆕 Track row count and supported status
+            if isRow {
+                rowCount += 1
+                let isSupported = ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"].contains { nameLower.contains($0) }
+                if isSupported {
+                    hasSupportedRow = true
+                }
+            }
+            
+            // 🆕 Track hinge count
+            if isHinge {
+                hingeCount += 1
+            }
+            
+            // 🆕 Track arm isolation counts
+            if isBicepIsolation {
+                bicepIsolationCount += 1
+            }
+            if isTricepIsolation {
+                tricepIsolationCount += 1
+            }
+            
+            if normalizedMuscle == "shoulders" || exerciseFamily == "shoulder_press" || exerciseFamily == "lateral_raise" || exerciseFamily == "rear_delt" {
+                hasShoulderExercise = true
+            }
+            
+            // 🆕 Track balance slot
+            if let balance = balanceSlot {
+                if balance == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("rear delt") || nameLower.contains("reverse fly")) {
+                    hasBalanceExercise = true
+                }
+                if balance == "core_stability" && (nameLower.contains("pallof") || nameLower.contains("dead bug") || nameLower.contains("plank")) {
+                    hasBalanceExercise = true
+                }
+            }
+        }
+        
+        // 🆕 BALANCE SLOT ENFORCEMENT: Add a balance exercise if space allows
+        if let balance = balanceSlot, !hasBalanceExercise, result.count < count {
+            #if DEBUG
+            print("⚖️ [BALANCE SLOT] Adding balance exercise: \(balance)")
+            #endif
+            
+            for scored in scoredExercises {
+                let exercise = scored.exercise
+                let name = exercise.name ?? ""
+                let nameLower = name.lowercased()
+                
+                if usedNames.contains(nameLower) { continue }
+                
+                var isBalanceMatch = false
+                if balance == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("rear delt") || nameLower.contains("reverse fly")) {
+                    isBalanceMatch = true
+                }
+                if balance == "core_stability" && (nameLower.contains("pallof") || nameLower.contains("dead bug")) {
+                    isBalanceMatch = true
+                }
+                
+                if isBalanceMatch {
+                    let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
+                    let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
+                    
+                    let generated = GeneratedExercise(
+                        id: exercise.id?.uuidString ?? UUID().uuidString,
+                        name: name,
+                        category: exercise.category ?? "Unknown",
+                        primaryBodyRegion: exercise.category ?? "Unknown",
+                        primaryMuscle: muscleGroups.first ?? "Unknown",
+                        secondaryMuscles: secondaryMuscles,
+                        equipment: exercise.equipment ?? "Bodyweight",
+                        difficulty: "Intermediate",
+                        videoUrl: nil,
+                        instructions: exercise.instructions
+                    )
+                    
+                    result.append(generated)
+                    hasBalanceExercise = true
+                    
+                    #if DEBUG
+                    print("   ✅ Added balance exercise: \(name)")
+                    #endif
+                    break
+                }
+            }
+        }
+        
+        // 🆕 SHOULDER ENFORCEMENT: If user wanted shoulders but we didn't get any, force-add one
+        if wantsShoulders && !hasShoulderExercise && result.count > 0 {
+            #if DEBUG
+            print("⚠️ [SHOULDER ENFORCEMENT] No shoulder exercises selected despite request! Attempting to swap...")
+            #endif
+            
+            // Find a shoulder exercise to swap in
+            for scored in scoredExercises {
+                let exercise = scored.exercise
+                let name = exercise.name ?? ""
+                let nameLower = name.lowercased()
+                let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
+                let primaryMuscle = muscleGroups.first?.lowercased() ?? ""
+                let exerciseFamily = getExerciseFamily(nameLower)
+                
+                // Look for a shoulder exercise
+                let isShoulderExercise = primaryMuscle.contains("delt") || primaryMuscle.contains("shoulder") ||
+                                        exerciseFamily == "shoulder_press" || exerciseFamily == "lateral_raise" || exerciseFamily == "rear_delt"
+                
+                if isShoulderExercise && !usedNames.contains(nameLower) {
+                    // Find the worst-fit exercise to replace (non-compound, non-chest)
+                    if let replaceIndex = result.indices.reversed().first(where: { idx in
+                        let ex = result[idx]
+                        let exPrimary = ex.primaryMuscle.lowercased()
+                        let exName = ex.name.lowercased()
+                        // Replace isolation moves first, or anything that's not chest
+                        return !isCompoundExercise(name: exName) || (!exPrimary.contains("chest") && !exPrimary.contains("pec"))
+                    }) {
+                        let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
+                        let generated = GeneratedExercise(
+                            id: exercise.id?.uuidString ?? UUID().uuidString,
+                            name: name,
+                            category: exercise.category ?? "Unknown",
+                            primaryBodyRegion: exercise.category ?? "Unknown",
+                            primaryMuscle: muscleGroups.first ?? "Shoulders",
+                            secondaryMuscles: secondaryMuscles,
+                            equipment: exercise.equipment ?? "Bodyweight",
+                            difficulty: "Intermediate",
+                            videoUrl: nil,
+                            instructions: exercise.instructions
+                        )
+                        
+                        #if DEBUG
+                        print("   ✅ [SHOULDER ENFORCEMENT] Replacing '\(result[replaceIndex].name)' with '\(name)'")
+                        #endif
+                        result[replaceIndex] = generated
+                        hasShoulderExercise = true
+                        break
+                    }
+                }
+            }
         }
         
         // Order: Compound exercises first, then isolation
@@ -1962,10 +3595,55 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🔍 FINAL VALIDATION: Check all required patterns are present
+        // ═══════════════════════════════════════════════════════════════════════════
+        if let rule = comboRule, !rule.mustInclude.isEmpty {
+            let selectedExerciseData = result.map { (name: $0.name ?? "", equipment: $0.equipment ?? "") }
+            let missingPatterns = WorkoutComboRules.validateRequiredPatterns(selectedExercises: selectedExerciseData, comboRule: rule)
+            
+            if !missingPatterns.isEmpty {
+                #if DEBUG
+                print("   ❌ [VALIDATION FAILED] Missing required patterns: \(missingPatterns)")
+                print("   ❌ This workout violates combo rules - returning empty result!")
+                #endif
+                // CRITICAL: NEVER show a workout that violates combo rules
+                // Return empty to trigger fallback or retry
+                return []
+            } else {
+                #if DEBUG
+                print("   ✅ [VALIDATION PASSED] All required patterns satisfied")
+                #endif
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🆕 PRIMARY MUSCLE MINIMUM VALIDATION - Ensure selected muscles are represented
+        // ═══════════════════════════════════════════════════════════════════════════
+        #if DEBUG
+        if wantsChest && chestExerciseCount < minChestExercises {
+            print("   ⚠️ [MUSCLE MIN] Chest selected but only \(chestExerciseCount)/\(minChestExercises) chest exercises")
+        }
+        if wantsCore && coreExerciseCount < minCoreExercises {
+            print("   ⚠️ [MUSCLE MIN] Core selected but only \(coreExerciseCount)/\(minCoreExercises) core exercises")
+        }
+        if wantsGlutes && gluteExerciseCount < minGluteExercises {
+            print("   ⚠️ [MUSCLE MIN] Glutes selected but only \(gluteExerciseCount)/\(minGluteExercises) glute exercises")
+        }
+        #endif
+        
+        // Log tracking stats
+        #if DEBUG
+        print("   📊 [CAPS] Calf: \(calfExerciseCount)/\(maxCalfExercises), Shrug: \(shrugCount)/\(maxShrugExercises), Forearm: \(forearmIsolationCount)/\(maxForearmIsolations)")
+        print("   📊 [MUSCLE] Chest: \(chestExerciseCount)/\(minChestExercises), Core: \(coreExerciseCount)/\(minCoreExercises), Glute: \(gluteExerciseCount)/\(minGluteExercises)")
+        print("   📊 [VERTICAL PULLS] Count: \(verticalPullCount), Families: \(verticalPullFamilies)")
+        #endif
+        
         print("✅ [SMART GEN] Final workout (\(result.count) exercises):")
         print("   👤 Gender: \(finalGenderMatchCount) matching, \(finalGenderFallbackCount) fallback")
         print("   🎯 Diversity: Positions \(usedBodyPositions.count), Movements \(usedMovementKeywords.count), Families \(usedExerciseFamilies.count), Base movements: \(usedBaseMovements.count)")
         print("   🔧 Equipment mix: \(usedEquipmentTypes.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
+        print("   🎯 Equipment targets: Machine/Cable: \(machineOrCableCount)/\(targetMachineOrCable) | Free-weight: \(freeWeightCount)/\(targetFreeWeight) (max: \(maxFreeWeight))")
         print("   💪 Muscle mix: \(usedNormalizedMuscles.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
         print("   🏋️ Exercise families: \(usedExerciseFamilies.filter { $0.key != "other" }.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
         for (idx, ex) in result.enumerated() {
@@ -1982,6 +3660,24 @@ class WorkoutGeneratorService: ObservableObject {
         print("\n   📋 FINAL ORDER (after smart sorting):")
         for (idx, ex) in sortedResult.enumerated() {
             print("   \(idx + 1). \(ex.name) - \(ex.equipment)")
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🔍 FINAL VALIDATION: Verify all combo rule requirements are met
+        // ═══════════════════════════════════════════════════════════════════════════
+        if let rule = comboRule {
+            let exerciseList = sortedResult.map { (name: $0.name, equipment: $0.equipment) }
+            let missing = WorkoutComboRules.getMissingRequirements(rule, exercises: exerciseList)
+            
+            if !missing.isEmpty {
+                print("   ⚠️ [VALIDATION WARNING] Workout missing required patterns:")
+                for pattern in missing {
+                    print("      ❌ \(pattern)")
+                }
+                print("   ⚠️ This workout may not meet user expectations!")
+            } else {
+                print("   ✅ [VALIDATION PASSED] All required patterns satisfied")
+            }
         }
         #endif
         

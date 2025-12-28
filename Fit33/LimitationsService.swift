@@ -808,11 +808,11 @@ extension LimitationsService {
                    metadata.unsupportedTorso ||
                    metadata.hipHingeDemand
         case .upperBack:
-            return metadata.movementPatterns.contains(.pull)
+            return metadata.movementPatterns.contains(RiskMovementPattern.pull)
         case .shoulders:
             return !metadata.shoulderStressFlags.isEmpty ||
                    metadata.overheadWork != .none ||
-                   metadata.movementPatterns.contains(.push)
+                   metadata.movementPatterns.contains(RiskMovementPattern.push)
         case .knees:
             return metadata.kneeFlexionDepth >= .moderate ||
                    metadata.impactLevel >= .moderate

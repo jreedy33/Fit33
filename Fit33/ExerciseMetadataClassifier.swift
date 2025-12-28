@@ -34,10 +34,26 @@ class ExerciseMetadataClassifier {
     
     /// Classify an exercise and return its risk metadata
     func classify(exercise: Exercise) -> ExerciseRiskMetadata {
-        let name = exercise.name.lowercased()
-        let equipment = exercise.equipment?.lowercased() ?? ""
-        let primaryMuscle = exercise.primaryMuscle?.lowercased() ?? ""
-        let secondaryMuscles = exercise.secondaryMuscles?.joined(separator: " ").lowercased() ?? ""
+        let name = (exercise.name ?? "").lowercased()
+        let equipment = (exercise.equipment ?? "").lowercased()
+        
+        // Extract primary muscle from muscleGroups NSObject array
+        let primaryMuscle: String
+        if let muscles = exercise.muscleGroups as? [String], let first = muscles.first {
+            primaryMuscle = first.lowercased()
+        } else {
+            // Fallback to category
+            primaryMuscle = (exercise.category ?? "").lowercased()
+        }
+        
+        // Extract secondary muscles from muscleGroups (all except first)
+        let secondaryMuscles: String
+        if let muscles = exercise.muscleGroups as? [String], muscles.count > 1 {
+            secondaryMuscles = muscles.dropFirst().joined(separator: " ").lowercased()
+        } else {
+            secondaryMuscles = ""
+        }
+        
         let allMuscles = "\(primaryMuscle) \(secondaryMuscles)"
         
         return ExerciseRiskMetadata(
@@ -65,8 +81,8 @@ class ExerciseMetadataClassifier {
     
     // MARK: - Movement Patterns
     
-    private func classifyMovementPatterns(name: String, muscle: String) -> Set<MovementPattern> {
-        var patterns: Set<MovementPattern> = []
+    private func classifyMovementPatterns(name: String, muscle: String) -> Set<RiskMovementPattern> {
+        var patterns: Set<RiskMovementPattern> = []
         
         // Push patterns
         if containsAny(name, ["press", "pushup", "push-up", "push up", "dip", "fly", "flye"]) {
@@ -386,10 +402,13 @@ class ExerciseMetadataClassifier {
     // MARK: - Difficulty Tier
     
     private func classifyDifficulty(name: String, exercise: Exercise) -> DifficultyTier {
-        // Check existing tier if available
-        if let tier = exercise.difficultyTier {
-            if tier == "advanced" { return .advanced }
-            if tier == "intermediate" { return .intermediate }
+        // Check existing difficulty level if available (1-10 scale)
+        let diffLevel = exercise.difficultyLevel
+        if diffLevel >= 7 {
+            return .advanced
+        } else if diffLevel >= 4 {
+            return .intermediate
+        } else if diffLevel > 0 {
             return .foundational
         }
         
@@ -427,7 +446,7 @@ extension Exercise {
     }
     
     /// Check if this exercise is safe for a specific limitation
-    func isSafeFor(limitation: Limitation) -> Bool {
+    func isSafeFor(limitation: FilterLimitation) -> Bool {
         let (exercises, _) = LimitationFilterEngine.applyLimitations(
             exercises: [self],
             limitations: [limitation],

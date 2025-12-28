@@ -23,8 +23,11 @@ struct AutoWorkoutPreviewView: View {
     @State private var showingExerciseSwap = false
     @State private var selectedExerciseIndex: Int? = nil
     @State private var selectedCoreDataExercise: Exercise? = nil
+    @State private var selectedGeneratedExercise: GeneratedExercise? = nil  // 🆕 Fallback for non-Core Data
     @State private var isRegenerating = false
     @State private var showingExerciseDetail = false
+    @State private var showingFallbackDetail = false  // 🆕 For fallback detail view
+    @State private var isSyncingExercises = false  // 🆕 For sync loading state
     
     // Haptic feedback generators (UX Audit)
     private let selectionFeedback = UISelectionFeedbackGenerator()
@@ -57,6 +60,25 @@ struct AutoWorkoutPreviewView: View {
                 emptyStateView
             } else {
                 exerciseListView
+            }
+            
+            // 🆕 Loading overlay for exercise sync
+            if isSyncingExercises {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                    Text("Loading exercise data...")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .padding(30)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color.black.opacity(0.7))
+                )
             }
         }
         .navigationTitle("Your Workout")
@@ -98,6 +120,21 @@ struct AutoWorkoutPreviewView: View {
                             ToolbarItem(placement: .navigationBarTrailing) {
                                 Button("Done") {
                                     showingExerciseDetail = false
+                                }
+                            }
+                        }
+                }
+            }
+        }
+        .sheet(isPresented: $showingFallbackDetail) {
+            // 🆕 Fallback detail view when Core Data not available
+            if let exercise = selectedGeneratedExercise {
+                NavigationView {
+                    GeneratedExerciseDetailView(exercise: exercise, themeColor: themeColor)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") {
+                                    showingFallbackDetail = false
                                 }
                             }
                         }
@@ -197,6 +234,13 @@ struct AutoWorkoutPreviewView: View {
                                     if let coreDataExercise = ExerciseLibraryService.shared.getExercise(byName: exercise.name) {
                                         selectedCoreDataExercise = coreDataExercise
                                         showingExerciseDetail = true
+                                    } else {
+                                        // 🆕 Fallback: Show detail with GeneratedExercise data (no Core Data)
+                                        #if DEBUG
+                                        print("⚠️ [AUTO-WORKOUT] Core Data exercise not found, using fallback for: \(exercise.name)")
+                                        #endif
+                                        selectedGeneratedExercise = exercise
+                                        showingFallbackDetail = true
                                     }
                                 },
                                 onTapSwap: {
@@ -404,49 +448,94 @@ struct AutoWorkoutPreviewView: View {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // Create Workout entity
-        let context = PersistenceController.shared.container.viewContext
-        let workout = Workout(context: context)
-        workout.id = UUID()
-        workout.name = workoutTitle
-        workout.date = Date()
-        workout.duration = 0
-        workout.isCompleted = false
-        
-        #if DEBUG
-        print("   Workout entity created: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
-        checkpoint = CFAbsoluteTimeGetCurrent()
-        #endif
-        
         // Lookup Core Data exercises
         let exerciseNames = exercises.map { $0.name }
-        let coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
+        var coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
         
         #if DEBUG
         print("   Exercise lookup: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms (\(coreDataExercises.count) found)")
+        print("   Looking for: \(exerciseNames.prefix(3))...")
+        let totalInCoreData = ExerciseLibraryService.shared.getAllExercises().count
+        print("   Total exercises in Core Data: \(totalInCoreData)")
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        guard !coreDataExercises.isEmpty else {
+        // 🆕 If Core Data exercises not found, try syncing from cloud first
+        if coreDataExercises.isEmpty {
             #if DEBUG
-            print("❌ [AUTO-WORKOUT] No Core Data exercises found!")
+            print("⚠️ [AUTO-WORKOUT] No Core Data exercises found - attempting sync...")
             #endif
-            context.delete(workout)
+            
+            // Show syncing state and trigger async sync
+            isSyncingExercises = true
+            Task {
+                // Sync exercises from cloud
+                await ExerciseLibraryService.shared.syncExercisesFromCloud()
+                
+                // Retry lookup after sync
+                await MainActor.run {
+                    isSyncingExercises = false
+                    
+                    // Retry the lookup
+                    let retryExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
+                    
+                    #if DEBUG
+                    print("   After sync - found \(retryExercises.count) exercises")
+                    #endif
+                    
+                    if retryExercises.isEmpty {
+                        // Still empty - show error to user
+                        errorMessage = "Unable to load exercise data. Please check your internet connection and try again."
+                        showingError = true
+                        #if DEBUG
+                        print("❌ [AUTO-WORKOUT] Still no exercises after sync!")
+                        #endif
+                    } else {
+                        // Got exercises - proceed with workout
+                        proceedWithWorkout(
+                            title: workoutTitle,
+                            coreDataExercises: retryExercises
+                        )
+                    }
+                }
+            }
             return
         }
         
+        // Proceed with workout if we have exercises
+        proceedWithWorkout(title: workoutTitle, coreDataExercises: coreDataExercises)
+        
+        #if DEBUG
+        let totalTime = (CFAbsoluteTimeGetCurrent() - totalStartTime) * 1000
+        print("🎯 [AUTO-WORKOUT] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        #endif
+    }
+    
+    /// Helper function to proceed with workout after Core Data exercises are confirmed
+    private func proceedWithWorkout(title: String, coreDataExercises: [Exercise]) {
         // Validate exercise IDs
         let exercisesWithValidIds = coreDataExercises.filter { $0.id != nil }
         guard exercisesWithValidIds.count == coreDataExercises.count else {
             #if DEBUG
             print("❌ [AUTO-WORKOUT] Some exercises missing IDs!")
             #endif
-            context.delete(workout)
+            errorMessage = "Some exercises are missing data. Please regenerate the workout."
+            showingError = true
             return
         }
         
+        // Create Workout entity
+        let context = PersistenceController.shared.container.viewContext
+        let workout = Workout(context: context)
+        workout.id = UUID()
+        workout.name = title
+        workout.date = Date()
+        workout.duration = 0
+        workout.isCompleted = false
+        
         #if DEBUG
-        print("   Validation complete: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        print("   Validation complete")
         print("🎯 [AUTO-WORKOUT] Calling workoutManager.startWorkout()...")
         #endif
         
@@ -456,14 +545,8 @@ struct AutoWorkoutPreviewView: View {
             exercises: coreDataExercises,
             insights: nil,
             programDay: nil,
-            programDayFocus: workoutTitle
+            programDayFocus: title
         )
-        
-        #if DEBUG
-        let totalTime = (CFAbsoluteTimeGetCurrent() - totalStartTime) * 1000
-        print("🎯 [AUTO-WORKOUT] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        #endif
     }
     
     private func regenerateWorkout() {
@@ -1033,3 +1116,179 @@ struct ExerciseDataDetailView: View {
     }
 }
 
+// MARK: - Generated Exercise Detail View (Fallback when Core Data not available)
+struct GeneratedExerciseDetailView: View {
+    let exercise: GeneratedExercise
+    let themeColor: Color
+    @Environment(\.colorScheme) var colorScheme
+    
+    private var categoryColor: Color {
+        switch exercise.category.lowercased() {
+        case "chest": return .red
+        case "back": return .blue
+        case "legs": return .green
+        case "shoulders": return .orange
+        case "arms": return .purple
+        case "core": return .yellow
+        default: return themeColor
+        }
+    }
+    
+    private var categoryIcon: String {
+        switch exercise.category.lowercased() {
+        case "chest": return "figure.strengthtraining.traditional"
+        case "back": return "figure.rowing"
+        case "legs": return "figure.run"
+        case "shoulders": return "figure.arms.open"
+        case "arms": return "dumbbell.fill"
+        case "core": return "figure.core.training"
+        default: return "dumbbell.fill"
+        }
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Video Section
+                RemoteVideoPlayerView(
+                    exerciseName: exercise.name,
+                    categoryColor: categoryColor,
+                    videoFilename: nil  // Will use cache lookup
+                )
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .background(
+                    LinearGradient(
+                        colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                
+                // Content Section
+                VStack(alignment: .leading, spacing: 20) {
+                    // Exercise Name & Category Badge
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(exercise.name)
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        HStack(spacing: 12) {
+                            // Category Badge
+                            HStack(spacing: 6) {
+                                Image(systemName: categoryIcon)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(exercise.category)
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                LinearGradient(
+                                    colors: [categoryColor, categoryColor.opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(20)
+                            
+                            // Equipment Badge
+                            HStack(spacing: 6) {
+                                Image(systemName: "dumbbell.fill")
+                                    .font(.system(size: 12))
+                                Text(exercise.equipment)
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(20)
+                        }
+                    }
+                    .padding(.top, 16)
+                    
+                    // Primary Muscle
+                    sectionCard(title: "Primary Muscle", icon: "figure.strengthtraining.traditional") {
+                        Text(exercise.primaryMuscle)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(categoryColor)
+                            )
+                    }
+                    
+                    // Secondary Muscles
+                    if !exercise.secondaryMuscles.isEmpty {
+                        sectionCard(title: "Secondary Muscles", icon: "figure.arms.open") {
+                            FlowLayout(spacing: 8) {
+                                ForEach(exercise.secondaryMuscles, id: \.self) { muscle in
+                                    Text(muscle)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color(.systemGray5))
+                                        )
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    
+                    // Instructions
+                    if let instructions = exercise.instructions, !instructions.isEmpty {
+                        sectionCard(title: "Instructions", icon: "text.alignleft") {
+                            Text(instructions)
+                                .font(.system(size: 15))
+                                .foregroundColor(.secondary)
+                                .lineSpacing(4)
+                        }
+                    }
+                    
+                    Spacer(minLength: 100)
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .background(Color(.systemBackground))
+        .navigationTitle("Exercise Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Prefetch video for this exercise
+            VideoStreamingService.shared.prefetchVideos(for: [exercise.name])
+        }
+    }
+    
+    // MARK: - Section Card
+    private func sectionCard<Content: View>(
+        title: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(categoryColor)
+                
+                Text(title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            
+            content()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(colorScheme == .dark ? Color(.systemGray6).opacity(0.5) : Color(.systemGray6).opacity(0.5))
+        )
+    }
+}

@@ -78,42 +78,40 @@ enum LimitationSeverity: String, Codable, CaseIterable, Hashable {
     }
 }
 
-/// Type of limitation
-enum LimitationType: String, Codable, CaseIterable {
-    case injury = "Injury"
-    case chronic = "Chronic Condition"
-    
-    var displayName: String { rawValue }
-}
+// NOTE: LimitationType is defined in LimitationsService.swift - using that one
 
-// MARK: - Limitation Model
+// MARK: - Limitation Model (for filter engine use)
 
-/// A user's limitation/injury
-struct Limitation: Codable, Hashable, Identifiable {
+/// A lightweight limitation struct for the filter engine
+/// Maps from UserLimitation used elsewhere in the app
+struct FilterLimitation: Hashable, Identifiable {
     let id: String
     let area: LimitationArea
     let severity: LimitationSeverity
-    let type: LimitationType
     let notes: String?
-    let createdAt: Date
     var isActive: Bool
     
     init(
         id: String = UUID().uuidString,
         area: LimitationArea,
         severity: LimitationSeverity,
-        type: LimitationType = .injury,
         notes: String? = nil,
-        createdAt: Date = Date(),
         isActive: Bool = true
     ) {
         self.id = id
         self.area = area
         self.severity = severity
-        self.type = type
         self.notes = notes
-        self.createdAt = createdAt
         self.isActive = isActive
+    }
+    
+    /// Create from UserLimitation
+    init(from userLimitation: UserLimitation) {
+        self.id = userLimitation.id.uuidString
+        self.area = LimitationArea.from(string: userLimitation.affectedArea.rawValue)
+        self.severity = LimitationSeverity.from(string: userLimitation.severity.rawValue)
+        self.notes = userLimitation.notes
+        self.isActive = userLimitation.isActive
     }
 }
 
@@ -205,9 +203,9 @@ struct ShoulderStressFlags: OptionSet, Codable, Hashable {
 }
 
 /// Complete exercise risk metadata
-struct ExerciseRiskMetadata: Codable, Hashable {
+struct ExerciseRiskMetadata: Hashable {
     // Core movement classification
-    let movementPatterns: Set<MovementPattern>
+    let movementPatterns: Set<RiskMovementPattern>
     
     // Spinal stress
     let spinalLoad: SpinalLoad
@@ -269,8 +267,9 @@ struct ExerciseRiskMetadata: Codable, Hashable {
     )
 }
 
-/// Movement pattern classification
-enum MovementPattern: String, Codable, CaseIterable {
+/// Movement pattern classification (for risk assessment)
+/// Named distinctly to avoid conflicts with other MovementPattern enums in the codebase
+enum RiskMovementPattern: String, Codable, CaseIterable, Hashable {
     case push = "push"
     case pull = "pull"
     case squat = "squat"
@@ -338,7 +337,7 @@ class LimitationFilterEngine {
     /// - Returns: Filtered and scored exercises
     static func applyLimitations(
         exercises: [Exercise],
-        limitations: [Limitation],
+        limitations: [FilterLimitation],
         targetMuscles: [String],
         metadataProvider: (Exercise) -> ExerciseRiskMetadata
     ) -> (exercises: [FilteredExercise], summary: LimitationFilterSummary) {
@@ -441,7 +440,7 @@ class LimitationFilterEngine {
     private static func evaluateExercise(
         exercise: Exercise,
         metadata: ExerciseRiskMetadata,
-        limitation: Limitation,
+        limitation: FilterLimitation,
         targetMuscles: [String]
     ) -> (shouldExclude: Bool, penalty: Double, warnings: [String], reason: String?) {
         
@@ -487,28 +486,28 @@ class LimitationFilterEngine {
                    metadata.axialLoading >= .low ||
                    metadata.unsupportedTorso ||
                    metadata.hipHingeDemand ||
-                   metadata.movementPatterns.contains(.hinge)
+                   metadata.movementPatterns.contains(RiskMovementPattern.hinge)
             
         case .upperBack:
-            return metadata.movementPatterns.contains(.pull) ||
+            return metadata.movementPatterns.contains(RiskMovementPattern.pull) ||
                    metadata.unsupportedTorso
             
         case .shoulders:
             return !metadata.shoulderStressFlags.isEmpty ||
                    metadata.overheadWork != .none ||
-                   metadata.movementPatterns.contains(.push)
+                   metadata.movementPatterns.contains(RiskMovementPattern.push)
             
         case .knees:
             return metadata.kneeFlexionDepth >= .moderate ||
                    metadata.impactLevel >= .moderate ||
-                   metadata.movementPatterns.contains(.squat) ||
-                   metadata.movementPatterns.contains(.lunge)
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.lunge)
             
         case .hips:
             return metadata.hipHingeDemand ||
                    metadata.kneeFlexionDepth >= .moderate ||
-                   metadata.movementPatterns.contains(.hinge) ||
-                   metadata.movementPatterns.contains(.squat)
+                   metadata.movementPatterns.contains(RiskMovementPattern.hinge) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat)
             
         case .neck:
             return metadata.neckStress ||
@@ -519,8 +518,8 @@ class LimitationFilterEngine {
             
         case .elbows:
             return metadata.elbowStress ||
-                   metadata.movementPatterns.contains(.push) ||
-                   metadata.movementPatterns.contains(.pull)
+                   metadata.movementPatterns.contains(RiskMovementPattern.push) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.pull)
             
         case .ankles:
             return metadata.impactLevel >= .moderate ||

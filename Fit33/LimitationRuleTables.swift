@@ -36,12 +36,12 @@ enum LimitationRuleTables {
                 LimitationRule(
                     id: "lb_unsupported_hinge",
                     reason: "Unsupported torso hinge movement",
-                    matches: { $0.unsupportedTorso && $0.movementPatterns.contains(.hinge) }
+                    matches: { $0.unsupportedTorso && $0.movementPatterns.contains(RiskMovementPattern.hinge) }
                 ),
                 LimitationRule(
                     id: "lb_unsupported_row",
                     reason: "Unsupported bent-over position",
-                    matches: { $0.unsupportedTorso && $0.movementPatterns.contains(.pull) }
+                    matches: { $0.unsupportedTorso && $0.movementPatterns.contains(RiskMovementPattern.pull) }
                 ),
                 LimitationRule(
                     id: "lb_high_impact",
@@ -99,12 +99,12 @@ enum LimitationRuleTables {
                 LimitationRule(
                     id: "kn_heavy_squat",
                     reason: "Heavy squat pattern",
-                    matches: { $0.movementPatterns.contains(.squat) && $0.axialLoading >= .low }
+                    matches: { $0.movementPatterns.contains(RiskMovementPattern.squat) && $0.axialLoading >= .low }
                 ),
                 LimitationRule(
                     id: "kn_heavy_lunge",
                     reason: "Heavy lunge pattern",
-                    matches: { $0.movementPatterns.contains(.lunge) && $0.balanceDemand == .high }
+                    matches: { $0.movementPatterns.contains(RiskMovementPattern.lunge) && $0.balanceDemand == .high }
                 )
             ]
             
@@ -118,7 +118,7 @@ enum LimitationRuleTables {
                 LimitationRule(
                     id: "hp_deep_squat",
                     reason: "Deep squat (hip ROM)",
-                    matches: { $0.kneeFlexionDepth == .high && $0.movementPatterns.contains(.squat) }
+                    matches: { $0.kneeFlexionDepth == .high && $0.movementPatterns.contains(RiskMovementPattern.squat) }
                 ),
                 LimitationRule(
                     id: "hp_high_impact",
@@ -669,7 +669,7 @@ enum LimitationRuleTables {
                     reason: "Deep squat",
                     penalty: 60,
                     isNegative: true,
-                    matches: { $0.kneeFlexionDepth == .high && $0.movementPatterns.contains(.squat) }
+                    matches: { $0.kneeFlexionDepth == .high && $0.movementPatterns.contains(RiskMovementPattern.squat) }
                 )
             ]
             

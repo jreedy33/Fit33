@@ -57,6 +57,9 @@ class ExerciseLibraryService: ObservableObject {
     func getExercise(byName name: String) -> Exercise? {
         // Build cache if needed (with lowercase keys for case-insensitive matching)
         if cachedExercisesByName == nil || !isCacheValid {
+            #if DEBUG
+            print("📦 [ExerciseLibrary] Cache miss for '\(name)' - rebuilding...")
+            #endif
             let allExercises = getAllExercises()
             cachedExercisesByName = Dictionary(
                 allExercises.compactMap { exercise -> (String, Exercise)? in
@@ -66,7 +69,13 @@ class ExerciseLibraryService: ObservableObject {
                 uniquingKeysWith: { first, _ in first }
             )
         }
-        return cachedExercisesByName?[name.lowercased()]
+        let result = cachedExercisesByName?[name.lowercased()]
+        #if DEBUG
+        if result == nil {
+            print("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))")
+        }
+        #endif
+        return result
     }
     
     /// Get multiple exercises by name - O(n) where n is names count
@@ -83,8 +92,17 @@ class ExerciseLibraryService: ObservableObject {
         print("📦 Exercise cache invalidated")
         #endif
         
-        // Immediately re-warm cache so it's ready for workouts
-        preWarmCache()
+        // Refresh the context to ensure it sees all changes after batch operations
+        viewContext.refreshAllObjects()
+        
+        // SYNCHRONOUSLY rebuild the cache so it's immediately available
+        // (Don't use preWarmCache which runs async)
+        let startTime = CFAbsoluteTimeGetCurrent()
+        _ = getAllExercises()
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        #if DEBUG
+        print("🔥 [ExerciseLibrary] Cache rebuilt synchronously: \(elapsed)ms, \(cachedExercises?.count ?? 0) exercises")
+        #endif
     }
     
     private var isCacheValid: Bool {
@@ -353,8 +371,15 @@ class ExerciseLibraryService: ObservableObject {
             
             do {
                 try viewContext.save()
-                invalidateCache() // Clear cache after sync
                 print("✅ Synced \(syncedCount) exercises to Core Data")
+                
+                // CRITICAL: Invalidate cache AFTER save completes
+                // This will synchronously rebuild the cache
+                invalidateCache()
+                
+                // Verify exercises are accessible
+                let verifyCount = getAllExercises().count
+                print("✅ [VERIFY] Cache now has \(verifyCount) exercises")
             } catch {
                 print("❌ Error saving exercises to Core Data: \(error)")
             }
@@ -425,8 +450,15 @@ class ExerciseLibraryService: ObservableObject {
     func getAllExercises() -> [Exercise] {
         // Return cached exercises if valid
         if isCacheValid, let cached = cachedExercises {
+            #if DEBUG
+            print("📦 [ExerciseLibrary] Returning \(cached.count) cached exercises")
+            #endif
             return cached
         }
+        
+        #if DEBUG
+        print("📦 [ExerciseLibrary] Fetching exercises from Core Data...")
+        #endif
         
         let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
@@ -434,6 +466,14 @@ class ExerciseLibraryService: ObservableObject {
         
         do {
             let exercises = try viewContext.fetch(request)
+            
+            #if DEBUG
+            print("📦 [ExerciseLibrary] Fetched \(exercises.count) exercises from Core Data")
+            if exercises.count > 0 {
+                print("📦 [ExerciseLibrary] Sample: \(exercises.prefix(3).compactMap { $0.name })")
+            }
+            #endif
+            
             cachedExercises = exercises
             cacheTimestamp = Date()
             
@@ -445,6 +485,10 @@ class ExerciseLibraryService: ObservableObject {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
+            
+            #if DEBUG
+            print("📦 [ExerciseLibrary] Built name cache with \(cachedExercisesByName?.count ?? 0) entries")
+            #endif
             
             return exercises
         } catch {

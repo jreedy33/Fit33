@@ -31,6 +31,49 @@ import re
 # Supabase connection
 from supabase import create_client
 
+# Import combo rules engine
+try:
+    from scripts.workout_combo_rules import (
+        get_exercise_count_for_duration as combo_exercise_count,
+        detect_workout_combo,
+        get_combo_rule,
+        get_balance_slot,
+        get_focus_override,
+        should_avoid_exercise,
+        get_required_patterns,
+        get_effective_caps,
+        detect_exercise_pattern,
+        validate_workout_against_rules,
+        get_scoring_adjustments,
+        GLOBAL_CAPS,
+        FOCUS_AREA_OVERRIDES,
+        COMBO_RULES,
+    )
+    COMBO_RULES_AVAILABLE = True
+except ImportError:
+    # Fallback if module not found (when running directly)
+    try:
+        from workout_combo_rules import (
+            get_exercise_count_for_duration as combo_exercise_count,
+            detect_workout_combo,
+            get_combo_rule,
+            get_balance_slot,
+            get_focus_override,
+            should_avoid_exercise,
+            get_required_patterns,
+            get_effective_caps,
+            detect_exercise_pattern,
+            validate_workout_against_rules,
+            get_scoring_adjustments,
+            GLOBAL_CAPS,
+            FOCUS_AREA_OVERRIDES,
+            COMBO_RULES,
+        )
+        COMBO_RULES_AVAILABLE = True
+    except ImportError:
+        COMBO_RULES_AVAILABLE = False
+        print("⚠️ workout_combo_rules.py not found - using fallback rules")
+
 # PDF Generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
@@ -889,6 +932,16 @@ RISKY_EXERCISES = [
     
     # Complex plank variations
     "plank lateral raise", "plank front raise", "plank reach",
+    
+    # Shoulder-risky for foundational users (bench dips stress anterior delts)
+    "bench dip",  # Can cause shoulder impingement, prefer tricep pushdown or dip machine
+    
+    # Twisting/rotation under load - risky for shoulders and back
+    "twisting overhead", "twisting press", "rotating press", "twist press",
+    
+    # High injury risk for ALL users - should be blocked as default
+    "good morning",  # High low-back injury risk - prefer RDL or back extension
+    "upright row",   # Shoulder impingement risk
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2084,35 +2137,11 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
         score -= 20
     
     # BEGINNER COMPLEXITY PENALTY - mirrors Swift SmartExerciseSelectionEngine.swift
-    # Combo moves, complex plank variations are too hard for beginners
+    # NOTE: Combo moves and complex plank penalties are NOW applied in ALL USERS section above
+    # This section adds ADDITIONAL beginner-specific complexity penalties only
     if user.experience_level == ExperienceLevel.BEGINNER:
-        # COMBO EXERCISES: "Biceps Curl Squat", "Rear Lunge Biceps Curl", etc.
-        combo_patterns = [
-            "curl squat", "squat curl", "lunge curl", "curl lunge",
-            "press squat", "squat press", "lunge press", "press lunge",
-            "row lunge", "lunge row", "deadlift to", "to row", "to curl",
-            "to press", "and curl", "and press", "and row", "renegade"
-        ]
-        # Also check for "lunge" + "curl" combo (like "Rear Lunge Biceps Curl")
-        is_lunge_curl_combo = "lunge" in name_lower and "curl" in name_lower
-        is_lunge_press_combo = "lunge" in name_lower and "press" in name_lower
-        
-        if any(pattern in name_lower for pattern in combo_patterns) or is_lunge_curl_combo or is_lunge_press_combo:
-            score -= 200  # VERY heavy penalty - exclude combo moves for beginners
-        
-        # COMPLEX PLANK VARIATIONS: Plank with dumbbells, rows, raises
-        complex_plank_patterns = [
-            "plank row", "plank raise", "plank lateral", "plank front",
-            "plank with", "renegade", "commandos", "plank arm"
-        ]
-        # Also check for "plank" combined with other movements
-        is_plank_combo = "plank" in name_lower and (
-            "raise" in name_lower or "row" in name_lower or 
-            "lateral" in name_lower or "dumbbell" in name_lower
-        )
-        
-        if any(pattern in name_lower for pattern in complex_plank_patterns) or is_plank_combo:
-            score -= 200  # VERY heavy penalty for complex plank variations
+        # NOTE: Removed duplicate combo patterns check - already applied above with -300 for ALL users
+        # NOTE: Removed duplicate complex plank check - already applied above with -250 for ALL users
         
         # TWISTING/ROTATING - too much coordination for beginners
         complex_movement_patterns = [
@@ -2149,9 +2178,7 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
         if "hanging" in name_lower:
             score -= 200  # Hanging pikes, hanging leg raises too hard
         
-        # GOOD MORNINGS - High injury risk for beginners
-        if "good morning" in name_lower:
-            score -= 200  # Too much low-back risk
+        # GOOD MORNINGS - NOTE: Penalty applied in ALL USERS section below, not duplicated here
         
         # PLYO/JUMP MOVEMENTS - Not appropriate as default for beginners
         plyo_patterns = [
@@ -2282,6 +2309,99 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
             score += 40  # Machine lateral raise is fine too
     
     # ═══════════════════════════════════════════════════════════════════════════════
+    # UPPER CHEST FOCUS - Boost incline exercises when "upper chest" is targeted
+    # ═══════════════════════════════════════════════════════════════════════════════
+    is_upper_chest_focus = any("upper chest" in t.lower() for t in target_muscles)
+    
+    if is_upper_chest_focus:
+        # BOOST incline exercises - these actually hit upper chest
+        incline_patterns = [
+            "incline press", "incline bench", "incline db", "incline dumbbell",
+            "low to high", "low-to-high", "low cable fly",
+            "incline fly", "incline hammer", "incline smith"
+        ]
+        if any(p in name_lower for p in incline_patterns):
+            score += 150  # Very strong boost for incline work when upper chest is targeted
+        
+        # PENALIZE flat/decline exercises that don't hit upper chest well
+        if "decline" in name_lower:
+            score -= 100  # Decline hits lower chest, not upper
+        
+        # Flat bench is okay but incline is better for upper chest
+        if "flat bench" in name_lower or (
+            "bench press" in name_lower and "incline" not in name_lower and "decline" not in name_lower
+        ):
+            score -= 30  # Slight penalty - flat hits mid chest more
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # FRONT DELT REDUNDANCY - Penalize front raises when chest pressing is in workout
+    # Chest pressing already hits front delts heavily - front raises are redundant
+    # ═══════════════════════════════════════════════════════════════════════════════
+    is_pressing_day = is_chest_day or any("shoulder" in t.lower() for t in target_muscles)
+    
+    if is_pressing_day and "front raise" in name_lower:
+        score -= 100  # Front delts get hit by pressing - use lateral raises instead
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # LATERAL > FRONT RAISE - Prefer lateral raises over front raises for shoulders
+    # Side delts are harder to develop and need direct work, front delts get hit by pressing
+    # ═══════════════════════════════════════════════════════════════════════════════
+    is_shoulder_day = any("shoulder" in t.lower() or "delt" in t.lower() for t in target_muscles)
+    
+    if is_shoulder_day:
+        # Boost lateral/side work
+        if "lateral raise" in name_lower or "side raise" in name_lower or "side delt" in name_lower:
+            score += 80  # Lateral delts need direct work
+        
+        # Penalize front raises (redundant with pressing)
+        if "front raise" in name_lower:
+            score -= 80  # Front delts already hit by pressing - low ROI
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SEATED OVERHEAD PREFERENCE FOR BACK ISSUES - Safer for lower back
+    # Standing overhead work can stress lower back; seated is safer
+    # ═══════════════════════════════════════════════════════════════════════════════
+    if has_lower_back_issue:
+        is_overhead = "overhead" in name_lower or "shoulder press" in name_lower or \
+                      "military press" in name_lower or "ohp" in name_lower
+        
+        if is_overhead:
+            # BOOST seated variations - no spinal load
+            if "seated" in name_lower or "machine" in equip_lower or "lever" in equip_lower:
+                score += 100  # Much safer for lower back
+            # PENALIZE standing variations - potential back stress
+            elif "standing" in name_lower or (
+                "seated" not in name_lower and "machine" not in equip_lower
+            ):
+                score -= 80  # Standing overhead can stress lower back
+        
+        # Also penalize any "twisting" under load - risky for back
+        if "twist" in name_lower or "rotating" in name_lower:
+            score -= 120  # Rotational load is risky for back issues
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # REAR DELT BALANCE - Boost rear delt/face pull when workout is anterior-heavy
+    # Pushing workouts (chest/shoulders) should include some rear delt for balance
+    # ═══════════════════════════════════════════════════════════════════════════════
+    is_anterior_heavy = is_chest_day or is_push_day
+    
+    if is_anterior_heavy:
+        # BOOST rear delt and face pulls for shoulder health/balance
+        rear_delt_patterns = [
+            "face pull", "rear delt", "reverse fly", "posterior delt",
+            "bent over fly", "bent-over fly", "reverse cable fly"
+        ]
+        if any(p in name_lower for p in rear_delt_patterns):
+            score += 120  # Very important for shoulder health on pressing days
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BENCH DIP PENALTY FOR FOUNDATIONAL USERS - Shoulder impingement risk
+    # Bench dips put shoulders in a compromised position; prefer dip machine or pushdowns
+    # ═══════════════════════════════════════════════════════════════════════════════
+    if restrict_to_foundational and "bench dip" in name_lower:
+        score -= 200  # Bench dips are shoulder-risky for beginners - prefer assisted dip or pushdowns
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
     # TRICEPS VARIETY - Prefer pressdowns/overhead extensions over kickbacks
     # Kickbacks are fine but shouldn't dominate triceps selection
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -2346,12 +2466,27 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
     # Already covered by complex_squat_patterns above
     
     # ═══════════════════════════════════════════════════════════════════════════════
-    # INJURY-AWARE PENALTIES - Apply scoring penalties based on user injuries
-    # This allows mild injuries to still get certain exercises but deprioritized
+    # INJURY-AWARE PENALTIES - NOTE: Already applied at line ~2054
+    # Removed duplicate call to get_injury_exercise_penalties() to prevent double penalties
     # ═══════════════════════════════════════════════════════════════════════════════
-    if user.injuries:
-        injury_penalty = get_injury_exercise_penalties(name, user.injuries)
-        score += injury_penalty
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # COMBO RULE SCORING ADJUSTMENTS - Use workout_combo_rules.py for smart scoring
+    # ═══════════════════════════════════════════════════════════════════════════════
+    if COMBO_RULES_AVAILABLE:
+        # Get any focus areas from target muscles (e.g., "upper chest", "lower chest")
+        focus_areas = [t for t in target_muscles if any(f in t.lower() for f in ["upper", "lower", "front", "rear", "side", "mid"])]
+        
+        # Apply combo rule scoring adjustments
+        combo_adjustment = get_scoring_adjustments(name, equipment, target_muscles, focus_areas)
+        score += combo_adjustment
+        
+        # Check if exercise should be avoided based on combo rules
+        combo_rule = get_combo_rule(target_muscles)
+        if combo_rule:
+            should_avoid, avoid_reason = should_avoid_exercise(name, combo_rule, focus_areas)
+            if should_avoid:
+                score -= 300  # Heavy penalty for avoided exercises
     
     return score
 
@@ -2432,22 +2567,20 @@ def generate_selection_reasoning(ex: Dict, user: UserProfile, target_muscles: Li
 def get_exercise_count_for_duration(duration_minutes: int) -> int:
     """
     Get recommended exercise count based on workout duration.
-    UPDATED: Duration cap rule - ≤40 min = 4-6 exercises max
-    Rules:
-    - 15-20 min: 4 exercises
-    - 25-35 min: 5 exercises
-    - 40 min: 6 exercises (cap for "quick" workouts)
-    - 45-50 min: 7 exercises
+    SYNCED WITH: workout_combo_rules.py and Fit33/WorkoutComboRules.swift
+    
+    Rules (consistent across Python and Swift):
+    - ≤20 min: 4 exercises
+    - ≤30 min: 5 exercises
+    - ≤50 min: 6 exercises (7 ONLY if mostly machines/cables)
     - 60+ min: 8 exercises (hard cap)
     """
     if duration_minutes <= 20:
         return 4
-    elif duration_minutes <= 35:
+    elif duration_minutes <= 30:
         return 5
-    elif duration_minutes <= 40:
-        return 6  # Cap for "quick" workouts
     elif duration_minutes <= 50:
-        return 7
+        return 6  # Note: 7 only with fast equipment transitions (handled elsewhere)
     else:
         return 8  # Hard cap
 
@@ -2469,6 +2602,24 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
     
     is_gym_user = user.workout_location == WorkoutLocation.GYM
     expanded_targets = expand_target_muscles(target_muscles)
+    
+    # 🆕 HINGE GATING - Block hinges for Back/Biceps, Pull unless lower_back selected
+    # Defined BEFORE filtering loop so it's available during filtering
+    wants_lower_back_early = any("lower back" in t.lower() or "erector" in t.lower() for t in target_muscles)
+    wants_posterior_chain_early = any("posterior" in t.lower() for t in target_muscles)
+    is_full_body_early = any("full body" in t.lower() for t in target_muscles)
+    wants_legs_early = any("leg" in t.lower() or "quad" in t.lower() or "ham" in t.lower() or "glute" in t.lower() for t in target_muscles)
+    wants_chest_early = any("chest" in t.lower() for t in target_muscles)
+    
+    # Back/Pull day detection (without legs or chest)
+    is_back_pull_day = any("back" in t.lower() or "lat" in t.lower() for t in target_muscles) and not wants_chest_early and not wants_legs_early
+    
+    # Block hinges on Back/Pull days unless explicitly requested
+    allow_hinges = wants_lower_back_early or wants_posterior_chain_early or is_full_body_early or wants_legs_early
+    should_block_hinges = is_back_pull_day and not allow_hinges
+    
+    if should_block_hinges:
+        print(f"   🚫 [HINGE GATE] Blocking hinges for Back/Pull day (no lower_back/posterior/full_body selected)")
     
     # Phase 1: Filter exercises
     filtered = []
@@ -2534,6 +2685,79 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
             filter_reasons["stretching"] += 1
             continue
         
+        # Define name_lower at the start for all filters to use
+        name_lower = name.lower()
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🚫 STRETCH/MOBILITY GATING - Stretches are NOT main workout exercises
+        # ═══════════════════════════════════════════════════════════════════════════════
+        is_stretch = any(kw in name_lower for kw in ["stretch", "mobility", "foam roll", "static hold"])
+        if is_stretch:
+            filter_reasons["stretching"] += 1
+            continue
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🚫 RISKY PATTERN BLOCKING - Upright row, high pull, behind neck are risky
+        # ═══════════════════════════════════════════════════════════════════════════════
+        is_risky_pattern = any(kw in name_lower for kw in [
+            "upright row", "high pull", "behind neck", "behind the neck", "guillotine"
+        ])
+        if is_risky_pattern:
+            filter_reasons["risky_pattern"] += 1
+            continue
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🚫 CORE DAY LEAK BLOCKING - Block squat/hinge/press on Core/Abs only days
+        # ═══════════════════════════════════════════════════════════════════════════════
+        target_has_core = any("core" in t.lower() or "abs" in t.lower() for t in target_muscles)
+        target_has_chest = any("chest" in t.lower() for t in target_muscles)
+        target_has_shoulders = any("shoulder" in t.lower() or "delt" in t.lower() for t in target_muscles)
+        target_has_legs = any("leg" in t.lower() or "quad" in t.lower() or "ham" in t.lower() for t in target_muscles)
+        target_has_back_local = any("back" in t.lower() or "lat" in t.lower() for t in target_muscles)
+        is_core_only_workout = target_has_core and not target_has_chest and not target_has_shoulders and not target_has_legs and not target_has_back_local
+        
+        if is_core_only_workout:
+            # Block squats
+            is_squat = "squat" in name_lower or "front squat" in name_lower or "goblet" in name_lower
+            if is_squat:
+                filter_reasons["core_day_squat"] += 1
+                continue
+            # Block hinges
+            is_hinge_core = "deadlift" in name_lower or "rdl" in name_lower or "romanian" in name_lower or "good morning" in name_lower
+            if is_hinge_core:
+                filter_reasons["core_day_hinge"] += 1
+                continue
+            # Block presses (except pallof press)
+            is_press_core = "press" in name_lower and "pallof" not in name_lower and "leg press" not in name_lower
+            if is_press_core:
+                filter_reasons["core_day_press"] += 1
+                continue
+            # Block lateral raise planks
+            if "lateral raise plank" in name_lower or "plank lateral raise" in name_lower:
+                filter_reasons["core_day_shoulder"] += 1
+                continue
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🚫 PLYO BLOCKING - Block plyometrics by default
+        # ═══════════════════════════════════════════════════════════════════════════════
+        is_plyo = any(kw in name_lower for kw in ["plyo", "jump", "bound", "hop", "explosive", "box jump", "shuffle"])
+        if is_plyo and "step up" not in name_lower:
+            filter_reasons["plyo_blocked"] += 1
+            continue
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🚫 HINGE BLOCKING for Back/Biceps, Back/Rear Delts, Pull days
+        # Hinges (deadlifts, RDLs, back extensions) NOT allowed unless user selected:
+        # lower_back / posterior_chain / full_body / legs
+        # ═══════════════════════════════════════════════════════════════════════════════
+        is_hinge_exercise = any(kw in name_lower for kw in [
+            "deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension", "hip hinge"
+        ])
+        
+        if is_hinge_exercise and should_block_hinges:
+            filter_reasons["hinge_blocked_back_pull"] += 1
+            continue
+        
         # ═══════════════════════════════════════════════════════════════════════════════
         # FOUNDATIONAL MODE PRE-FILTER - Block risky exercises at filter stage
         # This is more efficient than penalizing them during scoring
@@ -2556,6 +2780,98 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
             )
             if has_lower_back_issue and is_lower_back_stress_exercise(name):
                 filter_reasons["lower_back_unsafe"] += 1
+                continue
+            
+            # 🆕 Block combo/core/plank exercises for foundational users
+            # These add unnecessary complexity when goal is hypertrophy
+            is_combo_move = (
+                ("plank" in name_lower and any(x in name_lower for x in ["push", "row", "pass", "jack", "through"])) or
+                "bear crawl" in name_lower or
+                "renegade" in name_lower or
+                "man maker" in name_lower or
+                "burpee" in name_lower or
+                ("to press" in name_lower or "to curl" in name_lower or "to row" in name_lower) and "low to high" not in name_lower
+            )
+            if is_combo_move:
+                filter_reasons["combo_not_foundational"] += 1
+                continue
+        
+        # 🆕 OFF-TARGET ISOLATION FILTER
+        # If user wants chest+shoulders, don't include bicep/tricep isolation exercises
+        target_has_arms = any(
+            "bicep" in t.lower() or "tricep" in t.lower() or "arm" in t.lower() 
+            for t in target_muscles
+        )
+        target_has_biceps = any("bicep" in t.lower() for t in target_muscles)
+        target_has_triceps = any("tricep" in t.lower() for t in target_muscles)
+        target_has_forearms = any("forearm" in t.lower() for t in target_muscles)
+        target_has_back = any("back" in t.lower() or "lat" in t.lower() for t in target_muscles)
+        target_has_chest_shoulders = any(
+            "chest" in t.lower() or "shoulder" in t.lower() or "delt" in t.lower()
+            for t in target_muscles
+        )
+        wants_chest_and_shoulders = (
+            target_has_chest_shoulders and 
+            any("shoulder" in t.lower() or "delt" in t.lower() for t in target_muscles) and
+            any("chest" in t.lower() for t in target_muscles)
+        )
+        
+        # Define primary_str for use in muscle blocking
+        primary_str = " ".join(primary_lower)
+        
+        # 🚫 FOREARM BLOCKING: Block forearm exercises unless explicitly selected
+        is_forearm_exercise = any(kw in name_lower for kw in [
+            "forearm", "wrist curl", "wrist extension", "wrist roller", "finger curl", 
+            "reverse curl", "behind back curl", "farmers", "gripper", "forearm pronation"
+        ]) or "forearm" in primary_str
+        if is_forearm_exercise and not target_has_forearms:
+            filter_reasons["forearm_not_selected"] += 1
+            continue
+        
+        # 🚫 TRICEPS BLOCKING: Block triceps exercises unless explicitly selected
+        is_triceps_exercise = any(kw in name_lower for kw in [
+            "tricep", "pushdown", "press down", "skull crusher"
+        ]) or ("extension" in name_lower and "leg" not in name_lower and "back" not in name_lower and "hip" not in name_lower)
+        if is_triceps_exercise and not target_has_triceps:
+            filter_reasons["triceps_not_selected"] += 1
+            continue
+        
+        # 🚫 BICEPS BLOCKING: Block biceps exercises when not selected (for Push days)
+        is_biceps_exercise = "bicep" in primary_str or ("curl" in name_lower and "leg curl" not in name_lower and "hamstring" not in name_lower and "wrist" not in name_lower)
+        if is_biceps_exercise and not target_has_biceps and not target_has_back:
+            filter_reasons["biceps_not_selected"] += 1
+            continue
+        
+        if wants_chest_and_shoulders and not target_has_arms:
+            name_lower = name.lower()
+            primary_str = " ".join(primary_lower)
+            # Block bicep isolation (curls that aren't part of compound)
+            is_bicep_isolation = (
+                ("curl" in name_lower and "leg curl" not in name_lower and "hamstring" not in name_lower) and
+                ("press" not in name_lower and " row" not in name_lower) and
+                ("bicep" in primary_str)
+            )
+            if is_bicep_isolation:
+                filter_reasons["off_target_isolation"] += 1
+                continue
+        
+        # ═══════════════════════════════════════════════════════════════════════════
+        # CRITICAL: Block PRESS variations when Back+Arms/Biceps selected (no chest/shoulders)
+        # ═══════════════════════════════════════════════════════════════════════════
+        target_has_back = any("back" in t.lower() or "lat" in t.lower() for t in target_muscles)
+        target_has_chest = any("chest" in t.lower() or "pec" in t.lower() for t in target_muscles)
+        target_has_shoulders = any("shoulder" in t.lower() or "delt" in t.lower() for t in target_muscles)
+        
+        # If Back+Arms without Chest/Shoulders → BLOCK all press variations
+        if target_has_back and target_has_arms and not target_has_chest and not target_has_shoulders:
+            name_lower = name.lower()
+            primary_str = " ".join(primary_lower)  # Define here for this block
+            if "press" in name_lower and "leg press" not in name_lower:
+                filter_reasons["press_in_back_arms"] += 1
+                continue
+            # Also block dips (they're pressing movements)
+            if "dip" in name_lower and not any(m in primary_str for m in ["back", "lat"]):
+                filter_reasons["dip_in_back_arms"] += 1
                 continue
         
         filtered.append(ex)
@@ -2639,8 +2955,230 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
         "calf_raise", "back_extension", "leg_press"
     }
     
-    # Max 1 exercise per family - MATCHES Swift maxPerExerciseFamily = 1
-    MAX_PER_EXERCISE_FAMILY = 1
+    # Max 2 exercises per family - Updated from 1 to allow variety (e.g., 2 curls OK, 3 not)
+    MAX_PER_EXERCISE_FAMILY = 2
+    
+    # 🆕 GLOBAL PRESS CAP - Max 2 total presses for multi-muscle workouts
+    # Prevents selecting 3+ press variations (bench + shoulder + decline = too many)
+    global_press_count = 0
+    MAX_GLOBAL_PRESSES = 2
+    multi_muscle_workout = len(set(target_lower)) > 1
+    
+    # 🆕 SHOULDER ENFORCEMENT - Track if we have shoulder exercises when requested
+    wants_shoulders = any("shoulder" in t.lower() or "delt" in t.lower() for t in target_muscles)
+    has_shoulder_exercise = False
+    
+    # 🆕 ROW CAP - Max 2 rows, and if both, one should be supported
+    row_count = 0
+    has_supported_row = False
+    MAX_ROWS = 2
+    
+    # 🆕 HINGE CAP - Max 1 hinge per workout (deadlift/RDL/back extension family)
+    hinge_count = 0
+    MAX_HINGES = 1
+    
+    # 🆕 CALF CAP - Max 1 calf raise unless calves explicitly selected
+    calf_count = 0
+    wants_calves = any("calf" in t.lower() or "calves" in t.lower() for t in target_muscles)
+    MAX_CALVES = 2 if wants_calves else 1
+    
+    # 🆕 SHRUG CAP - Max 1 shrug unless traps explicitly selected
+    shrug_count = 0
+    wants_traps = any("trap" in t.lower() for t in target_muscles)
+    MAX_SHRUGS = 2 if wants_traps else 1
+    
+    # 🆕 VERTICAL PULL FAMILY DUPLICATE CHECK
+    vertical_pull_count = 0
+    vertical_pull_families = set()  # Track pulldown vs chin-up vs straight-arm
+    
+    # 🆕 ARM ISOLATION CAP - If primary isn't "Arms", cap arm isolations
+    is_arms_day = any("arm" in t.lower() or "bicep" in t.lower() or "tricep" in t.lower() for t in target_muscles)
+    bicep_isolation_count = 0
+    tricep_isolation_count = 0
+    MAX_ARM_ISOLATIONS = 2 if is_arms_day else 1  # 1 biceps + 1 triceps max if not arms day
+    
+    # 🆕 PULLOVER CAP - Max 1 pullover unless lats/serratus focus
+    pullover_count = 0
+    wants_lats = any("lat" in t.lower() for t in target_muscles)
+    wants_serratus = any("serratus" in t.lower() for t in target_muscles)
+    MAX_PULLOVERS = 2 if (wants_lats or wants_serratus) else 1
+    
+    # 🆕 LEG PRESS CAP - Max 1 leg press variant per workout
+    leg_press_count = 0
+    MAX_LEG_PRESS = 1
+    
+    # 🆕 VERTICAL PRESS CAP - Max 1 shoulder/overhead press
+    vertical_press_count = 0
+    MAX_VERTICAL_PRESS = 1
+    
+    # 🆕 TRICEPS PATTERN COUNT - For Chest+Triceps, need 2 triceps patterns
+    triceps_pattern_count = 0
+    wants_chest = any("chest" in t.lower() for t in target_muscles)
+    wants_triceps = any("tricep" in t.lower() for t in target_muscles)
+    is_chest_triceps_day = wants_chest and wants_triceps and not wants_shoulders
+    MIN_TRICEPS_PATTERNS = 2 if is_chest_triceps_day else 0
+    
+    # 🆕 CORE-ONLY DAY DETECTION - Block squat/hinge/press
+    wants_core = any("core" in t.lower() or "abs" in t.lower() for t in target_muscles)
+    is_core_only_day = wants_core and not wants_chest and not wants_shoulders and not any("leg" in t.lower() or "back" in t.lower() for t in target_muscles)
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 🆕 HARD FAMILY CAPS - Max 1 per specific family (user feedback Dec 27)
+    # These families are prone to "template spam" when duplicated
+    # ═══════════════════════════════════════════════════════════════════════════════
+    horizontal_row_count = 0
+    tbar_row_count = 0
+    hammer_curl_count = 0
+    preacher_curl_count = 0
+    other_pattern_count = 0  # Unknown/unclassified patterns
+    
+    # Hard caps: These families should be MAX 1 unless user explicitly wants more
+    MAX_HORIZONTAL_ROW = 1  # No 2 bent-over rows or 2 cable rows
+    MAX_VERTICAL_PULL = 1   # No 2 pulldowns (enforced via family)
+    MAX_TBAR_ROW = 1
+    MAX_HAMMER_CURL = 1     # No 2 hammer curls
+    MAX_PREACHER_CURL = 1   # No 2 preacher curls
+    MAX_OTHER_PATTERN = 1   # Max 1 unknown pattern per workout
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 🆕 HINGE GATING - Block hinges for Back/Biceps, Pull unless lower_back selected
+    # ═══════════════════════════════════════════════════════════════════════════════
+    wants_lower_back = any("lower back" in t.lower() or "erector" in t.lower() for t in target_muscles)
+    wants_posterior_chain = any("posterior" in t.lower() for t in target_muscles)
+    is_full_body = any("full body" in t.lower() for t in target_muscles)
+    wants_legs = any("leg" in t.lower() or "quad" in t.lower() or "ham" in t.lower() or "glute" in t.lower() for t in target_muscles)
+    
+    # Back/Pull day detection (without legs or chest)
+    is_back_pull_day = any("back" in t.lower() or "lat" in t.lower() for t in target_muscles) and not wants_chest and not wants_legs
+    
+    # Block hinges on Back/Pull days unless explicitly requested
+    allow_hinges = wants_lower_back or wants_posterior_chain or is_full_body or wants_legs
+    should_block_hinges = is_back_pull_day and not allow_hinges
+    
+    if should_block_hinges:
+        print(f"   🚫 [HINGE GATE] Blocking hinges for Back/Pull day (no lower_back/posterior/full_body selected)")
+    
+    # 🆕 COMBO RULE CAPS - Get effective caps from combo rules engine
+    combo_rule = None
+    effective_caps = {}
+    balance_slot = None
+    required_patterns_fulfilled = set()
+    
+    if COMBO_RULES_AVAILABLE:
+        combo_rule = get_combo_rule(target_muscles)
+        if combo_rule:
+            effective_caps = get_effective_caps(combo_rule, is_arms_day)
+            print(f"📋 [COMBO RULES] Detected combo: {combo_rule.combo_name}")
+            print(f"   Must include: {combo_rule.must_include}")
+            print(f"   Avoid: {combo_rule.avoid}")
+            print(f"   Caps: {effective_caps}")
+        
+        # Get balance slot recommendation
+        balance_slot = get_balance_slot(target_muscles)
+        if balance_slot:
+            print(f"   ⚖️ Balance slot: {balance_slot}")
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 🎯 PHASE 0: ENFORCE MUST_INCLUDE COMBO RULE PATTERNS
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CRITICAL: Reserve slots for required patterns BEFORE general selection
+    # Example: Back + Biceps MUST have vertical_pull + horizontal_row + bicep_curl
+    
+    if COMBO_RULES_AVAILABLE and combo_rule and combo_rule.must_include:
+        print(f"\n🎯 [PHASE 0] Enforcing required patterns: {combo_rule.must_include}")
+        
+        for required_pattern in combo_rule.must_include:
+            # Check if we already have this pattern
+            has_pattern = False
+            for existing in selected:
+                existing_pattern = detect_exercise_pattern(existing.get('name', ''), existing.get('equipment', ''))
+                if existing_pattern == required_pattern:
+                    has_pattern = True
+                    break
+                # Handle aliases
+                if required_pattern == "horizontal_row" and existing_pattern in ["horizontal_row", "chest_supported_row"]:
+                    has_pattern = True
+                    break
+                if required_pattern == "bicep_curl" and existing_pattern in ["bicep_curl", "bicep_supinated", "bicep_neutral", "bicep_preacher"]:
+                    has_pattern = True
+                    break
+            
+            if has_pattern:
+                print(f"   ✅ [PHASE 0] Already have {required_pattern}")
+                continue
+            
+            # Find best exercise matching this pattern
+            for score, ex in scored:
+                if len(selected) >= count:
+                    break
+                
+                name = ex.get('name', '')
+                name_lower = name.lower()
+                equipment = ex.get('equipment', '')
+                
+                # Skip if already selected
+                if name_lower in [s.get('name', '').lower() for s in selected]:
+                    continue
+                
+                # Check pattern match
+                pattern = detect_exercise_pattern(name, equipment)
+                
+                # Match required pattern (with aliases)
+                matches_required = False
+                if pattern == required_pattern:
+                    matches_required = True
+                elif required_pattern == "horizontal_row" and pattern in ["horizontal_row", "chest_supported_row"]:
+                    matches_required = True
+                elif required_pattern == "bicep_curl" and pattern in ["bicep_curl", "bicep_supinated", "bicep_neutral", "bicep_preacher"]:
+                    matches_required = True
+                
+                if not matches_required:
+                    continue
+                
+                # Check avoid rules
+                if combo_rule:
+                    should_skip, skip_reason = should_avoid_exercise(name, combo_rule)
+                    if should_skip:
+                        continue
+                
+                # Check exercise family
+                family = detect_exercise_family(name)
+                if family != "other" and exercise_families[family] >= MAX_PER_EXERCISE_FAMILY:
+                    continue
+                
+                # SELECT THIS EXERCISE for required pattern
+                selected.append(ex)
+                exercise_families[family] += 1
+                required_patterns_fulfilled.add(required_pattern)
+                
+                # Track for caps
+                movement_pattern = classify_movement_pattern(name, equipment)
+                movement_patterns[movement_pattern] += 1
+                
+                # Check if this is a row or hinge
+                is_row = " row" in name_lower or name_lower.startswith("row")
+                is_hinge = any(kw in name_lower for kw in ["deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension"])
+                
+                if is_row:
+                    row_count += 1
+                    if any(kw in name_lower for kw in ["chest supported", "chest-supported", "seated", "lever", "machine"]):
+                        has_supported_row = True
+                
+                if is_hinge:
+                    hinge_count += 1
+                
+                print(f"   ✅ [PHASE 0] Reserved {required_pattern}: {name} (score: {score:.0f})")
+                break
+        
+        # Validate we got all required patterns
+        missing = [p for p in combo_rule.must_include if p not in required_patterns_fulfilled]
+        if missing:
+            print(f"   ⚠️ [PHASE 0] Could not find exercises for: {missing}")
+        else:
+            print(f"   ✅ [PHASE 0] All required patterns fulfilled: {sorted(required_patterns_fulfilled)}")
+    
+    # 🎯 PHASE 1: General selection (equipment diversity)
+    print(f"\n🎯 [PHASE 1] Filling remaining slots with equipment diversity...")
     
     for score, ex in scored:
         if len(selected) >= count:
@@ -2665,6 +3203,132 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
         max_for_pattern = MOVEMENT_PATTERN_LIMITS.get(movement_pattern, 2)
         if movement_patterns[movement_pattern] >= max_for_pattern:
             continue
+        
+        # 🆕 GLOBAL PRESS CAP - Max 2 total presses for multi-muscle workouts
+        is_press_exercise = "press" in name_lower
+        if multi_muscle_workout and is_press_exercise and global_press_count >= MAX_GLOBAL_PRESSES:
+            continue  # Skip additional presses
+        
+        # 🆕 ROW CAP - Max 2 rows, and prefer at least one supported row
+        is_row = " row" in name_lower or name_lower.startswith("row")
+        if is_row:
+            if row_count >= MAX_ROWS:
+                continue  # Skip additional rows
+            # If we already have 1 unsupported row, second row should be supported
+            is_supported = any(kw in name_lower for kw in ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"])
+            if row_count == 1 and not has_supported_row and not is_supported:
+                continue  # Second row should be supported if first wasn't
+        
+        # 🆕 HINGE CAP - Max 1 hinge per workout
+        is_hinge = any(h in name_lower for h in ["deadlift", "rdl", "romanian", "good morning", "back extension", "hyperextension"])
+        if is_hinge and hinge_count >= MAX_HINGES:
+            continue  # Skip additional hinges
+        
+        # 🆕 CALF CAP - Max 1 calf raise unless calves explicitly selected
+        is_calf = any(kw in name_lower for kw in ["calf", "gastrocnemius", "soleus", "toe raise"])
+        if is_calf and calf_count >= MAX_CALVES:
+            continue  # Skip additional calves
+        
+        # 🆕 SHRUG CAP - Max 1 shrug unless traps explicitly selected
+        is_shrug = "shrug" in name_lower
+        if is_shrug and shrug_count >= MAX_SHRUGS:
+            continue  # Skip additional shrugs
+        
+        # 🆕 VERTICAL PULL FAMILY DUPLICATE CHECK - Second vertical pull must be different family
+        is_vertical_pull = any(kw in name_lower for kw in ["pulldown", "pull down", "chin up", "chin-up", "pull up", "pull-up", "lat pull"])
+        if is_vertical_pull and vertical_pull_count >= 1:
+            # Determine family of this vertical pull
+            if "chin up" in name_lower or "chin-up" in name_lower:
+                vp_family = "chin_up"
+            elif "pull up" in name_lower or "pull-up" in name_lower:
+                vp_family = "pull_up"
+            elif "straight arm" in name_lower:
+                vp_family = "straight_arm_pulldown"
+            else:
+                vp_family = "pulldown"
+            
+            if vp_family in vertical_pull_families:
+                continue  # Already have this family of vertical pull
+        
+        # 🆕 PULLOVER CAP - Max 1 pullover unless lats/serratus focus
+        is_pullover = "pullover" in name_lower
+        if is_pullover and pullover_count >= MAX_PULLOVERS:
+            continue  # Skip additional pullovers
+        
+        # 🆕 LEG PRESS CAP - Max 1 leg press variant per workout
+        is_leg_press = "leg press" in name_lower or ("press" in name_lower and "leg" in name_lower)
+        if is_leg_press and leg_press_count >= MAX_LEG_PRESS:
+            continue  # Skip additional leg press
+        
+        # 🆕 VERTICAL PRESS CAP - Max 1 shoulder/overhead press
+        is_vertical_press = any(kw in name_lower for kw in ["shoulder press", "overhead press", "military press", "viking press"]) and "leg" not in name_lower
+        if is_vertical_press and vertical_press_count >= MAX_VERTICAL_PRESS:
+            continue  # Skip additional vertical press
+        
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🆕 HARD FAMILY CAPS - Max 1 per specific family (user feedback Dec 27)
+        # ═══════════════════════════════════════════════════════════════════════════════
+        
+        # HORIZONTAL ROW CAP - Max 1 (no 2 bent-over rows or 2 cable rows)
+        is_horizontal_row = ("row" in name_lower and "upright row" not in name_lower) or "bent over" in name_lower or "bent-over" in name_lower
+        is_tbar_row = "t bar" in name_lower or "t-bar" in name_lower or "tbar" in name_lower
+        
+        if is_horizontal_row and not is_tbar_row and horizontal_row_count >= MAX_HORIZONTAL_ROW:
+            continue  # Skip additional horizontal rows
+        
+        if is_tbar_row and tbar_row_count >= MAX_TBAR_ROW:
+            continue  # Skip additional T-bar rows
+        
+        # HAMMER CURL CAP - Max 1 (no 2 hammer curls)
+        is_hammer_curl = "hammer" in name_lower and "curl" in name_lower
+        if is_hammer_curl and hammer_curl_count >= MAX_HAMMER_CURL:
+            continue  # Skip additional hammer curls
+        
+        # PREACHER CURL CAP - Max 1 (no 2 preacher curls)
+        is_preacher_curl = "preacher" in name_lower and "curl" in name_lower
+        if is_preacher_curl and preacher_curl_count >= MAX_PREACHER_CURL:
+            continue  # Skip additional preacher curls
+        
+        # UNKNOWN PATTERN CAP - Max 1 exercise with "other" pattern
+        detected_pattern_for_cap = detect_exercise_pattern(name, equipment)
+        is_other_pattern = detected_pattern_for_cap == "other" or not detected_pattern_for_cap
+        if is_other_pattern and other_pattern_count >= MAX_OTHER_PATTERN:
+            continue  # Skip additional unknown pattern exercises
+        
+        # 🆕 ARM ISOLATION CAP - Enforce if not arms day
+        is_bicep_isolation = movement_pattern in ["bicep_curl", "bicep_supinated", "bicep_neutral", "bicep_preacher"]
+        is_tricep_isolation = movement_pattern in ["tricep_pressdown", "tricep_overhead", "tricep_extension"]
+        
+        if not is_arms_day:
+            if is_bicep_isolation and bicep_isolation_count >= MAX_ARM_ISOLATIONS:
+                continue  # Cap bicep isolation
+            if is_tricep_isolation and tricep_isolation_count >= MAX_ARM_ISOLATIONS:
+                continue  # Cap tricep isolation
+        
+        # 🆕 COMBO RULE AVOIDANCE - Skip exercises that should be avoided
+        if COMBO_RULES_AVAILABLE and combo_rule:
+            should_skip, skip_reason = should_avoid_exercise(name, combo_rule)
+            if should_skip:
+                continue
+        
+        # 🆕 MUSCLE GROUP VALIDATION: Block wrong exercise types for this combo
+        if combo_rule:
+            detected_pattern = detect_exercise_pattern(name, equipment)
+            
+            # Back+Biceps: NO presses or tricep work
+            if combo_rule.combo_name == "Back + Biceps":
+                if detected_pattern in ["press", "chest_press", "incline_press", "decline_press", "shoulder_press"]:
+                    print(f"   🚫 [WRONG MUSCLE GROUP] Skipping '{name}': press exercise in Back+Biceps workout")
+                    continue
+                if detected_pattern in ["tricep_pressdown", "tricep_overhead", "dip"]:
+                    print(f"   🚫 [WRONG MUSCLE GROUP] Skipping '{name}': tricep exercise in Back+Biceps workout")
+                    continue
+            
+            # Legs workouts: NO upper body presses
+            if combo_rule.combo_name in ["Legs (Quads + Glutes)", "Quads + Hamstrings", "Glutes + Hamstrings"]:
+                if detected_pattern in ["press", "chest_press", "shoulder_press", "incline_press", "decline_press"]:
+                    print(f"   🚫 [WRONG MUSCLE GROUP] Skipping '{name}': upper body press in legs workout")
+                    continue  # Skip avoided exercise
         
         # ═══════════════════════════════════════════════════════════════════════════════
         # CRITICAL: Block upper body exercises on leg/glute days
@@ -2755,6 +3419,95 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
         used_equipment[equip_category] += 1
         movement_patterns[movement_pattern] += 1
         
+        # 🆕 Track global press count
+        if is_press_exercise:
+            global_press_count += 1
+        
+        # 🆕 Track row count and supported status
+        if is_row:
+            row_count += 1
+            is_supported = any(kw in name_lower for kw in ["chest supported", "chest-supported", "lying", "seated", "lever", "machine"])
+            if is_supported:
+                has_supported_row = True
+        
+        # 🆕 Track hinge count
+        if is_hinge:
+            hinge_count += 1
+        
+        # 🆕 Track calf count
+        if is_calf:
+            calf_count += 1
+        
+        # 🆕 Track shrug count
+        if is_shrug:
+            shrug_count += 1
+        
+        # 🆕 Track vertical pull families
+        if is_vertical_pull:
+            vertical_pull_count += 1
+            if "chin up" in name_lower or "chin-up" in name_lower:
+                vertical_pull_families.add("chin_up")
+            elif "pull up" in name_lower or "pull-up" in name_lower:
+                vertical_pull_families.add("pull_up")
+            elif "straight arm" in name_lower:
+                vertical_pull_families.add("straight_arm_pulldown")
+            else:
+                vertical_pull_families.add("pulldown")
+        
+        # 🆕 Track pullover count
+        if is_pullover:
+            pullover_count += 1
+        
+        # 🆕 Track leg press count
+        if is_leg_press:
+            leg_press_count += 1
+        
+        # 🆕 Track vertical press count
+        if is_vertical_press:
+            vertical_press_count += 1
+        
+        # 🆕 Track triceps pattern count
+        if is_tricep_isolation or "tricep" in name_lower or "pushdown" in name_lower or "skull crusher" in name_lower:
+            triceps_pattern_count += 1
+        
+        # 🆕 Track horizontal row count
+        if is_horizontal_row and not is_tbar_row:
+            horizontal_row_count += 1
+        
+        # 🆕 Track T-bar row count
+        if is_tbar_row:
+            tbar_row_count += 1
+        
+        # 🆕 Track hammer curl count
+        if is_hammer_curl:
+            hammer_curl_count += 1
+        
+        # 🆕 Track preacher curl count
+        if is_preacher_curl:
+            preacher_curl_count += 1
+        
+        # 🆕 Track "other" pattern count
+        if is_other_pattern:
+            other_pattern_count += 1
+        
+        # 🆕 Track arm isolation counts
+        if is_bicep_isolation:
+            bicep_isolation_count += 1
+        if is_tricep_isolation:
+            tricep_isolation_count += 1
+        
+        # 🆕 Track shoulder exercises
+        primary = ex.get('primary_muscles', [])
+        if isinstance(primary, str):
+            primary = [primary]
+        primary_lower_str = " ".join([m.lower() for m in primary if m])
+        is_shoulder_ex = (
+            "delt" in primary_lower_str or "shoulder" in primary_lower_str or
+            family in ["shoulder_press", "lateral_raise", "rear_delt"]
+        )
+        if is_shoulder_ex:
+            has_shoulder_exercise = True
+        
         # Track unsupported rows
         if movement_pattern == "horizontal_pull":
             is_supported = any(kw in name_lower for kw in [
@@ -2763,9 +3516,120 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
             if not is_supported:
                 unsupported_row_count += 1
     
-    print(f"Selected {len(selected)} exercises")
+    # 🆕 SHOULDER ENFORCEMENT: If user wanted shoulders but we didn't get any, force-add one
+    if wants_shoulders and not has_shoulder_exercise and len(selected) > 0:
+        print(f"⚠️ [SHOULDER ENFORCEMENT] No shoulder exercises selected despite request! Attempting to swap...")
+        
+        # Find a shoulder exercise from scored list
+        for score, ex in scored:
+            name = ex.get('name', '')
+            name_lower = name.lower()
+            primary = ex.get('primary_muscles', [])
+            if isinstance(primary, str):
+                primary = [primary]
+            primary_lower_str = " ".join([m.lower() for m in primary if m])
+            family = detect_exercise_family(name)
+            
+            is_shoulder = (
+                "delt" in primary_lower_str or "shoulder" in primary_lower_str or
+                family in ["shoulder_press", "lateral_raise", "rear_delt"]
+            )
+            
+            if is_shoulder and name_lower not in [s.get('name', '').lower() for s in selected]:
+                # Find a non-compound, non-chest exercise to replace
+                for i in range(len(selected) - 1, -1, -1):
+                    sel_name = selected[i].get('name', '').lower()
+                    sel_primary = selected[i].get('primary_muscles', [])
+                    if isinstance(sel_primary, str):
+                        sel_primary = [sel_primary]
+                    sel_primary_str = " ".join([m.lower() for m in sel_primary if m])
+                    
+                    # Replace isolation or non-chest exercise
+                    is_compound = any(kw in sel_name for kw in ['press', 'squat', 'deadlift', 'row', 'dip'])
+                    is_chest = 'chest' in sel_primary_str or 'pec' in sel_primary_str
+                    
+                    if not is_compound or not is_chest:
+                        print(f"   ✅ [SHOULDER ENFORCEMENT] Replacing '{selected[i].get('name')}' with '{name}'")
+                        selected[i] = ex
+                        has_shoulder_exercise = True
+                        break
+                
+                if has_shoulder_exercise:
+                    break
+    
+    # 🆕 BALANCE SLOT ENFORCEMENT: Add a balance exercise if space allows
+    if COMBO_RULES_AVAILABLE and balance_slot and len(selected) < count:
+        has_balance_exercise = False
+        
+        # Check if we already have the balance exercise
+        for sel in selected:
+            sel_name = sel.get('name', '').lower()
+            if balance_slot == "rear_delt" and any(p in sel_name for p in ["rear delt", "face pull", "reverse fly"]):
+                has_balance_exercise = True
+                break
+            if balance_slot == "core_stability" and any(p in sel_name for p in ["pallof", "dead bug", "plank"]):
+                has_balance_exercise = True
+                break
+        
+        if not has_balance_exercise:
+            print(f"⚖️ [BALANCE SLOT] Adding balance exercise: {balance_slot}")
+            # Find a balance exercise from scored list
+            for score, ex in scored:
+                name = ex.get('name', '')
+                name_lower = name.lower()
+                
+                if name_lower in [s.get('name', '').lower() for s in selected]:
+                    continue
+                
+                is_balance_match = False
+                if balance_slot == "rear_delt" and any(p in name_lower for p in ["rear delt", "face pull", "reverse fly"]):
+                    is_balance_match = True
+                if balance_slot == "core_stability" and any(p in name_lower for p in ["pallof", "dead bug", "plank"]):
+                    is_balance_match = True
+                if balance_slot == "rotator_cuff" and any(p in name_lower for p in ["external rotation", "face pull", "band pull"]):
+                    is_balance_match = True
+                
+                if is_balance_match:
+                    reasoning = generate_selection_reasoning(ex, user, target_muscles, {"score": score, "is_balance_slot": True})
+                    ex['selection_reasoning'] = reasoning
+                    ex['selection_score'] = score
+                    ex['is_balance_slot'] = True
+                    selected.append(ex)
+                    print(f"   ✅ Added balance exercise: {name}")
+                    break
+    
+    # 🆕 WORKOUT VALIDATION: Check against combo rules
+    if COMBO_RULES_AVAILABLE and combo_rule:
+        focus_areas = [t for t in target_muscles if any(f in t.lower() for f in ["upper", "lower", "front", "rear", "side", "mid"])]
+        is_valid, issues = validate_workout_against_rules(selected, target_muscles, focus_areas)
+        if not is_valid:
+            print(f"⚠️ [VALIDATION] Workout has issues:")
+            for issue in issues:
+                print(f"   - {issue}")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔍 FINAL VALIDATION: Check all required patterns are present
+    # ═══════════════════════════════════════════════════════════════════════════
+    if COMBO_RULES_AVAILABLE and combo_rule and combo_rule.must_include:
+        selected_data = [(ex.get('name', ''), ex.get('equipment', '')) for ex in selected]
+        is_valid, issues = validate_workout_against_rules(
+            [{'name': name, 'equipment': eq} for name, eq in selected_data],
+            target_muscles,
+            focus_areas=None
+        )
+        
+        if not is_valid:
+            print(f"\n⚠️ [VALIDATION FAILED] Workout violates combo rules:")
+            for issue in issues:
+                print(f"   - {issue}")
+            print(f"⚠️ This workout should NOT be shown to user!")
+        else:
+            print(f"\n✅ [VALIDATION PASSED] All required patterns present")
+    
+    print(f"\nSelected {len(selected)} exercises")
     for ex in selected:
-        print(f"  - {ex.get('name')} [{ex.get('equipment')}]")
+        balance_tag = " [BALANCE]" if ex.get('is_balance_slot') else ""
+        print(f"  - {ex.get('name')} [{ex.get('equipment')}]{balance_tag}")
     
     return selected
 
@@ -2936,6 +3800,11 @@ def detect_exercise_family(name: str) -> str:
     """
     name_lower = name.lower()
     
+    # 🆕 REVERSE GRIP PRESSES - Group ALL reverse grip variations together
+    # Prevents selecting 3 different reverse grip press variations
+    if "reverse grip" in name_lower and "press" in name_lower:
+        return "reverse_grip_press"
+    
     # SPECIAL CASE: Combo exercises - classify by PRIMARY movement
     if "deadlift" in name_lower and ("row" in name_lower or "shrug" in name_lower):
         return "deadlift"
@@ -2955,19 +3824,20 @@ def detect_exercise_family(name: str) -> str:
         return "skull_crusher"
     
     # SMITH MACHINE PRESSES - Chest exercises on Smith
-    if "smith" in name_lower and ("decline" in name_lower or "incline" in name_lower or "flat" in name_lower or "reverse grip" in name_lower):
+    if "smith" in name_lower and ("decline" in name_lower or "incline" in name_lower or "flat" in name_lower):
         return "smith_chest_press"
     
-    # CHEST FAMILIES
+    # CHEST FAMILIES - SYNCED WITH Swift getExerciseFamily()
+    # All chest presses grouped together as "chest_press" (not separate bench_press)
     if "bench press" in name_lower:
-        return "bench_press"
+        return "chest_press"  # FIXED: Align with Swift
     if "chest press" in name_lower:
         return "chest_press"
     # Incline/Decline/Flat Press variations without "bench" or "chest" in name
     if ("incline" in name_lower or "decline" in name_lower or "flat" in name_lower) and "press" in name_lower:
         # But not shoulder press
         if "shoulder" not in name_lower and "leg" not in name_lower:
-            return "bench_press"
+            return "chest_press"  # FIXED: Align with Swift
     if "fly" in name_lower or "flye" in name_lower:
         return "chest_fly"
     if "push-up" in name_lower or "pushup" in name_lower or "push up" in name_lower:
@@ -2988,13 +3858,17 @@ def detect_exercise_family(name: str) -> str:
         return "deadlift"
     
     # BACK FAMILIES - include all row variations (narrow grip, wide grip, etc.)
-    # Note: "arrow" check was causing issues because "narrow" contains "arrow" - removed
-    if "row" in name_lower and "upright" not in name_lower and "deadlift" not in name_lower:
-        # Exclude "arrow" exercises but not "narrow" (which contains "arrow")
-        if " arrow" in name_lower or name_lower.startswith("arrow"):
-            pass  # Skip actual arrow exercises
+    # SYNCED WITH Swift: Check for " row" (space before) to avoid matching "narrow"
+    if (" row" in name_lower or name_lower.startswith("row")) and "upright" not in name_lower and "deadlift" not in name_lower:
+        # Specific row types match Swift naming
+        if "seated" in name_lower:
+            return "seated_row"
+        elif "bent over" in name_lower or "bent-over" in name_lower:
+            return "bent_row"
+        elif "cable" in name_lower:
+            return "cable_row"
         else:
-            return "row"
+            return "row_other"  # FIXED: Align with Swift
     if "pulldown" in name_lower or "pull-down" in name_lower or "pull down" in name_lower:
         return "pulldown"
     if "pull-up" in name_lower or "pullup" in name_lower or "pull up" in name_lower:
@@ -3002,9 +3876,8 @@ def detect_exercise_family(name: str) -> str:
     if "chin-up" in name_lower or "chinup" in name_lower or "chin up" in name_lower:
         return "chinup"
     if "face pull" in name_lower:
-        return "face_pull"
-    if "shrug" in name_lower and "deadlift" not in name_lower:
-        return "shrug"
+        return "rear_delt"  # FIXED: Align with Swift - face pull goes into rear_delt family
+    # NOTE: Shrug check is already done at line 3363, removed duplicate here
     if "lunge" in name_lower:
         return "lunge"
     if "leg extension" in name_lower:

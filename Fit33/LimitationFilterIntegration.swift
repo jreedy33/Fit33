@@ -174,24 +174,21 @@ class WorkoutLimitationFilter {
     
     // MARK: - Private Helpers
     
-    /// Convert existing UserLimitation to our filter Limitation model
-    private func convertToFilterLimitations() -> [Limitation] {
+    /// Convert existing UserLimitation to our filter FilterLimitation model
+    private func convertToFilterLimitations() -> [FilterLimitation] {
         let userLimitations = LimitationsService.shared.userLimitations
         
-        return userLimitations.compactMap { userLim -> Limitation? in
+        return userLimitations.compactMap { userLim -> FilterLimitation? in
             guard userLim.isActive else { return nil }
             
             let area = mapAffectedArea(userLim.affectedArea)
             let severity = mapSeverity(userLim.severity)
-            let type: LimitationType = userLim.limitationType == .injury ? .injury : .chronic
             
-            return Limitation(
+            return FilterLimitation(
                 id: userLim.id.uuidString,
                 area: area,
                 severity: severity,
-                type: type,
                 notes: userLim.notes,
-                createdAt: userLim.createdAt,
                 isActive: true
             )
         }
@@ -226,7 +223,7 @@ class WorkoutLimitationFilter {
     /// Evaluate a single exercise against a limitation
     private func evaluateAgainstLimitation(
         metadata: ExerciseRiskMetadata,
-        limitation: Limitation,
+        limitation: FilterLimitation,
         targetMuscles: [String]
     ) -> (shouldExclude: Bool, penalty: Double, warnings: [String], reason: String?) {
         
@@ -271,23 +268,23 @@ class WorkoutLimitationFilter {
                    metadata.hipHingeDemand
             
         case .upperBack:
-            return metadata.movementPatterns.contains(.pull)
+            return metadata.movementPatterns.contains(RiskMovementPattern.pull)
             
         case .shoulders:
             return !metadata.shoulderStressFlags.isEmpty ||
                    metadata.overheadWork != .none ||
-                   metadata.movementPatterns.contains(.push)
+                   metadata.movementPatterns.contains(RiskMovementPattern.push)
             
         case .knees:
             return metadata.kneeFlexionDepth >= .moderate ||
                    metadata.impactLevel >= .moderate ||
-                   metadata.movementPatterns.contains(.squat) ||
-                   metadata.movementPatterns.contains(.lunge)
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.lunge)
             
         case .hips:
             return metadata.hipHingeDemand ||
-                   metadata.movementPatterns.contains(.hinge) ||
-                   metadata.movementPatterns.contains(.squat)
+                   metadata.movementPatterns.contains(RiskMovementPattern.hinge) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat)
             
         case .neck:
             return metadata.neckStress ||

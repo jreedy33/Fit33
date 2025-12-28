@@ -141,7 +141,7 @@ class LimitationFilterTests {
     private func testLowerBackSkipCompletely() {
         print("\n║ Test 1: Lower Back - Skip Completely")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .lowerBack,
             severity: .skipCompletely,
             type: .injury
@@ -173,7 +173,7 @@ class LimitationFilterTests {
     private func testLowerBackLightWorkOnly() {
         print("\n║ Test 2: Lower Back - Light Work Only")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .lowerBack,
             severity: .lightWorkOnly,
             type: .injury
@@ -206,7 +206,7 @@ class LimitationFilterTests {
     private func testLowerBackBeCareful() {
         print("\n║ Test 3: Lower Back - Be Careful")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .lowerBack,
             severity: .beCareful,
             type: .chronic
@@ -234,7 +234,7 @@ class LimitationFilterTests {
     private func testShoulderSkipCompletely() {
         print("\n║ Test 4: Shoulder - Skip Completely")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .shoulders,
             severity: .skipCompletely,
             type: .injury
@@ -271,7 +271,7 @@ class LimitationFilterTests {
     private func testShoulderBeCareful() {
         print("\n║ Test 5: Shoulder - Be Careful")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .shoulders,
             severity: .beCareful,
             type: .chronic
@@ -294,7 +294,7 @@ class LimitationFilterTests {
     private func testKneeSkipCompletely() {
         print("\n║ Test 6: Knee - Skip Completely")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .knees,
             severity: .skipCompletely,
             type: .injury
@@ -321,7 +321,7 @@ class LimitationFilterTests {
     private func testStretchingOnly() {
         print("\n║ Test 7: Stretching Only")
         
-        let limitation = Limitation(
+        let limitation = FilterLimitation(
             area: .lowerBack,
             severity: .stretchingOnly,
             type: .injury
@@ -344,8 +344,8 @@ class LimitationFilterTests {
         print("\n║ Test 8: Multiple Limitations")
         
         // User has both lower back and knee issues
-        let backLimitation = Limitation(area: .lowerBack, severity: .beCareful, type: .chronic)
-        let kneeLimitation = Limitation(area: .knees, severity: .skipCompletely, type: .injury)
+        let backLimitation = FilterLimitation(area: .lowerBack, severity: .beCareful)
+        let kneeLimitation = FilterLimitation(area: .knees, severity: .skipCompletely)
         
         // Squat affects both - should be excluded due to knee skip completely
         let squatMeta = createMetadata(
@@ -416,7 +416,7 @@ class LimitationFilterTests {
     /// Evaluate metadata against a limitation
     private func evaluateMetadata(
         _ metadata: ExerciseRiskMetadata,
-        _ limitation: Limitation
+        _ limitation: FilterLimitation
     ) -> (shouldExclude: Bool, penalty: Double, warnings: [String], reason: String?) {
         
         // Check if exercise affects this limitation area
@@ -492,18 +492,18 @@ class LimitationFilterTests {
         case .shoulders:
             return !metadata.shoulderStressFlags.isEmpty ||
                    metadata.overheadWork != .none ||
-                   metadata.movementPatterns.contains(.push)
+                   metadata.movementPatterns.contains(RiskMovementPattern.push)
             
         case .knees:
             return metadata.kneeFlexionDepth >= .moderate ||
                    metadata.impactLevel >= .moderate ||
-                   metadata.movementPatterns.contains(.squat) ||
-                   metadata.movementPatterns.contains(.lunge)
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.lunge)
             
         case .hips:
             return metadata.hipHingeDemand ||
-                   metadata.movementPatterns.contains(.hinge) ||
-                   metadata.movementPatterns.contains(.squat)
+                   metadata.movementPatterns.contains(RiskMovementPattern.hinge) ||
+                   metadata.movementPatterns.contains(RiskMovementPattern.squat)
             
         case .neck:
             return metadata.neckStress ||

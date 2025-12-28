@@ -10,6 +10,9 @@
 		33333861626261352D313262652D343338302D623465642D /* StringArrayValueTransformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */; };
 		4D5C65A42F57483C9FAA501B /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149F1F9A361C4E178E9EF77A /* AuthView.swift */; };
 		7C0C41CE2F00A63D00F02E84 /* LimitationFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */; };
+		7C0C41D02F00B0A900F02E84 /* LimitationRuleTables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */; };
+		7C0C41D22F00B21600F02E84 /* ExerciseMetadataClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41D12F00B21600F02E84 /* ExerciseMetadataClassifier.swift */; };
+		7C0C41D42F00C36D00F02E84 /* WorkoutComboRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41D32F00C36D00F02E84 /* WorkoutComboRules.swift */; };
 		7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */; };
 		7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */; };
 		7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */; };
@@ -179,6 +182,9 @@
 		149F1F9A361C4E178E9EF77A /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringArrayValueTransformer.swift; sourceTree = "<group>"; };
 		7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitationFilterEngine.swift; sourceTree = "<group>"; };
+		7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitationRuleTables.swift; sourceTree = "<group>"; };
+		7C0C41D12F00B21600F02E84 /* ExerciseMetadataClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseMetadataClassifier.swift; sourceTree = "<group>"; };
+		7C0C41D32F00C36D00F02E84 /* WorkoutComboRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutComboRules.swift; sourceTree = "<group>"; };
 		7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicProgramGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartDayGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleRecoveryTracker.swift; sourceTree = "<group>"; };
@@ -460,12 +466,15 @@
 				7C558B1E2ED5027200A01E1F /* FoodDetailsView.swift */,
 				7CB08C5C2ED6432900236ECB /* FoodSearchView.swift */,
 				7C558B202ED63BFC00A01E1F /* FoodSearchView.swift */,
+				7C0C41D32F00C36D00F02E84 /* WorkoutComboRules.swift */,
 				7C558B1C2ED5025C00A01E1F /* FoodSearchView.swift */,
 				7C98FABD2EEBC81D001AE1F3 /* FoundationalExerciseDatabase.swift */,
 				7C47F9DE2EE336FB00BEC4D7 /* GeneratedProgramService.swift */,
 				7C558B172ED4D63500A01E1F /* GoFit.entitlements */,
 				7C558B0D2ED4D37B00A01E1F /* HealthKitManager.swift */,
 				7CAFD5592EDF780500920F0D /* HydrationService.swift */,
+				7C0C41D12F00B21600F02E84 /* ExerciseMetadataClassifier.swift */,
+				7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */,
 				7CAFD55B2EDF780B00920F0D /* HydrationWidget.swift */,
 				7CB08C7B2ED81D0700236ECB /* Info.plist */,
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
@@ -759,6 +768,7 @@
 				7CB08C932EDABADE00236ECB /* SmartProgramRecommender.swift in Sources */,
 				7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */,
 				7CB08C972EDBB88200236ECB /* ProgramExplorerView.swift in Sources */,
+				7C0C41D22F00B21600F02E84 /* ExerciseMetadataClassifier.swift in Sources */,
 				7C558B212ED63BFC00A01E1F /* FoodSearchView.swift in Sources */,
 				7C558B0E2ED4D37B00A01E1F /* HealthKitManager.swift in Sources */,
 				7CEAFD0E2EF9C86C00874B57 /* UnitSettingsManager.swift in Sources */,
@@ -772,6 +782,7 @@
 				7CB08CA32EDE395600236ECB /* BugReportService.swift in Sources */,
 				7CAFD5642EE1138800920F0D /* ExerciseMappingService.swift in Sources */,
 				7CB08C7D2ED8B78A00236ECB /* FavoriteRoutinesView.swift in Sources */,
+				7C0C41D42F00C36D00F02E84 /* WorkoutComboRules.swift in Sources */,
 				7C8405D22EE7D2ED0009ED0F /* PersonalizedProgramsView.swift in Sources */,
 				7CAFD56C2EE2109500920F0D /* ExercisePopularityService.swift in Sources */,
 				7C87B63B2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift in Sources */,
@@ -799,6 +810,7 @@
 				7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */,
 				7CAFD55A2EDF780500920F0D /* HydrationService.swift in Sources */,
 				7C8405CA2EE70AFB0009ED0F /* FavoriteBasedDiscoveryEngine.swift in Sources */,
+				7C0C41D02F00B0A900F02E84 /* LimitationRuleTables.swift in Sources */,
 				7CAFD5542EDE594100920F0D /* VideoStreamingService.swift in Sources */,
 				B1234567890123456789A007 /* IntelligentWorkoutGenerator.swift in Sources */,
 				7C98FAC02EEBCD58001AE1F3 /* EquipmentHierarchyService.swift in Sources */,

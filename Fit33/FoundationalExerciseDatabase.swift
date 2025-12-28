@@ -146,7 +146,11 @@ let RISKY_EXERCISES: Set<String> = [
     "renegade row", "plank row", "plank lateral raise", "plank front raise",
     // High injury risk
     "behind the neck press", "behind neck pulldown", "upright row",
-    "good morning"
+    "good morning",
+    // Shoulder-risky for foundational users (bench dips stress anterior delts)
+    "bench dip",  // Can cause shoulder impingement, prefer tricep pushdown or dip machine
+    // Twisting/rotation under load - risky for shoulders and back
+    "twisting overhead", "twisting press", "rotating press", "twist press"
 ]
 
 /// Exercises that stress the lower back - should be blocked/penalized for users with back issues
@@ -1392,86 +1396,81 @@ class FoundationalExerciseDatabase {
     ///   - Workouts 1-2:  Slight machine/cable preference (quick orientation)
     ///   - Workout 3+:    Normal selection
     ///
-    func getBeginnerEquipmentBoost(
+    /// Get equipment quality boost based on HYPERTROPHY effectiveness (not difficulty)
+    /// Advanced users don't need free weights forced on them - machines/cables are equally effective
+    func getEquipmentQualityBoost(
         equipment: String,
+        exerciseName: String,
         userWorkoutCount: Int,
-        experienceLevel: String,
         userEquipment: [String]
     ) -> Double {
-        let level = experienceLevel.lowercased()
         let equipLower = equipment.lowercased()
+        let nameLower = exerciseName.lowercased()
         
-        // Check what equipment user has available
-        let hasMachines = userEquipment.contains { $0.lowercased().contains("machine") }
-        let hasCables = userEquipment.contains { $0.lowercased().contains("cable") }
+        var boost: Double = 0
         
-        // Helper to calculate equipment boost
-        func equipmentBoost(machineBoost: Double, cableBoost: Double, 
-                           dumbbellPenalty: Double = 0, barbellPenalty: Double = 0) -> Double {
+        // ═══════════════════════════════════════════════════════════════
+        // HYPERTROPHY QUALITY BONUSES (equipment-agnostic benefits)
+        // ═══════════════════════════════════════════════════════════════
+        
+        // 1. CONSTANT TENSION BONUS - Cables excel at this
+        if equipLower.contains("cable") {
+            // Cables provide constant tension throughout ROM (great for hypertrophy)
+            if nameLower.contains("fly") || nameLower.contains("lateral raise") || 
+               nameLower.contains("face pull") || nameLower.contains("curl") ||
+               nameLower.contains("pushdown") || nameLower.contains("tricep") {
+                boost += 40  // Excellent for isolation work
+            }
+        }
+        
+        // 2. STABILITY & PROGRESSION BONUS - Machines excel at this
+        if equipLower.contains("machine") || equipLower.contains("lever") || equipLower.contains("smith") {
+            // Machines are stable, safe, and easy to progress (great for hypertrophy)
+            if nameLower.contains("press") || nameLower.contains("row") || 
+               nameLower.contains("pulldown") || nameLower.contains("squat") ||
+               nameLower.contains("leg press") {
+                boost += 40  // Excellent for heavy compound work
+            }
+        }
+        
+        // 3. SUPPORTED MOVEMENT BONUS - Reduces fatigue for target muscles
+        let isSupported = equipLower.contains("chest supported") || equipLower.contains("chest-supported") ||
+                         equipLower.contains("seated") || equipLower.contains("machine") ||
+                         equipLower.contains("lever")
+        if isSupported && nameLower.contains("row") {
+            boost += 50  // Supported rows = better back isolation
+        }
+        
+        // 4. VERSATILITY BONUS - Free weights allow natural movement paths
+        if equipLower.contains("dumbbell") {
+            // Dumbbells allow unilateral work and natural ROM
+            if nameLower.contains("press") || nameLower.contains("row") ||
+               nameLower.contains("fly") || nameLower.contains("curl") {
+                boost += 30  // Good for unilateral and ROM freedom
+            }
+        }
+        
+        // 5. BARBELL BONUS - Great for heavy compounds only
+        if equipLower.contains("barbell") && !equipLower.contains("ez bar") {
+            // Barbells excel at heavy bilateral compound work
+            if nameLower.contains("squat") || nameLower.contains("deadlift") ||
+               nameLower.contains("bench press") || nameLower.contains("row") {
+                boost += 35  // Excellent for strength/mass building
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════
+        // FIRST WORKOUT ORIENTATION (experience-neutral)
+        // ═══════════════════════════════════════════════════════════════
+        // For the FIRST workout only, give a slight boost to machines/cables
+        // This is about orientation, not skill level
+        if userWorkoutCount == 0 {
             if equipLower.contains("machine") || equipLower.contains("lever") {
-                return machineBoost
-            } else if equipLower.contains("cable") {
-                return cableBoost
-            } else if equipLower.contains("dumbbell") {
-                return -dumbbellPenalty
-            } else if equipLower.contains("barbell") {
-                return -barbellPenalty
-            }
-            return 0
-        }
-        
-        // ═══════════════════════════════════════════════════════════════
-        // ADVANCED: Quick 2-workout orientation, then fully open
-        // ═══════════════════════════════════════════════════════════════
-        if level == "advanced" {
-            guard userWorkoutCount < 2 && hasMachines && hasCables else { return 0 }
-            // Just a slight preference for first 2 workouts
-            return equipmentBoost(machineBoost: 30, cableBoost: 20)
-        }
-        
-        // ═══════════════════════════════════════════════════════════════
-        // INTERMEDIATE: 5-workout transition period
-        // ═══════════════════════════════════════════════════════════════
-        if level == "intermediate" {
-            guard userWorkoutCount < 5 && hasMachines && hasCables else { return 0 }
-            
-            if userWorkoutCount < 2 {
-                // Moderate preference
-                return equipmentBoost(machineBoost: 80, cableBoost: 60, dumbbellPenalty: 10, barbellPenalty: 20)
-            } else {
-                // Slight preference
-                return equipmentBoost(machineBoost: 30, cableBoost: 20)
+                boost += 20  // Gentle nudge (not forced)
             }
         }
         
-        // ═══════════════════════════════════════════════════════════════
-        // BEGINNER: Full 10-workout progression to build confidence
-        // ═══════════════════════════════════════════════════════════════
-        guard userWorkoutCount < 10 else { return 0 }
-        
-        if hasMachines && hasCables {
-            // Workouts 1-3: HEAVY preference for machines/cables
-            if userWorkoutCount < 3 {
-                return equipmentBoost(machineBoost: 150, cableBoost: 120, dumbbellPenalty: 30, barbellPenalty: 60)
-            }
-            // Workouts 4-6: Moderate preference, dumbbells now okay
-            else if userWorkoutCount < 6 {
-                return equipmentBoost(machineBoost: 80, cableBoost: 60, dumbbellPenalty: -20, barbellPenalty: 30)
-            }
-            // Workouts 7-10: Slight preference
-            else {
-                return equipmentBoost(machineBoost: 30, cableBoost: 20)
-            }
-        }
-        // If user only has cables (no machines)
-        else if hasCables && !hasMachines {
-            if userWorkoutCount < 5 {
-                if equipLower.contains("cable") { return 100 }
-                else if equipLower.contains("dumbbell") { return 20 }
-            }
-        }
-        
-        return 0
+        return boost
     }
     
     // MARK: - Scoring Methods
@@ -1574,5 +1573,53 @@ class FoundationalExerciseDatabase {
             return true
         }
         return false
+    }
+    
+    // MARK: - 🎯 Equipment-Neutral Pattern Requirements
+    
+    /// Get core pattern requirements for a muscle group (equipment-agnostic)
+    /// This defines WHAT exercises are needed, not HOW they're performed
+    static func getCorePatternRequirements(for muscleGroup: String) -> [String] {
+        let muscle = muscleGroup.lowercased()
+        
+        switch muscle {
+        case "chest":
+            return ["press", "secondary_chest"]  // Press + fly OR different press angle
+        case "back":
+            return ["vertical_pull", "horizontal_row", "rear_delt_or_upper_back"]
+        case "shoulders":
+            return ["shoulder_press", "lateral_raise", "rear_delt"]
+        case "legs", "quads":
+            return ["quad_compound", "hamstring_or_glute", "unilateral_or_glute"]
+        case "arms", "biceps":
+            return ["bicep_supinated", "bicep_neutral_or_cable"]
+        case "triceps":
+            return ["tricep_pressdown", "tricep_overhead"]
+        case "core":
+            return ["anti_rotation", "anti_extension", "flexion"]
+        default:
+            return []
+        }
+    }
+    
+    /// Get equipment requirement rule for a muscle group
+    /// Ensures at least one supported/machine exercise for safety and effectiveness
+    static func getEquipmentRequirement(for muscleGroup: String) -> String? {
+        let muscle = muscleGroup.lowercased()
+        
+        switch muscle {
+        case "chest":
+            return "at_least_one_machine_or_cable_press"  // Machine press OR cable fly
+        case "back":
+            return "at_least_one_supported_row"  // Machine/chest-supported/seated cable
+        case "shoulders":
+            return "lateral_raise_prefer_cable_or_machine"  // Better tension curve
+        case "legs", "quads":
+            return "quad_compound_prefer_machine_60_percent"  // Leg press/hack/smith
+        case "arms":
+            return "mix_cable_and_dumbbell"  // Avoid all-DB or all-cable
+        default:
+            return nil
+        }
     }
 }

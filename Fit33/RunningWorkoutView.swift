@@ -842,52 +842,58 @@ struct RunningWorkoutView: View {
         ZStack {
             backgroundGradient
             
-            VStack(spacing: 32) {
-                Spacer()
-                
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(accentColor.opacity(0.2))
-                        .frame(width: 120, height: 120)
-                    
-                    Image(systemName: "figure.run")
-                        .font(.system(size: 50))
-                        .foregroundStyle(accentGradient)
-                }
-                
-        VStack(spacing: 8) {
-                    Text("Outdoor Run")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                    
-                    Text("GPS tracking • Live pace • Route map")
-                        .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.6))
-                }
-                
-                // Goal Setup Button
-                Button(action: { showGoalSetup = true }) {
-                    HStack {
-                        Image(systemName: "target")
-                        Text(runningManager.goalType == .none ? "Set a goal" : "Goal set")
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Text("Outdoor Run")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        
+                        Text("GPS tracking • Live pace • Route map")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
                     }
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(accentColor)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .stroke(accentColor.opacity(0.5), lineWidth: 1)
-                    )
+                    .padding(.top, 20)
+                    
+                    // MARK: - Open Run Section
+                    openRunSection
+                    
+                    // MARK: - Goals & Challenges Section
+                    goalsAndChallengesSection
+                    
+                    Spacer(minLength: 100)
                 }
-                
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+    
+    // MARK: - Open Run Section
+    private var openRunSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "figure.run")
+                    .font(.title3)
+                    .foregroundColor(accentColor)
+                Text("Open Run")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
                 Spacer()
+            }
+            
+            // Open Run Card with GO button
+            VStack(spacing: 20) {
+                Text("Just run - no distance or time goal")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.7))
                 
-                // Start Button
+                // Big GO Button
                 Button(action: {
                     HapticManager.impact(.heavy)
+                    runningManager.goalType = .none
                     runningManager.startRun()
                 }) {
                     ZStack {
@@ -896,13 +902,104 @@ struct RunningWorkoutView: View {
                             .frame(width: 100, height: 100)
                             .shadow(color: accentColor.opacity(0.5), radius: 20, y: 10)
                         
-                        Text("START")
-                            .font(.title2)
-                            .fontWeight(.heavy)
+                        Text("GO")
+                            .font(.system(size: 32, weight: .heavy))
                             .foregroundColor(.black)
                     }
                 }
-                .padding(.bottom, 60)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(accentColor.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+    }
+    
+    // MARK: - Goals & Challenges Section
+    private var goalsAndChallengesSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "trophy.fill")
+                    .font(.title3)
+                    .foregroundColor(.yellow)
+                Text("Goals & Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            
+            // Distance Goals
+            VStack(alignment: .leading, spacing: 12) {
+                Text("DISTANCE")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1)
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    RunChallengeCard(challenge: .distance1K)
+                    RunChallengeCard(challenge: .distance5K)
+                    RunChallengeCard(challenge: .distance10K)
+                    RunChallengeCard(challenge: .halfMarathon)
+                    RunChallengeCard(challenge: .marathon)
+                    RunChallengeCard(challenge: .ultra50K)
+                }
+            }
+            
+            // Time Challenges
+            VStack(alignment: .leading, spacing: 12) {
+                Text("TIME")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1)
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    RunChallengeCard(challenge: .time15Min)
+                    RunChallengeCard(challenge: .time30Min)
+                    RunChallengeCard(challenge: .time45Min)
+                    RunChallengeCard(challenge: .time60Min)
+                    RunChallengeCard(challenge: .time90Min)
+                    RunChallengeCard(challenge: .time120Min)
+                }
+            }
+            
+            // Speed Challenges
+            VStack(alignment: .leading, spacing: 12) {
+                Text("SPEED RECORDS")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1)
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    RunChallengeCard(challenge: .fastest1K)
+                    RunChallengeCard(challenge: .fastest5K)
+                    RunChallengeCard(challenge: .fastest10K)
+                    RunChallengeCard(challenge: .fastestMile)
+                }
+            }
+            
+            // Training Programs
+            VStack(alignment: .leading, spacing: 12) {
+                Text("TRAINING PROGRAMS")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1)
+                
+                LazyVGrid(columns: [GridItem(.flexible())], spacing: 12) {
+                    RunChallengeCard(challenge: .couch5K)
+                    RunChallengeCard(challenge: .halfMarathonTraining)
+                    RunChallengeCard(challenge: .marathonTraining)
+                }
             }
         }
     }
@@ -1491,6 +1588,255 @@ struct RoutePreviewMap: UIViewRepresentable {
                 return renderer
             }
             return MKOverlayRenderer(overlay: overlay)
+        }
+    }
+}
+
+// MARK: - Run Challenge Types
+enum RunChallenge: String, CaseIterable, Identifiable {
+    // Distance Goals
+    case distance1K = "1K"
+    case distance5K = "5K"
+    case distance10K = "10K"
+    case halfMarathon = "Half Marathon"
+    case marathon = "Marathon"
+    case ultra50K = "50K Ultra"
+    
+    // Time Challenges
+    case time15Min = "15 Minutes"
+    case time30Min = "30 Minutes"
+    case time45Min = "45 Minutes"
+    case time60Min = "60 Minutes"
+    case time90Min = "90 Minutes"
+    case time120Min = "2 Hours"
+    
+    // Speed Records
+    case fastest1K = "Fastest 1K"
+    case fastest5K = "Fastest 5K"
+    case fastest10K = "Fastest 10K"
+    case fastestMile = "Fastest Mile"
+    
+    // Training Programs
+    case couch5K = "Couch to 5K"
+    case halfMarathonTraining = "Half Marathon Training"
+    case marathonTraining = "Marathon Training"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .distance1K, .distance5K, .distance10K, .halfMarathon, .marathon, .ultra50K:
+            return "figure.run"
+        case .time15Min, .time30Min, .time45Min, .time60Min, .time90Min, .time120Min:
+            return "clock.fill"
+        case .fastest1K, .fastest5K, .fastest10K, .fastestMile:
+            return "bolt.fill"
+        case .couch5K, .halfMarathonTraining, .marathonTraining:
+            return "calendar.badge.clock"
+        }
+    }
+    
+    var subtitle: String {
+        switch self {
+        case .distance1K: return "1 kilometer"
+        case .distance5K: return "5 kilometers"
+        case .distance10K: return "10 kilometers"
+        case .halfMarathon: return "21.1 kilometers"
+        case .marathon: return "42.2 kilometers"
+        case .ultra50K: return "50 kilometers"
+        case .time15Min: return "Run for 15 min"
+        case .time30Min: return "Run for 30 min"
+        case .time45Min: return "Run for 45 min"
+        case .time60Min: return "Run for 1 hour"
+        case .time90Min: return "Run for 1.5 hours"
+        case .time120Min: return "Run for 2 hours"
+        case .fastest1K: return "Beat your PR"
+        case .fastest5K: return "Beat your PR"
+        case .fastest10K: return "Beat your PR"
+        case .fastestMile: return "Beat your PR"
+        case .couch5K: return "8 week program"
+        case .halfMarathonTraining: return "12 week program"
+        case .marathonTraining: return "16 week program"
+        }
+    }
+    
+    var completedColor: Color {
+        switch self {
+        case .distance1K, .distance5K, .distance10K: return .green
+        case .halfMarathon, .marathon, .ultra50K: return .orange
+        case .time15Min, .time30Min, .time45Min, .time60Min, .time90Min, .time120Min: return .blue
+        case .fastest1K, .fastest5K, .fastest10K, .fastestMile: return .yellow
+        case .couch5K, .halfMarathonTraining, .marathonTraining: return .purple
+        }
+    }
+    
+    var targetDistance: Double? {
+        switch self {
+        case .distance1K: return 1000
+        case .distance5K: return 5000
+        case .distance10K: return 10000
+        case .halfMarathon: return 21097
+        case .marathon: return 42195
+        case .ultra50K: return 50000
+        case .fastest1K: return 1000
+        case .fastest5K: return 5000
+        case .fastest10K: return 10000
+        case .fastestMile: return 1609
+        default: return nil
+        }
+    }
+    
+    var targetTime: TimeInterval? {
+        switch self {
+        case .time15Min: return 15 * 60
+        case .time30Min: return 30 * 60
+        case .time45Min: return 45 * 60
+        case .time60Min: return 60 * 60
+        case .time90Min: return 90 * 60
+        case .time120Min: return 120 * 60
+        default: return nil
+        }
+    }
+}
+
+// MARK: - Run Challenge Manager
+class RunChallengeManager: ObservableObject {
+    static let shared = RunChallengeManager()
+    
+    @Published var completedChallenges: Set<String> = []
+    @Published var bestTimes: [String: TimeInterval] = [:]
+    
+    private let completedKey = "completedRunChallenges"
+    private let bestTimesKey = "bestRunTimes"
+    
+    init() {
+        loadProgress()
+    }
+    
+    func isCompleted(_ challenge: RunChallenge) -> Bool {
+        completedChallenges.contains(challenge.rawValue)
+    }
+    
+    func markCompleted(_ challenge: RunChallenge) {
+        completedChallenges.insert(challenge.rawValue)
+        saveProgress()
+    }
+    
+    func getBestTime(for challenge: RunChallenge) -> TimeInterval? {
+        bestTimes[challenge.rawValue]
+    }
+    
+    func updateBestTime(for challenge: RunChallenge, time: TimeInterval) {
+        if let existing = bestTimes[challenge.rawValue] {
+            if time < existing {
+                bestTimes[challenge.rawValue] = time
+                saveProgress()
+            }
+        } else {
+            bestTimes[challenge.rawValue] = time
+            saveProgress()
+        }
+    }
+    
+    private func loadProgress() {
+        if let saved = UserDefaults.standard.stringArray(forKey: completedKey) {
+            completedChallenges = Set(saved)
+        }
+        if let saved = UserDefaults.standard.dictionary(forKey: bestTimesKey) as? [String: TimeInterval] {
+            bestTimes = saved
+        }
+    }
+    
+    private func saveProgress() {
+        UserDefaults.standard.set(Array(completedChallenges), forKey: completedKey)
+        UserDefaults.standard.set(bestTimes, forKey: bestTimesKey)
+    }
+}
+
+// MARK: - Run Challenge Card
+struct RunChallengeCard: View {
+    let challenge: RunChallenge
+    @StateObject private var challengeManager = RunChallengeManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var isCompleted: Bool {
+        challengeManager.isCompleted(challenge)
+    }
+    
+    private let accentColor = Color(red: 0.2, green: 1.0, blue: 0.6)
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            // Start run with this challenge as goal
+            RunningManager.shared.setGoal(for: challenge)
+            RunningManager.shared.startRun()
+        }) {
+            HStack(spacing: 12) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(isCompleted ? challenge.completedColor.opacity(0.2) : Color.white.opacity(0.1))
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: challenge.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(isCompleted ? challenge.completedColor : .white.opacity(0.4))
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(challenge.rawValue)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(isCompleted ? .white : .white.opacity(0.5))
+                    
+                    Text(challenge.subtitle)
+                        .font(.caption)
+                        .foregroundColor(isCompleted ? .white.opacity(0.6) : .white.opacity(0.3))
+                }
+                
+                Spacer()
+                
+                // Completed badge or chevron
+                if isCompleted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(challenge.completedColor)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.3))
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isCompleted 
+                        ? challenge.completedColor.opacity(0.15)
+                        : Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(isCompleted 
+                                ? challenge.completedColor.opacity(0.3) 
+                                : Color.white.opacity(0.1), 
+                                lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(isCompleted ? 1.0 : 0.7)
+    }
+}
+
+// MARK: - RunningManager Extension for Challenges
+extension RunningManager {
+    func setGoal(for challenge: RunChallenge) {
+        if let distance = challenge.targetDistance {
+            goalType = .distance
+            goalValue = distance
+        } else if let time = challenge.targetTime {
+            goalType = .time
+            goalValue = time
         }
     }
 }

@@ -147,13 +147,8 @@ struct ExerciseDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Small spacer to push video down slightly from status bar
-                Color.white
-                    .frame(height: 50)
-                
-                // Video Section
+                // Video Section - solid white background extends behind status bar
                 videoSection
-                    .background(videoBackgroundColor)
                 
                 // Content Section with dark background
                 VStack(alignment: .leading, spacing: 20) {
@@ -192,9 +187,9 @@ struct ExerciseDetailView: View {
         .scrollIndicators(.hidden)
         .background(
             VStack(spacing: 0) {
-                // White only for top video area
-                videoBackgroundColor.frame(height: 350)
-                // Dark for rest of view
+                // Solid white for video area (no blur, no effects)
+                Color.white.frame(height: 320)
+                // Dark for rest
                 Color(.systemBackground)
             }
             .ignoresSafeArea()

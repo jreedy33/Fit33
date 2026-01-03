@@ -185,10 +185,11 @@ struct ExerciseDetailView: View {
             }
         }
         .scrollIndicators(.hidden)
+        .ignoresSafeArea(edges: .top)
         .background(
             VStack(spacing: 0) {
                 // Solid white for video area (no blur, no effects)
-                Color.white.frame(height: 320)
+                Color.white.frame(height: 350)
                 // Dark for rest
                 Color(.systemBackground)
             }
@@ -885,7 +886,7 @@ class VideoPlayerManager: ObservableObject {
     }
 }
 
-// MARK: - Custom Back Button (Reduced Blur)
+// MARK: - Custom Back Button (Solid, No Blur)
 
 struct BackButton: View {
     @Environment(\.dismiss) private var dismiss
@@ -897,11 +898,12 @@ struct BackButton: View {
         }) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundColor(.black)
                 .frame(width: 36, height: 36)
                 .background(
                     Circle()
-                        .fill(Color(.systemGray5).opacity(0.9)) // Solid, less blurry
+                        .fill(Color.white) // Fully solid white, no blur
+                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 )
         }
     }

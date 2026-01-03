@@ -26,6 +26,124 @@ final class SmartExerciseSearchService: ObservableObject {
     // Fuzzy matching scores
     private let FUZZY_MATCH_BONUS: Double = 150  // Bonus for partial word matches
     private let PARTIAL_WORD_MATCH_SCORE: Double = 75  // "bench" matches "benchpress"
+    private let TYPO_CORRECTED_SCORE: Double = 180  // Bonus when typo was corrected
+    
+    // MARK: - Common Typos Dictionary
+    // Maps common misspellings to correct spellings for exercise-related terms
+    private let typoCorrections: [String: String] = [
+        // Equipment typos
+        "dumbell": "dumbbell",
+        "dumbel": "dumbbell",
+        "dumble": "dumbbell",
+        "dumbbel": "dumbbell",
+        "dumbells": "dumbbell",
+        "dumbels": "dumbbell",
+        "barbel": "barbell",
+        "barbells": "barbell",
+        "kettleball": "kettlebell",
+        "kettlebel": "kettlebell",
+        "cabel": "cable",
+        "cabels": "cable",
+        "machien": "machine",
+        "mashine": "machine",
+        "bodyweigt": "bodyweight",
+        "benchpress": "bench press",
+        
+        // Muscle group typos
+        "bycep": "bicep",
+        "byceps": "bicep",
+        "bicept": "bicep",
+        "bicepp": "bicep",
+        "trycep": "tricep",
+        "tryceps": "tricep",
+        "tricept": "tricep",
+        "tricepp": "tricep",
+        "forarm": "forearm",
+        "forarms": "forearm",
+        "quadricep": "quads",
+        "hammstring": "hamstrings",
+        "hammstrings": "hamstrings",
+        "hamstrigns": "hamstrings",
+        "gluteus": "glutes",
+        "calfs": "calves",
+        "latissimus": "lats",
+        "trapezius": "traps",
+        "deltoid": "delts",
+        "deltoids": "delts",
+        "sholder": "shoulders",
+        "sholders": "shoulders",
+        "shouder": "shoulders",
+        "abdominal": "abs",
+        "abdominals": "abs",
+        "pectoral": "chest",
+        "pectorals": "chest",
+        
+        // Exercise type typos
+        "flye": "fly",
+        "flyes": "fly",
+        "flies": "fly",
+        "flie": "fly",
+        "curle": "curl",
+        "pres": "press",
+        "presss": "press",
+        "rwo": "row",
+        "sqaut": "squat",
+        "sqat": "squat",
+        "squatt": "squat",
+        "lange": "lunge",
+        "deadlif": "deadlift",
+        "dedlift": "deadlift",
+        "pullup": "pull up",
+        "pullups": "pull up",
+        "chinup": "chin up",
+        "chinups": "chin up",
+        "pushup": "push up",
+        "pushups": "push up",
+        "extention": "extension",
+        "extentions": "extension",
+        "extenstion": "extension",
+        "extnsion": "extension",
+        "crunchs": "crunch",
+        "rais": "raise",
+        "shrg": "shrug",
+        "dipp": "dip",
+        "inclin": "incline",
+        "inclien": "incline",
+        "declin": "decline",
+        "declien": "decline",
+        "laterl": "lateral",
+        "latral": "lateral",
+        
+        // Common word typos
+        "excercise": "exercise",
+        "exercize": "exercise",
+        "excersize": "exercise",
+        "exercis": "exercise",
+        "overhed": "overhead",
+        "overhad": "overhead",
+        "millitary": "military",
+        "militery": "military",
+        "millitry": "military",
+        "arnlod": "arnold",
+        "hamer": "hammer",
+        "hammar": "hammer",
+        "precher": "preacher",
+        "preecher": "preacher",
+        "scull": "skull",
+        "romanaian": "romanian",
+        "romanain": "romanian",
+        "bulgarin": "bulgarian",
+        "bulgarain": "bulgarian",
+        "revers": "reverse",
+        "reverese": "reverse",
+        "hyperextention": "hyperextension",
+        "sitted": "seated",
+        "seeted": "seated",
+        "standng": "standing",
+        "stading": "standing",
+        "lieing": "lying",
+        "lyeing": "lying"
+    ]
     
     // User behavior scores (personalization)
     private let FAVORITE_BOOST: Double = 800  // User's favorites (highest user preference)
@@ -109,6 +227,61 @@ final class SmartExerciseSearchService: ObservableObject {
         print("🔍 [SMART SEARCH] Initialized")
     }
     
+    // MARK: - Typo Correction
+    
+    /// Correct common typos in the search query
+    /// Returns both the corrected query and whether any corrections were made
+    func correctTypos(in query: String) -> (corrected: String, wasModified: Bool) {
+        var words = query.lowercased().split(separator: " ").map { String($0) }
+        var wasModified = false
+        
+        for (index, word) in words.enumerated() {
+            // Check for exact typo match
+            if let correction = typoCorrections[word] {
+                words[index] = correction
+                wasModified = true
+                #if DEBUG
+                print("🔤 [TYPO] Corrected '\(word)' → '\(correction)'")
+                #endif
+            } else {
+                // Check for partial matches (typo might be part of a word)
+                for (typo, correction) in typoCorrections {
+                    if word.contains(typo) && typo.count >= 4 {
+                        words[index] = word.replacingOccurrences(of: typo, with: correction)
+                        wasModified = true
+                        #if DEBUG
+                        print("🔤 [TYPO] Partial correction '\(word)' → '\(words[index])'")
+                        #endif
+                        break
+                    }
+                }
+            }
+        }
+        
+        return (words.joined(separator: " "), wasModified)
+    }
+    
+    /// Get all possible search terms including typo variations
+    /// Returns the original query plus any corrected versions
+    func getSearchVariations(for query: String) -> [String] {
+        var variations: Set<String> = [query.lowercased()]
+        
+        let (corrected, wasModified) = correctTypos(in: query)
+        if wasModified {
+            variations.insert(corrected)
+        }
+        
+        // Also add individual word corrections
+        let words = query.lowercased().split(separator: " ").map { String($0) }
+        for word in words {
+            if let correction = typoCorrections[word] {
+                variations.insert(correction)
+            }
+        }
+        
+        return Array(variations)
+    }
+    
     // MARK: - Main Search API
     
     /// Search exercises with intelligent fuzzy matching and personalized ranking
@@ -137,12 +310,20 @@ final class SmartExerciseSearchService: ObservableObject {
         }
         
         let searchLower = query.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        // Get all search variations including typo corrections
+        let searchVariations = getSearchVariations(for: searchLower)
         let searchWords = searchLower.split(separator: " ").map { String($0) }
         
-        // Score all exercises
+        // Also get corrected words for individual word matching
+        let (correctedQuery, _) = correctTypos(in: searchLower)
+        let correctedWords = correctedQuery.split(separator: " ").map { String($0) }
+        
+        // Score all exercises (checking both original and typo-corrected queries)
         var scoredResults: [(exercise: Exercise, score: Double)] = []
         
         for exercise in exercises {
+            // Try scoring with original query first
             if let score = scoreExercise(
                 exercise,
                 searchQuery: searchLower,
@@ -152,6 +333,19 @@ final class SmartExerciseSearchService: ObservableObject {
                 equipmentFilter: equipmentFilter
             ) {
                 scoredResults.append((exercise, score))
+            } else if correctedQuery != searchLower {
+                // If no match, try with typo-corrected query
+                if let score = scoreExercise(
+                    exercise,
+                    searchQuery: correctedQuery,
+                    searchWords: correctedWords,
+                    userBehavior: userBehavior,
+                    categoryFilter: categoryFilter,
+                    equipmentFilter: equipmentFilter
+                ) {
+                    // Add typo correction bonus
+                    scoredResults.append((exercise, score + TYPO_CORRECTED_SCORE))
+                }
             }
         }
         

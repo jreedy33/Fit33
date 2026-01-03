@@ -8,5 +8,10 @@
 	</array>
 	<key>com.apple.developer.healthkit</key>
 	<true/>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:fit33.app</string>
+		<string>applinks:www.fit33.app</string>
+	</array>
 </dict>
 </plist>

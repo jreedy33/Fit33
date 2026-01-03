@@ -74,6 +74,26 @@ struct Fit33App: App {
         SessionLogManager.shared.checkForCrashLog()
         #endif
         
+        // 🔥 FORCE EXERCISE REFRESH - ONE TIME FIX FOR LEVER NAMES
+        // This will clear Core Data and force fresh sync from Supabase
+        let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
+        if needsExerciseRefresh {
+            print("🔥🔥🔥 FORCING EXERCISE REFRESH - CLEARING CACHED DATA 🔥🔥🔥")
+            let context = PersistenceController.shared.container.viewContext
+            let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
+            let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+            
+            do {
+                try context.execute(deleteRequest)
+                try context.save()
+                ExerciseLibraryService.shared.invalidateCache()
+                UserDefaults.standard.set(true, forKey: "exercise_lever_fix_applied_v1")
+                print("✅ Core Data cleared - exercises will reload from Supabase automatically")
+            } catch {
+                print("❌ Error clearing exercises: \(error)")
+            }
+        }
+        
         // Start session logging
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
@@ -303,34 +323,53 @@ struct Fit33App: App {
                     print("🔗 URL scheme: \(url.scheme ?? "none")")
                     print("🔗 URL host: \(url.host ?? "none")")
                     
-                    // Only handle our custom scheme
-                    guard url.scheme == "gofit" else {
-                        print("⚠️ Ignoring URL with different scheme")
-                        return
-                    }
+                    let scheme = url.scheme?.lowercased() ?? ""
                     
-                    // Handle different deep link paths
-                    if url.host == "running" {
-                        // Deep link from Live Activity - navigate to running view
-                        print("🏃 Deep link to running workout")
-                        DeepLinkManager.shared.pendingDestination = .running
-                        return
-                    }
-                    
-                    // Handle OAuth callback
-                    Task {
-                        do {
-                            try await supabaseManager.handleOAuthCallback(url: url)
-                            print("✅ OAuth callback handled successfully")
-                            
-                            // Force UI update after successful OAuth
-                            await MainActor.run {
-                                UserManager.shared.reloadCurrentUser()
-                            }
-                        } catch {
-                            print("❌ OAuth callback error: \(error)")
+                    // Handle our custom scheme (fit33://)
+                    if scheme == "fit33" {
+                        // Use the DeepLinkManager to route
+                        if DeepLinkManager.shared.handleURL(url) {
+                            print("✅ Deep link handled by DeepLinkManager")
+                            return
                         }
                     }
+                    
+                    // Legacy: Handle old gofit scheme
+                    if scheme == "gofit" {
+                        // Handle different deep link paths
+                        if url.host == "running" {
+                            // Deep link from Live Activity - navigate to running view
+                            print("🏃 Deep link to running workout")
+                            DeepLinkManager.shared.pendingDestination = .running
+                            return
+                        }
+                        
+                        // Handle OAuth callback
+                        Task {
+                            do {
+                                try await supabaseManager.handleOAuthCallback(url: url)
+                                print("✅ OAuth callback handled successfully")
+                                
+                                // Force UI update after successful OAuth
+                                await MainActor.run {
+                                    UserManager.shared.reloadCurrentUser()
+                                }
+                            } catch {
+                                print("❌ OAuth callback error: \(error)")
+                            }
+                        }
+                        return
+                    }
+                    
+                    // Handle universal links (https://fit33.app/...)
+                    if scheme == "https" {
+                        if DeepLinkManager.shared.handleURL(url) {
+                            print("✅ Universal link handled")
+                            return
+                        }
+                    }
+                    
+                    print("⚠️ Unhandled URL: \(url.absoluteString)")
                 }
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     switch newPhase {

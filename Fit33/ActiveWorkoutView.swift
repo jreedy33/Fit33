@@ -2192,15 +2192,9 @@ struct ExerciseCard: View {
                         setData: setItem,  // Pass the object directly, not a binding
                         previousSet: getPreviousSetData(for: index + 1),
                         onSetCompleted: {
-                            // Automatically add next set when current set is completed
-                            if index == sets.count - 1 { // Only if this is the last set
-                                let newSet = WorkoutSetData()
-                                // Pre-fill with current set's data for easy continuation
-                                newSet.weight = setItem.weight
-                                newSet.reps = setItem.reps
-                                sets.append(newSet)
-                                print("➕ Added new set \(sets.count) pre-filled: \(Int(setItem.weight))lbs × \(setItem.reps) reps")
-                            }
+                            // Timer starts automatically in SetRowView
+                            // DO NOT auto-add new set - user must tap "Add Set" button
+                            print("✅ Set \(index + 1) completed - timer started, waiting for user to add next set")
                         },
                         isLastSet: index == sets.count - 1,
                         restDuration: customRestTimer ?? restDuration,
@@ -2593,8 +2587,8 @@ struct SetRowView: View {
                             // Enable smooth animation now that ad is done
                             theRestTimer.enableAnimation()
                             
-                            // Add next set
-                            theOnSetCompleted()
+                            // DO NOT auto-add next set - user must tap "Add Set"
+                            // theOnSetCompleted()  // REMOVED - no longer auto-adding sets
                         }
                     }
                 }) {

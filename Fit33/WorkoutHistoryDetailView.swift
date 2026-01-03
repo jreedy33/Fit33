@@ -226,6 +226,21 @@ struct WorkoutHistoryDetailView: View {
                         }
                         
                         Spacer()
+                        
+                        // Share button
+                        Button(action: {
+                            HapticManager.impact(.light)
+                            WorkoutSharingService.shared.shareWorkout(workout: workout)
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(accentColor)
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    Circle()
+                                        .fill(accentColor.opacity(0.12))
+                                )
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -542,6 +557,41 @@ struct WorkoutHistoryDetailView: View {
                         .stroke(
                             LinearGradient(
                                 gradient: Gradient(colors: [accentColor, accentColor.opacity(0.8)]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 2
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Share button
+            Button(action: {
+                HapticManager.impact(.light)
+                WorkoutSharingService.shared.shareWorkout(workout: workout)
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Share Workout")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                }
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(colors: [Color.blue, Color.cyan]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    Capsule()
+                        .stroke(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.blue, Color.cyan]),
                                 startPoint: .leading,
                                 endPoint: .trailing
                             ),

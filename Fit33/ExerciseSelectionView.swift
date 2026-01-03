@@ -27,29 +27,30 @@ struct ExerciseSelectionView: View {
     var filteredExercises: [Exercise] {
         var filtered = exercises
         
-        // Filter by category first
+        // Filter by category first (most restrictive)
         if selectedCategory != "All" {
             filtered = filtered.filter { exercise in
-                exercise.category == selectedCategory ||
-                ((exercise.muscleGroups as? [String])?.contains(selectedCategory) ?? false)
+                let exerciseCategory = exercise.category?.lowercased() ?? ""
+                let targetCategory = selectedCategory.lowercased()
+                
+                // Direct category match
+                return exerciseCategory == targetCategory ||
+                       exerciseCategory.contains(targetCategory) ||
+                       targetCategory.contains(exerciseCategory)
             }
         }
         
-        // Filter by equipment (with normalization for 7000+ exercises)
+        // Filter by equipment (with comprehensive normalization)
         if selectedEquipment != "All" {
             filtered = filtered.filter { exercise in
-                exercise.equipment == selectedEquipment ||
-                ExerciseFilterService.normalizeEquipment(exercise.equipment) == selectedEquipment
+                exerciseMatchesEquipment(exercise, selectedEquipment: selectedEquipment)
             }
         }
         
-        // Filter by muscle group
+        // Filter by muscle group (focus area within category)
         if selectedMuscleGroup != "All" {
             filtered = filtered.filter { exercise in
-                (exercise.muscleGroups as? [String])?.contains { muscleGroup in
-                    muscleGroup.localizedCaseInsensitiveContains(selectedMuscleGroup) ||
-                    selectedMuscleGroup.localizedCaseInsensitiveContains(muscleGroup)
-                } ?? false
+                isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
             }
         }
         
@@ -79,6 +80,179 @@ struct ExerciseSelectionView: View {
         }
         
         return filtered
+    }
+    
+    // MARK: - Muscle Group Matching
+    /// Comprehensive muscle group matching - same logic as CustomWorkoutBuilderView
+    private func isExerciseForMuscleGroup(_ exercise: Exercise, muscleGroup: String) -> Bool {
+        let exerciseName = exercise.name?.lowercased() ?? ""
+        let exerciseMuscleGroups = (exercise.muscleGroups as? [String])?.map { $0.lowercased() } ?? []
+        let exerciseCategory = exercise.category?.lowercased() ?? ""
+        
+        // Helper to check if exercise is a fly/flye movement
+        let isFlyMovement = exerciseName.contains("fly") || exerciseName.contains("flye") || 
+                           exerciseName.contains("pec deck") || exerciseName.contains("crossover")
+        
+        switch muscleGroup {
+        case "Upper Chest":
+            let isIncline = exerciseName.contains("incline") && !exerciseName.contains("decline")
+            let isLowToHigh = exerciseName.contains("low to high") || exerciseName.contains("low-to-high")
+            if isFlyMovement && isIncline { return true }
+            return isIncline || isLowToHigh ||
+                   exerciseMuscleGroups.contains { $0.contains("upper") && ($0.contains("chest") || $0.contains("pec")) }
+                   
+        case "Lower Chest":
+            let isDecline = exerciseName.contains("decline") && !exerciseName.contains("incline")
+            let isDip = exerciseName.contains("dip") && !exerciseName.contains("hip")
+            if isFlyMovement && isDecline { return true }
+            return isDecline || isDip ||
+                   exerciseMuscleGroups.contains { $0.contains("lower") && ($0.contains("chest") || $0.contains("pec")) }
+                   
+        case "Inner Chest":
+            return exerciseName.contains("close grip") || exerciseName.contains("crossover") ||
+                   exerciseName.contains("squeeze") ||
+                   exerciseMuscleGroups.contains { $0.contains("inner") && $0.contains("chest") }
+                   
+        case "Outer Chest":
+            return isFlyMovement ||
+                   exerciseName.contains("wide grip") ||
+                   exerciseMuscleGroups.contains { $0.contains("outer") && $0.contains("chest") }
+                   
+        case "Lats":
+            return exerciseName.contains("pulldown") || exerciseName.contains("pull-down") ||
+                   exerciseName.contains("lat ") || exerciseName.hasPrefix("lat") ||
+                   exerciseName.contains("pull up") || exerciseName.contains("pull-up") ||
+                   exerciseName.contains("chin up") || exerciseName.contains("chin-up") ||
+                   exerciseMuscleGroups.contains { $0.contains("lat") }
+                   
+        case "Traps":
+            return exerciseName.contains("shrug") || exerciseName.contains("upright row") ||
+                   exerciseName.contains("trap") ||
+                   exerciseMuscleGroups.contains { $0.contains("trap") }
+                   
+        case "Upper Back", "Rhomboids":
+            return exerciseName.contains("row") || exerciseName.contains("face pull") ||
+                   exerciseName.contains("reverse fly") ||
+                   exerciseMuscleGroups.contains { $0.contains("rhomboid") || $0.contains("upper back") }
+                   
+        case "Lower Back":
+            return exerciseName.contains("deadlift") || exerciseName.contains("hyperextension") ||
+                   exerciseName.contains("good morning") || exerciseName.contains("superman") ||
+                   exerciseMuscleGroups.contains { $0.contains("lower back") || $0.contains("erector") }
+                   
+        case "Front Delts":
+            if exerciseName.contains("lateral") || exerciseName.contains("side") || 
+               exerciseName.contains("rear") || exerciseName.contains("reverse") { return false }
+            return exerciseName.contains("front raise") ||
+                   (exerciseName.contains("press") && exerciseCategory == "shoulders") ||
+                   exerciseMuscleGroups.contains { $0.contains("anterior") && $0.contains("delt") }
+                   
+        case "Side Delts", "Lateral Delts":
+            return exerciseName.contains("lateral raise") || exerciseName.contains("side raise") ||
+                   exerciseName.contains("upright row") ||
+                   exerciseMuscleGroups.contains { ($0.contains("lateral") || $0.contains("medial")) && $0.contains("delt") }
+                   
+        case "Rear Delts":
+            return exerciseName.contains("reverse fly") || exerciseName.contains("rear delt") ||
+                   exerciseName.contains("face pull") ||
+                   exerciseMuscleGroups.contains { ($0.contains("posterior") || $0.contains("rear")) && $0.contains("delt") }
+                   
+        case "Biceps":
+            return exerciseName.contains("curl") || exerciseName.contains("chin up") ||
+                   exerciseMuscleGroups.contains { $0.contains("bicep") }
+                   
+        case "Triceps":
+            return exerciseName.contains("tricep") || exerciseName.contains("pushdown") ||
+                   exerciseName.contains("extension") || exerciseName.contains("skull crusher") ||
+                   exerciseMuscleGroups.contains { $0.contains("tricep") }
+                   
+        case "Forearms":
+            return exerciseName.contains("wrist") || exerciseName.contains("forearm") ||
+                   exerciseMuscleGroups.contains { $0.contains("forearm") }
+                   
+        case "Quads", "Quadriceps":
+            return exerciseName.contains("squat") || exerciseName.contains("leg press") ||
+                   exerciseName.contains("leg extension") || exerciseName.contains("lunge") ||
+                   exerciseMuscleGroups.contains { $0.contains("quad") }
+                   
+        case "Hamstrings":
+            return exerciseName.contains("leg curl") || exerciseName.contains("romanian") ||
+                   exerciseName.contains("stiff leg") ||
+                   exerciseMuscleGroups.contains { $0.contains("hamstring") }
+                   
+        case "Glutes":
+            return exerciseName.contains("hip thrust") || exerciseName.contains("glute bridge") ||
+                   exerciseName.contains("kickback") ||
+                   exerciseMuscleGroups.contains { $0.contains("glute") }
+                   
+        case "Calves":
+            return exerciseName.contains("calf raise") || exerciseName.contains("calf ") ||
+                   exerciseMuscleGroups.contains { $0.contains("calf") || $0.contains("calve") }
+                   
+        case "Abs":
+            return exerciseName.contains("crunch") || exerciseName.contains("sit up") ||
+                   exerciseName.contains("plank") || exerciseName.contains("ab ") ||
+                   exerciseMuscleGroups.contains { $0.contains("abs") || $0.contains("rectus") }
+                   
+        case "Obliques":
+            return exerciseName.contains("oblique") || exerciseName.contains("twist") ||
+                   exerciseName.contains("side bend") ||
+                   exerciseMuscleGroups.contains { $0.contains("oblique") }
+                   
+        default:
+            // Generic match
+            let targetLower = muscleGroup.lowercased()
+            return exerciseMuscleGroups.contains { $0.contains(targetLower) }
+        }
+    }
+    
+    // MARK: - Equipment Matching Helper
+    /// Comprehensive equipment matching with normalization
+    private func exerciseMatchesEquipment(_ exercise: Exercise, selectedEquipment: String) -> Bool {
+        let exerciseEquipment = exercise.equipment?.lowercased() ?? ""
+        let targetEquipment = selectedEquipment.lowercased()
+        let exerciseName = exercise.name?.lowercased() ?? ""
+        
+        // Direct match
+        if exerciseEquipment == targetEquipment { return true }
+        
+        // Normalize and compare
+        let normalizedExercise = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+        if normalizedExercise == selectedEquipment { return true }
+        
+        // Handle compound equipment
+        let equipmentParts = exerciseEquipment.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        
+        switch targetEquipment {
+        case "dumbbells":
+            return exerciseEquipment.contains("dumbbell") || exerciseName.contains("dumbbell")
+        case "barbell":
+            let isBarbell = exerciseEquipment.contains("barbell") || exerciseName.contains("barbell") ||
+                           exerciseEquipment.contains("ez bar") || exerciseEquipment.contains("trap bar")
+            return isBarbell && !exerciseEquipment.contains("smith")
+        case "cables":
+            return exerciseEquipment.contains("cable") || exerciseName.contains("cable")
+        case "machines":
+            // IMPORTANT: Check cables and smith FIRST to exclude them
+            let isCable = exerciseEquipment.contains("cable") || exerciseName.contains("cable")
+            if isCable { return false }
+            
+            let isSmith = exerciseEquipment.contains("smith")
+            if isSmith { return false }
+            
+            // Any machine or lever equipment
+            return exerciseEquipment.contains("machine") || exerciseEquipment.contains("lever")
+        case "bodyweight":
+            return exerciseEquipment.isEmpty || exerciseEquipment.contains("bodyweight")
+        case "kettlebell":
+            return exerciseEquipment.contains("kettlebell") || exerciseName.contains("kettlebell")
+        case "resistance bands", "bands":
+            return exerciseEquipment.contains("band") || exerciseName.contains("band")
+        case "smith machine":
+            return exerciseEquipment.contains("smith") || exerciseName.contains("smith")
+        default:
+            return exerciseEquipment.contains(targetEquipment)
+        }
     }
     
     var body: some View {
@@ -231,12 +405,7 @@ struct ExerciseSelectionView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
         }
-        .simultaneousGesture(
-            DragGesture().onChanged { _ in
-                // Dismiss keyboard when user starts scrolling
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-        )
+        .scrollDismissesKeyboard(.immediately)
     }
     
     private var emptyStateView: some View {

@@ -474,12 +474,32 @@ final class ExerciseFilterService {
         "bodyweight": "Bodyweight",
         "bands": "Bands",
         
-        // Database format mappings
+        // Cable variations (all map to Cables)
         "cable machine": "Cables",
+        "cable": "Cables",
+        
+        // Machine variations (all map to Machines)
         "lever machine": "Machines",
-        "chest press machine": "Machines",
         "hack squat machine": "Machines",
         "leg press machine": "Machines",
+        "chest press machine": "Machines",
+        "shoulder press machine": "Machines",
+        "leg curl machine": "Machines",
+        "leg extension machine": "Machines",
+        "lat pulldown machine": "Machines",
+        "row machine": "Machines",
+        "calf raise machine": "Machines",
+        "hip abduction machine": "Machines",
+        "hip adduction machine": "Machines",
+        "pec deck machine": "Machines",
+        "fly machine": "Machines",
+        "bicep curl machine": "Machines",
+        "tricep extension machine": "Machines",
+        "preacher curl machine": "Machines",
+        "ab machine": "Machines",
+        "shrug machine": "Machines",
+        
+        // Smith Machine (separate category)
         "smith machine": "Smith Machine",
         "resistance band": "Bands",
         "pull-up bar": "Bodyweight",  // Most gyms/homes have this
@@ -656,8 +676,27 @@ final class ExerciseFilterService {
         // Check Smith Machine BEFORE Barbell to ensure proper separation
         if equipment.contains("smith") { return "Smith Machine" }
         if equipment.contains("barbell") || equipment.contains("ez bar") || equipment.contains("trap bar") { return "Barbell" }
+        // Check cables BEFORE machines (cables must never match machines)
         if equipment.contains("cable") { return "Cables" }
-        if equipment.contains("lever") || (equipment.contains("machine") && !equipment.contains("smith")) { return "Machines" }
+        // Check for specific machine types OR generic lever/machine
+        if equipment.contains("hack squat machine") { return "Machines" }
+        if equipment.contains("leg press machine") { return "Machines" }
+        if equipment.contains("chest press machine") { return "Machines" }
+        if equipment.contains("shoulder press machine") { return "Machines" }
+        if equipment.contains("leg curl machine") { return "Machines" }
+        if equipment.contains("leg extension machine") { return "Machines" }
+        if equipment.contains("lat pulldown machine") { return "Machines" }
+        if equipment.contains("row machine") { return "Machines" }
+        if equipment.contains("calf raise machine") { return "Machines" }
+        if equipment.contains("pec deck machine") { return "Machines" }
+        if equipment.contains("fly machine") { return "Machines" }
+        if equipment.contains("preacher curl machine") { return "Machines" }
+        if equipment.contains("bicep curl machine") { return "Machines" }
+        if equipment.contains("tricep extension machine") { return "Machines" }
+        if equipment.contains("ab machine") { return "Machines" }
+        if equipment.contains("shrug machine") { return "Machines" }
+        // Generic machine check (fallback)
+        if equipment.contains("lever") || (equipment.contains("machine") && !equipment.contains("smith") && !equipment.contains("cable")) { return "Machines" }
         if equipment.contains("kettlebell") { return "Kettlebell" }
         if equipment.contains("band") || equipment.contains("resistance") { return "Bands" }
         if equipment.contains("trx") || equipment.contains("ring") || equipment.contains("suspension") { return "TRX/Rings" }

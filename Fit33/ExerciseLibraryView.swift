@@ -26,107 +26,241 @@ struct ExerciseLibraryView: View {
     // One primary variation per movement - the essentials everyone should know
     private let recommendedExercises: Set<String> = [
         // ═══════════════════════════════════════════════════════════
-        // CHEST (12 essential movements)
+        // CHEST - 50 exercises (all equipment variations)
         // ═══════════════════════════════════════════════════════════
-        "bench press", "incline bench press", "decline bench press",
-        "dumbbell press", "push up", "chest dip",
-        "dumbbell fly", "cable fly", "pec deck",
-        "machine chest press", "cable crossover", "landmine press",
+        // Barbell Chest
+        "bench press", "incline bench press", "decline bench press", "close grip bench press",
+        "wide grip bench press", "reverse grip bench press", "floor press", "pin press",
+        "paused bench press", "tempo bench press", "board press", "guillotine press",
+        // Dumbbell Chest
+        "dumbbell press", "dumbbell bench press", "incline dumbbell press", "decline dumbbell press",
+        "dumbbell fly", "incline dumbbell fly", "decline dumbbell fly", "floor fly",
+        "neutral grip dumbbell press", "single arm dumbbell press", "alternating dumbbell press",
+        "dumbbell pullover", "dumbbell squeeze press", "hex press",
+        // Cable Chest
+        "cable fly", "cable crossover", "low cable fly", "high cable fly",
+        "incline cable fly", "single arm cable fly", "standing cable press",
+        "cable pullover", "cable squeeze press",
+        // Machine & Bodyweight Chest
+        "machine chest press", "pec deck", "machine fly", "smith machine bench press",
+        "smith machine incline press", "push up", "decline push up", "diamond push up",
+        "wide push up", "archer push up", "pike push up", "chest dip",
+        "ring dip", "deficit push up", "plyometric push up", "clap push up",
+        "landmine press", "svend press",
         
         // ═══════════════════════════════════════════════════════════
-        // BACK (14 essential movements)
+        // BACK - 60 exercises (lats, traps, rhomboids, lower back)
         // ═══════════════════════════════════════════════════════════
-        "pull up", "chin up", "lat pulldown",
-        "barbell row", "dumbbell row", "cable row", "seated row",
-        "t-bar row", "face pull", "straight arm pulldown",
-        "inverted row", "machine row", "deadlift", "rack pull",
+        // Lat-Focused
+        "pull up", "chin up", "wide grip pull up", "close grip chin up",
+        "neutral grip pull up", "weighted pull up", "assisted pull up",
+        "lat pulldown", "wide grip pulldown", "close grip pulldown",
+        "neutral grip pulldown", "reverse grip pulldown", "single arm pulldown",
+        "straight arm pulldown", "rope pulldown",
+        // Rows - Barbell
+        "barbell row", "bent over row", "pendlay row", "underhand barbell row",
+        "yates row", "seal row", "chest supported row",
+        // Rows - Dumbbell
+        "dumbbell row", "single arm row", "chest supported dumbbell row",
+        "kroc row", "incline row", "renegade row", "plank row",
+        // Rows - Cable & Machine
+        "cable row", "seated cable row", "single arm cable row",
+        "high cable row", "low cable row", "rope row",
+        "machine row", "t-bar row", "meadows row", "v-bar row",
+        // Deadlifts & Lower Back
+        "deadlift", "conventional deadlift", "sumo deadlift", "romanian deadlift",
+        "stiff leg deadlift", "trap bar deadlift", "deficit deadlift",
+        "rack pull", "snatch grip deadlift", "jefferson deadlift",
+        "single leg romanian deadlift", "b stance romanian deadlift",
+        "good morning", "back extension", "hyperextension", "45 degree hyperextension",
+        "reverse hyperextension", "superman", "bird dog",
+        // Face Pulls & Rear Delt
+        "face pull", "inverted row", "bodyweight row", "trx row",
+        "ring row", "australian pull up",
         
         // ═══════════════════════════════════════════════════════════
-        // SHOULDERS (12 essential movements)
+        // SHOULDERS - 50 exercises (front/side/rear delts)
         // ═══════════════════════════════════════════════════════════
-        "overhead press", "shoulder press", "dumbbell shoulder press",
-        "arnold press", "lateral raise", "front raise",
-        "rear delt fly", "reverse fly", "upright row",
-        "face pull", "machine shoulder press", "push press",
+        // Pressing
+        "overhead press", "military press", "barbell shoulder press", "seated shoulder press",
+        "standing shoulder press", "push press", "jerk press", "behind the neck press",
+        "dumbbell shoulder press", "seated dumbbell press", "arnold press",
+        "single arm dumbbell press", "alternating shoulder press", "landmine press",
+        "viking press", "z press", "bradford press", "log press",
+        "machine shoulder press", "smith machine shoulder press",
+        // Front Delts
+        "front raise", "barbell front raise", "dumbbell front raise",
+        "plate front raise", "cable front raise", "alternating front raise",
+        // Side Delts
+        "lateral raise", "dumbbell lateral raise", "cable lateral raise",
+        "single arm lateral raise", "leaning lateral raise", "seated lateral raise",
+        "machine lateral raise", "upright row", "wide grip upright row",
+        "cable upright row", "snatch grip high pull", "y raise",
+        // Rear Delts
+        "rear delt fly", "reverse fly", "bent over lateral raise",
+        "cable reverse fly", "pec deck reverse fly", "chest supported rear delt fly",
+        "face pull", "band pull apart", "reverse pec deck",
+        "single arm rear delt fly", "prone rear delt raise",
         
         // ═══════════════════════════════════════════════════════════
-        // BICEPS (10 essential movements)
+        // BICEPS - 40 exercises
         // ═══════════════════════════════════════════════════════════
-        "bicep curl", "barbell curl", "dumbbell curl",
-        "hammer curl", "preacher curl", "concentration curl",
-        "cable curl", "incline curl", "ez bar curl", "spider curl",
+        // Barbell Curls
+        "bicep curl", "barbell curl", "standing barbell curl", "ez bar curl",
+        "wide grip curl", "close grip curl", "reverse curl", "drag curl",
+        "cheat curl", "21s", "spider curl", "preacher curl",
+        "scott curl", "cable bar curl",
+        // Dumbbell Curls
+        "dumbbell curl", "alternating dumbbell curl", "hammer curl",
+        "cross body hammer curl", "incline dumbbell curl", "concentration curl",
+        "seated dumbbell curl", "zottman curl", "waiter curl",
+        "offset curl", "single arm preacher curl",
+        // Cable & Machine Curls
+        "cable curl", "low cable curl", "high cable curl",
+        "single arm cable curl", "rope cable curl", "machine curl",
+        "preacher curl machine", "bayesian curl",
+        // Chin-Up Variations
+        "chin up", "close grip chin up", "weighted chin up", "band assisted chin up",
+        "negative chin up", "l sit chin up",
         
         // ═══════════════════════════════════════════════════════════
-        // TRICEPS (10 essential movements)
+        // TRICEPS - 40 exercises
         // ═══════════════════════════════════════════════════════════
-        "tricep pushdown", "tricep extension", "skull crusher",
-        "close grip bench press", "tricep dip", "overhead extension",
-        "cable pushdown", "rope pushdown", "tricep kickback", "diamond push up",
+        // Extensions - Overhead
+        "tricep extension", "overhead tricep extension", "french press",
+        "dumbbell overhead extension", "single arm overhead extension",
+        "cable overhead extension", "rope overhead extension",
+        "ez bar overhead extension", "seated overhead extension",
+        // Extensions - Lying
+        "skull crusher", "lying tricep extension", "ez bar skull crusher",
+        "dumbbell skull crusher", "close grip floor press",
+        // Pushdowns
+        "tricep pushdown", "cable pushdown", "rope pushdown",
+        "straight bar pushdown", "v-bar pushdown", "single arm pushdown",
+        "reverse grip pushdown", "overhead cable extension",
+        // Kickbacks & Dips
+        "tricep kickback", "dumbbell kickback", "cable kickback",
+        "single arm kickback", "tricep dip", "bench dip",
+        "weighted dip", "ring dip", "machine dip",
+        // Press Variations
+        "close grip bench press", "jm press", "tate press",
+        "diamond push up", "tricep push up", "decline close grip press",
+        "pin press", "board press", "california press",
+        "reverse grip tricep pushdown",
         
         // ═══════════════════════════════════════════════════════════
-        // QUADS (12 essential movements)
+        // LEGS - QUADS - 40 exercises
         // ═══════════════════════════════════════════════════════════
-        "squat", "back squat", "front squat", "goblet squat",
-        "leg press", "leg extension", "hack squat",
-        "lunge", "walking lunge", "bulgarian split squat",
-        "step up", "sissy squat",
+        // Squats - Barbell
+        "squat", "back squat", "high bar squat", "low bar squat",
+        "front squat", "pause squat", "tempo squat", "pin squat",
+        "box squat", "anderson squat", "zercher squat", "overhead squat",
+        "safety bar squat", "cambered bar squat",
+        // Squats - Dumbbell & Goblet
+        "goblet squat", "dumbbell squat", "sumo goblet squat",
+        "dumbbell front squat", "dumbbell split squat",
+        // Leg Press & Machines
+        "leg press", "45 degree leg press", "horizontal leg press",
+        "single leg press", "narrow stance leg press", "wide stance leg press",
+        "hack squat", "hack squat machine", "reverse hack squat",
+        "leg extension", "single leg extension", "smith machine squat",
+        // Lunges & Step Ups
+        "lunge", "forward lunge", "reverse lunge", "walking lunge",
+        "stationary lunge", "lateral lunge", "curtsy lunge",
+        "step up", "high step up", "lateral step up",
         
         // ═══════════════════════════════════════════════════════════
-        // HAMSTRINGS (8 essential movements)
+        // LEGS - HAMSTRINGS - 30 exercises
         // ═══════════════════════════════════════════════════════════
-        "romanian deadlift", "stiff leg deadlift", "leg curl",
-        "lying leg curl", "seated leg curl", "good morning",
-        "nordic curl", "glute ham raise",
+        // Romanian Deadlifts
+        "romanian deadlift", "dumbbell romanian deadlift", "single leg romanian deadlift",
+        "stiff leg deadlift", "b stance romanian deadlift",
+        // Leg Curls
+        "leg curl", "lying leg curl", "seated leg curl",
+        "standing leg curl", "single leg curl", "stability ball leg curl",
+        "slider leg curl", "glute ham raise", "nordic curl",
+        "nordic hamstring curl", "razor curl",
+        // Good Mornings & Pulls
+        "good morning", "seated good morning", "safety bar good morning",
+        "cable pull through", "kettlebell swing", "single leg deadlift",
+        "deficit stiff leg deadlift", "snatch grip romanian deadlift",
+        "tempo romanian deadlift", "eccentric nordic curl",
+        "band hamstring curl", "swiss ball hamstring curl",
+        "copenhagen plank", "partner hamstring curl",
         
         // ═══════════════════════════════════════════════════════════
-        // GLUTES (10 essential movements)
+        // LEGS - GLUTES - 30 exercises
         // ═══════════════════════════════════════════════════════════
-        "hip thrust", "glute bridge", "cable kickback",
-        "donkey kick", "sumo deadlift", "sumo squat",
-        "cable pull through", "fire hydrant", "clamshell", "kickback",
+        // Hip Thrusts & Bridges
+        "hip thrust", "barbell hip thrust", "single leg hip thrust",
+        "banded hip thrust", "pause hip thrust", "american hip thrust",
+        "glute bridge", "single leg glute bridge", "elevated glute bridge",
+        "banded glute bridge", "frog pump", "hip thrust machine",
+        // Kickbacks & Abduction
+        "cable kickback", "donkey kick", "smith machine kickback",
+        "fire hydrant", "standing kickback", "bench kickback",
+        "clamshell", "side lying hip abduction", "cable hip abduction",
+        "machine hip abduction", "banded abduction", "monster walk",
+        // Squats & Lunges (Glute Focus)
+        "sumo squat", "wide stance squat", "bulgarian split squat",
+        "deficit bulgarian split squat", "walking lunge", "deficit reverse lunge",
         
         // ═══════════════════════════════════════════════════════════
-        // CALVES (5 essential movements)
+        // CALVES - 15 exercises
         // ═══════════════════════════════════════════════════════════
         "calf raise", "standing calf raise", "seated calf raise",
-        "leg press calf raise", "single leg calf raise",
+        "single leg calf raise", "donkey calf raise", "smith machine calf raise",
+        "leg press calf raise", "dumbbell calf raise", "hack squat calf raise",
+        "calf raise on stairs", "jump rope", "box jump",
+        "tibialis raise", "toe walk", "single leg standing calf raise",
         
         // ═══════════════════════════════════════════════════════════
-        // ABS (12 essential movements)
+        // ABS - 40 exercises
         // ═══════════════════════════════════════════════════════════
-        "crunch", "sit up", "leg raise", "hanging leg raise",
-        "plank", "russian twist", "bicycle crunch",
-        "mountain climber", "dead bug", "ab wheel",
-        "cable crunch", "v up",
+        // Crunches
+        "crunch", "bicycle crunch", "reverse crunch", "cable crunch",
+        "weighted crunch", "decline crunch", "rope crunch", "toe touch crunch",
+        "cross body crunch", "oblique crunch", "twisting crunch",
+        // Leg Raises
+        "leg raise", "hanging leg raise", "lying leg raise",
+        "captain's chair leg raise", "decline leg raise", "scissor kick",
+        "flutter kick", "vertical leg raise",
+        // Planks & Holds
+        "plank", "forearm plank", "extended plank", "plank to pike",
+        "plank jack", "plank up down", "side plank",
+        "hollow body hold", "dead bug", "bird dog",
+        // Other Ab Exercises
+        "sit up", "v up", "tuck up", "ab wheel rollout",
+        "mountain climber", "russian twist", "med ball slam",
+        "wood chop", "pallof press", "l sit",
         
         // ═══════════════════════════════════════════════════════════
-        // OBLIQUES (6 essential movements)
+        // COMPOUND / OLYMPIC / FUNCTIONAL - 30 exercises
         // ═══════════════════════════════════════════════════════════
-        "side plank", "wood chop", "side bend",
-        "oblique crunch", "pallof press", "windshield wiper",
+        // Olympic Lifts
+        "clean", "power clean", "hang clean", "clean and press",
+        "clean and jerk", "push jerk", "split jerk", "snatch",
+        "power snatch", "hang snatch", "muscle snatch", "high pull",
+        // Functional & Full Body
+        "thruster", "burpee", "man maker", "turkish get up",
+        "kettlebell swing", "american kettlebell swing", "single arm swing",
+        "devil press", "dumbbell snatch", "farmer walk",
+        "farmer carry", "suitcase carry", "overhead carry", "yoke walk",
+        "sandbag carry", "bear crawl", "sled push", "prowler push",
+        "tire flip", "battle rope",
         
         // ═══════════════════════════════════════════════════════════
-        // TRAPS (5 essential movements)
+        // TRAPS & FOREARMS - 20 exercises
         // ═══════════════════════════════════════════════════════════
-        "shrug", "barbell shrug", "dumbbell shrug",
-        "farmer carry", "upright row",
-        
-        // ═══════════════════════════════════════════════════════════
-        // FOREARMS (4 essential movements)
-        // ═══════════════════════════════════════════════════════════
-        "wrist curl", "reverse wrist curl", "farmer walk", "dead hang",
-        
-        // ═══════════════════════════════════════════════════════════
-        // COMPOUND / FULL BODY (8 essential movements)
-        // ═══════════════════════════════════════════════════════════
-        "deadlift", "clean", "clean and press", "power clean",
-        "kettlebell swing", "thruster", "burpee", "turkish get up",
-        
-        // ═══════════════════════════════════════════════════════════
-        // ROTATOR CUFF / PREHAB (5 essential movements)
-        // ═══════════════════════════════════════════════════════════
-        "external rotation", "internal rotation", "band pull apart",
-        "face pull", "y raise"
+        // Shrugs
+        "shrug", "barbell shrug", "dumbbell shrug", "trap bar shrug",
+        "behind the back shrug", "cable shrug", "smith machine shrug",
+        "overhead shrug", "snatch grip shrug",
+        // Forearms
+        "wrist curl", "reverse wrist curl", "barbell wrist curl",
+        "dumbbell wrist curl", "behind back wrist curl", "finger curl",
+        "reverse curl", "hammer curl", "farmer walk",
+        "dead hang", "plate pinch"
     ]
     
     // Categories filtered by selected exercise types (combines all selected)
@@ -146,55 +280,81 @@ struct ExerciseLibraryView: View {
     }
     
     // Extremely precise exercise-specific muscle group mapping based on biomechanics
+    // IMPROVED: Now properly handles fly exercises for chest focus areas
     private func isExerciseForMuscleGroup(_ exercise: Exercise, muscleGroup: String) -> Bool {
         let exerciseName = exercise.name?.lowercased() ?? ""
         let exerciseMuscleGroups = (exercise.muscleGroups as? [String])?.map { $0.lowercased() } ?? []
         
+        // Helper to check if exercise is a fly/flye movement
+        let isFlyMovement = exerciseName.contains("fly") || exerciseName.contains("flye") || 
+                           exerciseName.contains("pec deck") || exerciseName.contains("crossover")
+        
         switch muscleGroup {
         case "Upper Chest":
             // Only incline movements and exercises specifically targeting upper pecs
-            return (exerciseName.contains("incline") && !exerciseName.contains("decline")) ||
+            // Incline flies target upper chest!
+            let isIncline = exerciseName.contains("incline") && !exerciseName.contains("decline")
+            let isLowToHigh = exerciseName.contains("low to high") || exerciseName.contains("low-to-high")
+            
+            // Incline flies specifically target upper chest
+            if isFlyMovement && isIncline { return true }
+            
+            return isIncline || isLowToHigh ||
                    exerciseMuscleGroups.contains("upper pectoralis major") ||
                    exerciseMuscleGroups.contains("clavicular pectoralis") ||
+                   exerciseMuscleGroups.contains("clavicular") ||
                    exerciseMuscleGroups.contains("upper chest") ||
+                   exerciseMuscleGroups.contains { $0.contains("upper") && ($0.contains("chest") || $0.contains("pec")) } ||
                    (exerciseName.contains("reverse grip") && exerciseName.contains("bench")) ||
-                   exerciseName.contains("landmine press") ||
-                   exerciseName.contains("low to high")
+                   exerciseName.contains("landmine press")
                    
         case "Lower Chest":
             // Only decline movements and exercises specifically targeting lower pecs
-            return (exerciseName.contains("decline") && !exerciseName.contains("incline")) ||
+            // Decline flies target lower chest!
+            let isDecline = exerciseName.contains("decline") && !exerciseName.contains("incline")
+            let isHighToLow = exerciseName.contains("high to low") || exerciseName.contains("high-to-low")
+            let isDip = exerciseName.contains("dip") && !exerciseName.contains("hip")
+            
+            // Decline flies specifically target lower chest
+            if isFlyMovement && isDecline { return true }
+            
+            return isDecline || isHighToLow || isDip ||
                    exerciseMuscleGroups.contains("lower pectoralis major") ||
                    exerciseMuscleGroups.contains("sternal pectoralis") ||
+                   exerciseMuscleGroups.contains("sternal") ||
                    exerciseMuscleGroups.contains("lower chest") ||
-                   exerciseName.contains("dip") ||
-                   (exerciseName.contains("high to low") && exerciseName.contains("cable"))
+                   exerciseMuscleGroups.contains { $0.contains("lower") && ($0.contains("chest") || $0.contains("pec")) }
                    
         case "Inner Chest":
             // Close grip movements and exercises targeting inner pecs
             return exerciseName.contains("close grip") ||
+                   exerciseName.contains("close-grip") ||
                    exerciseName.contains("squeeze") ||
                    exerciseName.contains("diamond") ||
+                   exerciseName.contains("crossover") ||
+                   exerciseName.contains("cross over") ||
                    exerciseMuscleGroups.contains("inner pectoralis major") ||
                    exerciseMuscleGroups.contains("medial pectoralis") ||
                    exerciseMuscleGroups.contains("inner chest") ||
-                   (exerciseName.contains("cable") && exerciseName.contains("crossover"))
+                   exerciseMuscleGroups.contains { $0.contains("inner") && $0.contains("chest") }
                    
         case "Outer Chest":
             // Wide grip movements and exercises targeting outer pecs
-            return exerciseName.contains("wide grip") ||
-                   exerciseName.contains("fly") ||
-                   exerciseName.contains("flye") ||
+            // Standard flies target outer chest
+            return isFlyMovement ||
+                   exerciseName.contains("wide grip") ||
+                   exerciseName.contains("wide-grip") ||
                    exerciseMuscleGroups.contains("outer pectoralis major") ||
                    exerciseMuscleGroups.contains("lateral pectoralis") ||
                    exerciseMuscleGroups.contains("outer chest") ||
-                   exerciseName.contains("pec deck")
+                   exerciseMuscleGroups.contains { $0.contains("outer") && $0.contains("chest") }
                    
         case "Chest":
             // All chest exercises (but exclude specific targeting when other filters are active)
             return exercise.category?.lowercased() == "chest" ||
                    exerciseMuscleGroups.contains { $0.contains("pectoral") } ||
-                   exerciseMuscleGroups.contains { $0.contains("chest") }
+                   exerciseMuscleGroups.contains { $0.contains("chest") } ||
+                   exerciseMuscleGroups.contains { $0.contains("pec ") || $0.hasSuffix("pec") }
                    
         case "Lats":
             return exerciseName.contains("pulldown") ||
@@ -548,34 +708,97 @@ struct ExerciseLibraryView: View {
             }
         }
         
-        // Filter by equipment - STRICT matching
+        // Filter by equipment - COMPREHENSIVE matching
         if selectedEquipment != "All" {
-            let selectedEquipmentLower = selectedEquipment.lowercased()
             filtered = filtered.filter { exercise in
-                let exerciseEquipment = exercise.equipment?.lowercased() ?? ""
-                
-                // Parse comma-separated equipment (e.g., "Dumbbell, Bench")
-                let equipmentParts = exerciseEquipment
-                    .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                
-                // Check if any equipment part matches the selected equipment
-                return equipmentParts.contains { part in
-                    part.contains(selectedEquipmentLower) || selectedEquipmentLower.contains(part)
-                }
+                exerciseMatchesEquipmentLib(exercise, selectedEquipment: selectedEquipment)
             }
         }
         
-        // Filter by muscle group
+        // Filter by muscle group - COMPREHENSIVE matching
         if selectedMuscleGroup != "All" {
-            let muscleLower = selectedMuscleGroup.lowercased()
             filtered = filtered.filter { exercise in
-                let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
-                return muscleGroups.contains { $0.lowercased().contains(muscleLower) }
+                isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
             }
         }
         
         return filtered
+    }
+    
+    // MARK: - Equipment Matching
+    /// Comprehensive equipment matching with normalization
+    private func exerciseMatchesEquipmentLib(_ exercise: Exercise, selectedEquipment: String) -> Bool {
+        let exerciseEquipment = exercise.equipment?.lowercased() ?? ""
+        let targetEquipment = selectedEquipment.lowercased()
+        let exerciseName = exercise.name?.lowercased() ?? ""
+        
+        // Direct match
+        if exerciseEquipment == targetEquipment { return true }
+        
+        // Normalize and compare
+        let normalizedExercise = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+        if normalizedExercise == selectedEquipment { return true }
+        
+        // Handle compound equipment (comma-separated)
+        let equipmentParts = exerciseEquipment.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        
+        switch targetEquipment {
+        case "dumbbells":
+            return exerciseEquipment.contains("dumbbell") || exerciseName.contains("dumbbell") ||
+                   equipmentParts.contains { $0.contains("dumbbell") }
+        case "barbell":
+            let isBarbell = exerciseEquipment.contains("barbell") || exerciseName.contains("barbell") ||
+                           exerciseEquipment.contains("ez bar") || exerciseEquipment.contains("trap bar") ||
+                           equipmentParts.contains { $0.contains("barbell") }
+            return isBarbell && !exerciseEquipment.contains("smith")
+        case "cables":
+            return exerciseEquipment.contains("cable") || exerciseName.contains("cable") ||
+                   equipmentParts.contains { $0.contains("cable") }
+        case "machines":
+            // IMPORTANT: Check cables and smith FIRST to exclude them
+            let isCable = exerciseEquipment.contains("cable") || exerciseName.contains("cable")
+            if isCable { return false }
+            
+            let isSmith = exerciseEquipment.contains("smith")
+            if isSmith { return false }
+            
+            // Any machine or lever equipment
+            let isMachine = exerciseEquipment.contains("machine") ||
+                           exerciseEquipment.contains("lever") ||
+                           equipmentParts.contains { $0.contains("machine") || $0.contains("lever") }
+            
+            return isMachine
+        case "bodyweight":
+            return exerciseEquipment.isEmpty || exerciseEquipment.contains("bodyweight") ||
+                   exerciseEquipment == "body weight"
+        case "kettlebell":
+            return exerciseEquipment.contains("kettlebell") || exerciseName.contains("kettlebell") ||
+                   equipmentParts.contains { $0.contains("kettlebell") }
+        case "resistance bands", "bands":
+            return exerciseEquipment.contains("band") || exerciseName.contains("band") ||
+                   equipmentParts.contains { $0.contains("band") }
+        case "bench":
+            return exerciseEquipment.contains("bench") || equipmentParts.contains { $0.contains("bench") }
+        case "smith machine":
+            return exerciseEquipment.contains("smith") || exerciseName.contains("smith")
+        case "trx/rings":
+            return exerciseEquipment.contains("trx") || exerciseEquipment.contains("ring") ||
+                   exerciseEquipment.contains("suspension") || exerciseName.contains("trx") ||
+                   equipmentParts.contains { $0.contains("trx") || $0.contains("ring") || $0.contains("suspension") }
+        case "stability ball":
+            return exerciseEquipment.contains("stability ball") || exerciseEquipment.contains("swiss ball") ||
+                   exerciseName.contains("stability ball")
+        case "medicine ball":
+            return exerciseEquipment.contains("medicine ball") || exerciseName.contains("medicine ball")
+        case "pull-up bar":
+            return exerciseEquipment.contains("pull-up bar") || exerciseEquipment.contains("pullup") ||
+                   exerciseName.contains("pull up") || exerciseName.contains("pull-up") ||
+                   exerciseName.contains("chin up") || exerciseName.contains("chin-up")
+        default:
+            // Fallback: check if equipment contains target or vice versa
+            return exerciseEquipment.contains(targetEquipment) || targetEquipment.contains(exerciseEquipment) ||
+                   equipmentParts.contains { $0.contains(targetEquipment) || targetEquipment.contains($0) }
+        }
     }
     
     var body: some View {
@@ -613,12 +836,7 @@ struct ExerciseLibraryView: View {
                         .padding(.top, 4)
                         .padding(.bottom, 100)
                     }
-                    .simultaneousGesture(
-                        DragGesture().onChanged { _ in
-                            // Dismiss keyboard when user starts scrolling
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        }
-                    )
+                    .scrollDismissesKeyboard(.immediately)
                     .id(forceRenderID)
                     .refreshable {
                         loadExercises()

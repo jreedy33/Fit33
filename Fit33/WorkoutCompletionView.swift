@@ -675,26 +675,8 @@ struct WorkoutCompletionView: View {
     }
     
     private func shareWorkout() {
-        let summary = """
-        💪 Just finished my workout!
-        
-        ⏱ Duration: \(workoutDurationFormatted)
-        🏋️ Exercises: \(exercises.count)
-        📊 Sets: \(totalSets)
-        🔄 Reps: \(totalReps)
-        
-        #GOFit #FitnessGoals
-        """
-        
-        let activityVC = UIActivityViewController(
-            activityItems: [summary],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            rootVC.present(activityVC, animated: true)
-        }
+        // Use the sharing service for consistent share experience
+        WorkoutSharingService.shared.shareWorkout(workout: workout)
     }
 }
 

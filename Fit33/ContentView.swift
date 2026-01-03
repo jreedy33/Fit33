@@ -316,6 +316,8 @@ struct MainTabView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.managedObjectContext) private var viewContext
+    @StateObject private var deepLinkManager = DeepLinkManager.shared
     @State private var selectedTab: Int = 0
     @State private var scrollToTopTrigger: UUID = UUID()
     
@@ -532,6 +534,17 @@ struct MainTabView: View {
             
             // GO! Button overlay - isolated view that observes its own state
             GoButtonOverlay()
+        }
+        // Shared Workout Sheet - shows when user opens a shared workout link
+        .sheet(isPresented: $deepLinkManager.showSharedWorkoutSheet) {
+            if let workoutId = deepLinkManager.pendingSharedWorkoutId {
+                SharedWorkoutView(
+                    workoutId: workoutId,
+                    previewData: WorkoutSharingService.shared.pendingSharedWorkout
+                )
+                .environment(\.managedObjectContext, viewContext)
+                .environmentObject(workoutManager)
+            }
         }
     }
     

@@ -254,6 +254,112 @@ struct ProfileView: View {
                             .buttonStyle(PlainButtonStyle())
                         }
                         
+                        // Share & Invite Section
+                        ProfileSection(
+                            title: "SHARE & INVITE",
+                            icon: "person.2.fill",
+                            iconColor: .blue
+                        ) {
+                            VStack(spacing: 0) {
+                                // Share App via Messages
+                                Button(action: { 
+                                    HapticManager.impact(.light)
+                                    WorkoutSharingService.shared.shareAppViaMessages()
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "message.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.green)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Invite via iMessage")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text("Send a text to friends")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider().padding(.leading, 50)
+                                
+                                // Share App via WhatsApp
+                                Button(action: { 
+                                    HapticManager.impact(.light)
+                                    WorkoutSharingService.shared.shareAppViaWhatsApp()
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "paperplane.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.green)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Invite via WhatsApp")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text("Share with WhatsApp contacts")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider().padding(.leading, 50)
+                                
+                                // Share App (general)
+                                Button(action: { 
+                                    HapticManager.impact(.light)
+                                    WorkoutSharingService.shared.shareApp()
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.blue)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("More Share Options")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text("Share via any app")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
                         // Account Actions Section
                         ProfileSection(
                             title: "ACCOUNT",

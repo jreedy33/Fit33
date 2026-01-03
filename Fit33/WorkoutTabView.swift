@@ -113,6 +113,11 @@ struct WorkoutTabView: View {
             case .dashboard:
                 // Already on workout tab, no navigation needed
                 deepLinkManager.pendingDestination = nil
+            case .sharedWorkout:
+                // Shared workouts are handled by the sheet in MainTabView
+                // Just consume the destination here
+                deepLinkManager.pendingDestination = nil
+                print("🔗 Deep link: Shared workout will be displayed in sheet")
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in

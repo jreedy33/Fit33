@@ -100,18 +100,23 @@ class WorkoutManager: ObservableObject {
     }
     
     // Initialize sets for an exercise if not already present (call this BEFORE rendering)
+    // UPDATED: Now creates 3 sets by default instead of 1
     func initializeSetsForExercise(id: String) {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
-            let newSet = WorkoutSetData()
-            exerciseSetsData[id] = [newSet]
+            // Create 3 empty sets ready to go
+            let set1 = WorkoutSetData()
+            let set2 = WorkoutSetData()
+            let set3 = WorkoutSetData()
+            exerciseSetsData[id] = [set1, set2, set3]
             #if DEBUG
-            print("📦 Initialized sets for exercise \(id.prefix(8)), set id: \(newSet.id.uuidString.prefix(8))")
+            print("📦 Initialized 3 sets for exercise \(id.prefix(8))")
             #endif
         }
     }
     
     // Ensure all exercises have initialized sets (call on workout start)
     // OPTIMIZED: Batch all updates to trigger only ONE SwiftUI re-render
+    // UPDATED: Now creates 3 sets by default instead of 1
     func initializeSetsForExercises(_ exercises: [Exercise]) {
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -123,10 +128,13 @@ class WorkoutManager: ObservableObject {
         for exercise in exercises {
             if let exerciseId = exercise.id?.uuidString {
                 if exerciseSetsData[exerciseId] == nil || exerciseSetsData[exerciseId]?.isEmpty == true {
-                    let newSet = WorkoutSetData()
-                    updates[exerciseId] = [newSet]
+                    // Create 3 empty sets ready to go
+                    let set1 = WorkoutSetData()
+                    let set2 = WorkoutSetData()
+                    let set3 = WorkoutSetData()
+                    updates[exerciseId] = [set1, set2, set3]
                     #if DEBUG
-                    print("📦 Initialized sets for exercise \(exerciseId.prefix(8)), set id: \(newSet.id.uuidString.prefix(8))")
+                    print("📦 Initialized 3 sets for exercise \(exerciseId.prefix(8))")
                     #endif
                 }
             }
@@ -134,7 +142,7 @@ class WorkoutManager: ObservableObject {
         
         #if DEBUG
         let buildTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("📦 Built \(updates.count) sets in \(String(format: "%.2f", buildTime))ms")
+        print("📦 Built \(updates.count * 3) sets (3 per exercise) in \(String(format: "%.2f", buildTime))ms")
         let mergeStart = CFAbsoluteTimeGetCurrent()
         #endif
         
@@ -146,7 +154,7 @@ class WorkoutManager: ObservableObject {
         #if DEBUG
         let mergeTime = (CFAbsoluteTimeGetCurrent() - mergeStart) * 1000
         print("📦 Merge completed in \(String(format: "%.2f", mergeTime))ms")
-        print("📦 Initialized sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)")
+        print("📦 Initialized 3 sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)")
         #endif
     }
     

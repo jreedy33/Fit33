@@ -294,6 +294,9 @@ struct InsightsTabContent: View {
                 // Most Favorited Exercises
                 mostFavoritedSection
                 
+                // Force Exercise Refresh (for database updates)
+                forceExerciseRefreshCard
+                
                 // Refresh Button
                 refreshButton
             }
@@ -302,6 +305,46 @@ struct InsightsTabContent: View {
         .task {
             await viewModel.loadAnalytics()
         }
+    }
+    
+    private var forceExerciseRefreshCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.orange)
+                Text("Exercise Database")
+                    .font(.headline)
+            }
+            
+            Text("Force reload all exercises from Supabase (use after database updates)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            NavigationLink(destination: ForceExerciseRefreshView()) {
+                HStack {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                    Text("Reload Exercises")
+                        .fontWeight(.semibold)
+                }
+                .font(.subheadline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
     private var statsOverviewCard: some View {

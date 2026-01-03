@@ -297,6 +297,9 @@ struct InsightsTabContent: View {
                 // Force Exercise Refresh (for database updates)
                 forceExerciseRefreshCard
                 
+                // Force Workout State Reset (for stuck workouts)
+                forceWorkoutResetCard
+                
                 // Refresh Button
                 refreshButton
             }
@@ -339,6 +342,69 @@ struct InsightsTabContent: View {
                     )
                 )
                 .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+    }
+    
+    @State private var showingWorkoutResetConfirmation = false
+    
+    private var forceWorkoutResetCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title2)
+                    .foregroundColor(.red)
+                Text("Workout State Reset")
+                    .font(.headline)
+            }
+            
+            Text("Force clear stuck workout state (use if workout won't finish or app is stuck)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            // Current state indicator
+            HStack {
+                Circle()
+                    .fill(WorkoutManager.shared.isWorkoutActive ? Color.green : Color.gray)
+                    .frame(width: 8, height: 8)
+                Text(WorkoutManager.shared.isWorkoutActive ? "Active Workout Detected" : "No Active Workout")
+                    .font(.caption)
+                    .foregroundColor(WorkoutManager.shared.isWorkoutActive ? .green : .secondary)
+            }
+            
+            Button(action: {
+                showingWorkoutResetConfirmation = true
+            }) {
+                HStack {
+                    Image(systemName: "trash.circle.fill")
+                    Text("Force Reset Workout State")
+                        .fontWeight(.semibold)
+                }
+                .font(.subheadline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(
+                    LinearGradient(
+                        colors: [Color.red, Color.orange],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(12)
+            }
+            .alert("Reset Workout State?", isPresented: $showingWorkoutResetConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    WorkoutManager.shared.forceResetWorkoutState()
+                    HapticManager.notification(.success)
+                }
+            } message: {
+                Text("This will clear all active workout data and persisted state. Use this if your workout is stuck and won't finish.")
             }
         }
         .padding()

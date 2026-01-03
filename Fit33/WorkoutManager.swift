@@ -543,6 +543,36 @@ class WorkoutManager: ObservableObject {
         print("🗑️ [WORKOUT] Cleared active workout storage")
     }
     
+    /// Force clear ALL workout state - use when stuck in bad state
+    /// This is a nuclear option for debugging/recovery
+    func forceResetWorkoutState() {
+        print("🔴 [WORKOUT] FORCE RESET - Clearing all workout state")
+        
+        // Clear published state
+        isWorkoutActive = false
+        currentWorkout = nil
+        currentExercises = []
+        workoutStartTime = nil
+        workoutInsights = nil
+        currentProgramDayNumber = nil
+        currentProgramDayFocus = nil
+        currentSmartProgramId = nil
+        shouldNavigateToWorkoutTab = false
+        shouldNavigateToHomeTab = false
+        
+        // Clear all sets data
+        exerciseSetsData.removeAll()
+        
+        // Clear persisted state
+        UserDefaults.standard.removeObject(forKey: activeWorkoutKey)
+        UserDefaults.standard.removeObject(forKey: workoutSetsDataKey)
+        
+        // Force UI update
+        objectWillChange.send()
+        
+        print("✅ [WORKOUT] Force reset complete - all state cleared")
+    }
+    
     /// Called when app enters background - save workout state
     func saveWorkoutStateOnBackground() {
         if isWorkoutActive {

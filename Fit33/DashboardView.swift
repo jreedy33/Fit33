@@ -3209,32 +3209,8 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                ZStack {
-                    // Card fill matching WorkoutTabView style
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.13), Color(white: 0.09)]
-                                    : [Color.white, Color.white.opacity(0.95)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Subtle highlight stroke
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.08), Color.clear]
-                                    : [Color.white, Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
             )
         }
         .buttonStyle(PlainButtonStyle())

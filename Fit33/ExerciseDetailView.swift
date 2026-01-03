@@ -182,9 +182,10 @@ struct ExerciseDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(colorScheme == .dark ? .dark : .light, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar) // Always light status bar for video area
         .background(Color(.systemBackground).ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
+        .preferredColorScheme(nil) // Don't override system color scheme for content
         .onAppear {
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,

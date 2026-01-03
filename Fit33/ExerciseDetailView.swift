@@ -156,7 +156,7 @@ struct ExerciseDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Spacer for status bar area
                     Color.clear
-                        .frame(height: 50)
+                        .frame(height: 60)
                     
                     // Video Section
                     videoSection
@@ -196,6 +196,12 @@ struct ExerciseDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackButton()
+            }
+        }
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.light, for: .navigationBar) // Dark status bar text for white video background
         .background(Color(.systemBackground))
@@ -879,6 +885,28 @@ class VideoPlayerManager: ObservableObject {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+}
+
+// MARK: - Custom Back Button (Reduced Blur)
+
+struct BackButton: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.tap()
+            dismiss()
+        }) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.primary)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color(.systemGray5).opacity(0.9)) // Solid, less blurry
+                )
+        }
     }
 }
 

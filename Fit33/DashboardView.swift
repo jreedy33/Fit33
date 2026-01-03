@@ -957,33 +957,33 @@ struct DashboardView: View {
         .padding(24)
         .background(
             ZStack {
-                // Main card background with gradient (darker at top, lighter at bottom)
-                RoundedRectangle(cornerRadius: 20)
+                // Clean gradient background matching EnhancedStatCard
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.12), Color(white: 0.18)]
-                                : [Color.white.opacity(0.95), Color.white],
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.15), Color(white: 0.10)]
+                                : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 20)
+                // Subtle top highlight
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                ? [Color.white.opacity(0.08), Color.clear]
+                                : [Color.white, Color.clear],
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        lineWidth: 1.5
+                        lineWidth: 1
                     )
             }
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 4)
     }
     
     // Get the glow color based on the most recent workout's muscle group (kept for card content)
@@ -3209,47 +3209,18 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                ZStack {
-                    // Clean gradient background (matches EnhancedStatCard style)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Subtle highlight stroke
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1.5
-                        )
-                }
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.97))
             )
             .overlay(
-                Group {
-                    if !isMostRecent {
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                colorScheme == .dark 
-                                    ? Color.white.opacity(0.08)
-                                    : Color.black.opacity(0.04),
-                                lineWidth: 1
-                            )
-                    }
-                }
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        colorScheme == .dark 
+                            ? Color.white.opacity(0.06)
+                            : Color.black.opacity(0.04),
+                        lineWidth: 0.5
+                    )
             )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: isMostRecent ? 12 : 8, x: 0, y: isMostRecent ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
     }

@@ -147,11 +147,7 @@ struct ExerciseDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Status bar spacer - pushes video below Dynamic Island/notch
-                Color.clear
-                    .frame(height: 15)
-                
-                // Video Section with white background
+                // Video Section with white background - starts at safe area top
                 videoSection
                     .background(videoBackgroundColor)
                 

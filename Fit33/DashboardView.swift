@@ -1064,36 +1064,36 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(20)
+        .padding(24)
         .background(
             ZStack {
-                // Main card background with gradient (matching other cards)
-                RoundedRectangle(cornerRadius: 20)
+                // Outer container - darker to let inner cards pop (matches Recent Activity)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.18), Color(white: 0.12)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.11), Color(white: 0.07)]
+                                : [Color(white: 0.96), Color(white: 0.94)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 20)
+                // Subtle top highlight
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                ? [Color.white.opacity(0.1), Color.clear]
+                                : [Color.white.opacity(0.8), Color.clear],
                             startPoint: .top,
-                            endPoint: .bottom
+                            endPoint: .center
                         ),
-                        lineWidth: 1.5
+                        lineWidth: 1
                     )
             }
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.1), radius: 16, x: 0, y: 8)
     }
     
     private func generateMotivationalMessage() -> String {
@@ -3382,22 +3382,9 @@ struct StatCard: View {
     
     var body: some View {
         VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [color, color.opacity(0.7)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 40, height: 40)
-                    .shadow(color: color.opacity(0.3), radius: 4, x: 0, y: 2)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-            }
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
             
             VStack(spacing: 4) {
                 Text(value)
@@ -3414,13 +3401,35 @@ struct StatCard: View {
         .frame(maxWidth: .infinity, minHeight: 100)
         .padding(.vertical, 16)
         .padding(.horizontal, 12)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.clear, lineWidth: 1)
+        .background(
+            ZStack {
+                // Card fill - lighter to pop from container
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.18), Color(white: 0.14)]
+                                : [Color.white, Color.white.opacity(0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Subtle top highlight
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.12), Color.clear]
+                                : [Color.white, Color.clear],
+                            startPoint: .top,
+                            endPoint: .center
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
     }
 }
 

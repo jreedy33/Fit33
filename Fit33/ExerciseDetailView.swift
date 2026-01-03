@@ -145,52 +145,59 @@ struct ExerciseDetailView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .top) {
-            // Pure white background extending behind status bar to match video content
-            videoBackgroundColor
-                .ignoresSafeArea(edges: .top)
-            
-            // Main content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Video Section with white background extending to top
-                    videoSection
-                        .background(videoBackgroundColor)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Status bar spacer - pushes video below Dynamic Island/notch
+                Color.clear
+                    .frame(height: 60)
+                
+                // Video Section with white background
+                videoSection
+                    .background(videoBackgroundColor)
+                
+                // Content Section with dark background
+                VStack(alignment: .leading, spacing: 20) {
+                    // Exercise Name & Badges
+                    headerSection
                     
-                    // Content Section with dark background
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Exercise Name & Badges
-                        headerSection
-                        
-                        // User's Personal Stats (if they have history)
-                        if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
-                            userStatsSection
-                        }
-                        
-                        // Exercise Description
-                        if let description = exerciseDescriptionText {
-                            descriptionSection(description)
-                        }
-                        
-                        // How To Section
-                        if !howToSteps.isEmpty {
-                            howToSection
-                        }
-                        
-                        // Target Muscles
-                        muscleSection
-                        
-                        // Equipment Info
-                        equipmentSection
-                        
-                        Spacer(minLength: 40)
+                    // User's Personal Stats (if they have history)
+                    if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
+                        userStatsSection
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .background(Color(.systemBackground))
+                    
+                    // Exercise Description
+                    if let description = exerciseDescriptionText {
+                        descriptionSection(description)
+                    }
+                    
+                    // How To Section
+                    if !howToSteps.isEmpty {
+                        howToSection
+                    }
+                    
+                    // Target Muscles
+                    muscleSection
+                    
+                    // Equipment Info
+                    equipmentSection
+                    
+                    // Bottom padding for tab bar
+                    Spacer(minLength: 100)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .background(Color(.systemBackground))
             }
         }
+        .background(
+            // White background for video area at top
+            VStack(spacing: 0) {
+                videoBackgroundColor
+                    .frame(height: 400)
+                Color(.systemBackground)
+            }
+            .ignoresSafeArea()
+        )
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -200,8 +207,6 @@ struct ExerciseDetailView: View {
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.light, for: .navigationBar) // Dark status bar text for white video background
-        .background(Color(.systemBackground))
-        .ignoresSafeArea(edges: .top)
         .onAppear {
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,

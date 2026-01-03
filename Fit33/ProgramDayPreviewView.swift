@@ -218,9 +218,9 @@ struct SmartProgramDayPreviewView: View {
             .padding(.bottom, 120)
         }
         .onAppear {
-            // Prefetch videos
+            // 🚀 Prefetch videos using high-performance engine
             let exerciseNames = day.exercises.map { $0.exerciseName }
-            VideoStreamingService.shared.prefetchVideos(for: exerciseNames)
+            VideoPlaybackEngine.shared.prefetchVisible(exercises: exerciseNames)
         }
     }
     

@@ -644,7 +644,7 @@ struct CustomWorkoutBuilderView: View {
                             .padding(.top, 100)
                         } else {
                             LazyVStack(spacing: 8) {
-                                ForEach(filteredExercises, id: \.objectID) { exercise in
+                                ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
                                     CustomWorkoutExerciseRowWithNav(
                                         exercise: exercise,
                                         isSelected: selectedExercises.contains { $0.id == exercise.id },
@@ -653,6 +653,10 @@ struct CustomWorkoutBuilderView: View {
                                         }
                                     )
                                     .padding(.horizontal, 16)
+                                    // 🚀 Prefetch when exercise appears in viewport
+                                    .onAppear {
+                                        prefetchVisibleExercise(exercise: exercise, index: index)
+                                    }
                                 }
                             }
                             .padding(.top, 8)
@@ -1070,11 +1074,30 @@ struct CustomWorkoutBuilderView: View {
         } else {
             selectedExercises.append(exercise)
             
-            // 🚀 Smart prefetch: User selected this exercise, preload its video
+            // 🚀 Smart prefetch: User selected this exercise, priority preload its video
             if let name = exercise.name {
-                VideoStreamingService.shared.prefetchVideo(for: name)
+                VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
             }
         }
+    }
+    
+    // MARK: - 🚀 Smart Video Prefetching
+    
+    private func prefetchVisibleExercise(exercise: Exercise, index: Int) {
+        guard let name = exercise.name else { return }
+        
+        var namesToPrefetch = [name]
+        
+        // Get next 2 exercises
+        let exercises = filteredExercises
+        if index + 1 < exercises.count, let nextName = exercises[index + 1].name {
+            namesToPrefetch.append(nextName)
+        }
+        if index + 2 < exercises.count, let nextName2 = exercises[index + 2].name {
+            namesToPrefetch.append(nextName2)
+        }
+        
+        VideoPlaybackEngine.shared.prefetchVisible(exercises: namesToPrefetch)
     }
     
     private func startCustomWorkout() {

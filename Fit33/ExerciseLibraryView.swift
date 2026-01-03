@@ -824,12 +824,15 @@ struct ExerciseLibraryView: View {
                         Color.clear.frame(height: 0).id("top")
                         
                         LazyVStack(spacing: 10) {
-                            ForEach(filteredExercises, id: \.objectID) { exercise in
+                            ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
                                 NavigationLink(destination: ExerciseDetailView(exercise: exercise)) {
                                     CompactExerciseRowContent(exercise: exercise, showChevron: true)
                                 }
                                 .buttonStyle(PlainButtonStyle())
-                                // No prefetching - videos load on-demand when exercise is tapped
+                                // 🚀 Smart prefetch: preload video when exercise becomes visible
+                                .onAppear {
+                                    prefetchVisibleExercise(exercise: exercise, index: index)
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -1240,6 +1243,27 @@ struct ExerciseLibraryView: View {
     
     private func loadExercises() {
         exercises = ExerciseLibraryService.shared.getAllExercises()
+    }
+    
+    // MARK: - 🚀 Smart Video Prefetching
+    
+    /// Prefetch video when exercise becomes visible in list
+    private func prefetchVisibleExercise(exercise: Exercise, index: Int) {
+        guard let name = exercise.name else { return }
+        
+        // Prefetch this exercise and adjacent ones
+        var namesToPrefetch = [name]
+        
+        // Get next 2 exercises for prefetch
+        let exercises = filteredExercises
+        if index + 1 < exercises.count, let nextName = exercises[index + 1].name {
+            namesToPrefetch.append(nextName)
+        }
+        if index + 2 < exercises.count, let nextName2 = exercises[index + 2].name {
+            namesToPrefetch.append(nextName2)
+        }
+        
+        VideoPlaybackEngine.shared.prefetchVisible(exercises: namesToPrefetch)
     }
 }
 

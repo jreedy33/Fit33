@@ -730,7 +730,7 @@ private struct ExerciseVideoMapping: Codable {
     let video_url: String
 }
 
-// MARK: - Remote Video Player View
+// MARK: - Remote Video Player View (YouTube-Style Instant Start)
 
 import SwiftUI
 
@@ -742,40 +742,41 @@ struct RemoteVideoPlayerView: View {
     
     @StateObject private var playerManager = RemoteVideoPlayerManager()
     @State private var hasAppeared = false
+    @State private var showPlayer = false
     
     private var backgroundColor: Color {
-        colorScheme == .dark ? Color(white: 0.1) : Color(white: 0.95)
+        colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.96)
     }
     
     var body: some View {
         ZStack {
-            // Clean background that matches the page
+            // Clean background
             backgroundColor
             
-            if playerManager.isLoading {
-                // Loading state
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: categoryColor))
-                    
-                    Text("Loading video...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            } else if let player = playerManager.player {
-                // Video player - centered, proper aspect ratio
+            if let player = playerManager.player, showPlayer {
+                // 🎬 Video ready - show immediately with quick fade
                 VideoPlayer(player: player)
                     .aspectRatio(16/9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    .transition(.opacity.animation(.easeIn(duration: 0.1)))
+            } else if playerManager.isLoading {
+                // ⏳ Very brief loading (should be <500ms with new engine)
+                VStack(spacing: 10) {
+                    // Subtle pulsing animation
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(categoryColor.opacity(0.4))
+                        .symbolEffect(.pulse)
+                }
             } else {
-                // Fallback - no video available
-                VStack(spacing: 16) {
+                // 🚫 No video available
+                VStack(spacing: 14) {
                     Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.system(size: 80))
-                        .foregroundColor(categoryColor)
+                        .font(.system(size: 64))
+                        .foregroundColor(categoryColor.opacity(0.4))
                     
                     Text("Video Coming Soon")
-                        .font(.headline)
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.secondary)
                 }
             }
@@ -785,7 +786,16 @@ struct RemoteVideoPlayerView: View {
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true
+            
+            // 🚀 Load video using high-performance engine
             playerManager.loadVideo(for: exerciseName, videoFilename: videoFilename)
+            
+            // Quick reveal after player is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                withAnimation(.easeIn(duration: 0.1)) {
+                    showPlayer = true
+                }
+            }
         }
         .onDisappear {
             playerManager.pause()
@@ -793,89 +803,94 @@ struct RemoteVideoPlayerView: View {
     }
 }
 
-// MARK: - Remote Video Player Manager
+// MARK: - Remote Video Player Manager (YouTube-Style Engine)
 
 class RemoteVideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isLoading = false
     @Published var error: Error?
     
-    private var playerLooper: AVPlayerLooper?
     private var queuePlayer: AVQueuePlayer?
-    private var timeObserver: Any?
     
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
         
-        // 🚀 Try to get preloaded player first (INSTANT)
+        // 🚀 Use high-performance VideoPlaybackEngine (instant if cached)
+        if let enginePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: videoFilename) {
+            DispatchQueue.main.async { [weak self] in
+                self?.queuePlayer = enginePlayer
+                self?.player = enginePlayer
+                self?.isLoading = false
+                
+                #if DEBUG
+                let cacheStatus = VideoPlaybackEngine.shared.isReadyForInstantPlay(exerciseName: exerciseName) ? "cached" : "new"
+                print("🎬 Video ready (\(cacheStatus)): \(exerciseName)")
+                #endif
+            }
+            return
+        }
+        
+        // Fallback: Try legacy VideoStreamingService
         if let preloadedPlayer = VideoStreamingService.shared.getPreloadedPlayer(for: exerciseName) {
-            setupLoopingPlayer(from: preloadedPlayer, exerciseName: exerciseName)
+            setupLegacyPlayer(from: preloadedPlayer, exerciseName: exerciseName)
             isLoading = false
             return
         }
         
-        // 🎬 PRIMARY: Use direct video filename from Exercise entity if available
+        // Last resort: Create directly
         if let filename = videoFilename, !filename.isEmpty {
-            let storageBaseURL = "https://pub-e3d767a1940c49f0a79f85f93f57835f.r2.dev"
+            let storageBaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
             let urlString = "\(storageBaseURL)/\(filename)"
             if let videoURL = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                #if DEBUG
-                print("📹 Using direct video_filename: \(exerciseName) -> \(filename)")
-                #endif
-                createAndSetupPlayer(url: videoURL, exerciseName: exerciseName)
+                createDirectPlayer(url: videoURL, exerciseName: exerciseName)
                 return
             }
         }
         
-        // Fallback: Get video URL via cache lookup
-        guard let videoURL = VideoStreamingService.shared.getVideoURL(for: exerciseName) else {
-            #if DEBUG
-            print("⚠️ No video mapping found for: \(exerciseName)")
-            #endif
-            SessionLogManager.shared.logVideoPlaybackError(
-                exerciseName: exerciseName,
-                error: "No video mapping found",
-                source: "cache_lookup"
-            )
-            isLoading = false
+        // Get URL from VideoStreamingService
+        if let videoURL = VideoStreamingService.shared.getVideoURL(for: exerciseName) {
+            createDirectPlayer(url: videoURL, exerciseName: exerciseName)
             return
         }
         
-        createAndSetupPlayer(url: videoURL, exerciseName: exerciseName)
+        #if DEBUG
+        print("⚠️ No video found for: \(exerciseName)")
+        #endif
+        isLoading = false
     }
     
-    private func createAndSetupPlayer(url: URL, exerciseName: String) {
-        // Create optimized player
+    private func createDirectPlayer(url: URL, exerciseName: String) {
         let asset = AVURLAsset(url: url, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: false
+            AVURLAssetPreferPreciseDurationAndTimingKey: false,
+            "AVURLAssetOutOfBandMIMETypeKey": "video/mp4"
         ])
         
         let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
         playerItem.preferredForwardBufferDuration = 2
         
-        let newPlayer = AVPlayer(playerItem: playerItem)
-        newPlayer.automaticallyWaitsToMinimizeStalling = false
+        let qp = AVQueuePlayer(playerItem: playerItem)
+        let _ = AVPlayerLooper(player: qp, templateItem: playerItem)
         
-        setupLoopingPlayer(from: newPlayer, exerciseName: exerciseName)
-        isLoading = false
+        qp.automaticallyWaitsToMinimizeStalling = false
+        qp.play()
+        
+        self.queuePlayer = qp
+        self.player = qp
+        self.isLoading = false
     }
     
-    private func setupLoopingPlayer(from sourcePlayer: AVPlayer, exerciseName: String) {
+    private func setupLegacyPlayer(from sourcePlayer: AVPlayer, exerciseName: String) {
         guard let currentItem = sourcePlayer.currentItem else { return }
         
-        // Create a new player item for looping (can't reuse across players)
         let asset = currentItem.asset
         let loopItem = AVPlayerItem(asset: asset)
         loopItem.preferredForwardBufferDuration = 3
         
-        // Setup looping queue player
         let qp = AVQueuePlayer(playerItem: loopItem)
+        let _ = AVPlayerLooper(player: qp, templateItem: loopItem)
+        
         self.queuePlayer = qp
-        self.playerLooper = AVPlayerLooper(player: qp, templateItem: loopItem)
-        
         self.player = qp
-        
-        // Auto-play immediately
         qp.play()
     }
     
@@ -889,9 +904,6 @@ class RemoteVideoPlayerManager: ObservableObject {
     
     deinit {
         pause()
-        if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
-        }
     }
 }
 

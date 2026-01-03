@@ -98,6 +98,9 @@ struct Fit33App: App {
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
         
+        // 🚀 Initialize high-performance video engine (pre-warms favorites cache)
+        _ = VideoPlaybackEngine.shared
+        
         // Track app version for update detection
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         let currentBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"

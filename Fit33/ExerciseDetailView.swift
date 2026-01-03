@@ -191,6 +191,11 @@ struct ExerciseDetailView: View {
                 "exercise_id": exercise.id?.uuidString ?? "unknown"
             ])
             loadUserHistory()
+            
+            // 🚀 Priority prefetch for this exercise video
+            if let name = exercise.name {
+                VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
+            }
         }
     }
     

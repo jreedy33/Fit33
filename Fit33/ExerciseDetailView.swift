@@ -139,53 +139,63 @@ struct ExerciseDetailView: View {
         }
     }
     
+    // Background color to match video area (white/light gray)
+    private var videoBackgroundColor: Color {
+        Color(white: 0.96) // Light gray to match video content background
+    }
+    
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Spacer for navigation bar
-                Color.clear
-                    .frame(height: 60)
-                
-                // Video Section
-                videoSection
-                
-                // Content Section
-                VStack(alignment: .leading, spacing: 20) {
-                    // Exercise Name & Badges
-                    headerSection
+        ZStack(alignment: .top) {
+            // White background extending behind status bar to match video
+            videoBackgroundColor
+                .frame(height: 400) // Cover status bar + video area
+                .ignoresSafeArea(edges: .top)
+            
+            // Main content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Video Section (no spacer needed, goes edge to edge)
+                    videoSection
                     
-                    // User's Personal Stats (if they have history)
-                    if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
-                        userStatsSection
+                    // Content Section with dark background
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Exercise Name & Badges
+                        headerSection
+                        
+                        // User's Personal Stats (if they have history)
+                        if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
+                            userStatsSection
+                        }
+                        
+                        // Exercise Description
+                        if let description = exerciseDescriptionText {
+                            descriptionSection(description)
+                        }
+                        
+                        // How To Section
+                        if !howToSteps.isEmpty {
+                            howToSection
+                        }
+                        
+                        // Target Muscles
+                        muscleSection
+                        
+                        // Equipment Info
+                        equipmentSection
+                        
+                        Spacer(minLength: 40)
                     }
-                    
-                    // Exercise Description
-                    if let description = exerciseDescriptionText {
-                        descriptionSection(description)
-                    }
-                    
-                    // How To Section
-                    if !howToSteps.isEmpty {
-                        howToSection
-                    }
-                    
-                    // Target Muscles
-                    muscleSection
-                    
-                    // Equipment Info
-                    equipmentSection
-                    
-                    Spacer(minLength: 40)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .background(Color(.systemBackground))
                 }
-                .padding(.horizontal, 20)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar) // Always light status bar for video area
-        .background(Color(.systemBackground).ignoresSafeArea())
+        .toolbarColorScheme(.light, for: .navigationBar) // Dark status bar text for white video background
+        .background(Color(.systemBackground))
         .ignoresSafeArea(edges: .top)
-        .preferredColorScheme(nil) // Don't override system color scheme for content
         .onAppear {
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,

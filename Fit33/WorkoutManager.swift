@@ -385,9 +385,12 @@ class WorkoutManager: ObservableObject {
         let weight: Double
         let reps: Int
         let isCompleted: Bool
-        let isFailure: Bool
-        let isDropset: Bool
+        let setType: String  // Using string for Codable compatibility
         let restTime: TimeInterval
+        
+        // Legacy support - decode old format
+        let isFailure: Bool?
+        let isDropset: Bool?
     }
     
     /// Save active workout state to UserDefaults (call on workout start and state changes)
@@ -426,9 +429,10 @@ class WorkoutManager: ObservableObject {
                     weight: set.weight,
                     reps: set.reps,
                     isCompleted: set.isCompleted,
-                    isFailure: set.isFailure,
-                    isDropset: set.isDropset,
-                    restTime: set.restTime
+                    setType: set.setType.rawValue,
+                    restTime: set.restTime,
+                    isFailure: nil,
+                    isDropset: nil
                 )
             }
         }
@@ -496,9 +500,19 @@ class WorkoutManager: ObservableObject {
                     setData.weight = persisted.weight
                     setData.reps = persisted.reps
                     setData.isCompleted = persisted.isCompleted
-                    setData.isFailure = persisted.isFailure
-                    setData.isDropset = persisted.isDropset
                     setData.restTime = persisted.restTime
+                    
+                    // Restore setType - handle legacy data migration
+                    if let setTypeValue = SetType(rawValue: persisted.setType) {
+                        setData.setType = setTypeValue
+                    } else if persisted.isFailure == true {
+                        setData.setType = .failure
+                    } else if persisted.isDropset == true {
+                        setData.setType = .dropset
+                    } else {
+                        setData.setType = .normal
+                    }
+                    
                     return setData
                 }
             }

@@ -1062,6 +1062,7 @@ struct ActiveWorkoutView: View {
                 workoutSet.reps = Int16(setData.reps)
                 workoutSet.isCompleted = setData.isCompleted
                 workoutSet.restTime = Int32(setData.restTime)
+                workoutSet.setType = setData.setType.rawValue  // Save set type (Warmup, Dropset, Failure, etc.)
                 workoutSet.workoutExercise = workoutExercise
             }
         }
@@ -2371,11 +2372,35 @@ struct SetRowView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                // Set number or failure indicator
-                Text(setData.isFailure ? "F" : "\(setNumber)")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(setData.isFailure ? .red : .primary)
-                    .frame(width: 44, alignment: .leading)
+                // Set number/type indicator - tap to change set type
+                Menu {
+                    ForEach(SetType.allCases, id: \.self) { type in
+                        Button(action: {
+                            HapticManager.selectionChanged()
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                setData.setType = type
+                            }
+                        }) {
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(type.rawValue)
+                                    Text(type.description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: type.icon)
+                            }
+                        }
+                    }
+                } label: {
+                    // Display letter for special types, or number for normal
+                    Text(setData.setType.displayLetter ?? "\(setNumber)")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(setData.setType.color)
+                        .frame(width: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
                 
                 // Previous set info - show last workout's data or smart recommendation
                 HStack(spacing: 4) {
@@ -2803,14 +2828,92 @@ struct PreviousSetData {
     }
 }
 
+// MARK: - Set Type Enum
+enum SetType: String, CaseIterable, Codable {
+    case normal = "Normal"
+    case warmup = "Warmup"
+    case dropset = "Dropset"
+    case failure = "Failure"
+    case amrap = "AMRAP"       // As Many Reps As Possible
+    case pause = "Pause Rep"   // Pause at bottom/top
+    case tempo = "Tempo"       // Slow/controlled tempo
+    
+    /// Display letter for the set row
+    var displayLetter: String? {
+        switch self {
+        case .normal: return nil  // Show number instead
+        case .warmup: return "W"
+        case .dropset: return "D"
+        case .failure: return "F"
+        case .amrap: return "A"
+        case .pause: return "P"
+        case .tempo: return "T"
+        }
+    }
+    
+    /// Color for the set type indicator
+    var color: Color {
+        switch self {
+        case .normal: return .primary
+        case .warmup: return .orange
+        case .dropset: return .purple
+        case .failure: return .red
+        case .amrap: return .green
+        case .pause: return .cyan
+        case .tempo: return .blue
+        }
+    }
+    
+    /// Icon for the menu
+    var icon: String {
+        switch self {
+        case .normal: return "number.circle"
+        case .warmup: return "flame"
+        case .dropset: return "arrow.down.circle"
+        case .failure: return "exclamationmark.triangle"
+        case .amrap: return "infinity.circle"
+        case .pause: return "pause.circle"
+        case .tempo: return "metronome"
+        }
+    }
+    
+    /// Description for the menu
+    var description: String {
+        switch self {
+        case .normal: return "Standard working set"
+        case .warmup: return "Light weight warm-up"
+        case .dropset: return "Reduce weight, continue reps"
+        case .failure: return "Push to muscle failure"
+        case .amrap: return "As many reps as possible"
+        case .pause: return "Pause at bottom/top"
+        case .tempo: return "Slow controlled tempo"
+        }
+    }
+}
+
 class WorkoutSetData: ObservableObject, Identifiable {
     let id = UUID()
     @Published var weight: Double = 0
     @Published var reps: Int = 0
     @Published var isCompleted: Bool = false
-    @Published var isFailure: Bool = false
-    @Published var isDropset: Bool = false
+    @Published var setType: SetType = .normal
     @Published var restTime: TimeInterval = 0
+    
+    // Legacy computed properties for backwards compatibility
+    var isFailure: Bool {
+        get { setType == .failure }
+        set { if newValue { setType = .failure } else if setType == .failure { setType = .normal } }
+    }
+    
+    var isDropset: Bool {
+        get { setType == .dropset }
+        set { if newValue { setType = .dropset } else if setType == .dropset { setType = .normal } }
+    }
+    
+    var isWarmup: Bool {
+        get { setType == .warmup }
+        set { if newValue { setType = .warmup } else if setType == .warmup { setType = .normal } }
+    }
 }
 
 class RestTimer: ObservableObject {

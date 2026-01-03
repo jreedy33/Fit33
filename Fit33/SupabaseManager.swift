@@ -1880,7 +1880,8 @@ class SupabaseManager: ObservableObject {
                             setNumber: Int(set.setNumber),
                             reps: Int(set.reps),
                             weight: set.weight,
-                            isCompleted: set.isCompleted
+                            isCompleted: set.isCompleted,
+                            setType: set.setType  // Warmup, Dropset, Failure, AMRAP, etc.
                         )
                         setDTOs.append(setDTO)
                     }
@@ -2004,6 +2005,7 @@ class SupabaseManager: ObservableObject {
                                     workoutSet.reps = Int16(setDTO.reps)
                                     workoutSet.weight = setDTO.weight
                                     workoutSet.isCompleted = setDTO.isCompleted
+                                    workoutSet.setType = setDTO.setType ?? "Normal"
                                     workoutSet.workoutExercise = workoutExercise
                                 }
                             }
@@ -2047,6 +2049,7 @@ class SupabaseManager: ObservableObject {
                                 workoutSet.reps = Int16(setDTO.reps)
                                 workoutSet.weight = setDTO.weight
                                 workoutSet.isCompleted = setDTO.isCompleted
+                                workoutSet.setType = setDTO.setType ?? "Normal"
                                 workoutSet.workoutExercise = workoutExercise
                             }
                         }
@@ -2825,11 +2828,13 @@ struct WorkoutSetDTO: Codable {
     let reps: Int
     let weight: Double
     let isCompleted: Bool
+    let setType: String?  // Warmup, Dropset, Failure, AMRAP, etc.
     
     enum CodingKeys: String, CodingKey {
         case id, reps, weight
         case setNumber = "set_number"
         case isCompleted = "is_completed"
+        case setType = "set_type"
     }
 }
 

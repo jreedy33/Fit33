@@ -748,7 +748,7 @@ struct RemoteVideoPlayerView: View {
     @State private var showPlayer = false
     
     private var backgroundColor: Color {
-        colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.96)
+        .white // Pure white to match exercise video content backgrounds
     }
     
     var body: some View {

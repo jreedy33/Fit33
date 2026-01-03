@@ -139,27 +139,23 @@ struct ExerciseDetailView: View {
         }
     }
     
-    // Background color to match video area (white/light gray)
+    // Background color to match video area - pure white to match video content
     private var videoBackgroundColor: Color {
-        Color(white: 0.96) // Light gray to match video content background
+        .white
     }
     
     var body: some View {
         ZStack(alignment: .top) {
-            // White background extending behind status bar to match video
+            // Pure white background extending behind status bar to match video content
             videoBackgroundColor
-                .frame(height: 400) // Cover status bar + video area
                 .ignoresSafeArea(edges: .top)
             
             // Main content
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Spacer for status bar area
-                    Color.clear
-                        .frame(height: 60)
-                    
-                    // Video Section
+                    // Video Section with white background extending to top
                     videoSection
+                        .background(videoBackgroundColor)
                     
                     // Content Section with dark background
                     VStack(alignment: .leading, spacing: 20) {

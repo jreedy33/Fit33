@@ -149,7 +149,7 @@ struct ExerciseDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Status bar spacer - pushes video below Dynamic Island/notch
                 Color.clear
-                    .frame(height: 40)
+                    .frame(height: 15)
                 
                 // Video Section with white background
                 videoSection

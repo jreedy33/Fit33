@@ -98,6 +98,9 @@ struct Fit33App: App {
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
         
+        // 👤 Initialize gender filter service (centralized gender management)
+        _ = GenderFilterService.shared
+        
         // 🚀 Initialize high-performance video engine (pre-warms favorites cache)
         _ = VideoPlaybackEngine.shared
         

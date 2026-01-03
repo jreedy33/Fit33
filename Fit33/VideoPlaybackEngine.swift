@@ -541,21 +541,27 @@ final class VideoPlaybackEngine: ObservableObject {
     // MARK: - Private: Video URL Resolution
     
     private func getVideoURL(for exerciseName: String, videoFilename: String?) -> URL? {
-        // 1. Direct filename if provided
+        // 1. Direct filename if provided (already gender-specific from database)
         if let filename = videoFilename, !filename.isEmpty {
             let urlString = "\(r2BaseURL)/\(filename)"
             return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
         }
         
-        // 2. Check our mapping cache
+        // 2. Use GenderFilterService for gender-aware video selection
+        if let filename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) {
+            let urlString = "\(r2BaseURL)/\(filename)"
+            return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
+        }
+        
+        // 3. Check our mapping cache
         let key = exerciseName.lowercased()
         if let filename = videoMappings[key] {
             let urlString = "\(r2BaseURL)/\(filename)"
             return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
         }
         
-        // 3. Fallback to VideoStreamingService
-        return VideoStreamingService.shared.getVideoURL(for: exerciseName)
+        // 4. Fallback to VideoStreamingService with gender awareness
+        return VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName)
     }
     
     private func getVideoFilename(for exerciseName: String) -> String? {

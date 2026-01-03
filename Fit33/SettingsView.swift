@@ -748,7 +748,7 @@ struct SettingsView: View {
     // MARK: - Video Gender Row
     @ViewBuilder
     private func videoGenderRow() -> some View {
-        let currentGender = VideoStreamingService.shared.preferredVideoGender
+        let currentGender = GenderFilterService.shared.getPreferredGender()
         
         HStack(spacing: 16) {
             Image(systemName: currentGender == .male ? "figure.stand" : "figure.stand.dress")
@@ -770,10 +770,10 @@ struct SettingsView: View {
             Spacer()
             
             Menu {
-                ForEach(VideoStreamingService.VideoGender.allCases, id: \.self) { gender in
+                ForEach(GenderFilterService.Gender.allCases, id: \.self) { gender in
                     Button(action: {
                         withAnimation {
-                            VideoStreamingService.shared.setPreferredGender(gender)
+                            GenderFilterService.shared.setPreferredGender(gender)
                         }
                     }) {
                         HStack {

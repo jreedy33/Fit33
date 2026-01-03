@@ -677,6 +677,12 @@ struct ProfileView: View {
                 )
             }
             
+            // 👤 Update gender preference if changed
+            let genderPref: GenderFilterService.Gender = gender.lowercased().contains("female") ? .female : .male
+            if GenderFilterService.shared.getPreferredGender() != genderPref {
+                GenderFilterService.shared.setPreferredGender(genderPref)
+            }
+            
             // Notify other parts of the app that profile was updated
             // This ensures recommendation engine uses fresh data
             NotificationCenter.default.post(

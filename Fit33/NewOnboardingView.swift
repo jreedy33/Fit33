@@ -3493,6 +3493,12 @@ struct NewOnboardingView: View {
         // Sync video gender preference based on user's gender selection
         VideoStreamingService.shared.syncGenderFromUserProfile()
         
+        // 👤 Set centralized gender preference
+        if let gender = selectedGender {
+            let genderPref: GenderFilterService.Gender = gender.lowercased().contains("female") ? .female : .male
+            GenderFilterService.shared.setPreferredGender(genderPref)
+        }
+        
         // Show completion screen
         navigateTo(.complete)
     }

@@ -39,9 +39,12 @@ class VideoStreamingService: ObservableObject {
     }
     
     /// User's preferred video gender - synced from onboarding/settings
+    /// ⚠️ Use GenderFilterService.shared for centralized gender management
     @Published var preferredVideoGender: VideoGender = .male {
         didSet {
             UserDefaults.standard.set(preferredVideoGender.rawValue, forKey: "preferredVideoGender")
+            // Clear preloaded players since gender changed
+            clearPreloadCache()
             #if DEBUG
             print("📹 Video gender preference set to: \(preferredVideoGender.rawValue)")
             #endif
@@ -815,8 +818,11 @@ class RemoteVideoPlayerManager: ObservableObject {
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
         
+        // 👤 Get gender-appropriate video filename
+        let genderAwareFilename = videoFilename ?? GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true)
+        
         // 🚀 Use high-performance VideoPlaybackEngine (instant if cached)
-        if let enginePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: videoFilename) {
+        if let enginePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: genderAwareFilename) {
             DispatchQueue.main.async { [weak self] in
                 self?.queuePlayer = enginePlayer
                 self?.player = enginePlayer
@@ -824,7 +830,8 @@ class RemoteVideoPlayerManager: ObservableObject {
                 
                 #if DEBUG
                 let cacheStatus = VideoPlaybackEngine.shared.isReadyForInstantPlay(exerciseName: exerciseName) ? "cached" : "new"
-                print("🎬 Video ready (\(cacheStatus)): \(exerciseName)")
+                let genderMatch = GenderFilterService.shared.hasPreferredGenderVideo(for: exerciseName) ? "preferred" : "fallback"
+                print("🎬 Video ready (\(cacheStatus), \(genderMatch) gender): \(exerciseName)")
                 #endif
             }
             return
@@ -837,8 +844,8 @@ class RemoteVideoPlayerManager: ObservableObject {
             return
         }
         
-        // Last resort: Create directly
-        if let filename = videoFilename, !filename.isEmpty {
+        // Last resort: Create directly with gender-aware URL
+        if let filename = genderAwareFilename, !filename.isEmpty {
             let storageBaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
             let urlString = "\(storageBaseURL)/\(filename)"
             if let videoURL = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
@@ -847,8 +854,8 @@ class RemoteVideoPlayerManager: ObservableObject {
             }
         }
         
-        // Get URL from VideoStreamingService
-        if let videoURL = VideoStreamingService.shared.getVideoURL(for: exerciseName) {
+        // Get URL from VideoStreamingService with gender awareness
+        if let videoURL = VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName) {
             createDirectPlayer(url: videoURL, exerciseName: exerciseName)
             return
         }

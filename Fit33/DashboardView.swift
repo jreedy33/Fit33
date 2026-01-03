@@ -984,10 +984,9 @@ struct DashboardView: View {
             }
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: recentActivityGlowColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 20, x: 0, y: 10)
     }
     
-    // Get the glow color based on the most recent workout's muscle group
+    // Get the glow color based on the most recent workout's muscle group (kept for card content)
     private var recentActivityGlowColor: Color {
         guard let mostRecentWorkout = recentWorkouts.first else {
             return .blue // Default fallback
@@ -3210,67 +3209,31 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                Group {
-                    if isMostRecent {
-                        // Special depth effect for most recent workout
-                        ZStack {
-                            // Bottom shadow layer - workout gradient colored
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
-                                .offset(y: 8)
-                                .blur(radius: 4)
-                            
-                            // Middle shadow layer
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                                .offset(y: 4)
-                            
-                            // Main card background - grey tint
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(white: 0.18), Color(white: 0.12)]
-                                            : [Color(white: 0.96), Color(white: 0.92)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                            
-                            // Inner highlight
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                            : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                            
-                            // Colored accent border
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                            workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        }
-                    } else {
-                        // Standard background for other cards - grey tint
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark 
-                                ? Color(white: 0.15)
-                                : Color(white: 0.94))
-                    }
+                ZStack {
+                    // Clean gradient background (matches EnhancedStatCard style)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color(white: 0.15), Color(white: 0.10)]
+                                    : [Color.white, Color.white.opacity(0.95)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Subtle highlight stroke
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
                 }
             )
             .overlay(
@@ -3287,7 +3250,6 @@ struct RecentWorkoutCard: View {
                 }
             )
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: isMostRecent ? 12 : 8, x: 0, y: isMostRecent ? 6 : 4)
-            .shadow(color: isMostRecent ? workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12) : (colorScheme == .dark ? .clear : .black.opacity(0.05)), radius: isMostRecent ? 20 : 5, x: 0, y: isMostRecent ? 10 : 2)
         }
         .buttonStyle(PlainButtonStyle())
     }

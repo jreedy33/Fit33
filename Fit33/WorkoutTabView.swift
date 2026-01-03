@@ -1040,10 +1040,9 @@ struct WorkoutHomeView: View {
                 )
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: recentActivityGlowColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 20, x: 0, y: 10)
     }
     
-    // Get the glow color based on the most recent workout's muscle group
+    // Get the glow color based on the most recent workout's muscle group (kept for card content)
     private var recentActivityGlowColor: Color {
         guard let mostRecentWorkout = workouts.first else {
             return .blue // Default fallback

@@ -957,13 +957,13 @@ struct DashboardView: View {
         .padding(24)
         .background(
             ZStack {
-                // Clean gradient background matching EnhancedStatCard
+                // Outer container - darker to let inner cards pop
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                                ? [Color(white: 0.11), Color(white: 0.07)]
+                                : [Color(white: 0.96), Color(white: 0.94)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -974,16 +974,16 @@ struct DashboardView: View {
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.clear],
+                                ? [Color.white.opacity(0.1), Color.clear]
+                                : [Color.white.opacity(0.8), Color.clear],
                             startPoint: .top,
-                            endPoint: .bottom
+                            endPoint: .center
                         ),
                         lineWidth: 1
                     )
             }
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 4)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.1), radius: 16, x: 0, y: 8)
     }
     
     // Get the glow color based on the most recent workout's muscle group (kept for card content)
@@ -3209,17 +3209,34 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.13), Color(white: 0.09)]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                ZStack {
+                    // Main card fill - slightly lighter to pop from container
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color(white: 0.18), Color(white: 0.14)]
+                                    : [Color.white, Color.white.opacity(0.98)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
+                    
+                    // Subtle top highlight for depth
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.12), Color.clear]
+                                    : [Color.white, Color.clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            ),
+                            lineWidth: 1
+                        )
+                }
             )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(PlainButtonStyle())
     }

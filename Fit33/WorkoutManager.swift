@@ -286,9 +286,19 @@ class WorkoutManager: ObservableObject {
     private let programStartDateKey = "programStartDate"
     private let programCompletedDaysKey = "programCompletedDays"
     
+    // MARK: - Active Workout Persistence Keys
+    private let activeWorkoutKey = "activeWorkoutState"
+    private let workoutSetsDataKey = "workoutSetsData"
+    
+    // Maximum time (in seconds) before auto-ending a workout (6 hours)
+    private let maxWorkoutDuration: TimeInterval = 6 * 60 * 60
+    
     private init() {
         // Load saved program on init
         loadActiveProgramFromStorage()
+        
+        // ⚡️ PERSISTENCE: Load any saved active workout
+        loadActiveWorkoutFromStorage()
         
         // Start timer when workout becomes active
         $isWorkoutActive
@@ -357,13 +367,215 @@ class WorkoutManager: ObservableObject {
         print("🗑️ [PROGRAM] Cleared all program storage")
     }
     
+    // MARK: - Active Workout Persistence
+    
+    /// Structure to persist active workout state
+    private struct ActiveWorkoutState: Codable {
+        let workoutId: String
+        let exerciseIds: [String]
+        let startTime: Date
+        let programDayNumber: Int?
+        let programDayFocus: String?
+        let smartProgramId: String?
+    }
+    
+    /// Persisted set data (Codable version of WorkoutSetData)
+    private struct PersistedSetData: Codable {
+        let id: String
+        let weight: Double
+        let reps: Int
+        let isCompleted: Bool
+        let isFailure: Bool
+        let isDropset: Bool
+        let restTime: TimeInterval
+    }
+    
+    /// Save active workout state to UserDefaults (call on workout start and state changes)
+    func saveActiveWorkoutToStorage() {
+        guard isWorkoutActive,
+              let workout = currentWorkout,
+              let workoutId = workout.id?.uuidString else {
+            // No active workout - clear storage
+            clearActiveWorkoutStorage()
+            return
+        }
+        
+        let exerciseIds = currentExercises.compactMap { $0.id?.uuidString }
+        
+        let state = ActiveWorkoutState(
+            workoutId: workoutId,
+            exerciseIds: exerciseIds,
+            startTime: workoutStartTime ?? Date(),
+            programDayNumber: currentProgramDayNumber,
+            programDayFocus: currentProgramDayFocus,
+            smartProgramId: currentSmartProgramId
+        )
+        
+        // Save workout state
+        if let encoded = try? JSONEncoder().encode(state) {
+            UserDefaults.standard.set(encoded, forKey: activeWorkoutKey)
+            print("💾 [WORKOUT] Saved active workout state")
+        }
+        
+        // Save sets data
+        var persistedSets: [String: [PersistedSetData]] = [:]
+        for (exerciseId, sets) in exerciseSetsData {
+            persistedSets[exerciseId] = sets.map { set in
+                PersistedSetData(
+                    id: set.id.uuidString,
+                    weight: set.weight,
+                    reps: set.reps,
+                    isCompleted: set.isCompleted,
+                    isFailure: set.isFailure,
+                    isDropset: set.isDropset,
+                    restTime: set.restTime
+                )
+            }
+        }
+        
+        if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
+            UserDefaults.standard.set(setsEncoded, forKey: workoutSetsDataKey)
+            print("💾 [WORKOUT] Saved \(exerciseSetsData.count) exercise sets")
+        }
+    }
+    
+    /// Load active workout state from UserDefaults (call on app launch)
+    private func loadActiveWorkoutFromStorage() {
+        guard let data = UserDefaults.standard.data(forKey: activeWorkoutKey),
+              let state = try? JSONDecoder().decode(ActiveWorkoutState.self, from: data) else {
+            print("📂 [WORKOUT] No saved active workout found")
+            return
+        }
+        
+        // Check if workout is too old (auto-timeout after 6 hours)
+        let elapsedTime = Date().timeIntervalSince(state.startTime)
+        if elapsedTime > maxWorkoutDuration {
+            print("⏰ [WORKOUT] Active workout expired (\(Int(elapsedTime / 3600)) hours old) - auto-ending")
+            clearActiveWorkoutStorage()
+            return
+        }
+        
+        print("📂 [WORKOUT] Found saved active workout (started \(Int(elapsedTime / 60)) minutes ago)")
+        
+        // Fetch the workout and exercises from Core Data
+        let context = PersistenceController.shared.container.viewContext
+        
+        // Fetch workout
+        let workoutFetch: NSFetchRequest<Workout> = Workout.fetchRequest()
+        workoutFetch.predicate = NSPredicate(format: "id == %@", state.workoutId)
+        workoutFetch.fetchLimit = 1
+        
+        guard let workout = try? context.fetch(workoutFetch).first else {
+            print("⚠️ [WORKOUT] Could not find saved workout in Core Data - clearing")
+            clearActiveWorkoutStorage()
+            return
+        }
+        
+        // Fetch exercises
+        let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        exerciseFetch.predicate = NSPredicate(format: "id IN %@", state.exerciseIds.compactMap { UUID(uuidString: $0) })
+        
+        guard let exercises = try? context.fetch(exerciseFetch), !exercises.isEmpty else {
+            print("⚠️ [WORKOUT] Could not find saved exercises in Core Data - clearing")
+            clearActiveWorkoutStorage()
+            return
+        }
+        
+        // Sort exercises to match original order
+        let orderedExercises = state.exerciseIds.compactMap { id -> Exercise? in
+            exercises.first { $0.id?.uuidString == id }
+        }
+        
+        // Load sets data
+        if let setsData = UserDefaults.standard.data(forKey: workoutSetsDataKey),
+           let persistedSets = try? JSONDecoder().decode([String: [PersistedSetData]].self, from: setsData) {
+            
+            for (exerciseId, sets) in persistedSets {
+                exerciseSetsData[exerciseId] = sets.map { persisted in
+                    let setData = WorkoutSetData()
+                    setData.weight = persisted.weight
+                    setData.reps = persisted.reps
+                    setData.isCompleted = persisted.isCompleted
+                    setData.isFailure = persisted.isFailure
+                    setData.isDropset = persisted.isDropset
+                    setData.restTime = persisted.restTime
+                    return setData
+                }
+            }
+            print("📂 [WORKOUT] Restored \(persistedSets.count) exercise sets")
+        }
+        
+        // Restore workout state
+        currentWorkout = workout
+        currentExercises = orderedExercises
+        workoutStartTime = state.startTime
+        currentProgramDayNumber = state.programDayNumber
+        currentProgramDayFocus = state.programDayFocus
+        currentSmartProgramId = state.smartProgramId
+        isWorkoutActive = true
+        
+        print("✅ [WORKOUT] Restored active workout with \(orderedExercises.count) exercises")
+        
+        // Navigate to workout tab
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.shouldNavigateToWorkoutTab = true
+        }
+    }
+    
+    /// Clear active workout storage (call when workout finishes/cancels)
+    private func clearActiveWorkoutStorage() {
+        UserDefaults.standard.removeObject(forKey: activeWorkoutKey)
+        UserDefaults.standard.removeObject(forKey: workoutSetsDataKey)
+        print("🗑️ [WORKOUT] Cleared active workout storage")
+    }
+    
+    /// Called when app enters background - save workout state
+    func saveWorkoutStateOnBackground() {
+        if isWorkoutActive {
+            saveActiveWorkoutToStorage()
+            print("📱 [WORKOUT] Saved state before entering background")
+        }
+    }
+    
+    /// Called when app returns to foreground - check for expired workout
+    func checkWorkoutStateOnForeground() {
+        guard isWorkoutActive, let startTime = workoutStartTime else { return }
+        
+        let elapsedTime = Date().timeIntervalSince(startTime)
+        if elapsedTime > maxWorkoutDuration {
+            print("⏰ [WORKOUT] Workout has been active for \(Int(elapsedTime / 3600)) hours - auto-ending")
+            
+            // Auto-end the workout
+            cancelWorkout()
+            
+            // Show alert to user
+            NotificationCenter.default.post(
+                name: NSNotification.Name("WorkoutAutoEnded"),
+                object: nil,
+                userInfo: ["reason": "Your workout was automatically ended after 6 hours of inactivity."]
+            )
+        } else {
+            print("✅ [WORKOUT] Workout still valid (\(Int(elapsedTime / 60)) minutes elapsed)")
+        }
+    }
+    
     private var cancellables = Set<AnyCancellable>()
+    
+    // Counter for periodic saves (save every 30 seconds during workout)
+    private var saveCounter: Int = 0
     
     private func startTimer() {
         timer = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] time in
                 self?.currentTime = time
+                
+                // ⚡️ PERSISTENCE: Auto-save workout state every 30 seconds
+                self?.saveCounter += 1
+                if self?.saveCounter ?? 0 >= 30 {
+                    self?.saveCounter = 0
+                    self?.saveActiveWorkoutToStorage()
+                }
             }
     }
     
@@ -462,6 +674,11 @@ class WorkoutManager: ObservableObject {
         
         // DO NOT prepare ads here - AdMob WebView processes block UI for 4-6 seconds
         // Ads will be prepared lazily when shouldShowAd() is first called
+        
+        // ⚡️ PERSISTENCE: Save workout state so it survives app close
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.saveActiveWorkoutToStorage()
+        }
     }
     
     func finishWorkout() {
@@ -598,6 +815,9 @@ class WorkoutManager: ObservableObject {
         shouldNavigateToWorkoutTab = false
         clearAllSetsData() // Clear persistent sets data
         
+        // ⚡️ PERSISTENCE: Clear saved workout state
+        clearActiveWorkoutStorage()
+        
         #if DEBUG
         print("✅ WorkoutManager: Workout finished successfully")
         #endif
@@ -633,6 +853,9 @@ class WorkoutManager: ObservableObject {
         currentSmartProgramId = nil
         shouldNavigateToWorkoutTab = false
         clearAllSetsData() // Clear persistent sets data
+        
+        // ⚡️ PERSISTENCE: Clear saved workout state
+        clearActiveWorkoutStorage()
         
         #if DEBUG
         print("✅ WorkoutManager: Workout cancelled successfully")

@@ -387,12 +387,18 @@ struct Fit33App: App {
                         
                         // Smart notification check - cancel unnecessary reminders
                         NotificationManager.shared.performSmartCheck()
+                        
+                        // ⚡️ PERSISTENCE: Check if workout expired while app was closed
+                        WorkoutManager.shared.checkWorkoutStateOnForeground()
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")
                         // 🔧 DEV: Persist logs on inactive (in case of crash)
                         #if DEBUG
                         SessionLogManager.shared.persistLogsForCrashRecovery()
                         #endif
+                        
+                        // ⚡️ PERSISTENCE: Save workout state before app becomes inactive
+                        WorkoutManager.shared.saveWorkoutStateOnBackground()
                     case .background:
                         SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
                         // 🔧 DEV: Mark clean shutdown before going to background
@@ -401,6 +407,9 @@ struct Fit33App: App {
                         #endif
                         // End session when app goes to background (logs cleared unless bug report pending)
                         SessionLogManager.shared.endSession()
+                        
+                        // ⚡️ PERSISTENCE: Ensure workout state is saved before background
+                        WorkoutManager.shared.saveWorkoutStateOnBackground()
                     @unknown default:
                         break
                     }

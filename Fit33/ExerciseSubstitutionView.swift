@@ -585,7 +585,7 @@ struct SubstituteExerciseCard: View {
                 
                 // Exercise info
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(substitute.exercise.name ?? "Exercise")
+                    Text(substitute.exercise.displayName)
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)

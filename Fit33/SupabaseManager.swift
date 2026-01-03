@@ -16,6 +16,26 @@ class SupabaseManager: ObservableObject {
     
     private var client: SupabaseClient!
     
+    // MARK: - Cached Date Formatter (Performance Optimization)
+    /// ISO8601DateFormatter is expensive to create - reuse this instance
+    private let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    
+    /// Convert Date to ISO8601 string for database storage
+    @inline(__always)
+    private func dateToISO(_ date: Date) -> String {
+        iso8601Formatter.string(from: date)
+    }
+    
+    /// Convert ISO8601 string to Date (nil if invalid)
+    @inline(__always)
+    private func isoToDate(_ string: String) -> Date? {
+        ISO8601Parser.parse(string)
+    }
+    
     // Public getter for client (needed by FoodDatabaseService)
     var supabaseClient: SupabaseClient {
         return client
@@ -531,7 +551,7 @@ class SupabaseManager: ObservableObject {
             workout_environment: workoutEnvironment,
             age: age,
             gender: gender,
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            updated_at: dateToISO(Date())
         )
         
         try await client
@@ -554,7 +574,7 @@ class SupabaseManager: ObservableObject {
         
         let update = OnboardingUpdate(
             has_completed_onboarding: true,
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            updated_at: dateToISO(Date())
         )
         
         try await client
@@ -642,8 +662,8 @@ class SupabaseManager: ObservableObject {
             longest_streak: Int(user.longestStreak),
             total_workouts: Int(user.totalWorkouts),
             xp: Int(user.xp),
-            last_workout_date: user.lastWorkoutDate != nil ? ISO8601DateFormatter().string(from: user.lastWorkoutDate!) : nil,
-            updated_at: ISO8601DateFormatter().string(from: Date()),
+            last_workout_date: user.lastWorkoutDate != nil ? dateToISO( user.lastWorkoutDate!) : nil,
+            updated_at: dateToISO(Date()),
             weight_unit: unitSettings.weightUnit.rawValue,
             height_unit: unitSettings.heightUnit.rawValue,
             distance_unit: unitSettings.distanceUnit.rawValue,
@@ -1041,7 +1061,7 @@ class SupabaseManager: ObservableObject {
         let workout = WorkoutInsert(
             user_id: userId.uuidString,
             name: name,
-            date: ISO8601DateFormatter().string(from: date),
+            date: dateToISO( date),
             duration_seconds: durationSeconds,
             xp_earned: xpEarned,
             program_id: programId,
@@ -1204,7 +1224,7 @@ class SupabaseManager: ObservableObject {
         
         let progress = ProgressInsert(
             user_id: userId.uuidString,
-            date: ISO8601DateFormatter().string(from: Date()),
+            date: dateToISO(Date()),
             xp: 0,
             current_level: 1,
             current_streak: 0,
@@ -1247,8 +1267,8 @@ class SupabaseManager: ObservableObject {
             total_xp: newTotalXp,
             current_level: newLevel,
             total_workouts: current.totalWorkouts + 1,
-            last_workout_date: ISO8601DateFormatter().string(from: Date()),
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            last_workout_date: dateToISO(Date()),
+            updated_at: dateToISO(Date())
         )
         
         try await client
@@ -1381,7 +1401,7 @@ class SupabaseManager: ObservableObject {
             workout_name: workoutName,
             exercise_names: exerciseNames,
             original_workout_id: originalWorkoutId,
-            created_at: ISO8601DateFormatter().string(from: Date())
+            created_at: dateToISO(Date())
         )
         
         try await client
@@ -1443,7 +1463,7 @@ class SupabaseManager: ObservableObject {
         let uniqueUsers = Set(uniqueUsersResponse.map { $0.userId }).count
         
         // Get workouts in last 7 days
-        let sevenDaysAgo = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-7 * 24 * 60 * 60))
+        let sevenDaysAgo = dateToISO( Date().addingTimeInterval(-7 * 24 * 60 * 60))
         let recentWorkouts: [WorkoutDTO] = try await client
             .from("workouts")
             .select()
@@ -1494,7 +1514,7 @@ class SupabaseManager: ObservableObject {
         let totalUsers = profiles.count
         
         // Count users with recent activity (last 30 days)
-        let thirtyDaysAgo = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30 * 24 * 60 * 60))
+        let thirtyDaysAgo = dateToISO( Date().addingTimeInterval(-30 * 24 * 60 * 60))
         let activeUsers: [UserProfileDTO] = try await client
             .from("user_profiles")
             .select()
@@ -1513,7 +1533,7 @@ class SupabaseManager: ObservableObject {
     /// Get step tracking statistics across all users
     func fetchStepStatisticsAllUsers() async throws -> StepAnalyticsDTO {
         // Get all step records from last 7 days
-        let sevenDaysAgo = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-7 * 24 * 60 * 60))
+        let sevenDaysAgo = dateToISO( Date().addingTimeInterval(-7 * 24 * 60 * 60))
         
         let stepData: [StepDataDTO] = try await client
             .from("step_tracking")
@@ -1551,14 +1571,14 @@ class SupabaseManager: ObservableObject {
             let synced_at: String
         }
         
-        let dateString = ISO8601DateFormatter().string(from: date)
+        let dateString = dateToISO( date)
         
         let stepData = StepDataUpsert(
             user_id: userId.uuidString,
             date: dateString,
             steps: steps,
             goal: goal,
-            synced_at: ISO8601DateFormatter().string(from: Date())
+            synced_at: dateToISO(Date())
         )
         
         // Upsert (insert or update) to avoid duplicates
@@ -1610,7 +1630,7 @@ class SupabaseManager: ObservableObject {
         
         let calendar = Calendar.current
         let startDate = calendar.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-        let startDateString = ISO8601DateFormatter().string(from: startDate)
+        let startDateString = dateToISO( startDate)
         
         let response: [StepDataDTO] = try await client
             .from("step_tracking")
@@ -1636,7 +1656,7 @@ class SupabaseManager: ObservableObject {
         
         let update = StepGoalUpdate(
             daily_step_goal: goal,
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            updated_at: dateToISO(Date())
         )
         
         try await client
@@ -1674,8 +1694,8 @@ class SupabaseManager: ObservableObject {
     func fetchStepStatistics(startDate: Date, endDate: Date) async throws -> StepStatisticsDTO? {
         guard let userId = currentUser?.id else { return nil }
         
-        let startString = ISO8601DateFormatter().string(from: startDate)
-        let endString = ISO8601DateFormatter().string(from: endDate)
+        let startString = dateToISO( startDate)
+        let endString = dateToISO( endDate)
         
         let response: [StepDataDTO] = try await client
             .from("step_tracking")
@@ -1701,6 +1721,483 @@ class SupabaseManager: ObservableObject {
             daysGoalMet: daysGoalMet,
             goalCompletionRate: Double(daysGoalMet) / Double(response.count)
         )
+    }
+    
+    // MARK: - Cardio Workout Tracking
+    
+    /// Save a completed cardio workout to the cloud
+    func saveCardioWorkout(_ workout: CardioWorkoutData) async throws -> String? {
+        guard let userId = currentUser?.id else {
+            print("⚠️ [CARDIO] Cannot save - no user logged in")
+            return nil
+        }
+        
+        struct CardioWorkoutInsert: Encodable {
+            let user_id: String
+            let activity_type: String
+            let workout_name: String?
+            let goal_type: String
+            let goal_value: Double?
+            let goal_achieved: Bool
+            let duration_seconds: Int
+            let distance_meters: Double
+            let calories_burned: Double
+            let average_pace: Double?
+            let best_pace: Double?
+            let average_speed: Double?
+            let max_speed: Double?
+            let average_heart_rate: Int?
+            let max_heart_rate: Int?
+            let cadence: Int?
+            let average_power: Int?
+            let equipment_name: String?
+            let equipment_type: String?
+            let route_coordinates: String? // JSON string
+            let splits: String? // JSON string
+            let started_at: String
+            let completed_at: String
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        
+        let insert = CardioWorkoutInsert(
+            user_id: userId.uuidString,
+            activity_type: workout.activityType,
+            workout_name: workout.workoutName,
+            goal_type: workout.goalType,
+            goal_value: workout.goalValue,
+            goal_achieved: workout.goalAchieved,
+            duration_seconds: workout.durationSeconds,
+            distance_meters: workout.distanceMeters,
+            calories_burned: workout.caloriesBurned,
+            average_pace: workout.averagePace,
+            best_pace: workout.bestPace,
+            average_speed: workout.averageSpeed,
+            max_speed: workout.maxSpeed,
+            average_heart_rate: workout.averageHeartRate,
+            max_heart_rate: workout.maxHeartRate,
+            cadence: workout.cadence,
+            average_power: workout.averagePower,
+            equipment_name: workout.equipmentName,
+            equipment_type: workout.equipmentType,
+            route_coordinates: workout.routeCoordinatesJSON,
+            splits: workout.splitsJSON,
+            started_at: formatter.string(from: workout.startedAt),
+            completed_at: formatter.string(from: workout.completedAt)
+        )
+        
+        struct CardioWorkoutResponse: Codable {
+            let id: String
+        }
+        
+        let response: [CardioWorkoutResponse] = try await client
+            .from("cardio_workouts")
+            .insert(insert)
+            .select("id")
+            .execute()
+            .value
+        
+        let workoutId = response.first?.id
+        print("✅ [CARDIO] Workout saved: \(workout.activityType) - \(workout.durationSeconds)s")
+        
+        // Check for PRs after saving workout
+        if let id = workoutId {
+            await checkAndSaveCardioPRs(workout: workout, workoutId: id)
+        }
+        
+        return workoutId
+    }
+    
+    /// Check for personal records and save any new PRs
+    private func checkAndSaveCardioPRs(workout: CardioWorkoutData, workoutId: String) async {
+        guard let userId = currentUser?.id else { return }
+        
+        // Fetch existing PRs for this activity type
+        let existingPRs = await fetchCardioPRs(activityType: workout.activityType)
+        
+        var newPRs: [(type: String, category: String, value: Double, unit: String)] = []
+        
+        // Check distance PR (longest workout)
+        if workout.distanceMeters > 0 {
+            let existingDistancePR = existingPRs.first { $0.recordType == "longest_distance" }
+            if existingDistancePR == nil || workout.distanceMeters > (existingDistancePR?.value ?? 0) {
+                newPRs.append(("longest_distance", "distance", workout.distanceMeters, "meters"))
+            }
+        }
+        
+        // Check duration PR (longest duration)
+        if workout.durationSeconds > 0 {
+            let existingDurationPR = existingPRs.first { $0.recordType == "longest_duration" }
+            if existingDurationPR == nil || Double(workout.durationSeconds) > (existingDurationPR?.value ?? 0) {
+                newPRs.append(("longest_duration", "duration", Double(workout.durationSeconds), "seconds"))
+            }
+        }
+        
+        // Check calories PR (most calories)
+        if workout.caloriesBurned > 0 {
+            let existingCaloriesPR = existingPRs.first { $0.recordType == "most_calories" }
+            if existingCaloriesPR == nil || workout.caloriesBurned > (existingCaloriesPR?.value ?? 0) {
+                newPRs.append(("most_calories", "calories", workout.caloriesBurned, "calories"))
+            }
+        }
+        
+        // Check pace PR (fastest pace) - lower is better
+        if let pace = workout.averagePace, pace > 0, workout.distanceMeters >= 1000 { // At least 1km
+            let existingPacePR = existingPRs.first { $0.recordType == "fastest_pace" }
+            if existingPacePR == nil || pace < (existingPacePR?.value ?? Double.infinity) {
+                newPRs.append(("fastest_pace", "speed", pace, "min/km"))
+            }
+        }
+        
+        // Check specific distance PRs (5K, 10K, etc.)
+        let distanceKm = workout.distanceMeters / 1000
+        if distanceKm >= 5.0 {
+            // Calculate 5K time
+            let pacePerKm = Double(workout.durationSeconds) / distanceKm
+            let time5K = pacePerKm * 5.0
+            let existing5KPR = existingPRs.first { $0.recordType == "fastest_5k" }
+            if existing5KPR == nil || time5K < (existing5KPR?.value ?? Double.infinity) {
+                newPRs.append(("fastest_5k", "speed", time5K, "seconds"))
+            }
+        }
+        
+        if distanceKm >= 10.0 {
+            let pacePerKm = Double(workout.durationSeconds) / distanceKm
+            let time10K = pacePerKm * 10.0
+            let existing10KPR = existingPRs.first { $0.recordType == "fastest_10k" }
+            if existing10KPR == nil || time10K < (existing10KPR?.value ?? Double.infinity) {
+                newPRs.append(("fastest_10k", "speed", time10K, "seconds"))
+            }
+        }
+        
+        // Save new PRs
+        for pr in newPRs {
+            do {
+                try await saveCardioPR(
+                    userId: userId.uuidString,
+                    activityType: workout.activityType,
+                    recordType: pr.type,
+                    recordCategory: pr.category,
+                    value: pr.value,
+                    unit: pr.unit,
+                    workoutId: workoutId,
+                    previousValue: existingPRs.first { $0.recordType == pr.type }?.value
+                )
+                print("🏆 [CARDIO PR] New \(pr.type): \(pr.value) \(pr.unit)")
+            } catch {
+                print("⚠️ [CARDIO PR] Failed to save \(pr.type): \(error)")
+            }
+        }
+    }
+    
+    /// Save a personal record
+    private func saveCardioPR(
+        userId: String,
+        activityType: String,
+        recordType: String,
+        recordCategory: String,
+        value: Double,
+        unit: String,
+        workoutId: String,
+        previousValue: Double?
+    ) async throws {
+        struct CardioPRUpsert: Encodable {
+            let user_id: String
+            let activity_type: String
+            let record_type: String
+            let record_category: String
+            let value: Double
+            let unit: String
+            let workout_id: String
+            let previous_value: Double?
+            let improvement_percentage: Double?
+            let achieved_at: String
+        }
+        
+        var improvement: Double? = nil
+        if let prev = previousValue, prev > 0 {
+            if recordCategory == "speed" {
+                // For pace/time, lower is better
+                improvement = ((prev - value) / prev) * 100
+            } else {
+                // For distance/calories/duration, higher is better
+                improvement = ((value - prev) / prev) * 100
+            }
+        }
+        
+        let upsert = CardioPRUpsert(
+            user_id: userId,
+            activity_type: activityType,
+            record_type: recordType,
+            record_category: recordCategory,
+            value: value,
+            unit: unit,
+            workout_id: workoutId,
+            previous_value: previousValue,
+            improvement_percentage: improvement,
+            achieved_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("cardio_personal_records")
+            .upsert(upsert, onConflict: "user_id,activity_type,record_type")
+            .execute()
+    }
+    
+    /// Fetch personal records for an activity type
+    func fetchCardioPRs(activityType: String? = nil) async -> [CardioPRDTO] {
+        guard let userId = currentUser?.id else { return [] }
+        
+        do {
+            var query = client
+                .from("cardio_personal_records")
+                .select()
+                .eq("user_id", value: userId.uuidString)
+            
+            if let activity = activityType {
+                query = query.eq("activity_type", value: activity)
+            }
+            
+            let response: [CardioPRDTO] = try await query
+                .order("achieved_at", ascending: false)
+                .execute()
+                .value
+            
+            return response
+        } catch {
+            print("⚠️ [CARDIO] Failed to fetch PRs: \(error)")
+            return []
+        }
+    }
+    
+    /// Fetch recent cardio workouts
+    func fetchRecentCardioWorkouts(limit: Int = 20, activityType: String? = nil) async throws -> [CardioWorkoutDTO] {
+        guard let userId = currentUser?.id else { return [] }
+        
+        var query = client
+            .from("cardio_workouts")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+        
+        if let activity = activityType {
+            query = query.eq("activity_type", value: activity)
+        }
+        
+        let response: [CardioWorkoutDTO] = try await query
+            .order("completed_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        
+        print("✅ [CARDIO] Fetched \(response.count) workouts")
+        return response
+    }
+    
+    /// Fetch cardio statistics for a date range
+    func fetchCardioStats(startDate: Date, endDate: Date) async throws -> CardioStatsDTO {
+        guard let userId = currentUser?.id else {
+            return CardioStatsDTO(totalWorkouts: 0, totalDuration: 0, totalDistance: 0, totalCalories: 0, workoutsByType: [:])
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        let startString = formatter.string(from: startDate)
+        let endString = formatter.string(from: endDate)
+        
+        let workouts: [CardioWorkoutDTO] = try await client
+            .from("cardio_workouts")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+            .gte("completed_at", value: startString)
+            .lte("completed_at", value: endString)
+            .execute()
+            .value
+        
+        let totalDuration = workouts.reduce(0) { $0 + $1.durationSeconds }
+        let totalDistance = workouts.reduce(0.0) { $0 + $1.distanceMeters }
+        let totalCalories = workouts.reduce(0.0) { $0 + $1.caloriesBurned }
+        
+        // Group by activity type
+        var byType: [String: Int] = [:]
+        for workout in workouts {
+            byType[workout.activityType, default: 0] += 1
+        }
+        
+        return CardioStatsDTO(
+            totalWorkouts: workouts.count,
+            totalDuration: totalDuration,
+            totalDistance: totalDistance,
+            totalCalories: totalCalories,
+            workoutsByType: byType
+        )
+    }
+    
+    /// Fetch cardio streak information
+    func fetchCardioStreak() async -> CardioStreakDTO? {
+        guard let userId = currentUser?.id else { return nil }
+        
+        do {
+            let response: [CardioStreakDTO] = try await client
+                .from("cardio_streaks")
+                .select()
+                .eq("user_id", value: userId.uuidString)
+                .eq("streak_type", value: "daily_cardio")
+                .execute()
+                .value
+            
+            return response.first
+        } catch {
+            print("⚠️ [CARDIO] Failed to fetch streak: \(error)")
+            return nil
+        }
+    }
+    
+    /// Fetch weekly cardio summaries for trend analysis
+    func fetchCardioWeeklySummaries(weeks: Int = 12) async throws -> [CardioWeeklySummaryDTO] {
+        guard let userId = currentUser?.id else { return [] }
+        
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .weekOfYear, value: -weeks, to: Date()) ?? Date()
+        let startString = dateToISO( startDate)
+        
+        let response: [CardioWeeklySummaryDTO] = try await client
+            .from("cardio_weekly_summaries")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+            .gte("week_start", value: startString)
+            .order("week_start", ascending: false)
+            .execute()
+            .value
+        
+        return response
+    }
+    
+    // MARK: - Cardio Goals
+    
+    /// Create a new cardio goal
+    func createCardioGoal(
+        name: String,
+        goalType: String,
+        activityType: String?,
+        targetValue: Double,
+        unit: String,
+        periodType: String,
+        periodStart: Date,
+        periodEnd: Date
+    ) async throws {
+        guard let userId = currentUser?.id else { return }
+        
+        struct CardioGoalInsert: Encodable {
+            let user_id: String
+            let goal_name: String
+            let goal_type: String
+            let activity_type: String?
+            let target_value: Double
+            let unit: String
+            let period_type: String
+            let period_start: String
+            let period_end: String
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        let insert = CardioGoalInsert(
+            user_id: userId.uuidString,
+            goal_name: name,
+            goal_type: goalType,
+            activity_type: activityType,
+            target_value: targetValue,
+            unit: unit,
+            period_type: periodType,
+            period_start: dateFormatter.string(from: periodStart),
+            period_end: dateFormatter.string(from: periodEnd)
+        )
+        
+        try await client
+            .from("cardio_goals")
+            .insert(insert)
+            .execute()
+        
+        print("✅ [CARDIO] Goal created: \(name)")
+    }
+    
+    /// Fetch active cardio goals
+    func fetchActiveCardioGoals() async throws -> [CardioGoalDTO] {
+        guard let userId = currentUser?.id else { return [] }
+        
+        let today = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
+        
+        let response: [CardioGoalDTO] = try await client
+            .from("cardio_goals")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_active", value: true)
+            .execute()
+            .value
+        
+        return response
+    }
+    
+    // MARK: - Exercise Nicknames
+    
+    /// Fetch all exercise nicknames for the current user
+    func fetchExerciseNicknames() async throws -> [ExerciseNicknameDTO] {
+        guard let userId = currentUser?.id else { return [] }
+        
+        let response: [ExerciseNicknameDTO] = try await client
+            .from("user_exercise_nicknames")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+            .value
+        
+        print("✅ [NICKNAMES] Fetched \(response.count) exercise nicknames")
+        return response
+    }
+    
+    /// Save or update an exercise nickname
+    func saveExerciseNickname(officialName: String, nickname: String, exerciseId: UUID? = nil) async throws {
+        guard let userId = currentUser?.id else {
+            print("⚠️ [NICKNAMES] Cannot save - no user logged in")
+            return
+        }
+        
+        struct NicknameUpsert: Encodable {
+            let user_id: String
+            let official_name: String
+            let nickname: String
+            let exercise_id: String?
+            let updated_at: String
+        }
+        
+        let upsert = NicknameUpsert(
+            user_id: userId.uuidString,
+            official_name: officialName,
+            nickname: nickname,
+            exercise_id: exerciseId?.uuidString,
+            updated_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("user_exercise_nicknames")
+            .upsert(upsert, onConflict: "user_id,official_name")
+            .execute()
+        
+        print("✅ [NICKNAMES] Saved: '\(officialName)' -> '\(nickname)'")
+    }
+    
+    /// Delete an exercise nickname (revert to official name)
+    func deleteExerciseNickname(officialName: String) async throws {
+        guard let userId = currentUser?.id else { return }
+        
+        try await client
+            .from("user_exercise_nicknames")
+            .delete()
+            .eq("user_id", value: userId.uuidString)
+            .eq("official_name", value: officialName)
+            .execute()
+        
+        print("✅ [NICKNAMES] Deleted nickname for '\(officialName)'")
     }
     
     // MARK: - Comprehensive Data Sync
@@ -1742,6 +2239,9 @@ class SupabaseManager: ObservableObject {
             // Sync meal logs from cloud
             let mealLogs = try await fetchMealLogs()
             await syncMealLogsToCoreData(meals: mealLogs)
+            
+            // Sync exercise nicknames
+            await ExerciseNicknameService.shared.loadNicknames()
             
             print("✅ Comprehensive data sync completed!")
         } catch {
@@ -1901,7 +2401,7 @@ class SupabaseManager: ObservableObject {
             id: workoutId,
             userId: userId.uuidString,
             name: workout.name ?? "Workout",
-            date: ISO8601DateFormatter().string(from: workout.date ?? Date()),
+            date: dateToISO( workout.date ?? Date()),
             duration: Int(workout.duration),
             isCompleted: workout.isCompleted,
             xpEarned: Int(workout.xpEarned),
@@ -2078,7 +2578,7 @@ class SupabaseManager: ObservableObject {
         let mealDTO = MealLogDTO(
             id: mealId,
             userId: userId.uuidString,
-            date: ISO8601DateFormatter().string(from: meal.date ?? Date()),
+            date: dateToISO( meal.date ?? Date()),
             mealType: meal.mealType ?? "Other",
             foodName: meal.foodName ?? "Unknown",
             quantity: meal.quantity,
@@ -2862,3 +3362,247 @@ struct MealLogDTO: Codable {
     }
 }
 
+// MARK: - Cardio Workout DTOs
+
+/// Data structure for creating a new cardio workout
+struct CardioWorkoutData {
+    let activityType: String
+    let workoutName: String?
+    let goalType: String
+    let goalValue: Double?
+    let goalAchieved: Bool
+    let durationSeconds: Int
+    let distanceMeters: Double
+    let caloriesBurned: Double
+    let averagePace: Double?
+    let bestPace: Double?
+    let averageSpeed: Double?
+    let maxSpeed: Double?
+    let averageHeartRate: Int?
+    let maxHeartRate: Int?
+    let cadence: Int?
+    let averagePower: Int?
+    let equipmentName: String?
+    let equipmentType: String?
+    let routeCoordinatesJSON: String?
+    let splitsJSON: String?
+    let startedAt: Date
+    let completedAt: Date
+    
+    init(
+        activityType: String,
+        workoutName: String? = nil,
+        goalType: String,
+        goalValue: Double? = nil,
+        goalAchieved: Bool,
+        durationSeconds: Int,
+        distanceMeters: Double,
+        caloriesBurned: Double,
+        averagePace: Double? = nil,
+        bestPace: Double? = nil,
+        averageSpeed: Double? = nil,
+        maxSpeed: Double? = nil,
+        averageHeartRate: Int? = nil,
+        maxHeartRate: Int? = nil,
+        cadence: Int? = nil,
+        averagePower: Int? = nil,
+        equipmentName: String? = nil,
+        equipmentType: String? = nil,
+        routeCoordinatesJSON: String? = nil,
+        splitsJSON: String? = nil,
+        startedAt: Date,
+        completedAt: Date
+    ) {
+        self.activityType = activityType
+        self.workoutName = workoutName
+        self.goalType = goalType
+        self.goalValue = goalValue
+        self.goalAchieved = goalAchieved
+        self.durationSeconds = durationSeconds
+        self.distanceMeters = distanceMeters
+        self.caloriesBurned = caloriesBurned
+        self.averagePace = averagePace
+        self.bestPace = bestPace
+        self.averageSpeed = averageSpeed
+        self.maxSpeed = maxSpeed
+        self.averageHeartRate = averageHeartRate
+        self.maxHeartRate = maxHeartRate
+        self.cadence = cadence
+        self.averagePower = averagePower
+        self.equipmentName = equipmentName
+        self.equipmentType = equipmentType
+        self.routeCoordinatesJSON = routeCoordinatesJSON
+        self.splitsJSON = splitsJSON
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+    }
+}
+
+/// DTO for fetching cardio workouts from database
+struct CardioWorkoutDTO: Codable {
+    let id: String
+    let activityType: String
+    let workoutName: String?
+    let goalType: String
+    let goalValue: Double?
+    let goalAchieved: Bool
+    let durationSeconds: Int
+    let distanceMeters: Double
+    let caloriesBurned: Double
+    let averagePace: Double?
+    let bestPace: Double?
+    let averageSpeed: Double?
+    let maxSpeed: Double?
+    let averageHeartRate: Int?
+    let maxHeartRate: Int?
+    let cadence: Int?
+    let averagePower: Int?
+    let equipmentName: String?
+    let equipmentType: String?
+    let startedAt: String
+    let completedAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case activityType = "activity_type"
+        case workoutName = "workout_name"
+        case goalType = "goal_type"
+        case goalValue = "goal_value"
+        case goalAchieved = "goal_achieved"
+        case durationSeconds = "duration_seconds"
+        case distanceMeters = "distance_meters"
+        case caloriesBurned = "calories_burned"
+        case averagePace = "average_pace"
+        case bestPace = "best_pace"
+        case averageSpeed = "average_speed"
+        case maxSpeed = "max_speed"
+        case averageHeartRate = "average_heart_rate"
+        case maxHeartRate = "max_heart_rate"
+        case cadence
+        case averagePower = "average_power"
+        case equipmentName = "equipment_name"
+        case equipmentType = "equipment_type"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+    }
+}
+
+/// DTO for personal records
+struct CardioPRDTO: Codable {
+    let id: String
+    let activityType: String
+    let recordType: String
+    let recordCategory: String
+    let value: Double
+    let unit: String
+    let workoutId: String?
+    let previousValue: Double?
+    let improvementPercentage: Double?
+    let achievedAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case activityType = "activity_type"
+        case recordType = "record_type"
+        case recordCategory = "record_category"
+        case value, unit
+        case workoutId = "workout_id"
+        case previousValue = "previous_value"
+        case improvementPercentage = "improvement_percentage"
+        case achievedAt = "achieved_at"
+    }
+}
+
+/// DTO for cardio statistics
+struct CardioStatsDTO {
+    let totalWorkouts: Int
+    let totalDuration: Int
+    let totalDistance: Double
+    let totalCalories: Double
+    let workoutsByType: [String: Int]
+}
+
+/// DTO for cardio streak
+struct CardioStreakDTO: Codable {
+    let id: String
+    let streakType: String
+    let activityType: String?
+    let currentStreak: Int
+    let longestStreak: Int
+    let lastActivityDate: String?
+    let streakStartDate: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case streakType = "streak_type"
+        case activityType = "activity_type"
+        case currentStreak = "current_streak"
+        case longestStreak = "longest_streak"
+        case lastActivityDate = "last_activity_date"
+        case streakStartDate = "streak_start_date"
+    }
+}
+
+/// DTO for weekly summaries
+struct CardioWeeklySummaryDTO: Codable {
+    let id: String
+    let weekStart: String
+    let weekEnd: String
+    let totalWorkouts: Int
+    let totalDurationSeconds: Int
+    let totalDistanceMeters: Double
+    let totalCalories: Double
+    let avgWorkoutDuration: Int?
+    let avgPace: Double?
+    let avgHeartRate: Int?
+    let goalsCompleted: Int
+    let prsAchieved: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case totalWorkouts = "total_workouts"
+        case totalDurationSeconds = "total_duration_seconds"
+        case totalDistanceMeters = "total_distance_meters"
+        case totalCalories = "total_calories"
+        case avgWorkoutDuration = "avg_workout_duration"
+        case avgPace = "avg_pace"
+        case avgHeartRate = "avg_heart_rate"
+        case goalsCompleted = "goals_completed"
+        case prsAchieved = "prs_achieved"
+    }
+}
+
+/// DTO for cardio goals
+struct CardioGoalDTO: Codable {
+    let id: String
+    let goalName: String
+    let goalType: String
+    let activityType: String?
+    let targetValue: Double
+    let currentValue: Double
+    let unit: String
+    let periodType: String
+    let periodStart: String
+    let periodEnd: String
+    let isActive: Bool
+    let isCompleted: Bool
+    let completedAt: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case goalName = "goal_name"
+        case goalType = "goal_type"
+        case activityType = "activity_type"
+        case targetValue = "target_value"
+        case currentValue = "current_value"
+        case unit
+        case periodType = "period_type"
+        case periodStart = "period_start"
+        case periodEnd = "period_end"
+        case isActive = "is_active"
+        case isCompleted = "is_completed"
+        case completedAt = "completed_at"
+    }
+}

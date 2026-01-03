@@ -33,6 +33,64 @@ struct DashboardView: View {
     @State private var isLoadingRecommendation = false
     @State private var currentMotivationalMessage: String = ""
     
+    // Cardio workouts from Supabase
+    @State private var recentCardioWorkouts: [CardioWorkoutDTO] = []
+    
+    // Combined workout item for unified display
+    enum RecentWorkoutItem: Identifiable {
+        case strength(Workout, isMostRecent: Bool)
+        case cardio(CardioWorkoutDTO, isMostRecent: Bool)
+        
+        var id: String {
+            switch self {
+            case .strength(let workout, _):
+                return "strength-\(workout.objectID.uriRepresentation().absoluteString)"
+            case .cardio(let cardio, _):
+                return "cardio-\(cardio.id)"
+            }
+        }
+        
+        var date: Date {
+            switch self {
+            case .strength(let workout, _):
+                return workout.date ?? Date.distantPast
+            case .cardio(let cardio, _):
+                // Use centralized ISO8601 parser (cached formatters)
+                return ISO8601Parser.parse(cardio.completedAt, fallback: Date.distantPast)
+            }
+        }
+    }
+    
+    // Combine strength and cardio workouts, sorted by date
+    private var combinedRecentWorkouts: [RecentWorkoutItem] {
+        var items: [RecentWorkoutItem] = []
+        
+        // Add strength workouts
+        for workout in recentWorkouts.prefix(5) {
+            items.append(.strength(workout, isMostRecent: false))
+        }
+        
+        // Add cardio workouts
+        for cardio in recentCardioWorkouts {
+            items.append(.cardio(cardio, isMostRecent: false))
+        }
+        
+        // Sort by date (most recent first)
+        items.sort { $0.date > $1.date }
+        
+        // Mark the most recent one
+        if !items.isEmpty {
+            switch items[0] {
+            case .strength(let workout, _):
+                items[0] = .strength(workout, isMostRecent: true)
+            case .cardio(let cardio, _):
+                items[0] = .cardio(cardio, isMostRecent: true)
+            }
+        }
+        
+        return items
+    }
+    
     // Streak info popup
     @State private var showStreakInfo = false
     
@@ -196,9 +254,15 @@ struct DashboardView: View {
             ])
             // Force refresh of smart program data when returning to dashboard
             smartProgramEngine.objectWillChange.send()
+            
+            // Refresh cardio workouts
+            Task {
+                await loadRecentCardioWorkouts()
+            }
         }
         .task {
             await loadPersonalizedRecommendation()
+            await loadRecentCardioWorkouts()
             // Set motivational message once on load (not on every redraw)
             if currentMotivationalMessage.isEmpty {
                 currentMotivationalMessage = generateMotivationalMessage()
@@ -239,6 +303,21 @@ struct DashboardView: View {
         self.personalizedRecommendation = recommendation
         self.isLoadingRecommendation = false
         print("💡 [DASHBOARD] Loaded recommendation: \(recommendation.message)")
+    }
+    
+    private func loadRecentCardioWorkouts() async {
+        do {
+            let cardioWorkouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 5)
+            await MainActor.run {
+                self.recentCardioWorkouts = cardioWorkouts
+                print("🏃 [DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts")
+                for workout in cardioWorkouts {
+                    print("   └─ \(workout.activityType): \(workout.completedAt)")
+                }
+            }
+        } catch {
+            print("⚠️ [DASHBOARD] Failed to load cardio workouts: \(error)")
+        }
     }
     
     // MARK: - Program Conflict Alert
@@ -932,7 +1011,7 @@ struct DashboardView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     
-                    Text("\(recentWorkouts.count) workouts completed")
+                    Text("\(recentWorkouts.count + recentCardioWorkouts.count) workouts completed")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -947,10 +1026,15 @@ struct DashboardView: View {
                 }
             }
             
-            // Workout cards with enhanced design
+            // Combined workout cards - mix strength and cardio workouts, sorted by date
             VStack(spacing: 12) {
-                ForEach(Array(recentWorkouts.prefix(3).enumerated()), id: \.element.id) { index, workout in
-                    RecentWorkoutCard(workout: workout, isMostRecent: index == 0)
+                ForEach(combinedRecentWorkouts.prefix(4), id: \.id) { item in
+                    switch item {
+                    case .strength(let workout, let isMostRecent):
+                        RecentWorkoutCard(workout: workout, isMostRecent: isMostRecent)
+                    case .cardio(let cardioWorkout, let isMostRecent):
+                        RecentCardioWorkoutCard(cardioWorkout: cardioWorkout, isMostRecent: isMostRecent)
+                    }
                 }
             }
         }
@@ -3348,6 +3432,263 @@ struct RecentWorkoutCard: View {
     }
 }
 
+// MARK: - Recent Cardio Workout Card
+struct RecentCardioWorkoutCard: View {
+    let cardioWorkout: CardioWorkoutDTO
+    var isMostRecent: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
+    
+    // Parse completed date (uses centralized cached formatters)
+    private var completedDate: Date {
+        return ISO8601Parser.parse(cardioWorkout.completedAt, fallback: Date())
+    }
+    
+    // Activity type display name and icon
+    private var activityInfo: (name: String, icon: String, color: Color) {
+        let type = cardioWorkout.activityType.lowercased().replacingOccurrences(of: "_", with: " ")
+        switch type {
+        case "outdoor run", "run":
+            return ("Outdoor Run", "figure.run", .green)
+        case "treadmill":
+            return ("Treadmill", "figure.walk.motion", .orange)
+        case "walk":
+            return ("Walk", "figure.walk", .blue)
+        case "indoor cycle", "indoor_cycle":
+            return ("Indoor Cycle", "bicycle", .cyan)
+        case "outdoor cycle", "outdoor_cycle":
+            return ("Outdoor Cycle", "bicycle", .green)
+        case "rowing":
+            return ("Rowing", "figure.rower", .blue)
+        case "elliptical":
+            return ("Elliptical", "figure.elliptical", .purple)
+        case "stair climber", "stair_climber":
+            return ("Stair Climber", "figure.stairs", .orange)
+        case "hiit":
+            return ("HIIT", "flame.fill", .red)
+        case "swimming":
+            return ("Swimming", "figure.pool.swim", .cyan)
+        default:
+            return (type.capitalized, "figure.run", .green)
+        }
+    }
+    
+    // Format duration
+    private func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes)m"
+        } else {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            return "\(hours)h \(remainingMinutes)m"
+        }
+    }
+    
+    // Format distance
+    private func formatDistance(_ meters: Double) -> String {
+        let km = meters / 1000
+        if km < 1 {
+            return String(format: "%.0fm", meters)
+        } else {
+            return String(format: "%.2fkm", km)
+        }
+    }
+    
+    // Format pace
+    private func formatPace(_ pace: Double?) -> String {
+        guard let pace = pace, pace > 0 else { return "--" }
+        let minutes = Int(pace)
+        let seconds = Int((pace - Double(minutes)) * 60)
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    var body: some View {
+        NavigationLink(destination: CardioWorkoutDetailView(cardioWorkout: cardioWorkout)) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Top section - Title and Date
+                HStack(alignment: .top, spacing: 12) {
+                    // Activity icon with gradient ring
+                    ZStack {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [activityInfo.color, activityInfo.color.opacity(0.6)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2.5
+                            )
+                            .frame(width: 52, height: 52)
+                        
+                        Image(systemName: activityInfo.icon)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [activityInfo.color, activityInfo.color.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Activity name with Cardio badge
+                        HStack(spacing: 8) {
+                            Text(activityInfo.name)
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            
+                            // Cardio badge in activity color
+                            Text("Cardio")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(activityInfo.color)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(activityInfo.color.opacity(0.15))
+                                )
+                        }
+                        
+                        // Date with relative time
+                        Text(DateFormatUtils.formatSmartDate(completedDate))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Goal achieved badge
+                    if cardioWorkout.goalAchieved {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.green)
+                            .padding(.trailing, 8)
+                    }
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    }
+                
+                    Divider()
+                        .padding(.vertical, 12)
+                
+                    // Bottom section - Cardio Stats
+                    HStack(spacing: 0) {
+                        // Duration
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(activityInfo.color)
+                                Text(formatDuration(cardioWorkout.durationSeconds))
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            Text("Duration")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 1, height: 35)
+                        
+                        // Distance
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(activityInfo.color)
+                                Text(formatDistance(cardioWorkout.distanceMeters))
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            Text("Distance")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 1, height: 35)
+                        
+                        // Calories
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.orange)
+                                Text("\(Int(cardioWorkout.caloriesBurned))")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            Text("Calories")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 1, height: 35)
+                        
+                        // Pace
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "speedometer")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.purple)
+                                Text(formatPace(cardioWorkout.averagePace))
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            Text("/km")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                
+                    // Heart rate tag (if available)
+                    if let heartRate = cardioWorkout.averageHeartRate, heartRate > 0 {
+                        HStack(spacing: 6) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 10))
+                                Text("\(heartRate) bpm")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.red.opacity(0.12))
+                            )
+                            
+                            Spacer()
+                        }
+                        .padding(.top, 12)
+                    }
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+    }
+}
+
 struct StatCard: View {
     let title: String
     let value: String
@@ -4079,9 +4420,9 @@ struct HistoryExerciseRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Exercise name
+            // Exercise name (uses nickname if user has one set)
             VStack(alignment: .leading, spacing: 1) {
-                Text(workoutExercise.exercise?.name ?? "Unknown Exercise")
+                Text(workoutExercise.exercise?.displayName ?? "Unknown Exercise")
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)

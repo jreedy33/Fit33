@@ -499,7 +499,7 @@ struct SeamlessExerciseSelectionRow: View {
                 // Exercise details
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(exercise.name ?? "Unknown Exercise")
+                        Text(exercise.displayName)
                             .font(.system(size: 16, weight: .medium, design: .rounded))
                             .foregroundColor(.primary)
                             .lineLimit(1)
@@ -628,7 +628,7 @@ struct CompactExerciseSelectionRow: View {
                 // Exercise details
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(exercise.name ?? "Unknown Exercise")
+                        Text(exercise.displayName)
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
@@ -790,7 +790,7 @@ struct ExerciseSelectionCard: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(exercise.name ?? "Exercise")
+                    Text(exercise.displayName)
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)

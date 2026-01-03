@@ -500,7 +500,7 @@ struct SharedExerciseRow: View {
             
             // Exercise info
             VStack(alignment: .leading, spacing: 3) {
-                Text(exercise.name ?? "Exercise")
+                Text(exercise.displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)

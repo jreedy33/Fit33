@@ -20,6 +20,11 @@
 		7C0C41EA2F09A37F00F02E84 /* GenderFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */; };
 		7C0C41EC2F09BCFD00F02E84 /* FitnessEquipmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */; };
 		7C0C41EE2F09BD0300F02E84 /* BluetoothFitnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */; };
+		7C0C41F02F09C91A00F02E84 /* CardioLandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */; };
+		7C0C41F22F09C91F00F02E84 /* CardioGoalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */; };
+		7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */; };
+		7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */; };
+		7C0C41F82F09D76A00F02E84 /* CardioWorkoutDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */; };
 		7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */; };
 		7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */; };
 		7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */; };
@@ -199,6 +204,11 @@
 		7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenderFilterService.swift; sourceTree = "<group>"; };
 		7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessEquipmentView.swift; sourceTree = "<group>"; };
 		7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothFitnessManager.swift; sourceTree = "<group>"; };
+		7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioLandingView.swift; sourceTree = "<group>"; };
+		7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioGoalSetupView.swift; sourceTree = "<group>"; };
+		7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioActiveWorkoutView.swift; sourceTree = "<group>"; };
+		7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNicknameService.swift; sourceTree = "<group>"; };
+		7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioWorkoutDetailView.swift; sourceTree = "<group>"; };
 		7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicProgramGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartDayGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleRecoveryTracker.swift; sourceTree = "<group>"; };
@@ -428,9 +438,14 @@
 				7CB08C942EDB830200236ECB /* ActivityRingsView.swift */,
 				7CB08C942EDBA01000236ECB /* ActivityRingsView.swift */,
 				7CB08C792ED8178000236ECB /* AdaptiveColors.swift */,
+				7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */,
 				7CB08C772ED816FF00236ECB /* AdManager.swift */,
+				7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */,
+				7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */,
 				7C0C41E52F098DF600F02E84 /* ForceExerciseRefresh.swift */,
+				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
 				7C8405C72EE685400009ED0F /* AdvancedIntelligenceService.swift */,
+				7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */,
 				7C8405CD2EE7C0EC0009ED0F /* AlternativeExerciseEngine.swift */,
 				7C0C41E72F09A13500F02E84 /* VideoPlaybackEngine.swift */,
 				7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */,
@@ -751,6 +766,7 @@
 				7CEAFD122EF9CB2E00874B57 /* TermsConditionsView.swift in Sources */,
 				7CEAFD132EF9CB2E00874B57 /* PrivacyPolicyView.swift in Sources */,
 				7CB08C672ED6A34F00236ECB /* AutoWorkoutPreviewView.swift in Sources */,
+				7C0C41F02F09C91A00F02E84 /* CardioLandingView.swift in Sources */,
 				7CB08C652ED6A33C00236ECB /* WorkoutGeneratorService.swift in Sources */,
 				7C558B1F2ED5027200A01E1F /* FoodDetailsView.swift in Sources */,
 				7C81611E2EF86F29007556A7 /* RunningActivityAttributes.swift in Sources */,
@@ -765,6 +781,7 @@
 				7CB08C7A2ED8178000236ECB /* AdaptiveColors.swift in Sources */,
 				7C8405E42EE8C57E0009ED0F /* OnboardingComponents.swift in Sources */,
 				7CB08C952EDBA01000236ECB /* ActivityRingsView.swift in Sources */,
+				7C0C41F22F09C91F00F02E84 /* CardioGoalSetupView.swift in Sources */,
 				7C558B122ED4D39100A01E1F /* DashboardView.swift in Sources */,
 				7C8405E02EE8BEE30009ED0F /* LimitationsSettingsView.swift in Sources */,
 				7CTRAINHUB12EE0100236ECB /* TrainingHubView.swift in Sources */,
@@ -804,9 +821,11 @@
 				7C81611C2EF86925007556A7 /* RunningWorkoutView.swift in Sources */,
 				7C0C41EA2F09A37F00F02E84 /* GenderFilterService.swift in Sources */,
 				A12345678901234567890260 /* WorkoutCompletionView.swift in Sources */,
+				7C0C41F82F09D76A00F02E84 /* CardioWorkoutDetailView.swift in Sources */,
 				7CB08C6B2ED73A6F00236ECB /* CloudProgramService.swift in Sources */,
 				7CB08CA32EDE395600236ECB /* BugReportService.swift in Sources */,
 				7CAFD5642EE1138800920F0D /* ExerciseMappingService.swift in Sources */,
+				7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */,
 				7CB08C7D2ED8B78A00236ECB /* FavoriteRoutinesView.swift in Sources */,
 				7C0C41D42F00C36D00F02E84 /* WorkoutComboRules.swift in Sources */,
 				7C8405D22EE7D2ED0009ED0F /* PersonalizedProgramsView.swift in Sources */,
@@ -819,6 +838,7 @@
 				7C47F9DF2EE336FB00BEC4D7 /* GeneratedProgramService.swift in Sources */,
 				7CAFD5682EE1FB9F00920F0D /* SmartExercisePairingEngine.swift in Sources */,
 				7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */,
+				7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */,
 				7CB08C6D2ED73A6F00236ECB /* CloudProgramScheduleView.swift in Sources */,
 				7C8405D42EE87BD10009ED0F /* ProgramDetailView.swift in Sources */,
 				B1234567890123456789A001 /* WorkoutProgramEngine.swift in Sources */,
@@ -882,7 +902,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -893,7 +913,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -912,7 +932,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -923,7 +943,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1066,7 +1086,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1087,7 +1107,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1103,7 +1123,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1124,7 +1144,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

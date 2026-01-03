@@ -340,7 +340,7 @@ struct SmartExerciseSwapView: View {
                 
                 // Exercise info
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(suggestion.exercise.name ?? "Exercise")
+                    Text(suggestion.exercise.displayName)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)

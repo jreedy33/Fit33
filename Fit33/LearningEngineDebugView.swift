@@ -5,6 +5,9 @@
 //  Debug view to test and verify learning engine data persistence
 //  Add this to your app's settings or dev menu to monitor sync status
 //
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
+
+#if DEBUG
 
 import SwiftUI
 
@@ -468,3 +471,4 @@ struct DebugFlowLayout: Layout {
     }
 }
 
+#endif // DEBUG

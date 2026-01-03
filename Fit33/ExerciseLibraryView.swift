@@ -1339,7 +1339,7 @@ struct CompactExerciseRowContent: View {
             
             // Exercise details
             VStack(alignment: .leading, spacing: 2) {
-                Text(exercise.name ?? "Unknown Exercise")
+                Text(exercise.displayName)
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)

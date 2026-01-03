@@ -232,8 +232,8 @@ struct ExerciseDetailView: View {
     
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Exercise Name
-            Text(exercise.name ?? "Exercise")
+            // Exercise Name (shows nickname if user has set one)
+            Text(exercise.displayName)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
                 .lineLimit(2)

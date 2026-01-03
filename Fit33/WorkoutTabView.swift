@@ -282,125 +282,135 @@ struct WorkoutHomeView: View {
     }
     
     // MARK: - Cardio Section
+    @State private var showingCardioLanding = false
+    @State private var showingStretchMode = false
+    
     private var cardioSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Outdoor Run Card
-            Button(action: {
-                guard !isNavigating else { return }
-                isNavigating = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
-                
-                HapticManager.impact(.medium)
-                navigationPath.append("OutdoorRun")
-            }) {
-                HStack(spacing: 16) {
-                    // Icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .frame(width: 56, height: 56)
-                        
-                        Image(systemName: "figure.run")
-                            .font(.system(size: 24))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                    }
+            // Cardio & Stretch Row - Two compact buttons side by side
+            HStack(spacing: 12) {
+                // Cardio Button
+                Button(action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
                     
-                    // Text
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Outdoor Run")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
+                    HapticManager.impact(.medium)
+                    showingCardioLanding = true
+                }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                                .frame(width: 44, height: 44)
+                            
+                            Image(systemName: "figure.run")
+                                .font(.system(size: 18))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                        }
                         
-                        Text("GPS tracking • Pace • Route Map")
-                            .font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Cardio")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Run • Cycle • Row")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        Spacer(minLength: 0)
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    
-                    Spacer()
-                    
-                    // Arrow
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(
+                                LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                lineWidth: 1
+                            )
+                    )
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1
-                        )
-                )
-            }
-            .buttonStyle(.plain)
-            
-            // Connect Equipment Card
-            Button(action: {
-                guard !isNavigating else { return }
-                isNavigating = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+                .buttonStyle(.plain)
                 
-                HapticManager.impact(.medium)
-                showingEquipmentConnection = true
-            }) {
-                HStack(spacing: 16) {
-                    // Icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .frame(width: 56, height: 56)
-                        
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 22))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                    }
+                // Stretch Button
+                Button(action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
                     
-                    // Text
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Connect Equipment")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
+                    HapticManager.impact(.medium)
+                    showingStretchMode = true
+                }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(colors: [Color.purple.opacity(0.3), Color.pink.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                                .frame(width: 44, height: 44)
+                            
+                            Image(systemName: "figure.flexibility")
+                                .font(.system(size: 18))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                        }
                         
-                        Text("Treadmill • Bike • Rower • Elliptical")
-                            .font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Stretch")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Recovery • Mobility")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        Spacer(minLength: 0)
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    
-                    Spacer()
-                    
-                    // Arrow
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(
+                                LinearGradient(colors: [Color.purple.opacity(0.3), Color.pink.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                lineWidth: 1
+                            )
+                    )
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1
-                        )
-                )
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+        }
+        .sheet(isPresented: $showingCardioLanding) {
+            CardioLandingView()
+                .environmentObject(userManager)
+        }
+        .sheet(isPresented: $showingStretchMode) {
+            StretchModeView()
+                .environmentObject(userManager)
         }
     }
     

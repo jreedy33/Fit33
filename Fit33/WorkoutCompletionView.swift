@@ -487,7 +487,7 @@ struct WorkoutCompletionView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(exercise.name ?? "Unknown Exercise")
+                            Text(exercise.displayName)
                                 .font(.headline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
@@ -749,7 +749,7 @@ struct ExerciseSummaryCard: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(exercise.name ?? "Unknown Exercise")
+                Text(exercise.displayName)
                     .font(.headline)
                     .foregroundColor(.primary)
                 

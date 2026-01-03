@@ -60,22 +60,91 @@ enum TimeFormatter {
     }
 }
 
+// MARK: - ISO8601 Date Parsing (Cached for Performance)
+/// Centralized ISO8601 formatters - these are expensive to create, so we reuse them
+
+enum ISO8601Parser {
+    /// Formatter with fractional seconds (Supabase default)
+    private static let formatterWithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    
+    /// Formatter without fractional seconds (fallback)
+    private static let formatterStandard: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    
+    /// Parse ISO8601 string to Date - tries fractional seconds first, then standard
+    @inline(__always)
+    static func parse(_ dateString: String) -> Date? {
+        // Try fractional seconds first (most common from Supabase)
+        if let date = formatterWithFractionalSeconds.date(from: dateString) {
+            return date
+        }
+        // Fallback to standard format
+        return formatterStandard.date(from: dateString)
+    }
+    
+    /// Parse ISO8601 string to Date with fallback
+    @inline(__always)
+    static func parse(_ dateString: String, fallback: Date) -> Date {
+        return parse(dateString) ?? fallback
+    }
+    
+    /// Format Date to ISO8601 string
+    @inline(__always)
+    static func string(from date: Date) -> String {
+        return formatterStandard.string(from: date)
+    }
+}
+
 // MARK: - Date Formatting Utilities
 
 enum DateFormatUtils {
     
+    // Cached DateFormatter instances (expensive to create)
+    private static let shortFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+    
+    private static let fullFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM d, yyyy"
+        return formatter
+    }()
+    
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter
+    }()
+    
+    private static let dayAbbrevFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+    
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+    
     /// Formats date as "MMM d" (e.g., "Dec 9")
     static func formatShort(_ date: Date) -> String {
-        let formatter = Foundation.DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        return shortFormatter.string(from: date)
     }
     
     /// Formats date as "MMMM d, yyyy" (e.g., "December 9, 2024")
     static func formatFull(_ date: Date) -> String {
-        let formatter = Foundation.DateFormatter()
-        formatter.dateFormat = "MMMM d, yyyy"
-        return formatter.string(from: date)
+        return fullFormatter.string(from: date)
     }
     
     /// Formats date as relative (Today, Yesterday, or date)
@@ -92,9 +161,28 @@ enum DateFormatUtils {
     
     /// Gets day name (Mon, Tue, etc.)
     static func getDayName(_ date: Date, abbreviated: Bool = true) -> String {
-        let formatter = Foundation.DateFormatter()
-        formatter.dateFormat = abbreviated ? "EEE" : "EEEE"
-        return formatter.string(from: date)
+        return abbreviated ? dayAbbrevFormatter.string(from: date) : dayFormatter.string(from: date)
+    }
+    
+    /// Formats time as "h:mm a" (e.g., "2:30 PM")
+    static func formatTime(_ date: Date) -> String {
+        return timeFormatter.string(from: date)
+    }
+    
+    /// Smart date formatting: "Today · 2:30 PM", "Yesterday · 2:30 PM", "Monday · 2:30 PM", "Dec 28 · 2:30 PM"
+    static func formatSmartDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        if calendar.isDateInToday(date) {
+            return "Today · \(formatTime(date))"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday · \(formatTime(date))"
+        } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
+            return "\(getDayName(date, abbreviated: false)) · \(formatTime(date))"
+        } else {
+            return "\(formatShort(date)) · \(formatTime(date))"
+        }
     }
 }
 
@@ -417,6 +505,52 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Common Button Styles (Avoid Duplicates)
+
+/// Universal scale button style - use instead of defining duplicates
+/// Available scale effects: .subtle (0.98), .standard (0.97), .prominent (0.92)
+struct UniversalScaleButtonStyle: ButtonStyle {
+    enum Scale {
+        case subtle    // 0.98 - barely noticeable
+        case standard  // 0.97 - default, Apple-like
+        case prominent // 0.92 - obvious press effect
+        
+        var factor: CGFloat {
+            switch self {
+            case .subtle: return 0.98
+            case .standard: return 0.97
+            case .prominent: return 0.92
+            }
+        }
+    }
+    
+    let scale: Scale
+    let withHaptic: Bool
+    
+    init(scale: Scale = .standard, withHaptic: Bool = false) {
+        self.scale = scale
+        self.withHaptic = withHaptic
+    }
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale.factor : 1.0)
+            .animation(.linear(duration: 0.08), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed && withHaptic {
+                    HapticManager.lightTap()
+                }
+            }
+    }
+}
+
+extension Button {
+    /// Apply standard scale button style (0.97 scale, optional haptic)
+    func scaleButtonStyle(_ scale: UniversalScaleButtonStyle.Scale = .standard, withHaptic: Bool = false) -> some View {
+        self.buttonStyle(UniversalScaleButtonStyle(scale: scale, withHaptic: withHaptic))
     }
 }
 

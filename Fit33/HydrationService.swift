@@ -151,6 +151,17 @@ class HydrationService: ObservableObject {
     
     private let supabase = SupabaseManager.shared
     
+    // Cached ISO8601 formatter (expensive to create)
+    private let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    
+    @inline(__always) private func dateToISO(_ date: Date) -> String {
+        iso8601.string(from: date)
+    }
+    
     private init() {
         Task {
             await loadTodayData()
@@ -289,8 +300,8 @@ class HydrationService: ObservableObject {
                 .from("hydration_logs")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("logged_at", value: ISO8601DateFormatter().string(from: startOfDay))
-                .lt("logged_at", value: ISO8601DateFormatter().string(from: endOfDay))
+                .gte("logged_at", value: dateToISO( startOfDay))
+                .lt("logged_at", value: dateToISO( endOfDay))
                 .order("logged_at", ascending: false)
                 .execute()
                 .value
@@ -413,7 +424,7 @@ class HydrationService: ObservableObject {
                 user_id: userId.uuidString,
                 amount_ml: amountMl,
                 drink_type: "water",
-                logged_at: ISO8601DateFormatter().string(from: Date()),
+                logged_at: dateToISO( Date()),
                 notes: notes
             )
             
@@ -481,7 +492,7 @@ class HydrationService: ObservableObject {
             reminder_interval_hours: newSettings.reminderIntervalHours,
             preferred_cup_size_ml: newSettings.preferredCupSizeMl,
             weight_based_goal: newSettings.weightBasedGoal,
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            updated_at: dateToISO( Date())
         )
         
         do {
@@ -572,7 +583,7 @@ class HydrationService: ObservableObject {
     /// Calculate today's summary from local logs (for offline/local mode)
     @MainActor
     private func calculateTodayStats() {
-        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let today = dateToISO( Date()).prefix(10)
         let totalMl = todayLogs.reduce(0) { $0 + $1.amountMl }
         let goalMl = settings.dailyGoalMl
         
@@ -588,8 +599,8 @@ class HydrationService: ObservableObject {
             sportsDrinkMl: 0,
             otherMl: 0,
             entryCount: todayLogs.count,
-            firstDrinkTime: todayLogs.first.map { ISO8601DateFormatter().string(from: $0.loggedAt) },
-            lastDrinkTime: todayLogs.last.map { ISO8601DateFormatter().string(from: $0.loggedAt) }
+            firstDrinkTime: todayLogs.first.map { dateToISO( $0.loggedAt) },
+            lastDrinkTime: todayLogs.last.map { dateToISO( $0.loggedAt) }
         )
     }
     

@@ -4,6 +4,9 @@
 //
 //  View for running and displaying the program generation audit
 //
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
+
+#if DEBUG
 
 import SwiftUI
 
@@ -420,3 +423,4 @@ struct ProgramAuditView: View {
     }
 }
 
+#endif // DEBUG

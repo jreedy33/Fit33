@@ -31,6 +31,18 @@ class AdvancedIntelligenceService: ObservableObject {
         SupabaseManager.shared.supabaseClient
     }
     
+    // Cached ISO8601 formatter (expensive to create)
+    private let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    
+    /// Convert Date to ISO8601 string
+    @inline(__always) private func dateToISO(_ date: Date) -> String {
+        iso8601.string(from: date)
+    }
+    
     private init() {
         print("🧠 [ADVANCED INTELLIGENCE] Service initialized")
     }
@@ -53,14 +65,14 @@ class AdvancedIntelligenceService: ObservableObject {
             let data: [String: AnyJSON] = [
                 "user_id": .string(userId.uuidString),
                 "exercise_name": .string(exerciseName),
-                "week_start": .string(ISO8601DateFormatter().string(from: weekStart)),
+                "week_start": .string(dateToISO( weekStart)),
                 "avg_weight": .double(weight),
                 "max_weight": .double(weight),
                 "total_volume": .double(volume),
                 "total_sets": .integer(sets),
                 "total_reps": .integer(reps * sets),
                 "workout_count": .integer(1),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -185,7 +197,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "avg_exercises_completed": .integer(newExercises),
                 "avg_volume_per_workout": .double(volume),
                 "personal_records_count": .integer(existingPRs + (hadPR ? 1 : 0)),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -287,7 +299,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "typical_drop_off_set": .integer(dropOffSet + 1),
                 "optimal_set_count": .integer(optimalSets),
                 "sample_size": .integer(sampleSize),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -507,8 +519,8 @@ class AdvancedIntelligenceService: ObservableObject {
                 "swapped_to_exercise": .string(swappedTo),
                 "swap_reason": .string(reason.rawValue),
                 "times_swapped": .integer(timesSwapped),
-                "last_swap_date": .string(ISO8601DateFormatter().string(from: Date())),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "last_swap_date": .string(dateToISO( Date())),
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -574,7 +586,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 .select()
                 .eq("user_id", value: userId.uuidString)
                 .eq("muscle_group", value: muscleGroup)
-                .eq("week_start", value: ISO8601DateFormatter().string(from: weekStart))
+                .eq("week_start", value: dateToISO( weekStart))
                 .limit(1)
                 .execute()
                 .value
@@ -591,14 +603,14 @@ class AdvancedIntelligenceService: ObservableObject {
             let data: [String: AnyJSON] = [
                 "user_id": .string(userId.uuidString),
                 "muscle_group": .string(muscleGroup),
-                "week_start": .string(ISO8601DateFormatter().string(from: weekStart)),
+                "week_start": .string(dateToISO( weekStart)),
                 "total_sets": .integer(totalSets),
                 "total_reps": .integer(totalReps),
                 "total_volume": .double(totalVolume),
                 "workout_count": .integer(workoutCount),
                 "exercise_variety": .integer(exerciseVariety),
                 "training_status": .string(trainingStatus),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -628,7 +640,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 .from("weekly_volume_trends")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .eq("week_start", value: ISO8601DateFormatter().string(from: weekStart))
+                .eq("week_start", value: dateToISO( weekStart))
                 .execute()
                 .value
             
@@ -711,7 +723,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "deadlift_1rm": .double(normalizedName.contains("deadlift") ? oneRM : 0),
                 "overhead_press_1rm": .double(normalizedName.contains("press") ? oneRM : 0),
                 "overall_strength_level": .string(strengthLevel),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -771,7 +783,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "avg_calorie_deficit": .integer(calorieDeficit),
                 "cardio_minutes_this_week": .integer(cardioMinutes),
                 "avg_reps_increase": .double(repsIncrease),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase
@@ -833,7 +845,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "should_reduce": .bool(shouldReduce),
                 "times_performed": .integer(timesPerformed),
                 "last_performed": .string(formatDate(Date())),
-                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+                "updated_at": .string(dateToISO( Date()))
             ]
             
             try await supabase

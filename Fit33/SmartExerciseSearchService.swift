@@ -442,6 +442,10 @@ final class SmartExerciseSearchService: ObservableObject {
         let equipment = exercise.equipment?.lowercased() ?? ""
         let muscles = (exercise.muscleGroups as? [String])?.map { $0.lowercased() }.joined(separator: " ") ?? ""
         
+        // Also check user's custom nickname for this exercise
+        let nickname = ExerciseNicknameService.shared.displayName(for: exercise).lowercased()
+        let hasNickname = nickname != name
+        
         // ═══════════════════════════════════════════════════════════════
         // STEP 1: Check if exercise matches search (fuzzy matching)
         // ═══════════════════════════════════════════════════════════════
@@ -449,18 +453,32 @@ final class SmartExerciseSearchService: ObservableObject {
         var hasMatch = false
         var baseScore: Double = 0
         
+        // Check nickname first (if user has set one, prioritize it)
+        if hasNickname {
+            if nickname == searchQuery {
+                baseScore += EXACT_MATCH_SCORE + 100 // Extra bonus for nickname match
+                hasMatch = true
+            } else if nickname.hasPrefix(searchQuery) {
+                baseScore += STARTS_WITH_SCORE + 50
+                hasMatch = true
+            } else if nickname.contains(searchQuery) {
+                baseScore += CONTAINS_SCORE + 25
+                hasMatch = true
+            }
+        }
+        
         // Exact name match (perfect match)
-        if name == searchQuery {
+        if !hasMatch && name == searchQuery {
             baseScore += EXACT_MATCH_SCORE
             hasMatch = true
         }
         // Name starts with query (very strong match)
-        else if name.hasPrefix(searchQuery) {
+        else if !hasMatch && name.hasPrefix(searchQuery) {
             baseScore += STARTS_WITH_SCORE
             hasMatch = true
         }
         // Name contains query (strong match)
-        else if name.contains(searchQuery) {
+        else if !hasMatch && name.contains(searchQuery) {
             baseScore += CONTAINS_SCORE
             hasMatch = true
             
@@ -472,14 +490,17 @@ final class SmartExerciseSearchService: ObservableObject {
             }
         }
         // Word boundary matching (e.g., "curl" matches "bicep curl")
-        else if searchWords.count == 1 {
+        else if !hasMatch && searchWords.count == 1 {
             let nameWords = name.split(separator: " ").map { String($0) }
-            if nameWords.contains(searchQuery) {
+            let nicknameWords = nickname.split(separator: " ").map { String($0) }
+            
+            if nameWords.contains(searchQuery) || nicknameWords.contains(searchQuery) {
                 baseScore += WORD_BOUNDARY_SCORE
                 hasMatch = true
             }
             // Partial word match (e.g., "press" matches "bench press")
-            else if nameWords.contains(where: { $0.contains(searchQuery) }) {
+            else if nameWords.contains(where: { $0.contains(searchQuery) }) || 
+                    nicknameWords.contains(where: { $0.contains(searchQuery) }) {
                 baseScore += PARTIAL_WORD_MATCH_SCORE
                 hasMatch = true
             }

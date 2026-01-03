@@ -8,6 +8,9 @@
 //
 //  Created by Cursor AI
 //
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
+
+#if DEBUG
 
 import Foundation
 
@@ -580,3 +583,5 @@ func runLimitationFilterTests() {
         }
     }
 }
+
+#endif // DEBUG

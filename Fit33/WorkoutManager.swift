@@ -24,6 +24,7 @@ class WorkoutManager: ObservableObject {
     @Published var shouldNavigateToWorkoutTab: Bool = false
     @Published var shouldNavigateToHomeTab: Bool = false
     @Published var shouldPopToRootHome: Bool = false
+    @Published var shouldDismissCardioFlow: Bool = false  // Dismiss entire cardio workout flow
     @Published var shouldShowWorkoutGenerator: Bool = false
     @Published var shouldNavigateToAutoGen: Bool = false  // 🔧 Redirect Home→Workout auto-gen flow
     @Published var shouldNavigateToPrograms: Bool = false  // 🔧 Redirect Home→Workout programs
@@ -990,6 +991,7 @@ class WorkoutManager: ObservableObject {
         shouldNavigateToHomeTab = false
         shouldNavigateToHomeTabInstant = false
         shouldPopToRootHome = false
+        shouldDismissCardioFlow = false
         shouldShowWorkoutGenerator = false
         shouldClearWorkoutTabNav = false
         shouldNavigateToAutoGen = false

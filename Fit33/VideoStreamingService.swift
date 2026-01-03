@@ -752,12 +752,12 @@ struct RemoteVideoPlayerView: View {
     }
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             // Clean background
             backgroundColor
             
             if let player = playerManager.player, showPlayer {
-                // 🎬 Video ready - show immediately with quick fade
+                // 🎬 Video ready - show immediately with quick fade, aligned to top
                 VideoPlayer(player: player)
                     .aspectRatio(16/9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
@@ -771,6 +771,7 @@ struct RemoteVideoPlayerView: View {
                         .foregroundColor(categoryColor.opacity(0.4))
                         .symbolEffect(.pulse)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // 🚫 No video available
                 VStack(spacing: 14) {
@@ -782,10 +783,11 @@ struct RemoteVideoPlayerView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 220, maxHeight: 280)
+        .frame(height: 240) // Fixed height, content aligned to top
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true

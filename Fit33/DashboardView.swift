@@ -3209,16 +3209,15 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.97))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(
-                        colorScheme == .dark 
-                            ? Color.white.opacity(0.06)
-                            : Color.black.opacity(0.04),
-                        lineWidth: 0.5
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.13), Color(white: 0.09)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     )
             )
         }

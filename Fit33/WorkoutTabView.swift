@@ -179,6 +179,7 @@ struct WorkoutHomeView: View {
     private var workouts: FetchedResults<Workout>
     @State private var forceRenderID = UUID()
     @State private var isNavigating = false  // 🔧 Debounce protection
+    @State private var showingEquipmentConnection = false
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @ObservedObject private var generatedProgramService = GeneratedProgramService.shared
     
@@ -242,6 +243,9 @@ struct WorkoutHomeView: View {
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        .sheet(isPresented: $showingEquipmentConnection) {
+            FitnessEquipmentView()
         }
     }
     
@@ -333,6 +337,65 @@ struct WorkoutHomeView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
                             LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            
+            // Connect Equipment Card
+            Button(action: {
+                guard !isNavigating else { return }
+                isNavigating = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+                
+                HapticManager.impact(.medium)
+                showingEquipmentConnection = true
+            }) {
+                HStack(spacing: 16) {
+                    // Icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .frame(width: 56, height: 56)
+                        
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 22))
+                            .foregroundStyle(
+                                LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                    }
+                    
+                    // Text
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Connect Equipment")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        Text("Treadmill • Bike • Rower • Elliptical")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Arrow
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1
                         )
                 )

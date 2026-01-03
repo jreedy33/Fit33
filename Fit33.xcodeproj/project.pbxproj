@@ -18,6 +18,8 @@
 		7C0C41E62F098DF600F02E84 /* ForceExerciseRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41E52F098DF600F02E84 /* ForceExerciseRefresh.swift */; };
 		7C0C41E82F09A13500F02E84 /* VideoPlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41E72F09A13500F02E84 /* VideoPlaybackEngine.swift */; };
 		7C0C41EA2F09A37F00F02E84 /* GenderFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */; };
+		7C0C41EC2F09BCFD00F02E84 /* FitnessEquipmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */; };
+		7C0C41EE2F09BD0300F02E84 /* BluetoothFitnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */; };
 		7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */; };
 		7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */; };
 		7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */; };
@@ -195,6 +197,8 @@
 		7C0C41E52F098DF600F02E84 /* ForceExerciseRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceExerciseRefresh.swift; sourceTree = "<group>"; };
 		7C0C41E72F09A13500F02E84 /* VideoPlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlaybackEngine.swift; sourceTree = "<group>"; };
 		7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenderFilterService.swift; sourceTree = "<group>"; };
+		7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessEquipmentView.swift; sourceTree = "<group>"; };
+		7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothFitnessManager.swift; sourceTree = "<group>"; };
 		7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicProgramGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartDayGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleRecoveryTracker.swift; sourceTree = "<group>"; };
@@ -429,8 +433,10 @@
 				7C8405C72EE685400009ED0F /* AdvancedIntelligenceService.swift */,
 				7C8405CD2EE7C0EC0009ED0F /* AlternativeExerciseEngine.swift */,
 				7C0C41E72F09A13500F02E84 /* VideoPlaybackEngine.swift */,
+				7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */,
 				7CB08C722ED810A500236ECB /* AppearanceManager.swift */,
 				7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */,
+				7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */,
 				A1234567890123456789012F /* Assets.xcassets */,
 				149F1F9A361C4E178E9EF77A /* AuthView.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
@@ -727,6 +733,7 @@
 				7CB08C992EDBBCD800236ECB /* ProgramStartService.swift in Sources */,
 				7C54AC0F2ED4C097004DD918 /* FoodDatabaseService.swift in Sources */,
 				7C8405DE2EE8B78E0009ED0F /* SharedUtilities.swift in Sources */,
+				7C0C41EC2F09BCFD00F02E84 /* FitnessEquipmentView.swift in Sources */,
 				A12345678901234567890160 /* PersistenceController.swift in Sources */,
 				7C98FABA2EEBC6D1001AE1F3 /* SmartVariantRotationEngine.swift in Sources */,
 				A12345678901234567890162 /* UserManager.swift in Sources */,
@@ -777,6 +784,7 @@
 				7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */,
 				A12345678901234567890210 /* ExerciseDetailView.swift in Sources */,
 				7CAFD55C2EDF780B00920F0D /* HydrationWidget.swift in Sources */,
+				7C0C41EE2F09BD0300F02E84 /* BluetoothFitnessManager.swift in Sources */,
 				A12345678901234567890220 /* ActiveWorkoutView.swift in Sources */,
 				7C98FABE2EEBC81D001AE1F3 /* FoundationalExerciseDatabase.swift in Sources */,
 				A12345678901234567890230 /* ExerciseLibraryView.swift in Sources */,

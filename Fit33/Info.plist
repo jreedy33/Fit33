@@ -49,9 +49,14 @@
 	<string>Fit33 uses your location to track your outdoor runs, showing your route, distance, and pace.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Fit33 uses your location to track your outdoor runs even when the app is in the background, ensuring accurate distance and route recording.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Fit33 uses Bluetooth to connect to gym equipment like treadmills, bikes, and rowing machines to sync your workout data in real-time.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Fit33 uses Bluetooth to connect to fitness equipment and heart rate monitors.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
+		<string>bluetooth-central</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

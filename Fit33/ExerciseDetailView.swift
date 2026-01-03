@@ -154,7 +154,11 @@ struct ExerciseDetailView: View {
             // Main content
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Video Section (no spacer needed, goes edge to edge)
+                    // Spacer for status bar area
+                    Color.clear
+                        .frame(height: 50)
+                    
+                    // Video Section
                     videoSection
                     
                     // Content Section with dark background

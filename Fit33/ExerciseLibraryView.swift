@@ -15,6 +15,10 @@ struct ExerciseLibraryView: View {
     @State private var forceRenderID = UUID()
     @State private var exerciseFilter: ExerciseFilterType = .recommended
     
+    // ⚡️ PERFORMANCE: Cached filtered results to avoid recomputation on every render
+    @State private var cachedFilteredExercises: [Exercise] = []
+    @State private var filterUpdateTask: Task<Void, Never>?
+    
     enum ExerciseFilterType: String, CaseIterable {
         case recommended = "Recommended"
         case all = "All Exercises"
@@ -581,8 +585,26 @@ struct ExerciseLibraryView: View {
         }
     }
     
+    // ⚡️ PERFORMANCE: Update cached results asynchronously
+    private func updateFilteredExercises() {
+        filterUpdateTask?.cancel()
+        filterUpdateTask = Task { @MainActor in
+            // Small delay to batch rapid filter changes
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            guard !Task.isCancelled else { return }
+            
+            // Compute filtered results
+            let results = computeFilteredExercises()
+            
+            // Update UI with quick animation
+            withAnimation(.easeOut(duration: 0.15)) {
+                cachedFilteredExercises = results
+            }
+        }
+    }
+    
     // 🚀 PERFORMANCE: Computed property with minimal logging
-    var filteredExercises: [Exercise] {
+    private func computeFilteredExercises() -> [Exercise] {
         var filtered = exercises
         
         // Filter by exercise filter type (Recommended/All/Favorites/Custom)
@@ -723,6 +745,11 @@ struct ExerciseLibraryView: View {
         }
         
         return filtered
+    }
+    
+    // Legacy computed property for backwards compatibility (use cachedFilteredExercises instead)
+    var filteredExercises: [Exercise] {
+        cachedFilteredExercises
     }
     
     // MARK: - Equipment Matching
@@ -883,6 +910,9 @@ struct ExerciseLibraryView: View {
                 // Load exercises from cache first
                 loadExercises()
                 
+                // ⚡️ Initialize cached filtered results immediately
+                cachedFilteredExercises = computeFilteredExercises()
+                
                 // Log screen appearance with unique ID
                 SessionLogManager.shared.logScreen(.exerciseLibrary, metadata: [
                     "exercise_count": exercises.count,
@@ -899,16 +929,26 @@ struct ExerciseLibraryView: View {
                     Task {
                         await ExerciseLibraryService.shared.syncExercisesFromCloud()
                         await MainActor.run {
-                loadExercises()
+                            loadExercises()
+                            updateFilteredExercises()
                             print("📚 [LIBRARY] Sync complete, now have \(exercises.count) exercises")
                         }
                     }
                 }
             }
+            // ⚡️ PERFORMANCE: Debounced filter updates
+            .onChange(of: searchText) { _, _ in updateFilteredExercises() }
+            .onChange(of: selectedCategory) { _, _ in updateFilteredExercises() }
+            .onChange(of: selectedEquipment) { _, _ in updateFilteredExercises() }
+            .onChange(of: selectedMuscleGroup) { _, _ in updateFilteredExercises() }
+            .onChange(of: selectedExerciseTypes) { _, _ in updateFilteredExercises() }
+            .onChange(of: exerciseFilter) { _, _ in updateFilteredExercises() }
+            .onChange(of: exercises) { _, _ in updateFilteredExercises() }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 // Refresh when app comes to foreground
                 viewContext.refreshAllObjects()
                 loadExercises()
+                updateFilteredExercises()
                 forceRenderID = UUID()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FavoriteExerciseChanged"))) { _ in
@@ -916,6 +956,7 @@ struct ExerciseLibraryView: View {
                 print("📚 Exercise Library: Favorite changed, refreshing...")
                 viewContext.refreshAllObjects()
                 loadExercises()
+                updateFilteredExercises()
                 forceRenderID = UUID()
             }
         }

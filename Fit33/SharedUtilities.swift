@@ -420,19 +420,92 @@ extension View {
     }
 }
 
-// MARK: - Haptic Feedback
+// MARK: - Haptic Feedback (Performance Optimized)
+/// Pre-initialized generators for instant zero-latency haptic feedback
 
-enum HapticManager {
+final class HapticManager {
+    static let shared = HapticManager()
+    
+    // Pre-initialized for instant response (no allocation on tap)
+    private let lightImpact = UIImpactFeedbackGenerator(style: .light)
+    private let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
+    private let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
+    private let rigidImpact = UIImpactFeedbackGenerator(style: .rigid)
+    private let softImpact = UIImpactFeedbackGenerator(style: .soft)
+    private let selection = UISelectionFeedbackGenerator()
+    private let notification = UINotificationFeedbackGenerator()
+    
+    private init() {
+        prepareAll()
+    }
+    
+    /// Pre-warm all generators on app launch
+    func prepareAll() {
+        lightImpact.prepare()
+        mediumImpact.prepare()
+        heavyImpact.prepare()
+        rigidImpact.prepare()
+        softImpact.prepare()
+        selection.prepare()
+        notification.prepare()
+    }
+    
+    // MARK: - Static API (backwards compatible)
+    
+    @inline(__always)
     static func selectionChanged() {
-        UISelectionFeedbackGenerator().selectionChanged()
+        shared.selection.selectionChanged()
+        shared.selection.prepare()
     }
     
+    @inline(__always)
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+        switch style {
+        case .light:
+            shared.lightImpact.impactOccurred()
+            shared.lightImpact.prepare()
+        case .medium:
+            shared.mediumImpact.impactOccurred()
+            shared.mediumImpact.prepare()
+        case .heavy:
+            shared.heavyImpact.impactOccurred()
+            shared.heavyImpact.prepare()
+        case .rigid:
+            shared.rigidImpact.impactOccurred()
+            shared.rigidImpact.prepare()
+        case .soft:
+            shared.softImpact.impactOccurred()
+            shared.softImpact.prepare()
+        @unknown default:
+            shared.mediumImpact.impactOccurred()
+            shared.mediumImpact.prepare()
+        }
     }
     
+    @inline(__always)
     static func notification(_ type: UINotificationFeedbackGenerator.FeedbackType) {
-        UINotificationFeedbackGenerator().notificationOccurred(type)
+        shared.notification.notificationOccurred(type)
+        shared.notification.prepare()
     }
+    
+    // MARK: - Fast Convenience Methods
+    
+    @inline(__always)
+    static func lightTap() { impact(.light) }
+    
+    @inline(__always)
+    static func tap() { impact(.medium) }
+    
+    @inline(__always)
+    static func heavyTap() { impact(.heavy) }
+    
+    @inline(__always)
+    static func success() { notification(.success) }
+    
+    @inline(__always)
+    static func warning() { notification(.warning) }
+    
+    @inline(__always)
+    static func error() { notification(.error) }
 }
 

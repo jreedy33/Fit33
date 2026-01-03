@@ -98,6 +98,9 @@ struct Fit33App: App {
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
         
+        // ⚡ Pre-warm haptic generators for instant tap feedback
+        HapticManager.shared.prepareAll()
+        
         // 👤 Initialize gender filter service (centralized gender management)
         _ = GenderFilterService.shared
         

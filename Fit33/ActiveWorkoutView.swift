@@ -10,9 +10,7 @@ struct ActiveWorkoutView: View {
     // AdManager accessed lazily via .shared to avoid blocking view init
     @Binding var isPresented: Bool
     
-    // Haptic feedback generators (UX Audit)
-    private let selectionFeedback = UISelectionFeedbackGenerator()
-    private let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+    // ⚡️ PERFORMANCE: Use centralized HapticManager (pre-warmed generators)
     
     let workout: Workout
     @State private var exercises: [Exercise]
@@ -302,7 +300,7 @@ struct ActiveWorkoutView: View {
                         
                         // Favorite button
                         Button(action: {
-                            selectionFeedback.selectionChanged() // Haptic (UX Audit)
+                            HapticManager.selectionChanged() // ⚡️ Pre-warmed haptics
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                                 isWorkoutFavorite.toggle()
                                 workout.isFavorite = isWorkoutFavorite

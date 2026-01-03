@@ -472,6 +472,9 @@ struct MainTabView: View {
         }
         .onChange(of: selectedTab) { oldValue, newValue in
             if oldValue != newValue {
+                // ⚡️ Immediate haptic feedback on tab switch
+                HapticManager.selectionChanged()
+                
                 // Log tab switch with screen IDs
                 let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
                 let fromScreen = oldValue < tabScreens.count ? tabScreens[oldValue] : .unknown

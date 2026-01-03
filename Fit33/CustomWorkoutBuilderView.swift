@@ -21,6 +21,10 @@ struct CustomWorkoutBuilderView: View {
     @State private var showingAddExercise = false
     @State private var isLoadingExercises = false
     
+    // ⚡️ PERFORMANCE: Cached filtered results to avoid recomputation
+    @State private var cachedFilteredExercises: [Exercise] = []
+    @State private var filterUpdateTask: Task<Void, Never>?
+    
     enum ExerciseFilterType: String, CaseIterable {
         case all = "All Exercises"
         case favorites = "Favorites"
@@ -489,6 +493,20 @@ struct CustomWorkoutBuilderView: View {
         return filtered
     }
     
+    // ⚡️ PERFORMANCE: Async filter update
+    private func updateFilteredExercises() {
+        filterUpdateTask?.cancel()
+        filterUpdateTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms debounce
+            guard !Task.isCancelled else { return }
+            
+            let results = filteredExercises
+            withAnimation(.easeOut(duration: 0.15)) {
+                cachedFilteredExercises = results
+            }
+        }
+    }
+    
     // MARK: - Equipment Matching Helper
     /// Comprehensive equipment matching with normalization
     private func exerciseMatchesEquipment(_ exercise: Exercise, selectedEquipment: String) -> Bool {
@@ -644,7 +662,7 @@ struct CustomWorkoutBuilderView: View {
                             .padding(.top, 100)
                         } else {
                             LazyVStack(spacing: 8) {
-                                ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
+                                ForEach(Array(cachedFilteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
                                     CustomWorkoutExerciseRowWithNav(
                                         exercise: exercise,
                                         isSelected: selectedExercises.contains { $0.id == exercise.id },
@@ -676,6 +694,8 @@ struct CustomWorkoutBuilderView: View {
                     ])
                     // Load exercises from cache/Core Data (cloud sync handles population)
                     loadExercises()
+                    // ⚡️ Initialize cached results immediately
+                    cachedFilteredExercises = filteredExercises
                     forceRenderID = UUID()
                     workoutManager.isOnCustomWorkoutBuilder = true
                     workoutManager.selectedCustomWorkoutExercises = selectedExercises
@@ -684,6 +704,13 @@ struct CustomWorkoutBuilderView: View {
                     workoutManager.isOnCustomWorkoutBuilder = false
                     workoutManager.selectedCustomWorkoutExercises = []
                 }
+                // ⚡️ PERFORMANCE: Debounced filter updates
+                .onChange(of: searchText) { _, _ in updateFilteredExercises() }
+                .onChange(of: selectedCategory) { _, _ in updateFilteredExercises() }
+                .onChange(of: selectedEquipment) { _, _ in updateFilteredExercises() }
+                .onChange(of: selectedMuscleGroup) { _, _ in updateFilteredExercises() }
+                .onChange(of: exerciseFilter) { _, _ in updateFilteredExercises() }
+                .onChange(of: exercises) { _, _ in updateFilteredExercises() }
                 .onChange(of: selectedExercises) { _, newValue in
                     workoutManager.selectedCustomWorkoutExercises = newValue
                 }

@@ -145,51 +145,60 @@ struct ExerciseDetailView: View {
     }
     
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Video Section - extends into safe area
-                    videoSection
-                        .background(videoBackgroundColor)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Small spacer to push video down slightly from status bar
+                Color.white
+                    .frame(height: 50)
+                
+                // Video Section
+                videoSection
+                    .background(videoBackgroundColor)
+                
+                // Content Section with dark background
+                VStack(alignment: .leading, spacing: 20) {
+                    // Exercise Name & Badges
+                    headerSection
                     
-                    // Content Section with dark background
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Exercise Name & Badges
-                        headerSection
-                        
-                        // User's Personal Stats (if they have history)
-                        if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
-                            userStatsSection
-                        }
-                        
-                        // Exercise Description
-                        if let description = exerciseDescriptionText {
-                            descriptionSection(description)
-                        }
-                        
-                        // How To Section
-                        if !howToSteps.isEmpty {
-                            howToSection
-                        }
-                        
-                        // Target Muscles
-                        muscleSection
-                        
-                        // Equipment Info
-                        equipmentSection
-                        
-                        // Bottom padding for tab bar
-                        Spacer(minLength: 100)
+                    // User's Personal Stats (if they have history)
+                    if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
+                        userStatsSection
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .background(Color(.systemBackground))
+                    
+                    // Exercise Description
+                    if let description = exerciseDescriptionText {
+                        descriptionSection(description)
+                    }
+                    
+                    // How To Section
+                    if !howToSteps.isEmpty {
+                        howToSection
+                    }
+                    
+                    // Target Muscles
+                    muscleSection
+                    
+                    // Equipment Info
+                    equipmentSection
+                    
+                    // Bottom padding for tab bar
+                    Spacer(minLength: 100)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .background(Color(.systemBackground))
             }
-            .scrollIndicators(.hidden)
         }
-        .background(videoBackgroundColor)
-        .ignoresSafeArea(edges: .top)
+        .scrollIndicators(.hidden)
+        .background(
+            VStack(spacing: 0) {
+                // White only for top video area
+                videoBackgroundColor.frame(height: 350)
+                // Dark for rest of view
+                Color(.systemBackground)
+            }
+            .ignoresSafeArea()
+        )
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {

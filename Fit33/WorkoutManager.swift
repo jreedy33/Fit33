@@ -862,6 +862,48 @@ class WorkoutManager: ObservableObject {
         #endif
     }
     
+    /// Replace an exercise in the current workout with a new one
+    func replaceExercise(_ oldExercise: Exercise, with newExercise: Exercise) {
+        guard let index = currentExercises.firstIndex(where: { $0.id == oldExercise.id }) else {
+            #if DEBUG
+            print("⚠️ WorkoutManager: Could not find exercise to replace: \(oldExercise.name ?? "?")")
+            #endif
+            return
+        }
+        
+        #if DEBUG
+        print("🔄 WorkoutManager: Replacing '\(oldExercise.name ?? "?")' with '\(newExercise.name ?? "?")'")
+        #endif
+        
+        // Get the old exercise ID for sets data
+        let oldExerciseId = oldExercise.id?.uuidString ?? ""
+        let newExerciseId = newExercise.id?.uuidString ?? UUID().uuidString
+        
+        // Replace the exercise in the array
+        currentExercises[index] = newExercise
+        
+        // Transfer sets data from old exercise to new one
+        if let existingSets = exerciseSetsData[oldExerciseId] {
+            // Copy the sets to the new exercise (preserving any progress)
+            exerciseSetsData[newExerciseId] = existingSets
+            // Remove old exercise sets
+            exerciseSetsData.removeValue(forKey: oldExerciseId)
+        } else {
+            // Initialize with default 3 sets if no existing data
+            initializeSetsForExercise(id: newExerciseId)
+        }
+        
+        // Save updated state
+        saveActiveWorkoutToStorage()
+        
+        // Trigger UI update
+        objectWillChange.send()
+        
+        #if DEBUG
+        print("✅ WorkoutManager: Exercise replaced successfully")
+        #endif
+    }
+    
     func showWorkoutGenerator() {
         #if DEBUG
         print("🧠 WorkoutManager: Navigating to workout generator")

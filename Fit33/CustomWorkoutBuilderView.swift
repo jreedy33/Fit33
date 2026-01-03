@@ -8,6 +8,45 @@ struct CustomWorkoutBuilderView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
     
+    // MARK: - Mode Configuration
+    enum Mode {
+        case build          // Default: multi-select to build a workout
+        case replace(Exercise, (Exercise) -> Void)  // Single-select to replace an exercise
+        case addToWorkout((Exercise) -> Void)       // Single-select to add to active workout
+        
+        var title: String {
+            switch self {
+            case .build: return "Build Workout"
+            case .replace: return "Replace Exercise"
+            case .addToWorkout: return "Add Exercise"
+            }
+        }
+        
+        var isSingleSelect: Bool {
+            switch self {
+            case .build: return false
+            case .replace, .addToWorkout: return true
+            }
+        }
+    }
+    
+    let mode: Mode
+    
+    // Default initializer for build mode
+    init() {
+        self.mode = .build
+    }
+    
+    // Initializer for replace mode
+    init(replacing exercise: Exercise, onSelect: @escaping (Exercise) -> Void) {
+        self.mode = .replace(exercise, onSelect)
+    }
+    
+    // Initializer for add to workout mode
+    init(onAddExercise: @escaping (Exercise) -> Void) {
+        self.mode = .addToWorkout(onAddExercise)
+    }
+    
     @State private var exercises: [Exercise] = []
     @State private var selectedExercises: [Exercise] = []
     @State private var searchText = ""
@@ -735,6 +774,9 @@ struct CustomWorkoutBuilderView: View {
         .navigationBarHidden(true)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onChange(of: selectedExercises.count) { count in
+            // Only show GO button in build mode
+            guard case .build = mode else { return }
+            
             if count > 0 {
                 GoButtonState.shared.show(
                     primaryColor: .blue,
@@ -747,7 +789,10 @@ struct CustomWorkoutBuilderView: View {
             }
         }
         .onDisappear {
-            GoButtonState.shared.hide()
+            // Only hide GO button if we showed it (build mode)
+            if case .build = mode {
+                GoButtonState.shared.hide()
+            }
         }
     }
     
@@ -831,7 +876,7 @@ struct CustomWorkoutBuilderView: View {
                 .padding(.top, max(geometry.safeAreaInsets.top + 4, 56))
                 
                 // Title - left aligned, animates size on scroll
-                Text("Build Workout")
+                Text(mode.title)
                     .font(isScrolled ? .title3 : .largeTitle)
                     .fontWeight(.bold)
                     .foregroundColor(Color(red: 0.3, green: 0.5, blue: 0.7))
@@ -894,8 +939,8 @@ struct CustomWorkoutBuilderView: View {
                         )
                     }
                     
-                    // Small selected counter with blue gradient
-                    if !selectedExercises.isEmpty {
+                    // Small selected counter with blue gradient (only in build mode)
+                    if !mode.isSingleSelect && !selectedExercises.isEmpty {
                         HStack(spacing: 4) {
                             Text("\(selectedExercises.count)")
                                 .font(.caption)
@@ -1096,6 +1141,30 @@ struct CustomWorkoutBuilderView: View {
     }
     
     private func toggleExerciseSelection(_ exercise: Exercise) {
+        // Handle single-select modes (replace/add)
+        if mode.isSingleSelect {
+            HapticManager.impact(.medium)
+            
+            // Prefetch video immediately
+            if let name = exercise.name {
+                VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
+            }
+            
+            // Execute the callback and dismiss
+            switch mode {
+            case .replace(_, let onSelect):
+                onSelect(exercise)
+                dismiss()
+            case .addToWorkout(let onSelect):
+                onSelect(exercise)
+                dismiss()
+            case .build:
+                break // Not single-select
+            }
+            return
+        }
+        
+        // Default multi-select behavior for build mode
         if let index = selectedExercises.firstIndex(where: { $0.id == exercise.id }) {
             selectedExercises.remove(at: index)
         } else {

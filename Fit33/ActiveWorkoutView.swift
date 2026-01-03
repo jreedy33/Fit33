@@ -1811,13 +1811,16 @@ struct ExerciseCard: View {
             RestTimerSetupView(onSetTimer: onSetRestTimer)
         }
         .sheet(isPresented: $showingReplaceExercise) {
-            ExerciseSubstitutionView(
-                currentExercise: exercise,
-                onSelectReplacement: { newExercise in
-                    // The parent view handles the actual replacement
+            CustomWorkoutBuilderView(
+                replacing: exercise,
+                onSelect: { newExercise in
+                    // Replace this exercise with the selected one
+                    WorkoutManager.shared.replaceExercise(exercise, with: newExercise)
                     onReplaceExercise()
                 }
             )
+            .environmentObject(WorkoutManager.shared)
+            .environmentObject(UserManager.shared)
         }
         .onAppear {
             // ⚡ PERF: Access cached property directly (no Core Data fetch)

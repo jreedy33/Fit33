@@ -160,7 +160,8 @@ struct TrainingInsightsWidget: View {
         for workout in sortedWorkouts {
             guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
             for workoutExercise in exercises {
-                guard let exerciseName = workoutExercise.exercise?.name,
+                let exerciseName = workoutExercise.safeDisplayName
+                guard exerciseName != "Loading...",
                       let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] else { continue }
                 
                 for set in sets where set.isCompleted {

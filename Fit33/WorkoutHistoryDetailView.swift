@@ -18,12 +18,15 @@ struct WorkoutHistoryDetailView: View {
         var deduplicated: [WorkoutExercise] = []
         
         for workoutExercise in sorted {
-            let key = "\(workoutExercise.exercise?.id?.uuidString ?? "unknown")_\(workoutExercise.order)"
+            let exerciseId = workoutExercise.exercise?.id?.uuidString ?? workoutExercise.id?.uuidString ?? "unknown"
+            let key = "\(exerciseId)_\(workoutExercise.order)"
             if !seen.contains(key) {
                 seen.insert(key)
                 deduplicated.append(workoutExercise)
             } else {
-                print("⚠️ [HISTORY] Skipping duplicate exercise: \(workoutExercise.exercise?.name ?? "Unknown") at position \(workoutExercise.order)")
+                #if DEBUG
+                print("⚠️ [HISTORY] Skipping duplicate exercise: \(workoutExercise.safeDisplayName) at position \(workoutExercise.order)")
+                #endif
             }
         }
         
@@ -57,7 +60,8 @@ struct WorkoutHistoryDetailView: View {
     private var personalRecords: [(exercise: String, weight: Double, reps: Int)] {
         var prs: [(exercise: String, weight: Double, reps: Int)] = []
         for workoutExercise in workoutExercises {
-            guard let exerciseName = workoutExercise.exercise?.name,
+            let exerciseName = workoutExercise.safeDisplayName
+            guard exerciseName != "Loading...",
                   let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] else { continue }
             
             if let bestSet = sets.filter({ $0.isCompleted }).max(by: { first, second in
@@ -77,10 +81,9 @@ struct WorkoutHistoryDetailView: View {
     private var muscleBreakdown: [(muscle: String, count: Int, color: Color)] {
         var muscleCount: [String: Int] = [:]
         for workoutExercise in workoutExercises {
-            if let muscleGroups = workoutExercise.exercise?.muscleGroups as? [String] {
-                for muscle in muscleGroups {
-                    muscleCount[muscle.capitalized, default: 0] += 1
-                }
+            // Use safeMuscleGroups for nil-safety
+            for muscle in workoutExercise.safeMuscleGroups {
+                muscleCount[muscle.capitalized, default: 0] += 1
             }
         }
         return muscleCount.sorted { $0.value > $1.value }.prefix(4).map { 
@@ -886,12 +889,11 @@ struct PremiumExerciseRow: View {
                         }
                         
                         HStack(spacing: 8) {
-                            if let category = workoutExercise.exercise?.category {
-                                Text(category)
-                                    .font(.caption)
-                                    .foregroundColor(categoryColor)
-                                    .fontWeight(.medium)
-                            }
+                            let category = workoutExercise.safeCategory
+                            Text(category)
+                                .font(.caption)
+                                .foregroundColor(categoryColor)
+                                .fontWeight(.medium)
                             
                             Text("•")
                                 .font(.caption2)
@@ -1093,7 +1095,7 @@ struct PremiumExerciseRow: View {
     }
     
     private var categoryColor: Color {
-        switch workoutExercise.exercise?.category?.lowercased() {
+        switch workoutExercise.safeCategory.lowercased() {
         case "chest": return .purple
         case "back": return .blue
         case "legs": return .green
@@ -1106,7 +1108,7 @@ struct PremiumExerciseRow: View {
     }
     
     private var categoryGradient: [Color] {
-        switch workoutExercise.exercise?.category?.lowercased() {
+        switch workoutExercise.safeCategory.lowercased() {
         case "chest":
             return [Color.purple, Color.pink]
         case "back":
@@ -1127,51 +1129,51 @@ struct PremiumExerciseRow: View {
     }
     
     private var categoryIcon: String {
-        if let exerciseName = workoutExercise.exercise?.name?.lowercased() {
-            if exerciseName.contains("dumbbell") {
-                return "dumbbell.fill"
-            } else if exerciseName.contains("barbell") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("cable") {
-                return "dot.radiowaves.left.and.right"
-            } else if exerciseName.contains("push") && exerciseName.contains("up") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("pull") && (exerciseName.contains("up") || exerciseName.contains("chin")) {
-                return "figure.climbing"
-            } else if exerciseName.contains("squat") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("deadlift") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("row") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("press") {
-                return "figure.strengthtraining.traditional"
-            } else if exerciseName.contains("curl") {
-                return "figure.arms.open"
-            } else if exerciseName.contains("extension") {
-                return "figure.arms.open"
-            } else if exerciseName.contains("raise") {
-                return "arrow.up"
-            } else if exerciseName.contains("fly") || exerciseName.contains("flye") {
-                return "arrow.left.and.right"
-            } else if exerciseName.contains("plank") {
-                return "figure.core.training"
-            } else if exerciseName.contains("crunch") || exerciseName.contains("sit") {
-                return "figure.core.training"
-            } else if exerciseName.contains("leg") {
-                return "figure.walk"
-            } else if exerciseName.contains("lunge") {
-                return "figure.walk"
-            } else if exerciseName.contains("run") || exerciseName.contains("jog") {
-                return "figure.run"
-            } else if exerciseName.contains("jump") {
-                return "figure.jumprope"
-            } else if exerciseName.contains("bike") || exerciseName.contains("cycle") {
-                return "figure.outdoor.cycle"
-            }
+        let exerciseName = workoutExercise.safeDisplayName.lowercased()
+        
+        if exerciseName.contains("dumbbell") {
+            return "dumbbell.fill"
+        } else if exerciseName.contains("barbell") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("cable") {
+            return "dot.radiowaves.left.and.right"
+        } else if exerciseName.contains("push") && exerciseName.contains("up") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("pull") && (exerciseName.contains("up") || exerciseName.contains("chin")) {
+            return "figure.climbing"
+        } else if exerciseName.contains("squat") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("deadlift") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("row") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("press") {
+            return "figure.strengthtraining.traditional"
+        } else if exerciseName.contains("curl") {
+            return "figure.arms.open"
+        } else if exerciseName.contains("extension") {
+            return "figure.arms.open"
+        } else if exerciseName.contains("raise") {
+            return "arrow.up"
+        } else if exerciseName.contains("fly") || exerciseName.contains("flye") {
+            return "arrow.left.and.right"
+        } else if exerciseName.contains("plank") {
+            return "figure.core.training"
+        } else if exerciseName.contains("crunch") || exerciseName.contains("sit") {
+            return "figure.core.training"
+        } else if exerciseName.contains("leg") {
+            return "figure.walk"
+        } else if exerciseName.contains("lunge") {
+            return "figure.walk"
+        } else if exerciseName.contains("run") || exerciseName.contains("jog") {
+            return "figure.run"
+        } else if exerciseName.contains("jump") {
+            return "figure.jumprope"
+        } else if exerciseName.contains("bike") || exerciseName.contains("cycle") {
+            return "figure.outdoor.cycle"
         }
         
-        switch workoutExercise.exercise?.category?.lowercased() {
+        switch workoutExercise.safeCategory.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.strengthtraining.traditional"
         case "legs": return "figure.walk"

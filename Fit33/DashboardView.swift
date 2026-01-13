@@ -4257,11 +4257,9 @@ struct ExpandedWorkoutCard: View {
         }
     }
     
-    // Get unique muscle groups
+    // Get unique muscle groups (using safe accessors)
     private var muscleGroups: [String] {
-        let allMuscleGroups = workoutExercises.compactMap { workoutExercise in
-            workoutExercise.exercise?.muscleGroups as? [String]
-        }.flatMap { $0 }
+        let allMuscleGroups = workoutExercises.flatMap { $0.safeMuscleGroups }
         return Array(Set(allMuscleGroups)).sorted()
     }
     

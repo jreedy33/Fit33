@@ -2858,11 +2858,10 @@ struct SmartInsightsCard: View {
                   let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
             
             for workoutExercise in exercises {
-                if let muscleGroups = workoutExercise.exercise?.muscleGroups as? [String] {
-                    for muscle in muscleGroups {
-                        if lastWorked[muscle] == nil || date > lastWorked[muscle]! {
-                            lastWorked[muscle] = date
-                        }
+                // Use safeMuscleGroups for nil-safety
+                for muscle in workoutExercise.safeMuscleGroups {
+                    if lastWorked[muscle] == nil || date > lastWorked[muscle]! {
+                        lastWorked[muscle] = date
                     }
                 }
             }
@@ -2913,7 +2912,8 @@ struct SmartInsightsCard: View {
         for workout in recentWorkouts {
             guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
             for workoutExercise in exercises {
-                guard let exerciseName = workoutExercise.exercise?.name,
+                let exerciseName = workoutExercise.safeDisplayName
+                guard exerciseName != "Loading...",
                       let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] else { continue }
                 
                 for set in sets where set.isCompleted && set.weight > 0 {
@@ -2954,7 +2954,8 @@ struct SmartInsightsCard: View {
         for workout in sortedWorkouts {
             guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
             for workoutExercise in exercises {
-                guard let exerciseName = workoutExercise.exercise?.name,
+                let exerciseName = workoutExercise.safeDisplayName
+                guard exerciseName != "Loading...",
                       let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] else { continue }
                 
                 for set in sets where set.isCompleted {

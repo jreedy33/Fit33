@@ -494,7 +494,8 @@ struct DataDownloadView: View {
                         let sortedExercises = exercises.sorted { $0.order < $1.order }
                         
                         for (index, workoutExercise) in sortedExercises.enumerated() {
-                            let exerciseName = workoutExercise.exercise?.name ?? "Exercise"
+                            // Use safeDisplayName for nil-safety
+                            let exerciseName = workoutExercise.safeDisplayName
                             report += "  \(index + 1). \(exerciseName)\n"
                             
                             // Get sets for this exercise

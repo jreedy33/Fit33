@@ -599,10 +599,9 @@ class UserManager: ObservableObject {
             for workout in workouts {
                 if let exercises = workout.exercises?.allObjects as? [WorkoutExercise] {
                     for workoutExercise in exercises {
-                        if let muscleGroups = workoutExercise.exercise?.muscleGroups as? [String] {
-                            for muscle in muscleGroups {
-                                muscleGroupCounts[muscle, default: 0] += 1
-                            }
+                        // Use safeMuscleGroups for nil-safety
+                        for muscle in workoutExercise.safeMuscleGroups {
+                            muscleGroupCounts[muscle, default: 0] += 1
                         }
                     }
                 }

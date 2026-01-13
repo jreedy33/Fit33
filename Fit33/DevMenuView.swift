@@ -163,8 +163,13 @@ struct DevMenuView: View {
                     BugsTabContent()
                         .tag(1)
                     
+                    #if DEBUG
                     LearningEngineDebugView()
                         .tag(2)
+                    #else
+                    Text("Learning Engine Debug (Debug builds only)")
+                        .tag(2)
+                    #endif
                     
                     QualityAuditTabContent()
                         .tag(3)

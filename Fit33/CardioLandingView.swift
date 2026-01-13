@@ -125,6 +125,9 @@ struct CardioLandingView: View {
     @State private var searchText = ""
     @State private var selectedFilter: CardioFilter = .all
     
+    // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
+    @FocusState private var isSearchFocused: Bool
+    
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)],
         predicate: NSPredicate(format: "category CONTAINS[cd] %@ OR workoutType CONTAINS[cd] %@", "cardio", "cardio"),
@@ -194,6 +197,13 @@ struct CardioLandingView: View {
                     }
                 }
             }
+            .onAppear {
+                updateFilteredExercises()
+            }
+            // ⚡️ HIGH-PERFORMANCE: Instant filter updates
+            .onChange(of: searchText) { _, _ in updateFilteredExercises() }
+            .onChange(of: selectedFilter) { _, _ in updateFilteredExercises() }
+            .onChange(of: cardioExercises.count) { _, _ in updateFilteredExercises() }
         }
     }
     
@@ -333,16 +343,26 @@ struct CardioLandingView: View {
                     .foregroundColor(.secondary)
             }
             
-            // Search bar
+            // ⚡️ SNAPPY SEARCH: Instant response search bar
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                 
                 TextField("Search exercises...", text: $searchText)
                     .font(.subheadline)
+                    .focused($isSearchFocused)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        isSearchFocused = false
+                    }
                 
                 if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
+                    Button(action: { 
+                        searchText = ""
+                        isSearchFocused = false
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
@@ -382,14 +402,25 @@ struct CardioLandingView: View {
         }
     }
     
+    // ⚡️ HIGH-PERFORMANCE: Cached results
+    @State private var cachedFilteredExercises: [Exercise] = []
+    @State private var lastSearchText: String = ""
+    @State private var lastFilter: CardioFilter = .all
+    
     // MARK: - Filtered Exercises
     private var filteredExercises: [Exercise] {
+        cachedFilteredExercises
+    }
+    
+    private func updateFilteredExercises() {
         var exercises = Array(cardioExercises)
         
-        // Apply search
+        // ⚡️ ULTRA-FAST SEARCH: Simple string matching
         if !searchText.isEmpty {
-            exercises = exercises.filter {
-                $0.name?.localizedCaseInsensitiveContains(searchText) ?? false
+            let query = searchText.lowercased()
+            exercises = exercises.filter { exercise in
+                guard let name = exercise.name?.lowercased() else { return false }
+                return name.contains(query) || name.hasPrefix(query)
             }
         }
         
@@ -417,7 +448,7 @@ struct CardioLandingView: View {
             }
         }
         
-        return exercises
+        cachedFilteredExercises = exercises
     }
 }
 

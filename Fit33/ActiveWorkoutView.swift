@@ -357,7 +357,8 @@ struct ActiveWorkoutView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
             .background(Color.clear)
         }
         .onAppear {
@@ -407,13 +408,39 @@ struct ActiveWorkoutView: View {
         }
         initializationComplete = true
         
-        // Log screen with unique ID
+        #if DEBUG
+        let startTime = CFAbsoluteTimeGetCurrent()
+        print("🚀 [PERF] initializeWorkout() - Starting for \(exercises.count) exercises")
+        #endif
+        
+        // ⚡️ INSTANT: Defer ALL heavy work to next run loop cycle
+        // This ensures the view renders IMMEDIATELY with exercise names visible
+        // Analytics, cache lookups, and smart recommendations happen AFTER first frame
+        
+        #if DEBUG
+        print("🚀 [PERF] initializeWorkout() - INSTANT RETURN (deferring work)")
+        #endif
+        
+        // Defer all initialization work to allow first frame to render
+        DispatchQueue.main.async { [self] in
+            performDeferredInitialization()
+        }
+    }
+    
+    /// Performs initialization work after the first frame has rendered
+    private func performDeferredInitialization() {
+        #if DEBUG
+        let startTime = CFAbsoluteTimeGetCurrent()
+        print("🚀 [PERF] performDeferredInitialization() - Starting")
+        #endif
+        
+        // Log screen with unique ID (non-blocking)
         SessionLogManager.shared.logScreen(.activeWorkout, metadata: [
             "workout_id": workout.id?.uuidString ?? "unknown",
             "exercise_count": exercises.count
         ])
         
-        // Log workout start
+        // Log workout start (non-blocking)
         SessionLogManager.shared.logWorkoutStart(
             workoutId: workout.id?.uuidString ?? "unknown",
             type: workout.name ?? "Custom",
@@ -421,16 +448,10 @@ struct ActiveWorkoutView: View {
             source: workoutManager.currentProgramDayNumber != nil ? "Program" : "Manual"
         )
         
-        #if DEBUG
-        let startTime = CFAbsoluteTimeGetCurrent()
-        print("🚀 [PERF] initializeWorkout() - Starting for \(exercises.count) exercises")
-        #endif
-        
         // NOTE: Sets are already initialized in WorkoutManager.startWorkout()
         // Do NOT re-initialize here as it can cause race conditions with SwiftUI rendering
         
-        // ⚡ FAST PATH: Check cache synchronously first - ONLY apply cached data
-        // Smart recommendations are now generated ASYNC to prevent UI blocking
+        // ⚡ FAST PATH: Check cache synchronously - ONLY apply cached data
         let exerciseNames = exercises.compactMap { $0.name }
         let cache = ExerciseHistoryService.shared.previousSetsCache
         var exercisesNeedingSmartRecs: [(exercise: Exercise, name: String)] = []
@@ -459,34 +480,36 @@ struct ActiveWorkoutView: View {
         
         #if DEBUG
         let syncTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("🚀 [PERF] initializeWorkout() - Sync cache applied: \(String(format: "%.1f", syncTime))ms")
+        print("🚀 [PERF] Cache applied: \(String(format: "%.1f", syncTime))ms")
         print("🚀 [PERF] Exercises needing smart recs: \(exercisesNeedingSmartRecs.count)")
         #endif
         
-        // 🔧 ASYNC: Generate smart recommendations in background (non-blocking!)
-        // Using regular Task (not detached) so it's tied to view lifecycle
+        // 🔧 ASYNC: Generate smart recommendations in BACKGROUND (truly non-blocking!)
         if !exercisesNeedingSmartRecs.isEmpty {
             let currentUser = UserManager.shared.currentUser
             let context = viewContext
-            let wm = workoutManager  // Capture reference to avoid self access issues
+            let wm = workoutManager
             
-            let smartRecsTask = Task { @MainActor in
+            // Use Task.detached to run computation OFF the main thread entirely
+            let smartRecsTask = Task.detached(priority: .userInitiated) {
                 guard let user = currentUser else { return }
                 guard !Task.isCancelled else { return }
                 
-                // Generate recommendations (still on main actor but non-blocking due to Task)
                 var recommendations: [(exerciseId: String, data: [PreviousSetData], sets: [WorkoutSetData]?)] = []
                 
                 for (exercise, exerciseName) in exercisesNeedingSmartRecs {
                     guard !Task.isCancelled else { return }
                     guard let exerciseId = exercise.id?.uuidString else { continue }
                     
-                    let recs = StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
-                        exerciseName: exerciseName,
-                        user: user,
-                        numberOfSets: 3,
-                        context: context
-                    )
+                    // Heavy computation happens on background thread
+                    let recs = await MainActor.run {
+                        StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                            exerciseName: exerciseName,
+                            user: user,
+                            numberOfSets: 3,
+                            context: context
+                        )
+                    }
                     
                     let smartPreviousData = recs.enumerated().map { index, rec in
                         PreviousSetData(setNumber: index + 1, recommendation: rec)
@@ -500,86 +523,113 @@ struct ActiveWorkoutView: View {
                     recommendations.append((exerciseId: exerciseId, data: smartPreviousData, sets: smartSets))
                     
                     #if DEBUG
-                    print("💡 [SMART-ASYNC] Generated for '\(exerciseName)': \(recs.first?.displayString ?? "N/A")")
+                    await MainActor.run {
+                        print("💡 [SMART-ASYNC] Generated for '\(exerciseName)': \(recs.first?.displayString ?? "N/A")")
+                    }
                     #endif
+                    
+                    // Yield to allow UI to remain responsive
+                    await Task.yield()
                 }
                 
-                // Apply all at once (already on MainActor)
+                // Apply results on main thread
                 guard !Task.isCancelled else { return }
-                for rec in recommendations {
-                    previousExerciseSets[rec.exerciseId] = rec.data
-                    
-                    if let smartSets = rec.sets {
-                        let existingSets = wm.getSetsForExercise(id: rec.exerciseId)
-                        if existingSets.count == 1 && existingSets.first?.weight == 0 && existingSets.first?.reps == 0 {
-                            wm.updateSetsForExercise(id: rec.exerciseId, sets: smartSets)
+                await MainActor.run {
+                    for rec in recommendations {
+                        previousExerciseSets[rec.exerciseId] = rec.data
+                        
+                        if let smartSets = rec.sets {
+                            let existingSets = wm.getSetsForExercise(id: rec.exerciseId)
+                            if existingSets.count == 1 && existingSets.first?.weight == 0 && existingSets.first?.reps == 0 {
+                                wm.updateSetsForExercise(id: rec.exerciseId, sets: smartSets)
+                            }
                         }
                     }
+                    
+                    #if DEBUG
+                    print("🚀 [PERF] Smart recommendations applied: \(recommendations.count) exercises")
+                    #endif
                 }
-                
-                #if DEBUG
-                print("🚀 [PERF] Smart recommendations applied: \(recommendations.count) exercises")
-                #endif
             }
             initTasks.append(smartRecsTask)
         }
         
         #if DEBUG
-        print("🚀 [PERF] initializeWorkout() - COMPLETE (UI unblocked) in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+        print("🚀 [PERF] performDeferredInitialization() - COMPLETE in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
         #endif
         
-        // SLOW PATH: Fetch historical data asynchronously (background, non-blocking)
+        // SLOW PATH: Fetch historical data asynchronously (BACKGROUND, truly non-blocking)
         let currentUser = UserManager.shared.currentUser
         let wm = workoutManager
         let ctx = viewContext
         let exs = exercises
         
-        let historyTask = Task { @MainActor in
+        // Use Task.detached to ensure this runs off the main thread
+        let historyTask = Task.detached(priority: .background) {
             guard !Task.isCancelled else { return }
             
             let allPreviousSets = await ExerciseHistoryService.shared.fetchPreviousSetsForExercises(exerciseNames)
             
             guard !Task.isCancelled else { return }
             
+            // Process data in background, batch updates for main thread
+            var updates: [(exerciseId: String, data: [PreviousSetData])] = []
+            
             for exercise in exs {
                 guard !Task.isCancelled else { return }
                 guard let exerciseId = exercise.id?.uuidString,
                       let exerciseName = exercise.name else { continue }
                 
-                // Only update if not already set
-                if previousExerciseSets[exerciseId] == nil {
-                    if let cloudSets = allPreviousSets[exerciseName], !cloudSets.isEmpty {
-                        let previousData = cloudSets.map { cloudSet in
-                            PreviousSetData(
-                                setNumber: cloudSet.setNumber,
-                                weight: cloudSet.weight,
-                                reps: cloudSet.reps
-                            )
-                        }
-                        previousExerciseSets[exerciseId] = previousData
-                    } else if let user = currentUser {
-                        // Fallback: generate smart recs now
-                        if previousExerciseSets[exerciseId] == nil {
-                            let recommendations = StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
-                                exerciseName: exerciseName,
-                                user: user,
-                                numberOfSets: 3,
-                                context: ctx
-                            )
-                        
-                            let smartPreviousData = recommendations.enumerated().map { index, rec in
-                                PreviousSetData(
-                                    setNumber: index + 1,
-                                    recommendation: rec
-                                )
-                            }
-                            
-                            previousExerciseSets[exerciseId] = smartPreviousData
-                            
-                            #if DEBUG
-                            print("💡 [SMART-FALLBACK] Generated for '\(exerciseName)'")
-                            #endif
-                        }
+                // Check on main thread if already set
+                let alreadySet = await MainActor.run { previousExerciseSets[exerciseId] != nil }
+                guard !alreadySet else { continue }
+                
+                if let cloudSets = allPreviousSets[exerciseName], !cloudSets.isEmpty {
+                    let previousData = cloudSets.map { cloudSet in
+                        PreviousSetData(
+                            setNumber: cloudSet.setNumber,
+                            weight: cloudSet.weight,
+                            reps: cloudSet.reps
+                        )
+                    }
+                    updates.append((exerciseId: exerciseId, data: previousData))
+                } else if let user = currentUser {
+                    // Fallback: generate smart recs (on main thread since it needs Core Data context)
+                    let recommendations = await MainActor.run {
+                        StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                            exerciseName: exerciseName,
+                            user: user,
+                            numberOfSets: 3,
+                            context: ctx
+                        )
+                    }
+                    
+                    let smartPreviousData = recommendations.enumerated().map { index, rec in
+                        PreviousSetData(
+                            setNumber: index + 1,
+                            recommendation: rec
+                        )
+                    }
+                    
+                    updates.append((exerciseId: exerciseId, data: smartPreviousData))
+                    
+                    #if DEBUG
+                    await MainActor.run {
+                        print("💡 [SMART-FALLBACK] Generated for '\(exerciseName)'")
+                    }
+                    #endif
+                }
+                
+                // Yield between exercises to keep UI responsive
+                await Task.yield()
+            }
+            
+            // Apply all updates at once on main thread
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                for update in updates {
+                    if previousExerciseSets[update.exerciseId] == nil {
+                        previousExerciseSets[update.exerciseId] = update.data
                     }
                 }
             }
@@ -1839,12 +1889,15 @@ struct ExerciseCard: View {
             }
             isFavorite = exercise.isFavorite
             
-            // Prefetch similar exercises in background for instant shuffle
-            prefetchSimilarExercises()
-            
             // Enable animations after first render (glow appears instantly)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 hasAppeared = true
+            }
+            
+            // Prefetch similar exercises AFTER a delay to not block initial interaction
+            // Stagger based on exercise index to spread out the work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + Double(currentIndex) * 0.1) {
+                prefetchSimilarExercises()
             }
         }
         .onChange(of: exercise.id) { _, newId in
@@ -3328,20 +3381,23 @@ struct RoundedCorner: Shape {
 }
 
 // MARK: - Marquee Text Component
+// Continuous scroll like a rotating gear - always scrolls left, pauses, repeats
 
 struct MarqueeText: View {
     let text: String
     let font: Font
     let weight: Font.Weight
-    let shouldAnimate: Bool // External control for animation
-    let pauseDuration: Double = 1.0 // Pause for 1 second after each scroll cycle
+    let shouldAnimate: Bool // Only scroll when card is active
     
-    @State private var offset: CGFloat = 0
+    // Animation configuration
+    private let scrollSpeed: CGFloat = 20 // Points per second - slow steady scroll
+    private let gapBetweenCopies: CGFloat = 100 // Large gap between text copies
+    private let pauseDuration: Double = 3.0 // Pause after each full rotation
+    
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
-    @State private var needsScrolling = false // Internal check if text is too long
-    @State private var animationTask: Task<Void, Never>?
-    @State private var isReady = false // ⚡ PERF: Defer expensive measurement
+    @State private var needsScrolling = false
+    @State private var xOffset: CGFloat = 0
     
     init(text: String, font: Font = .headline, weight: Font.Weight = .semibold, shouldAnimate: Bool = true) {
         self.text = text
@@ -3350,131 +3406,110 @@ struct MarqueeText: View {
         self.shouldAnimate = shouldAnimate
     }
     
+    // One full rotation distance
+    private var cycleWidth: CGFloat {
+        textWidth + gapBetweenCopies
+    }
+    
+    // How long one scroll cycle takes
+    private var scrollTime: Double {
+        guard scrollSpeed > 0, cycleWidth > 0 else { return 5.0 }
+        return Double(cycleWidth) / Double(scrollSpeed)
+    }
+    
     var body: some View {
-        // ⚡ PERF: Show simple text immediately, defer GeometryReader
-        if !isReady {
-            Text(text)
-                .font(font)
-                .fontWeight(weight)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .onAppear {
-                    // Defer expensive measurement until after initial render
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        isReady = true
-                    }
-                }
-        } else {
         GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                // Invisible text to measure width
+            // Always show both copies of text for smooth looping
+            HStack(spacing: gapBetweenCopies) {
                 Text(text)
                     .font(font)
                     .fontWeight(weight)
                     .fixedSize()
-                    .hidden()
                     .background(
-                        GeometryReader { textGeometry in
-                            Color.clear.onAppear {
-                                textWidth = textGeometry.size.width
-                                containerWidth = geometry.size.width
-                                needsScrolling = textWidth > containerWidth
-                                
-                                if needsScrolling && shouldAnimate {
-                                    startAnimationLoop()
-                                }
-                            }
-                            .onChange(of: geometry.size.width) { newWidth in
-                                containerWidth = newWidth
-                                let newNeedsScrolling = textWidth > containerWidth
-                                
-                                if newNeedsScrolling != needsScrolling {
-                                    needsScrolling = newNeedsScrolling
-                                    animationTask?.cancel()
+                        GeometryReader { textGeo in
+                            Color.clear
+                                .onAppear {
+                                    textWidth = textGeo.size.width
+                                    containerWidth = geometry.size.width
+                                    needsScrolling = textWidth > containerWidth - 10
                                     
+                                    // Start animation if needed
                                     if needsScrolling && shouldAnimate {
-                                        offset = 0
-                                        startAnimationLoop()
+                                        startScrolling()
                                     }
                                 }
-                            }
-                            .onChange(of: shouldAnimate) { _, newShouldAnimate in
-                                if newShouldAnimate && needsScrolling {
-                                    // Start animation when exercise becomes active
-                                    offset = 0
-                                    startAnimationLoop()
-                                } else {
-                                    // Stop animation when exercise becomes inactive
-                                    animationTask?.cancel()
-                                    offset = 0
-                                }
-                            }
                         }
                     )
                 
-                // Animated text (only if text needs scrolling AND should animate)
-                if needsScrolling && shouldAnimate {
-                    HStack(spacing: 40) {
-                        Text(text)
-                            .font(font)
-                            .fontWeight(weight)
-                            .fixedSize()
-                        
-                        Text(text)
-                            .font(font)
-                            .fontWeight(weight)
-                            .fixedSize()
-                    }
-                    .offset(x: offset)
-                    .frame(width: containerWidth * 3, alignment: .leading) // Allow space for scrolling
-                } else {
+                // Second copy for seamless loop (only visible during scroll)
+                if needsScrolling {
                     Text(text)
                         .font(font)
                         .fontWeight(weight)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .fixedSize()
                 }
             }
-            .frame(maxWidth: containerWidth, alignment: .leading) // Constrain to container width
-            .clipped() // Clip anything outside container
+            .offset(x: xOffset)
+            .frame(width: geometry.size.width, alignment: .leading)
+            .clipped()
         }
-        .frame(height: 22) // Fixed height for headline text
-        .clipped() // Extra clipping layer for safety
-        .onDisappear {
-            animationTask?.cancel()
+        .frame(height: 22)
+        .clipped()
+        .onChange(of: shouldAnimate) { _, animate in
+            if animate && needsScrolling {
+                startScrolling()
+            } else if !animate {
+                resetPosition()
+            }
         }
-        } // ⚡ PERF: Close deferred else block
     }
     
-    private func startAnimationLoop() {
-        animationTask?.cancel()
+    private func startScrolling() {
+        guard needsScrolling && shouldAnimate else { return }
         
-        animationTask = Task {
-            // Initial pause - let user read the start of the text first
-            try? await Task.sleep(nanoseconds: UInt64(1.5 * 1_000_000_000))
-            
-            while !Task.isCancelled && needsScrolling && shouldAnimate {
-                // Reset to start position
-                await MainActor.run {
-                    offset = 0
-                }
-                
-                // Brief pause at start position before scrolling
-                try? await Task.sleep(nanoseconds: UInt64(pauseDuration * 1_000_000_000))
-                
-                guard !Task.isCancelled && shouldAnimate else { break }
-                
-                // Animate scrolling (slower speed for readability)
-                let scrollDuration = Double(textWidth) / 40 // Slower than before (was /30)
-                await MainActor.run {
-                    withAnimation(.linear(duration: scrollDuration)) {
-                        offset = -(textWidth + 40)
-                    }
-                }
-                
-                // Wait for animation to complete
-                try? await Task.sleep(nanoseconds: UInt64(scrollDuration * 1_000_000_000))
+        // Reset to start position
+        xOffset = 0
+        
+        // Wait a moment, then start the scroll cycle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard shouldAnimate && needsScrolling else { return }
+            performScrollCycle()
+        }
+    }
+    
+    private func performScrollCycle() {
+        guard shouldAnimate && needsScrolling else { 
+            resetPosition()
+            return 
+        }
+        
+        // Animate scroll to the left (one full cycle)
+        withAnimation(.linear(duration: scrollTime)) {
+            xOffset = -cycleWidth
+        }
+        
+        // After scroll completes: reset instantly, pause, then repeat
+        DispatchQueue.main.asyncAfter(deadline: .now() + scrollTime) {
+            guard shouldAnimate && needsScrolling else {
+                resetPosition()
+                return
             }
+            
+            // Instant reset (second copy is now at start position - seamless)
+            withAnimation(.none) {
+                xOffset = 0
+            }
+            
+            // Pause, then scroll again
+            DispatchQueue.main.asyncAfter(deadline: .now() + pauseDuration) {
+                performScrollCycle()
+            }
+        }
+    }
+    
+    private func resetPosition() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            xOffset = 0
         }
     }
 }
@@ -3494,25 +3529,196 @@ struct AddExerciseDuringWorkoutView: View {
     @State private var availableExercises: [Exercise] = []
     @State private var selectedExerciseForDetail: Exercise?
     
+    // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
+    @FocusState private var isSearchFocused: Bool
+    
+    // ⚡️ HIGH-PERFORMANCE: Cached results
+    @State private var cachedFilteredExercises: [Exercise] = []
+    @State private var preFilteredExercises: [Exercise] = []
+    @State private var lastFilterKey: String = ""
+    @State private var searchCache: [String: [Exercise]] = [:]
+    
     private let categories = ["All", "Chest", "Back", "Legs", "Shoulders", "Arms", "Core"]
     private let equipmentTypes = ["All", "Bodyweight", "Dumbbells", "Barbell", "Cable", "Machine"]
     
     var filteredExercises: [Exercise] {
-        var filtered = availableExercises
+        cachedFilteredExercises
+    }
+    
+    private func updateFilteredExercises() {
+        let filterKey = "\(selectedCategory)|\(selectedEquipment)"
+        
+        if filterKey != lastFilterKey {
+            lastFilterKey = filterKey
+            searchCache.removeAll()
+            preFilteredExercises = applyFiltersOnly(to: availableExercises)
+        }
         
         if !searchText.isEmpty {
-            filtered = filtered.filter { exercise in
-                (exercise.name?.localizedCaseInsensitiveContains(searchText) ?? false) ||
-                (exercise.category?.localizedCaseInsensitiveContains(searchText) ?? false)
+            let searchKey = searchText.lowercased()
+            if let cached = searchCache[searchKey] {
+                cachedFilteredExercises = cached
+                return
+            }
+            let results = ultraFastSearch(query: searchKey, in: preFilteredExercises)
+            searchCache[searchKey] = results
+            cachedFilteredExercises = results
+        } else {
+            cachedFilteredExercises = preFilteredExercises
+        }
+    }
+    
+    private func ultraFastSearch(query: String, in exercises: [Exercise]) -> [Exercise] {
+        guard !query.isEmpty else { return exercises }
+        
+        // Split query into words and correct typos for each
+        let queryWords = query.split(separator: " ").map { correctCommonTypos(String($0)) }
+        let isMultiWord = queryWords.count > 1
+        let variations = isMultiWord ? [query] : getQuickVariations(query)
+        
+        // Build corrected query for direct substring matching
+        let correctedQuery = queryWords.joined(separator: " ")
+        
+        // Priority buckets (highest to lowest):
+        // 1. exactMatches: name equals query exactly
+        // 2. startsWithPhraseMatches: name STARTS with the exact phrase (e.g., "front raise" → "Front Raise (Dumbbell)")
+        // 3. containsPhraseMatches: name CONTAINS the exact phrase (e.g., "front raise" → "Seated Front Raise")
+        // 4. allWordsMatches: all words found but not as contiguous phrase (e.g., "front raise" → "Front Lat Raise")
+        var exactMatches: [Exercise] = []
+        var startsWithPhraseMatches: [Exercise] = []
+        var containsPhraseMatches: [Exercise] = []
+        var allWordsMatches: [Exercise] = []
+        
+        for exercise in exercises {
+            guard let name = exercise.name?.lowercased() else { continue }
+            
+            var matched = false
+            
+            // SINGLE-WORD: Use variations for typo tolerance
+            if !isMultiWord {
+                for variation in variations {
+                    if name == variation { exactMatches.append(exercise); matched = true; break }
+                    else if name.hasPrefix(variation) { startsWithPhraseMatches.append(exercise); matched = true; break }
+                    else if name.contains(variation) { containsPhraseMatches.append(exercise); matched = true; break }
+                }
+            }
+            
+            // MULTI-WORD: Check for exact phrase match first (preserves word order)
+            if !matched && isMultiWord {
+                if name == correctedQuery {
+                    exactMatches.append(exercise)
+                    matched = true
+                } else if name.hasPrefix(correctedQuery) {
+                    // Name STARTS with the exact phrase - highest priority
+                    startsWithPhraseMatches.append(exercise)
+                    matched = true
+                } else if name.contains(correctedQuery) {
+                    // Name CONTAINS the exact phrase - second priority
+                    containsPhraseMatches.append(exercise)
+                    matched = true
+                }
+            }
+            
+            // MULTI-WORD: Word-order-independent matching (lowest priority)
+            if !matched && isMultiWord {
+                let allWordsFound = queryWords.allSatisfy { word in
+                    let wordVariations = getQuickVariations(word)
+                    return wordVariations.contains { variation in name.contains(variation) }
+                }
+                if allWordsFound {
+                    allWordsMatches.append(exercise)
+                }
             }
         }
         
+        // Return in priority order: exact phrase ordering is prioritized
+        return exactMatches + startsWithPhraseMatches + containsPhraseMatches + allWordsMatches
+    }
+    
+    private func getQuickVariations(_ query: String) -> [String] {
+        let corrected = correctCommonTypos(query)
+        var variations = corrected == query ? [query] : [query, corrected]
+        
+        let baseWord = corrected
+        switch baseWord {
+        case "fly": variations += ["flye", "flyes", "flies"]
+        case "flye": variations += ["fly", "flyes", "flies"]
+        case "curl": variations += ["curls"]
+        case "curls": variations += ["curl"]
+        case "press": variations += ["presses"]
+        case "presses": variations += ["press"]
+        case "row": variations += ["rows"]
+        case "rows": variations += ["row"]
+        case "raise": variations += ["raises"]
+        case "raises": variations += ["raise"]
+        case "bicep": variations += ["biceps"]
+        case "biceps": variations += ["bicep"]
+        case "tricep": variations += ["triceps"]
+        case "triceps": variations += ["tricep"]
+        case "pulldown": variations += ["pull-down", "pull down", "pulldowns"]
+        case "pushdown": variations += ["push-down", "push down", "pushdowns"]
+        case "dumbbell": variations += ["dumbell", "dumbells", "dumbbells"]
+        case "dumbbells": variations += ["dumbbell", "dumbell"]
+        case "barbell": variations += ["barbel", "barbells"]
+        case "extension": variations += ["extensions"]
+        case "extensions": variations += ["extension"]
+        case "squat": variations += ["squats"]
+        case "squats": variations += ["squat"]
+        case "lunge": variations += ["lunges"]
+        case "lunges": variations += ["lunge"]
+        default:
+            if baseWord.hasSuffix("s") && baseWord.count > 3 { variations.append(String(baseWord.dropLast())) }
+            else if !baseWord.hasSuffix("s") && baseWord.count > 2 { variations.append(baseWord + "s") }
+        }
+        return variations
+    }
+    
+    private func correctCommonTypos(_ query: String) -> String {
+        // Only do EXACT matches - no substring replacement which causes bugs
+        // e.g., "decline" was becoming "declinee" because it contains "declin"
+        let typoMap: [String: String] = [
+            "dumbell": "dumbbell", "dumbel": "dumbbell", "dumble": "dumbbell",
+            "dumbells": "dumbbells", "dumbels": "dumbbells",
+            "barbel": "barbell", "barble": "barbell",
+            "kettleball": "kettlebell", "kettlebel": "kettlebell",
+            "cabel": "cable", "cabels": "cables",
+            "machien": "machine", "mashine": "machine",
+            "flye": "fly", "flyes": "flies",
+            "pres": "press", "presss": "press", "curle": "curl",
+            "rwo": "row", "sqaut": "squat", "sqat": "squat",
+            "deadlif": "deadlift", "dedlift": "deadlift",
+            "extention": "extension", "extenstion": "extension",
+            "pullup": "pull up", "pushup": "push up", "chinup": "chin up",
+            "bycep": "bicep", "byceps": "biceps", "bicept": "bicep",
+            "trycep": "tricep", "tryceps": "triceps", "tricept": "tricep",
+            "sholder": "shoulder", "sholders": "shoulders",
+            "inclin": "incline", "inclien": "incline",
+            "declin": "decline", "declien": "decline",
+            "laterl": "lateral", "latral": "lateral",
+            "revers": "reverse", "bensh": "bench", "banch": "bench", "benc": "bench"
+        ]
+        
+        // Only return correction for EXACT match
+        return typoMap[query] ?? query
+    }
+    
+    private func applyFiltersOnly(to exercises: [Exercise]) -> [Exercise] {
+        var filtered = exercises
+        
         if selectedCategory != "All" {
-            filtered = filtered.filter { $0.category == selectedCategory }
+            let categoryLower = selectedCategory.lowercased()
+            filtered = filtered.filter { exercise in
+                let exerciseCategory = (exercise.category ?? "").lowercased()
+                return exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
+            }
         }
         
         if selectedEquipment != "All" {
-            filtered = filtered.filter { $0.equipment == selectedEquipment }
+            let equipmentLower = selectedEquipment.lowercased()
+            filtered = filtered.filter { exercise in
+                let exerciseEquipment = (exercise.equipment ?? "").lowercased()
+                return exerciseEquipment.contains(equipmentLower) || equipmentLower.contains(exerciseEquipment)
+            }
         }
         
         return filtered
@@ -3558,6 +3764,13 @@ struct AddExerciseDuringWorkoutView: View {
                                 .foregroundColor(.secondary)
                             TextField("Search exercises...", text: $searchText)
                                 .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .focused($isSearchFocused)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    // ⚡️ INSTANT keyboard dismiss on return
+                                    isSearchFocused = false
+                                }
                         }
                         .padding(12)
                         .background(Color(.systemGray6))
@@ -3742,6 +3955,21 @@ struct AddExerciseDuringWorkoutView: View {
         }
         .onAppear {
             loadExercises()
+            updateFilteredExercises()
+        }
+        // ⚡️ HIGH-PERFORMANCE: Instant filter updates
+        .onChange(of: searchText) { _, _ in updateFilteredExercises() }
+        .onChange(of: selectedCategory) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
+        }
+        .onChange(of: selectedEquipment) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
+        }
+        .onChange(of: availableExercises) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
         }
     }
     

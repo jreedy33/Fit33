@@ -12,6 +12,15 @@ struct ExerciseSelectionView: View {
     @State private var exercises: [Exercise] = []
     @State private var selectedExerciseForDetail: Exercise?
     
+    // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
+    @FocusState private var isSearchFocused: Bool
+    
+    // ⚡️ HIGH-PERFORMANCE: Cached results - no recomputation on every render
+    @State private var cachedFilteredExercises: [Exercise] = []
+    @State private var preFilteredExercises: [Exercise] = []
+    @State private var lastFilterKey: String = ""
+    @State private var searchCache: [String: [Exercise]] = [:]
+    
     // Updated categories for 7000+ exercise library
     private let categories = ExerciseFilterService.allCategories
     private let allMuscleGroups = ["All", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", "Glutes", "Calves", "Lats", "Upper Back", "Traps", "Lower Back", "Front Delts", "Side Delts", "Rear Delts", "Abs", "Obliques", "Hip Flexors", "Adductors", "Rotator Cuff"]
@@ -24,59 +33,195 @@ struct ExerciseSelectionView: View {
     // Updated equipment for 7000+ exercise library
     private let equipmentTypes = ExerciseFilterService.allEquipment
     
+    // ⚡️ HIGH-PERFORMANCE: Use cached results, not computed
     var filteredExercises: [Exercise] {
-        var filtered = exercises
+        cachedFilteredExercises
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // ⚡️ HIGH-PERFORMANCE SEARCH ENGINE
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    private func updateFilteredExercises() {
+        let filterKey = "\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)"
         
-        // Filter by category first (most restrictive)
-        if selectedCategory != "All" {
-            filtered = filtered.filter { exercise in
-                let exerciseCategory = exercise.category?.lowercased() ?? ""
-                let targetCategory = selectedCategory.lowercased()
-                
-                // Direct category match
-                return exerciseCategory == targetCategory ||
-                       exerciseCategory.contains(targetCategory) ||
-                       targetCategory.contains(exerciseCategory)
+        // Rebuild filter cache if filters changed
+        if filterKey != lastFilterKey {
+            lastFilterKey = filterKey
+            searchCache.removeAll()
+            preFilteredExercises = applyFiltersOnly(to: exercises)
+        }
+        
+        // Apply search to pre-filtered results
+        if !searchText.isEmpty {
+            let searchKey = searchText.lowercased()
+            if let cached = searchCache[searchKey] {
+                cachedFilteredExercises = cached
+                return
+            }
+            let results = ultraFastSearch(query: searchKey, in: preFilteredExercises)
+            searchCache[searchKey] = results
+            cachedFilteredExercises = results
+        } else {
+            cachedFilteredExercises = preFilteredExercises
+        }
+    }
+    
+    private func ultraFastSearch(query: String, in exercises: [Exercise]) -> [Exercise] {
+        guard !query.isEmpty else { return exercises }
+        
+        // Split query into words and correct typos for each
+        let queryWords = query.split(separator: " ").map { correctCommonTypos(String($0)) }
+        let isMultiWord = queryWords.count > 1
+        let variations = isMultiWord ? [query] : getQuickVariations(query)
+        
+        // Build corrected query for direct substring matching
+        let correctedQuery = queryWords.joined(separator: " ")
+        
+        // Priority buckets (highest to lowest):
+        // 1. exactMatches: name equals query exactly
+        // 2. startsWithPhraseMatches: name STARTS with the exact phrase (e.g., "front raise" → "Front Raise (Dumbbell)")
+        // 3. containsPhraseMatches: name CONTAINS the exact phrase (e.g., "front raise" → "Seated Front Raise")
+        // 4. allWordsMatches: all words found but not as contiguous phrase (e.g., "front raise" → "Front Lat Raise")
+        var exactMatches: [Exercise] = []
+        var startsWithPhraseMatches: [Exercise] = []
+        var containsPhraseMatches: [Exercise] = []
+        var allWordsMatches: [Exercise] = []
+        
+        for exercise in exercises {
+            guard let name = exercise.name?.lowercased() else { continue }
+            
+            var matched = false
+            
+            // SINGLE-WORD: Use variations for typo tolerance
+            if !isMultiWord {
+                for variation in variations {
+                    if name == variation { exactMatches.append(exercise); matched = true; break }
+                    else if name.hasPrefix(variation) { startsWithPhraseMatches.append(exercise); matched = true; break }
+                    else if name.contains(variation) { containsPhraseMatches.append(exercise); matched = true; break }
+                }
+            }
+            
+            // MULTI-WORD: Check for exact phrase match first (preserves word order)
+            if !matched && isMultiWord {
+                if name == correctedQuery {
+                    exactMatches.append(exercise)
+                    matched = true
+                } else if name.hasPrefix(correctedQuery) {
+                    // Name STARTS with the exact phrase - highest priority
+                    startsWithPhraseMatches.append(exercise)
+                    matched = true
+                } else if name.contains(correctedQuery) {
+                    // Name CONTAINS the exact phrase - second priority
+                    containsPhraseMatches.append(exercise)
+                    matched = true
+                }
+            }
+            
+            // MULTI-WORD: Word-order-independent matching (lowest priority)
+            if !matched && isMultiWord {
+                let allWordsFound = queryWords.allSatisfy { word in
+                    let wordVariations = getQuickVariations(word)
+                    return wordVariations.contains { variation in name.contains(variation) }
+                }
+                if allWordsFound {
+                    allWordsMatches.append(exercise)
+                }
             }
         }
         
-        // Filter by equipment (with comprehensive normalization)
+        // Return in priority order: exact phrase ordering is prioritized
+        return exactMatches + startsWithPhraseMatches + containsPhraseMatches + allWordsMatches
+    }
+    
+    private func getQuickVariations(_ query: String) -> [String] {
+        let corrected = correctCommonTypos(query)
+        var variations = corrected == query ? [query] : [query, corrected]
+        
+        let baseWord = corrected
+        switch baseWord {
+        case "fly": variations += ["flye", "flyes", "flies"]
+        case "flye": variations += ["fly", "flyes", "flies"]
+        case "curl": variations += ["curls"]
+        case "curls": variations += ["curl"]
+        case "press": variations += ["presses"]
+        case "presses": variations += ["press"]
+        case "row": variations += ["rows"]
+        case "rows": variations += ["row"]
+        case "raise": variations += ["raises"]
+        case "raises": variations += ["raise"]
+        case "bicep": variations += ["biceps"]
+        case "biceps": variations += ["bicep"]
+        case "tricep": variations += ["triceps"]
+        case "triceps": variations += ["tricep"]
+        case "pulldown": variations += ["pull-down", "pull down", "pulldowns"]
+        case "pushdown": variations += ["push-down", "push down", "pushdowns"]
+        case "dumbbell": variations += ["dumbell", "dumbells", "dumbbells"]
+        case "dumbbells": variations += ["dumbbell", "dumbell"]
+        case "barbell": variations += ["barbel", "barbells"]
+        case "extension": variations += ["extensions"]
+        case "extensions": variations += ["extension"]
+        case "squat": variations += ["squats"]
+        case "squats": variations += ["squat"]
+        case "lunge": variations += ["lunges"]
+        case "lunges": variations += ["lunge"]
+        default:
+            if baseWord.hasSuffix("s") && baseWord.count > 3 { variations.append(String(baseWord.dropLast())) }
+            else if !baseWord.hasSuffix("s") && baseWord.count > 2 { variations.append(baseWord + "s") }
+        }
+        return variations
+    }
+    
+    private func correctCommonTypos(_ query: String) -> String {
+        // Only do EXACT matches - no substring replacement which causes bugs
+        // e.g., "decline" was becoming "declinee" because it contains "declin"
+        let typoMap: [String: String] = [
+            "dumbell": "dumbbell", "dumbel": "dumbbell", "dumble": "dumbbell",
+            "dumbells": "dumbbells", "dumbels": "dumbbells",
+            "barbel": "barbell", "barble": "barbell",
+            "kettleball": "kettlebell", "kettlebel": "kettlebell",
+            "cabel": "cable", "cabels": "cables",
+            "machien": "machine", "mashine": "machine",
+            "flye": "fly", "flyes": "flies",
+            "pres": "press", "presss": "press", "curle": "curl",
+            "rwo": "row", "sqaut": "squat", "sqat": "squat",
+            "deadlif": "deadlift", "dedlift": "deadlift",
+            "extention": "extension", "extenstion": "extension",
+            "pullup": "pull up", "pushup": "push up", "chinup": "chin up",
+            "bycep": "bicep", "byceps": "biceps", "bicept": "bicep",
+            "trycep": "tricep", "tryceps": "triceps", "tricept": "tricep",
+            "sholder": "shoulder", "sholders": "shoulders",
+            "inclin": "incline", "inclien": "incline",
+            "declin": "decline", "declien": "decline",
+            "laterl": "lateral", "latral": "lateral",
+            "revers": "reverse", "bensh": "bench", "banch": "bench", "benc": "bench"
+        ]
+        
+        // Only return correction for EXACT match
+        return typoMap[query] ?? query
+    }
+    
+    private func applyFiltersOnly(to exercises: [Exercise]) -> [Exercise] {
+        var filtered = exercises
+        
+        if selectedCategory != "All" {
+            let categoryLower = selectedCategory.lowercased()
+            filtered = filtered.filter { exercise in
+                let exerciseCategory = (exercise.category ?? "").lowercased()
+                return exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
+            }
+        }
+        
         if selectedEquipment != "All" {
             filtered = filtered.filter { exercise in
                 exerciseMatchesEquipment(exercise, selectedEquipment: selectedEquipment)
             }
         }
         
-        // Filter by muscle group (focus area within category)
         if selectedMuscleGroup != "All" {
             filtered = filtered.filter { exercise in
                 isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
             }
-        }
-        
-        // Apply smart search with filter context and personalization
-        let userBehavior = UserBehaviorLearningEngine.shared.userPreferences
-        let categoryForSearch = selectedCategory != "All" ? selectedCategory : nil
-        let equipmentForSearch = selectedEquipment != "All" ? selectedEquipment : nil
-        
-        if !searchText.isEmpty {
-            // Search with filter context
-            filtered = SmartExerciseSearchService.shared.searchExercises(
-                query: searchText,
-                in: filtered,
-                userBehavior: userBehavior,
-                categoryFilter: categoryForSearch,
-                equipmentFilter: equipmentForSearch
-            )
-        } else {
-            // No search - rank by common exercises for filters
-            filtered = SmartExerciseSearchService.shared.searchExercises(
-                query: "",
-                in: filtered,
-                userBehavior: userBehavior,
-                categoryFilter: categoryForSearch,
-                equipmentFilter: equipmentForSearch
-            )
         }
         
         return filtered
@@ -287,6 +432,25 @@ struct ExerciseSelectionView: View {
         .scrollDismissesKeyboard(.interactively) // Dismiss keyboard when interacting with scrollable content
         .onAppear {
             loadExercises()
+            updateFilteredExercises()
+        }
+        // ⚡️ HIGH-PERFORMANCE: Instant filter updates
+        .onChange(of: searchText) { _, _ in updateFilteredExercises() }
+        .onChange(of: selectedCategory) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
+        }
+        .onChange(of: selectedEquipment) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
+        }
+        .onChange(of: selectedMuscleGroup) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
+        }
+        .onChange(of: exercises) { _, _ in 
+            lastFilterKey = ""
+            updateFilteredExercises() 
         }
         .sheet(item: $selectedExerciseForDetail) { exercise in
             NavigationView {
@@ -304,7 +468,7 @@ struct ExerciseSelectionView: View {
     
     private var compactFiltersView: some View {
         VStack(spacing: 16) {
-            // Seamless search bar
+            // ⚡️ SNAPPY SEARCH: Instant response search bar
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .medium))
@@ -313,9 +477,20 @@ struct ExerciseSelectionView: View {
                 TextField("Search exercises...", text: $searchText)
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.body)
+                    .focused($isSearchFocused)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        // ⚡️ INSTANT keyboard dismiss on return
+                        isSearchFocused = false
+                    }
                 
                 if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
+                    Button(action: { 
+                        searchText = ""
+                        isSearchFocused = false // Also dismiss keyboard when clearing
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundColor(.secondary)
@@ -414,6 +589,12 @@ struct ExerciseSelectionView: View {
             .padding(.top, 8)
         }
         .scrollDismissesKeyboard(.immediately)
+        // ⚡️ SNAPPY SEARCH: Dismiss keyboard instantly when scrolling
+        .simultaneousGesture(
+            DragGesture().onChanged { _ in
+                isSearchFocused = false
+            }
+        )
     }
     
     private var emptyStateView: some View {

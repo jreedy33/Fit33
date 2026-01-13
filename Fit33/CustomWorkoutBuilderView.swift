@@ -60,6 +60,9 @@ struct CustomWorkoutBuilderView: View {
     @State private var showingAddExercise = false
     @State private var isLoadingExercises = false
     
+    // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
+    @FocusState private var isSearchFocused: Bool
+    
     // ⚡️ PERFORMANCE: Cached filtered results to avoid recomputation
     @State private var cachedFilteredExercises: [Exercise] = []
     @State private var filterUpdateTask: Task<Void, Never>?
@@ -433,99 +436,236 @@ struct CustomWorkoutBuilderView: View {
         }
     }
     
+    // ⚡️ HIGH-PERFORMANCE: Use cached results, not computed
     var filteredExercises: [Exercise] {
+        cachedFilteredExercises
+    }
+    
+    // ⚡️ HIGH-PERFORMANCE: Pre-filtered exercises cache
+    @State private var preFilteredExercises: [Exercise] = []
+    @State private var lastFilterKey: String = ""
+    @State private var searchCache: [String: [Exercise]] = [:]
+    
+    private func rebuildFilterCache() {
+        let filterKey = "\(exerciseFilter.rawValue)|\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)"
+        
+        if filterKey != lastFilterKey {
+            lastFilterKey = filterKey
+            searchCache.removeAll()
+            preFilteredExercises = applyFiltersOnly(to: exercises)
+            #if DEBUG
+            print("🔧 [FILTER] Rebuilt cache: \(preFilteredExercises.count) exercises")
+            // Check for bench/incline/decline exercises
+            let benchExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("bench") }
+            let declineExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("decline") }
+            let inclineExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("incline") }
+            print("🔧 [FILTER] bench exercises: \(benchExercises.count), decline: \(declineExercises.count), incline: \(inclineExercises.count)")
+            if let first = benchExercises.first { print("🔧 [FILTER] Sample bench: '\(first.name ?? "nil")'") }
+            #endif
+        }
+    }
+    
+    private func computeSearchResults() {
+        if !searchText.isEmpty {
+            let searchKey = searchText.lowercased()
+            #if DEBUG
+            print("🔍 [CACHE] Search key: '\(searchKey)', preFilteredExercises.count: \(preFilteredExercises.count)")
+            #endif
+            if let cached = searchCache[searchKey] {
+                #if DEBUG
+                print("🔍 [CACHE] HIT - returning \(cached.count) cached results")
+                #endif
+                cachedFilteredExercises = cached
+                return
+            }
+            #if DEBUG
+            print("🔍 [CACHE] MISS - computing fresh results")
+            #endif
+            let results = ultraFastSearch(query: searchKey, in: preFilteredExercises)
+            searchCache[searchKey] = results
+            cachedFilteredExercises = results
+        } else {
+            cachedFilteredExercises = preFilteredExercises
+        }
+    }
+    
+    private func ultraFastSearch(query: String, in exercises: [Exercise]) -> [Exercise] {
+        guard !query.isEmpty else { return exercises }
+        
+        // Split query into words and correct typos for each
+        let queryWords = query.split(separator: " ").map { correctCommonTypos(String($0)) }
+        let isMultiWord = queryWords.count > 1
+        let variations = isMultiWord ? [query] : getQuickVariations(query)
+        
+        // Build corrected query for direct substring matching
+        let correctedQuery = queryWords.joined(separator: " ")
+        
+        #if DEBUG
+        print("🔍 [SEARCH] Query: '\(query)', Words: \(queryWords), isMultiWord: \(isMultiWord)")
+        print("🔍 [SEARCH] correctedQuery: '\(correctedQuery)', searching \(exercises.count) exercises")
+        #endif
+        
+        // Priority buckets (highest to lowest):
+        // 1. exactMatches: name equals query exactly
+        // 2. startsWithPhraseMatches: name STARTS with the exact phrase (e.g., "front raise" → "Front Raise (Dumbbell)")
+        // 3. containsPhraseMatches: name CONTAINS the exact phrase (e.g., "front raise" → "Seated Front Raise")
+        // 4. allWordsMatches: all words found but not as contiguous phrase (e.g., "front raise" → "Front Lat Raise")
+        var exactMatches: [Exercise] = []
+        var startsWithPhraseMatches: [Exercise] = []
+        var containsPhraseMatches: [Exercise] = []
+        var allWordsMatches: [Exercise] = []
+        
+        for exercise in exercises {
+            guard let name = exercise.name?.lowercased() else { continue }
+            
+            var matched = false
+            
+            // SINGLE-WORD: Use variations for typo tolerance
+            if !isMultiWord {
+                for variation in variations {
+                    if name == variation { exactMatches.append(exercise); matched = true; break }
+                    else if name.hasPrefix(variation) { startsWithPhraseMatches.append(exercise); matched = true; break }
+                    else if name.contains(variation) { containsPhraseMatches.append(exercise); matched = true; break }
+                }
+            }
+            
+            // MULTI-WORD: Check for exact phrase match first (preserves word order)
+            if !matched && isMultiWord {
+                if name == correctedQuery {
+                    // Exact match
+                    exactMatches.append(exercise)
+                    matched = true
+                } else if name.hasPrefix(correctedQuery) {
+                    // Name STARTS with the exact phrase - highest priority for phrase
+                    // e.g., "front raise" matches "front raise (dumbbell)"
+                    startsWithPhraseMatches.append(exercise)
+                    matched = true
+                } else if name.contains(correctedQuery) {
+                    // Name CONTAINS the exact phrase - second priority
+                    // e.g., "front raise" matches "seated front raise"
+                    containsPhraseMatches.append(exercise)
+                    matched = true
+                }
+            }
+            
+            // MULTI-WORD: Word-order-independent matching (lowest priority)
+            // e.g., "front raise" matches "front lat raise" or "raise front"
+            if !matched && isMultiWord {
+                let allWordsFound = queryWords.allSatisfy { word in
+                    let wordVariations = getQuickVariations(word)
+                    return wordVariations.contains { variation in name.contains(variation) }
+                }
+                if allWordsFound {
+                    allWordsMatches.append(exercise)
+                }
+            }
+        }
+        
+        #if DEBUG
+        let totalResults = exactMatches.count + startsWithPhraseMatches.count + containsPhraseMatches.count + allWordsMatches.count
+        print("🔍 [SEARCH] Results: exact=\(exactMatches.count), startsWithPhrase=\(startsWithPhraseMatches.count), containsPhrase=\(containsPhraseMatches.count), allWords=\(allWordsMatches.count), TOTAL=\(totalResults)")
+        #endif
+        
+        // Return in priority order: exact phrase ordering is prioritized
+        return exactMatches + startsWithPhraseMatches + containsPhraseMatches + allWordsMatches
+    }
+    
+    private func getQuickVariations(_ query: String) -> [String] {
+        let corrected = correctCommonTypos(query)
+        var variations = corrected == query ? [query] : [query, corrected]
+        
+        let baseWord = corrected
+        switch baseWord {
+        case "fly": variations += ["flye", "flyes", "flies"]
+        case "flye": variations += ["fly", "flyes", "flies"]
+        case "curl": variations += ["curls"]
+        case "curls": variations += ["curl"]
+        case "press": variations += ["presses"]
+        case "presses": variations += ["press"]
+        case "row": variations += ["rows"]
+        case "rows": variations += ["row"]
+        case "raise": variations += ["raises"]
+        case "raises": variations += ["raise"]
+        case "bicep": variations += ["biceps"]
+        case "biceps": variations += ["bicep"]
+        case "tricep": variations += ["triceps"]
+        case "triceps": variations += ["tricep"]
+        case "pulldown": variations += ["pull-down", "pull down", "pulldowns"]
+        case "pushdown": variations += ["push-down", "push down", "pushdowns"]
+        case "dumbbell": variations += ["dumbell", "dumbells", "dumbbells"]
+        case "dumbbells": variations += ["dumbbell", "dumbell"]
+        case "barbell": variations += ["barbel", "barbells"]
+        case "extension": variations += ["extensions"]
+        case "extensions": variations += ["extension"]
+        case "squat": variations += ["squats"]
+        case "squats": variations += ["squat"]
+        case "lunge": variations += ["lunges"]
+        case "lunges": variations += ["lunge"]
+        default:
+            if baseWord.hasSuffix("s") && baseWord.count > 3 { variations.append(String(baseWord.dropLast())) }
+            else if !baseWord.hasSuffix("s") && baseWord.count > 2 { variations.append(baseWord + "s") }
+        }
+        return variations
+    }
+    
+    private func correctCommonTypos(_ query: String) -> String {
+        // Only do EXACT matches - no substring replacement which causes bugs
+        // e.g., "decline" was becoming "declinee" because it contains "declin"
+        let typoMap: [String: String] = [
+            "dumbell": "dumbbell", "dumbel": "dumbbell", "dumble": "dumbbell",
+            "dumbells": "dumbbells", "dumbels": "dumbbells",
+            "barbel": "barbell", "barble": "barbell",
+            "kettleball": "kettlebell", "kettlebel": "kettlebell",
+            "cabel": "cable", "cabels": "cables",
+            "machien": "machine", "mashine": "machine",
+            "flye": "fly", "flyes": "flies",
+            "pres": "press", "presss": "press", "curle": "curl",
+            "rwo": "row", "sqaut": "squat", "sqat": "squat",
+            "deadlif": "deadlift", "dedlift": "deadlift",
+            "extention": "extension", "extenstion": "extension",
+            "pullup": "pull up", "pushup": "push up", "chinup": "chin up",
+            "bycep": "bicep", "byceps": "biceps", "bicept": "bicep",
+            "trycep": "tricep", "tryceps": "triceps", "tricept": "tricep",
+            "sholder": "shoulder", "sholders": "shoulders",
+            "inclin": "incline", "inclien": "incline",
+            "declin": "decline", "declien": "decline",
+            "laterl": "lateral", "latral": "lateral",
+            "revers": "reverse", "bensh": "bench", "banch": "bench", "benc": "bench"
+        ]
+        
+        // Only return correction for EXACT match
+        return typoMap[query] ?? query
+    }
+    
+    private func applyFiltersOnly(to exercises: [Exercise]) -> [Exercise] {
         var filtered = exercises
         
-        // Filter by exercise type (all/favorites/custom)
         switch exerciseFilter {
         case .favorites:
             filtered = filtered.filter { $0.isFavorite }
         case .custom:
-            filtered = filtered.filter { exercise in
-                exercise.instructions?.contains("[CUSTOM_EXERCISE") ?? false
-            }
+            filtered = filtered.filter { $0.instructions?.contains("[CUSTOM_EXERCISE") ?? false }
         case .all:
             break
         }
         
-        // Filter by category FIRST (most restrictive)
         if selectedCategory != "All" {
+            let categoryLower = selectedCategory.lowercased()
             filtered = filtered.filter { exercise in
-                let exerciseCategory = exercise.category?.lowercased() ?? ""
-                let targetCategory = selectedCategory.lowercased()
-                
-                // Direct category match
-                return exerciseCategory == targetCategory ||
-                       exerciseCategory.contains(targetCategory) ||
-                       targetCategory.contains(exerciseCategory)
+                let exerciseCategory = (exercise.category ?? "").lowercased()
+                return exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
             }
         }
         
-        // Filter by equipment (with comprehensive normalization)
         if selectedEquipment != "All" {
             filtered = filtered.filter { exercise in
                 exerciseMatchesEquipment(exercise, selectedEquipment: selectedEquipment)
             }
         }
         
-        // Filter by muscle group (focus area within category)
         if selectedMuscleGroup != "All" {
             filtered = filtered.filter { exercise in
                 isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
-            }
-        }
-        
-        // Filter by search text LAST (search within filtered results)
-        // INCLUDES TYPO CORRECTION for common misspellings
-        if !searchText.isEmpty {
-            let searchLower = searchText.lowercased().trimmingCharacters(in: .whitespaces)
-            
-            // Get typo-corrected version of search
-            let (correctedSearch, _) = SmartExerciseSearchService.shared.correctTypos(in: searchLower)
-            let searchTerms = [searchLower, correctedSearch] // Check both original and corrected
-            
-            filtered = filtered.filter { exercise in
-                let name = exercise.name?.lowercased() ?? ""
-                let equipment = exercise.equipment?.lowercased() ?? ""
-                let muscleGroups = (exercise.muscleGroups as? [String])?.joined(separator: " ").lowercased() ?? ""
-                let combinedText = "\(name) \(equipment) \(muscleGroups)"
-                
-                // Check against both original and typo-corrected search terms
-                for search in searchTerms {
-                    // Check name (primary match)
-                    if name.contains(search) {
-                        return true
-                    }
-                    
-                    // Check equipment
-                    if equipment.contains(search) {
-                        return true
-                    }
-                    
-                    // Check muscle groups
-                    if muscleGroups.contains(search) {
-                        return true
-                    }
-                    
-                    // Multi-word search: all words must appear
-                    let searchWords = search.split(separator: " ").map { String($0) }
-                    if searchWords.count > 1 {
-                        let allWordsMatch = searchWords.allSatisfy { word in
-                            combinedText.contains(word)
-                        }
-                        if allWordsMatch { return true }
-                    }
-                    
-                    // Also check individual corrected words
-                    for word in searchWords {
-                        let (correctedWord, wasModified) = SmartExerciseSearchService.shared.correctTypos(in: word)
-                        if wasModified && combinedText.contains(correctedWord) {
-                            return true
-                        }
-                    }
-                }
-                
-                return false
             }
         }
         
@@ -533,17 +673,11 @@ struct CustomWorkoutBuilderView: View {
     }
     
     // ⚡️ PERFORMANCE: Async filter update
+    // ⚡️ HIGH-PERFORMANCE: Instant filter updates
     private func updateFilteredExercises() {
         filterUpdateTask?.cancel()
-        filterUpdateTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms debounce
-            guard !Task.isCancelled else { return }
-            
-            let results = filteredExercises
-            withAnimation(.easeOut(duration: 0.15)) {
-                cachedFilteredExercises = results
-            }
-        }
+        rebuildFilterCache()
+        computeSearchResults()
     }
     
     // MARK: - Equipment Matching Helper
@@ -723,6 +857,12 @@ struct CustomWorkoutBuilderView: View {
                     }
                     .coordinateSpace(name: "scroll")
                     .scrollDismissesKeyboard(.immediately)
+                    // ⚡️ SNAPPY SEARCH: Dismiss keyboard instantly when scrolling
+                    .simultaneousGesture(
+                        DragGesture().onChanged { _ in
+                            isSearchFocused = false
+                        }
+                    )
                 }
                 .onPreferenceChange(CustomWorkoutScrollOffsetKey.self) { value in
                     scrollOffset = value
@@ -733,8 +873,9 @@ struct CustomWorkoutBuilderView: View {
                     ])
                     // Load exercises from cache/Core Data (cloud sync handles population)
                     loadExercises()
-                    // ⚡️ Initialize cached results immediately
-                    cachedFilteredExercises = filteredExercises
+                    // ⚡️ Initialize cached results and filter cache immediately
+                    lastFilterKey = "" // Force rebuild
+                    updateFilteredExercises()
                     forceRenderID = UUID()
                     workoutManager.isOnCustomWorkoutBuilder = true
                     workoutManager.selectedCustomWorkoutExercises = selectedExercises
@@ -743,11 +884,28 @@ struct CustomWorkoutBuilderView: View {
                     workoutManager.isOnCustomWorkoutBuilder = false
                     workoutManager.selectedCustomWorkoutExercises = []
                 }
-                // ⚡️ PERFORMANCE: Debounced filter updates
+                // ⚡️ HIGH-PERFORMANCE: Instant filter updates
                 .onChange(of: searchText) { _, _ in updateFilteredExercises() }
-                .onChange(of: selectedCategory) { _, _ in updateFilteredExercises() }
-                .onChange(of: selectedEquipment) { _, _ in updateFilteredExercises() }
-                .onChange(of: selectedMuscleGroup) { _, _ in updateFilteredExercises() }
+                .onChange(of: selectedCategory) { _, _ in 
+                    lastFilterKey = ""
+                    updateFilteredExercises() 
+                }
+                .onChange(of: selectedEquipment) { _, _ in 
+                    lastFilterKey = ""
+                    updateFilteredExercises() 
+                }
+                .onChange(of: selectedMuscleGroup) { _, _ in 
+                    lastFilterKey = ""
+                    updateFilteredExercises() 
+                }
+                .onChange(of: exerciseFilter) { _, _ in 
+                    lastFilterKey = ""
+                    updateFilteredExercises() 
+                }
+                .onChange(of: exercises) { _, _ in 
+                    lastFilterKey = ""
+                    updateFilteredExercises() 
+                }
                 .onChange(of: exerciseFilter) { _, _ in updateFilteredExercises() }
                 .onChange(of: exercises) { _, _ in updateFilteredExercises() }
                 .onChange(of: selectedExercises) { _, newValue in
@@ -964,7 +1122,7 @@ struct CustomWorkoutBuilderView: View {
                     }
                 }
                 
-                // Compact search bar
+                // ⚡️ SNAPPY SEARCH: Instant response search bar
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 14, weight: .medium))
@@ -974,9 +1132,21 @@ struct CustomWorkoutBuilderView: View {
                         .textFieldStyle(PlainTextFieldStyle())
                         .font(.subheadline)
                         .foregroundColor(.primary)
+                        .focused($isSearchFocused)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            // ⚡️ INSTANT keyboard dismiss on return
+                            isSearchFocused = false
+                        }
                     
                     if !searchText.isEmpty {
-                        Button(action: { HapticManager.selectionChanged(); searchText = "" }) {
+                        Button(action: { 
+                            HapticManager.selectionChanged()
+                            searchText = ""
+                            isSearchFocused = false
+                        }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(.secondary)
@@ -1202,7 +1372,10 @@ struct CustomWorkoutBuilderView: View {
             return
         }
         
+        #if DEBUG
+        let startTime = CFAbsoluteTimeGetCurrent()
         print("🏋️‍♂️ Starting custom workout with \(selectedExercises.count) exercises")
+        #endif
         
         // Generate workout name
         let formatter = DateFormatter()
@@ -1218,13 +1391,16 @@ struct CustomWorkoutBuilderView: View {
         newWorkout.isCompleted = false
         newWorkout.user = userManager.currentUser
         
-        // Start workout using WorkoutManager
+        // Start workout using WorkoutManager FIRST (sets up all state)
         workoutManager.startWorkout(workout: newWorkout, exercises: selectedExercises)
         
-        // Dismiss this view
+        // THEN dismiss this view (after state is stable)
         dismiss()
         
-        print("✅ Custom workout started successfully")
+        #if DEBUG
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        print("✅ Custom workout started in \(String(format: "%.2f", elapsed))ms")
+        #endif
     }
 }
 

@@ -16,17 +16,18 @@ final class SmartExerciseSearchService: ObservableObject {
     
     // MARK: - Constants for Scoring
     
-    // Name matching scores (highest priority)
-    private let EXACT_MATCH_SCORE: Double = 1000
-    private let STARTS_WITH_SCORE: Double = 500
-    private let CONTAINS_SCORE: Double = 200
-    private let POSITION_BONUS_MAX: Double = 50
-    private let WORD_BOUNDARY_SCORE: Double = 100
+    // ⚡️ SNAPPY SEARCH: Aggressive exact-match prioritization
+    // Exact matches get MASSIVE scores to always appear first
+    private let EXACT_MATCH_SCORE: Double = 10000      // Exact name = always first
+    private let STARTS_WITH_SCORE: Double = 5000       // Name starts with query = top
+    private let CONTAINS_SCORE: Double = 1000          // Name contains query
+    private let POSITION_BONUS_MAX: Double = 200       // Earlier position = better
+    private let WORD_BOUNDARY_SCORE: Double = 800      // Matches a complete word
     
-    // Fuzzy matching scores
-    private let FUZZY_MATCH_BONUS: Double = 150  // Bonus for partial word matches
-    private let PARTIAL_WORD_MATCH_SCORE: Double = 75  // "bench" matches "benchpress"
-    private let TYPO_CORRECTED_SCORE: Double = 180  // Bonus when typo was corrected
+    // Fuzzy matching scores (lower priority than exact)
+    private let FUZZY_MATCH_BONUS: Double = 300       // Bonus for partial word matches
+    private let PARTIAL_WORD_MATCH_SCORE: Double = 150 // "bench" matches "benchpress"
+    private let TYPO_CORRECTED_SCORE: Double = 250    // Bonus when typo was corrected
     
     // MARK: - Common Typos Dictionary
     // Maps common misspellings to correct spellings for exercise-related terms
@@ -311,19 +312,20 @@ final class SmartExerciseSearchService: ObservableObject {
         
         let searchLower = query.lowercased().trimmingCharacters(in: .whitespaces)
         
-        // Get all search variations including typo corrections
-        let searchVariations = getSearchVariations(for: searchLower)
+        // ⚡️ FAST PATH: For very short queries (1-2 chars), use ultra-fast prefix matching
+        if searchLower.count <= 2 {
+            return fastPrefixSearch(searchLower, in: exercises)
+        }
+        
+        // ⚡️ FAST PATH: For simple queries, skip typo correction overhead
+        let isSimpleQuery = searchLower.count <= 4 && !searchLower.contains(" ")
+        
         let searchWords = searchLower.split(separator: " ").map { String($0) }
         
-        // Also get corrected words for individual word matching
-        let (correctedQuery, _) = correctTypos(in: searchLower)
-        let correctedWords = correctedQuery.split(separator: " ").map { String($0) }
-        
-        // Score all exercises (checking both original and typo-corrected queries)
+        // Score all exercises with simplified logic for speed
         var scoredResults: [(exercise: Exercise, score: Double)] = []
         
         for exercise in exercises {
-            // Try scoring with original query first
             if let score = scoreExercise(
                 exercise,
                 searchQuery: searchLower,
@@ -333,18 +335,25 @@ final class SmartExerciseSearchService: ObservableObject {
                 equipmentFilter: equipmentFilter
             ) {
                 scoredResults.append((exercise, score))
-            } else if correctedQuery != searchLower {
-                // If no match, try with typo-corrected query
-                if let score = scoreExercise(
-                    exercise,
-                    searchQuery: correctedQuery,
-                    searchWords: correctedWords,
-                    userBehavior: userBehavior,
-                    categoryFilter: categoryFilter,
-                    equipmentFilter: equipmentFilter
-                ) {
-                    // Add typo correction bonus
-                    scoredResults.append((exercise, score + TYPO_CORRECTED_SCORE))
+            }
+        }
+        
+        // ⚡️ Only do typo correction for longer queries (5+ chars) with no results
+        if scoredResults.isEmpty && !isSimpleQuery {
+            let (correctedQuery, wasModified) = correctTypos(in: searchLower)
+            if wasModified {
+                let correctedWords = correctedQuery.split(separator: " ").map { String($0) }
+                for exercise in exercises {
+                    if let score = scoreExercise(
+                        exercise,
+                        searchQuery: correctedQuery,
+                        searchWords: correctedWords,
+                        userBehavior: userBehavior,
+                        categoryFilter: categoryFilter,
+                        equipmentFilter: equipmentFilter
+                    ) {
+                        scoredResults.append((exercise, score + TYPO_CORRECTED_SCORE))
+                    }
                 }
             }
         }
@@ -352,17 +361,104 @@ final class SmartExerciseSearchService: ObservableObject {
         // Sort by score (highest first)
         scoredResults.sort { $0.score > $1.score }
         
-        // Debug: Log top 5 results
-        #if DEBUG
-        if !scoredResults.isEmpty {
-            print("🔍 [SMART SEARCH] Top results for '\(query)':")
-            for (index, result) in scoredResults.prefix(5).enumerated() {
-                print("   \(index + 1). \(result.exercise.name ?? "Unknown") (score: \(Int(result.score)))")
+        return scoredResults.map { $0.exercise }
+    }
+    
+    // ⚡️ ULTRA-FAST: Simple prefix/contains search for 1-2 character queries
+    private func fastPrefixSearch(_ query: String, in exercises: [Exercise]) -> [Exercise] {
+        var exactStarts: [Exercise] = []
+        var containsMatch: [Exercise] = []
+        
+        // Get keyword variations for smarter matching
+        let variations = getKeywordVariations(query)
+        
+        for exercise in exercises {
+            guard let name = exercise.name?.lowercased() else { continue }
+            
+            var matched = false
+            var isPrefix = false
+            
+            for variation in variations {
+                if name.hasPrefix(variation) {
+                    isPrefix = true
+                    matched = true
+                    break
+                } else if name.contains(variation) {
+                    matched = true
+                }
+            }
+            
+            if matched {
+                if isPrefix {
+                    exactStarts.append(exercise)
+                } else {
+                    containsMatch.append(exercise)
+                }
             }
         }
-        #endif
         
-        return scoredResults.map { $0.exercise }
+        // Exact prefix matches first, then contains matches
+        return exactStarts + containsMatch
+    }
+    
+    // ═══════════════════════════════════════════════════════════════
+    // 🎯 SMART KEYWORD VARIATIONS: Handle common spelling variations
+    // ═══════════════════════════════════════════════════════════════
+    
+    /// Get keyword variations for common exercise terms
+    /// e.g., "fly" → ["fly", "flye", "flies", "flyes"]
+    private func getKeywordVariations(_ keyword: String) -> [String] {
+        let lower = keyword.lowercased()
+        var variations = [lower]
+        
+        // Common exercise term variations
+        switch lower {
+        case "fly":
+            variations += ["flye", "flies", "flyes", "flys"]
+        case "flye":
+            variations += ["fly", "flies", "flyes", "flys"]
+        case "press":
+            variations += ["presses"]
+        case "curl":
+            variations += ["curls"]
+        case "row":
+            variations += ["rows", "rowing"]
+        case "raise":
+            variations += ["raises"]
+        case "extension":
+            variations += ["extensions", "ext"]
+        case "pulldown":
+            variations += ["pull-down", "pull down", "pulldowns"]
+        case "pushdown":
+            variations += ["push-down", "push down", "pushdowns"]
+        case "pull":
+            variations += ["pulls", "pulling"]
+        case "push":
+            variations += ["pushes", "pushing"]
+        case "squat":
+            variations += ["squats", "squatting"]
+        case "lunge":
+            variations += ["lunges", "lunging"]
+        case "deadlift":
+            variations += ["deadlifts", "dead lift", "dead-lift"]
+        case "bench":
+            variations += ["benches", "benching"]
+        case "crunch":
+            variations += ["crunches"]
+        case "dip":
+            variations += ["dips"]
+        case "shrug":
+            variations += ["shrugs"]
+        case "plank":
+            variations += ["planks"]
+        default:
+            // Add plural form if it's a common pattern
+            if !lower.hasSuffix("s") {
+                variations.append(lower + "s")
+            }
+        }
+        
+        return variations
     }
     
     /// Rank exercises when no search query (just filters applied)
@@ -446,8 +542,12 @@ final class SmartExerciseSearchService: ObservableObject {
         let nickname = ExerciseNicknameService.shared.displayName(for: exercise).lowercased()
         let hasNickname = nickname != name
         
+        // 🎯 SMART KEYWORD MATCHING: Get variations of search terms
+        // e.g., "fly" also matches "flye", "flies", etc.
+        let queryVariations = getKeywordVariations(searchQuery)
+        
         // ═══════════════════════════════════════════════════════════════
-        // STEP 1: Check if exercise matches search (fuzzy matching)
+        // STEP 1: Check if exercise matches search (with keyword variations)
         // ═══════════════════════════════════════════════════════════════
         
         var hasMatch = false
@@ -455,60 +555,84 @@ final class SmartExerciseSearchService: ObservableObject {
         
         // Check nickname first (if user has set one, prioritize it)
         if hasNickname {
-            if nickname == searchQuery {
-                baseScore += EXACT_MATCH_SCORE + 100 // Extra bonus for nickname match
-                hasMatch = true
-            } else if nickname.hasPrefix(searchQuery) {
-                baseScore += STARTS_WITH_SCORE + 50
-                hasMatch = true
-            } else if nickname.contains(searchQuery) {
-                baseScore += CONTAINS_SCORE + 25
-                hasMatch = true
+            for variation in queryVariations {
+                if nickname == variation {
+                    baseScore += EXACT_MATCH_SCORE + 100 // Extra bonus for nickname match
+                    hasMatch = true
+                    break
+                } else if nickname.hasPrefix(variation) {
+                    baseScore += STARTS_WITH_SCORE + 50
+                    hasMatch = true
+                    break
+                } else if nickname.contains(variation) {
+                    baseScore += CONTAINS_SCORE + 25
+                    hasMatch = true
+                    break
+                }
             }
         }
         
-        // Exact name match (perfect match)
-        if !hasMatch && name == searchQuery {
-            baseScore += EXACT_MATCH_SCORE
-            hasMatch = true
-        }
-        // Name starts with query (very strong match)
-        else if !hasMatch && name.hasPrefix(searchQuery) {
-            baseScore += STARTS_WITH_SCORE
-            hasMatch = true
-        }
-        // Name contains query (strong match)
-        else if !hasMatch && name.contains(searchQuery) {
-            baseScore += CONTAINS_SCORE
-            hasMatch = true
-            
-            // Bonus for position (earlier in name = better)
-            if let range = name.range(of: searchQuery) {
-                let position = name.distance(from: name.startIndex, to: range.lowerBound)
-                let positionBonus = max(0, POSITION_BONUS_MAX - Double(position))
-                baseScore += positionBonus
+        // Try all query variations for name matching
+        if !hasMatch {
+            for variation in queryVariations {
+                // Exact name match (perfect match)
+                if name == variation {
+                    baseScore += EXACT_MATCH_SCORE
+                    hasMatch = true
+                    break
+                }
+                // Name starts with query (very strong match)
+                else if name.hasPrefix(variation) {
+                    baseScore += STARTS_WITH_SCORE
+                    hasMatch = true
+                    break
+                }
+                // Name contains query (strong match)
+                else if name.contains(variation) {
+                    baseScore += CONTAINS_SCORE
+                    hasMatch = true
+                    
+                    // Bonus for position (earlier in name = better)
+                    if let range = name.range(of: variation) {
+                        let position = name.distance(from: name.startIndex, to: range.lowerBound)
+                        let positionBonus = max(0, POSITION_BONUS_MAX - Double(position))
+                        baseScore += positionBonus
+                    }
+                    break
+                }
             }
         }
+        
         // Word boundary matching (e.g., "curl" matches "bicep curl")
-        else if !hasMatch && searchWords.count == 1 {
+        if !hasMatch && searchWords.count == 1 {
             let nameWords = name.split(separator: " ").map { String($0) }
             let nicknameWords = nickname.split(separator: " ").map { String($0) }
             
-            if nameWords.contains(searchQuery) || nicknameWords.contains(searchQuery) {
-                baseScore += WORD_BOUNDARY_SCORE
-                hasMatch = true
-            }
-            // Partial word match (e.g., "press" matches "bench press")
-            else if nameWords.contains(where: { $0.contains(searchQuery) }) || 
-                    nicknameWords.contains(where: { $0.contains(searchQuery) }) {
-                baseScore += PARTIAL_WORD_MATCH_SCORE
-                hasMatch = true
+            for variation in queryVariations {
+                if nameWords.contains(variation) || nicknameWords.contains(variation) {
+                    baseScore += WORD_BOUNDARY_SCORE
+                    hasMatch = true
+                    break
+                }
+                // Partial word match (e.g., "press" matches "bench press")
+                if nameWords.contains(where: { $0.contains(variation) }) || 
+                   nicknameWords.contains(where: { $0.contains(variation) }) {
+                    baseScore += PARTIAL_WORD_MATCH_SCORE
+                    hasMatch = true
+                    break
+                }
             }
         }
+        
         // Multi-word fuzzy matching (all words must appear)
-        else if searchWords.count > 1 {
-            let allWordsMatch = searchWords.allSatisfy { word in
-                name.contains(word) || category.contains(word)
+        if !hasMatch && searchWords.count > 1 {
+            // Get variations for each word
+            let allWordVariations = searchWords.map { getKeywordVariations($0) }
+            
+            let allWordsMatch = allWordVariations.allSatisfy { variations in
+                variations.contains { variation in
+                    name.contains(variation) || category.contains(variation)
+                }
             }
             if allWordsMatch {
                 baseScore += FUZZY_MATCH_BONUS
@@ -531,15 +655,20 @@ final class SmartExerciseSearchService: ObservableObject {
         
         // Check category/equipment/muscle matches (secondary matches)
         if !hasMatch {
-            if category.contains(searchQuery) {
-                baseScore += CATEGORY_MATCH_SCORE
-                hasMatch = true
-            } else if muscles.contains(searchQuery) {
-                baseScore += MUSCLE_MATCH_SCORE
-                hasMatch = true
-            } else if equipment.contains(searchQuery) {
-                baseScore += EQUIPMENT_MATCH_SCORE
-                hasMatch = true
+            for variation in queryVariations {
+                if category.contains(variation) {
+                    baseScore += CATEGORY_MATCH_SCORE
+                    hasMatch = true
+                    break
+                } else if muscles.contains(variation) {
+                    baseScore += MUSCLE_MATCH_SCORE
+                    hasMatch = true
+                    break
+                } else if equipment.contains(variation) {
+                    baseScore += EQUIPMENT_MATCH_SCORE
+                    hasMatch = true
+                    break
+                }
             }
         }
         

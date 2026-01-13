@@ -115,6 +115,35 @@ class WorkoutManager: ObservableObject {
         }
     }
     
+    // ⚡️ CRITICAL PERFORMANCE: Pre-fetch all Core Data properties BEFORE navigation
+    // This forces Core Data to materialize exercise data from disk immediately,
+    // so SwiftUI doesn't have to wait for lazy fetching during render
+    func prefetchExerciseData(_ exercises: [Exercise]) {
+        #if DEBUG
+        let startTime = CFAbsoluteTimeGetCurrent()
+        print("⚡️ [PREFETCH] Pre-warming \(exercises.count) exercises...")
+        #endif
+        
+        // Force Core Data to fetch all properties we'll need during rendering
+        // by accessing them now (while user sees transition animation)
+        for exercise in exercises {
+            // Access all properties that will be read during view render
+            // This triggers Core Data to load from disk NOW, not during SwiftUI layout
+            _ = exercise.id
+            _ = exercise.name
+            _ = exercise.category
+            _ = exercise.equipment
+            _ = exercise.muscleGroups
+            _ = exercise.isFavorite
+            _ = exercise.displayName // This also pre-warms nickname lookup
+        }
+        
+        #if DEBUG
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        print("⚡️ [PREFETCH] Pre-warmed \(exercises.count) exercises in \(String(format: "%.2f", elapsed))ms")
+        #endif
+    }
+    
     // Ensure all exercises have initialized sets (call on workout start)
     // OPTIMIZED: Batch all updates to trigger only ONE SwiftUI re-render
     // UPDATED: Now creates 3 sets by default instead of 1
@@ -638,9 +667,6 @@ class WorkoutManager: ObservableObject {
         print("   Thread: \(Thread.isMainThread ? "Main ✅" : "Background ⚠️")")
         #endif
         
-        // 📺 Prepare ads for workout (initializes SDK + preloads ad)
-        AdManager.shared.prepareForWorkout()
-        
         // Ensure we're on the main thread for @Published property changes
         guard Thread.isMainThread else {
             #if DEBUG
@@ -664,26 +690,17 @@ class WorkoutManager: ObservableObject {
         var checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // Set workout state
-        currentWorkout = workout
-        currentExercises = exercises
-        workoutStartTime = Date()
-        workoutInsights = insights
-        currentProgramDayNumber = programDay
-        currentProgramDayFocus = programDayFocus
-        currentSmartProgramId = smartProgramId
-        
-        // Record workout context (temporal data)
-        Task {
-            await recordWorkoutContext()
-        }
+        // ⚡️ CRITICAL FIRST: Pre-fetch all Core Data properties IMMEDIATELY
+        // This forces Core Data to materialize from disk NOW (not during SwiftUI render)
+        // Result: Exercise names appear INSTANTLY when ActiveWorkoutView loads
+        prefetchExerciseData(exercises)
         
         #if DEBUG
-        print("   State assignment: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        print("   Prefetch data: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // ⚡ CRITICAL: Initialize sets BEFORE triggering navigation
+        // ⚡ CRITICAL: Initialize sets BEFORE setting state
         // This prevents SwiftUI from fighting with data changes during render
         initializeSetsForExercises(exercises)
         
@@ -692,36 +709,48 @@ class WorkoutManager: ObservableObject {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // NOW set navigation flags (data is ready)
-        // Stagger state changes to prevent AttributeGraph cycles
+        // ⚡️ INSTANT TRANSITION: Set ALL state synchronously in one batch
+        // This ensures the ActiveWorkoutView has everything it needs IMMEDIATELY
+        // No delays, no staggering - just instant activation
+        currentWorkout = workout
+        currentExercises = exercises
+        workoutStartTime = Date()
+        workoutInsights = insights
+        currentProgramDayNumber = programDay
+        currentProgramDayFocus = programDayFocus
+        currentSmartProgramId = smartProgramId
         
-        print("🎯 [WORKOUT MANAGER] Starting workout transition...")
-        
-        // Step 1: Clear navigation path (shows gradient overlay)
+        // Clear navigation and switch tab
         shouldClearWorkoutTabNav = true
-        
-        // Step 2: Switch tab
         shouldNavigateToWorkoutTab = true
         
-        // Step 3: After 100ms, activate workout (gradient hides the transition)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-            isWorkoutActive = true
-            shouldClearWorkoutTabNav = false
-            print("🎯 [WORKOUT MANAGER] Workout ACTIVE")
-        }
+        // ⚡️ INSTANT: Activate workout NOW - no delay!
+        // The workout view will appear immediately with all data ready
+        isWorkoutActive = true
+        shouldClearWorkoutTabNav = false
         
         #if DEBUG
-        print("   Navigation flags: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        print("   State + Navigation: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
         let totalTime = (CFAbsoluteTimeGetCurrent() - totalStartTime) * 1000
         print("🏋️ [PERF] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms")
+        print("🎯 [WORKOUT MANAGER] Workout ACTIVE - INSTANT!")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         #endif
         
-        // DO NOT prepare ads here - AdMob WebView processes block UI for 4-6 seconds
-        // Ads will be prepared lazily when shouldShowAd() is first called
+        // 📺 Prepare ads ASYNC after workout starts (non-blocking)
+        Task.detached(priority: .background) {
+            await MainActor.run {
+                AdManager.shared.prepareForWorkout()
+            }
+        }
         
-        // ⚡️ PERSISTENCE: Save workout state so it survives app close
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        // Record workout context ASYNC (non-blocking)
+        Task {
+            await recordWorkoutContext()
+        }
+        
+        // ⚡️ PERSISTENCE: Save workout state after brief delay (non-blocking)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.saveActiveWorkoutToStorage()
         }
     }

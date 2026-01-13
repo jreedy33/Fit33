@@ -191,6 +191,10 @@ class WorkoutManager: ObservableObject {
     // Update sets for an exercise (replaces entire array)
     func updateSetsForExercise(id: String, sets: [WorkoutSetData]) {
         exerciseSetsData[id] = sets
+        
+        // ⚡️ PERSISTENCE: Save immediately when sets are updated
+        // (Debounced via throttle to avoid excessive saves)
+        throttledSave()
     }
     
     // Add a set to an exercise
@@ -200,6 +204,18 @@ class WorkoutManager: ObservableObject {
         } else {
             exerciseSetsData[id] = [set]
         }
+        
+        // ⚡️ PERSISTENCE: Save immediately when set is added
+        throttledSave()
+    }
+    
+    // Throttle saves to at most once per 5 seconds for performance
+    private var lastSaveTime: Date = .distantPast
+    private func throttledSave() {
+        let now = Date()
+        guard now.timeIntervalSince(lastSaveTime) > 5 else { return }
+        lastSaveTime = now
+        saveActiveWorkoutToStorage()
     }
     
     // Clear all sets data (when workout ends)
@@ -320,8 +336,8 @@ class WorkoutManager: ObservableObject {
     private let activeWorkoutKey = "activeWorkoutState"
     private let workoutSetsDataKey = "workoutSetsData"
     
-    // Maximum time (in seconds) before auto-ending a workout (6 hours)
-    private let maxWorkoutDuration: TimeInterval = 6 * 60 * 60
+    // Maximum time (in seconds) before auto-ending a workout (4 hours)
+    private let maxWorkoutDuration: TimeInterval = 4 * 60 * 60
     
     private init() {
         // Load saved program on init
@@ -447,7 +463,9 @@ class WorkoutManager: ObservableObject {
         // Save workout state
         if let encoded = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(encoded, forKey: activeWorkoutKey)
+            #if DEBUG
             print("💾 [WORKOUT] Saved active workout state")
+            #endif
         }
         
         // Save sets data
@@ -469,27 +487,40 @@ class WorkoutManager: ObservableObject {
         
         if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
             UserDefaults.standard.set(setsEncoded, forKey: workoutSetsDataKey)
+            #if DEBUG
             print("💾 [WORKOUT] Saved \(exerciseSetsData.count) exercise sets")
+            #endif
         }
     }
     
     /// Load active workout state from UserDefaults (call on app launch)
     private func loadActiveWorkoutFromStorage() {
-        guard let data = UserDefaults.standard.data(forKey: activeWorkoutKey),
-              let state = try? JSONDecoder().decode(ActiveWorkoutState.self, from: data) else {
-            print("📂 [WORKOUT] No saved active workout found")
+        print("📂 [WORKOUT] Checking for saved active workout...")
+        
+        guard let data = UserDefaults.standard.data(forKey: activeWorkoutKey) else {
+            print("📂 [WORKOUT] No saved active workout data found")
             return
         }
         
-        // Check if workout is too old (auto-timeout after 6 hours)
+        guard let state = try? JSONDecoder().decode(ActiveWorkoutState.self, from: data) else {
+            print("⚠️ [WORKOUT] Could not decode saved workout state")
+            return
+        }
+        
+        // Check if workout is too old (auto-timeout after 4 hours)
         let elapsedTime = Date().timeIntervalSince(state.startTime)
+        let hoursElapsed = elapsedTime / 3600
+        let minutesElapsed = Int(elapsedTime / 60)
+        
         if elapsedTime > maxWorkoutDuration {
-            print("⏰ [WORKOUT] Active workout expired (\(Int(elapsedTime / 3600)) hours old) - auto-ending")
+            print("⏰ [WORKOUT] Active workout expired (\(String(format: "%.1f", hoursElapsed)) hours old, limit is 4 hours) - auto-ending")
             clearActiveWorkoutStorage()
             return
         }
         
-        print("📂 [WORKOUT] Found saved active workout (started \(Int(elapsedTime / 60)) minutes ago)")
+        print("📂 [WORKOUT] Found saved active workout (started \(minutesElapsed) minutes ago)")
+        print("📂 [WORKOUT] Workout ID: \(state.workoutId)")
+        print("📂 [WORKOUT] Exercise IDs: \(state.exerciseIds.count) exercises")
         
         // Fetch the workout and exercises from Core Data
         let context = PersistenceController.shared.container.viewContext
@@ -499,20 +530,64 @@ class WorkoutManager: ObservableObject {
         workoutFetch.predicate = NSPredicate(format: "id == %@", state.workoutId)
         workoutFetch.fetchLimit = 1
         
-        guard let workout = try? context.fetch(workoutFetch).first else {
-            print("⚠️ [WORKOUT] Could not find saved workout in Core Data - clearing")
+        var workout: Workout?
+        do {
+            workout = try context.fetch(workoutFetch).first
+        } catch {
+            print("❌ [WORKOUT] Core Data fetch error for workout: \(error)")
+        }
+        
+        // If workout not found, try to create a placeholder
+        if workout == nil {
+            print("⚠️ [WORKOUT] Could not find saved workout in Core Data (ID: \(state.workoutId))")
+            print("⚠️ [WORKOUT] This can happen if app data was cleared. Creating placeholder workout...")
+            
+            // Create a new placeholder workout to continue
+            let newWorkout = Workout(context: context)
+            newWorkout.id = UUID(uuidString: state.workoutId) ?? UUID()
+            newWorkout.name = "Resumed Workout"
+            newWorkout.date = state.startTime
+            newWorkout.isCompleted = false
+            
+            workout = newWorkout
+            
+            do {
+                try context.save()
+                print("✅ [WORKOUT] Created placeholder workout")
+            } catch {
+                print("❌ [WORKOUT] Failed to create placeholder workout: \(error)")
+                clearActiveWorkoutStorage()
+                return
+            }
+        }
+        
+        // At this point workout should exist (either fetched or created)
+        guard let resolvedWorkout = workout else {
+            print("❌ [WORKOUT] Unexpected: workout is still nil after creation attempt")
             clearActiveWorkoutStorage()
             return
         }
         
         // Fetch exercises
-        let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-        exerciseFetch.predicate = NSPredicate(format: "id IN %@", state.exerciseIds.compactMap { UUID(uuidString: $0) })
+        let exerciseIds = state.exerciseIds.compactMap { UUID(uuidString: $0) }
+        print("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseIds.map { $0.uuidString.prefix(8) })")
         
-        guard let exercises = try? context.fetch(exerciseFetch), !exercises.isEmpty else {
-            print("⚠️ [WORKOUT] Could not find saved exercises in Core Data - clearing")
-            clearActiveWorkoutStorage()
-            return
+        let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        exerciseFetch.predicate = NSPredicate(format: "id IN %@", exerciseIds)
+        
+        var exercises: [Exercise] = []
+        do {
+            exercises = try context.fetch(exerciseFetch)
+            print("📂 [WORKOUT] Found \(exercises.count) exercises in Core Data")
+        } catch {
+            print("❌ [WORKOUT] Core Data fetch error for exercises: \(error)")
+        }
+        
+        if exercises.isEmpty {
+            print("⚠️ [WORKOUT] Could not find any saved exercises in Core Data")
+            print("⚠️ [WORKOUT] NOT clearing workout - sets data may still be valid")
+            // Don't clear - user might still want to see their progress
+            // They can manually finish or cancel
         }
         
         // Sort exercises to match original order
@@ -520,7 +595,7 @@ class WorkoutManager: ObservableObject {
             exercises.first { $0.id?.uuidString == id }
         }
         
-        // Load sets data
+        // Load sets data (this is the most important data to preserve!)
         if let setsData = UserDefaults.standard.data(forKey: workoutSetsDataKey),
            let persistedSets = try? JSONDecoder().decode([String: [PersistedSetData]].self, from: setsData) {
             
@@ -546,11 +621,17 @@ class WorkoutManager: ObservableObject {
                     return setData
                 }
             }
-            print("📂 [WORKOUT] Restored \(persistedSets.count) exercise sets")
+            
+            // Count completed sets
+            var completedSets = 0
+            for (_, sets) in exerciseSetsData {
+                completedSets += sets.filter { $0.isCompleted }.count
+            }
+            print("📂 [WORKOUT] Restored \(persistedSets.count) exercises with \(completedSets) completed sets")
         }
         
         // Restore workout state
-        currentWorkout = workout
+        currentWorkout = resolvedWorkout
         currentExercises = orderedExercises
         workoutStartTime = state.startTime
         currentProgramDayNumber = state.programDayNumber
@@ -558,7 +639,8 @@ class WorkoutManager: ObservableObject {
         currentSmartProgramId = state.smartProgramId
         isWorkoutActive = true
         
-        print("✅ [WORKOUT] Restored active workout with \(orderedExercises.count) exercises")
+        print("✅ [WORKOUT] Successfully restored active workout with \(orderedExercises.count) exercises")
+        print("✅ [WORKOUT] Workout has been active for \(minutesElapsed) minutes (\(String(format: "%.1f", hoursElapsed)) hours)")
         
         // Navigate to workout tab
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -613,11 +695,17 @@ class WorkoutManager: ObservableObject {
     
     /// Called when app returns to foreground - check for expired workout
     func checkWorkoutStateOnForeground() {
-        guard isWorkoutActive, let startTime = workoutStartTime else { return }
+        guard isWorkoutActive, let startTime = workoutStartTime else {
+            print("📱 [WORKOUT] App foregrounded - no active workout")
+            return
+        }
         
         let elapsedTime = Date().timeIntervalSince(startTime)
+        let hoursElapsed = elapsedTime / 3600
+        let minutesElapsed = Int(elapsedTime / 60)
+        
         if elapsedTime > maxWorkoutDuration {
-            print("⏰ [WORKOUT] Workout has been active for \(Int(elapsedTime / 3600)) hours - auto-ending")
+            print("⏰ [WORKOUT] Workout has been active for \(String(format: "%.1f", hoursElapsed)) hours - exceeds 4 hour limit")
             
             // Auto-end the workout
             cancelWorkout()
@@ -626,16 +714,19 @@ class WorkoutManager: ObservableObject {
             NotificationCenter.default.post(
                 name: NSNotification.Name("WorkoutAutoEnded"),
                 object: nil,
-                userInfo: ["reason": "Your workout was automatically ended after 6 hours of inactivity."]
+                userInfo: ["reason": "Your workout was automatically ended after 4 hours. Tap FINISH next time to save your progress!"]
             )
         } else {
-            print("✅ [WORKOUT] Workout still valid (\(Int(elapsedTime / 60)) minutes elapsed)")
+            print("✅ [WORKOUT] App foregrounded - workout still active (\(minutesElapsed) min / \(String(format: "%.1f", hoursElapsed)) hrs)")
+            
+            // Re-save state to ensure it's fresh
+            saveActiveWorkoutToStorage()
         }
     }
     
     private var cancellables = Set<AnyCancellable>()
     
-    // Counter for periodic saves (save every 30 seconds during workout)
+    // Counter for periodic saves (save every 15 seconds during workout for better persistence)
     private var saveCounter: Int = 0
     
     private func startTimer() {
@@ -644,11 +735,14 @@ class WorkoutManager: ObservableObject {
             .sink { [weak self] time in
                 self?.currentTime = time
                 
-                // ⚡️ PERSISTENCE: Auto-save workout state every 30 seconds
+                // ⚡️ PERSISTENCE: Auto-save workout state every 15 seconds (more frequent for safety)
                 self?.saveCounter += 1
-                if self?.saveCounter ?? 0 >= 30 {
+                if self?.saveCounter ?? 0 >= 15 {
                     self?.saveCounter = 0
                     self?.saveActiveWorkoutToStorage()
+                    #if DEBUG
+                    print("💾 [WORKOUT] Auto-saved workout state (periodic)")
+                    #endif
                 }
             }
     }

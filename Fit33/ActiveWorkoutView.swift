@@ -107,8 +107,9 @@ struct ActiveWorkoutView: View {
                                     onRemoveExercise: {
                                         removeExercise(at: index)
                                     },
-                                    onReplaceExercise: {
-                                        // This will be handled by the ExerciseReplacementView
+                                    onReplaceExercise: { newExercise in
+                                        // Load historical data for the replaced exercise
+                                        loadHistoricalDataForExercise(newExercise)
                                     },
                                     onShuffleExercise: { newExercise in
                                         shuffleCount += 1
@@ -369,6 +370,21 @@ struct ActiveWorkoutView: View {
             // Set first exercise as active for glow effect
             if activeExerciseId == nil {
                 activeExerciseId = exercises.first?.id?.uuidString
+            }
+        }
+        // ⚡️ SYNC: Update local exercises when WorkoutManager exercises change (e.g., after replace)
+        .onChange(of: workoutManager.currentExercises) { oldExercises, newExercises in
+            // Only update if the exercises actually changed
+            let oldIds = Set(oldExercises.compactMap { $0.id })
+            let newIds = Set(newExercises.compactMap { $0.id })
+            
+            if oldIds != newIds {
+                #if DEBUG
+                print("🔄 [SYNC] Exercises changed - updating local state")
+                print("   Old: \(oldExercises.compactMap { $0.name })")
+                print("   New: \(newExercises.compactMap { $0.name })")
+                #endif
+                exercises = newExercises
             }
         }
         .onDisappear {
@@ -635,6 +651,84 @@ struct ActiveWorkoutView: View {
             }
         }
         initTasks.append(historyTask)
+    }
+    
+    /// Load historical data for a newly replaced exercise
+    private func loadHistoricalDataForExercise(_ exercise: Exercise) {
+        guard let exerciseId = exercise.id?.uuidString,
+              let exerciseName = exercise.name else { return }
+        
+        #if DEBUG
+        print("🔄 Loading historical data for replaced exercise: \(exerciseName)")
+        #endif
+        
+        let currentUser = UserManager.shared.currentUser
+        let ctx = viewContext
+        
+        Task.detached(priority: .userInitiated) {
+            // First check if we have cached data
+            let cache = ExerciseHistoryService.shared.previousSetsCache
+            
+            if let cachedSets = cache[exerciseName], !cachedSets.isEmpty {
+                // Use cached data
+                let previousData = cachedSets.map { cloudSet in
+                    PreviousSetData(
+                        setNumber: cloudSet.setNumber,
+                        weight: cloudSet.weight,
+                        reps: cloudSet.reps
+                    )
+                }
+                
+                await MainActor.run {
+                    previousExerciseSets[exerciseId] = previousData
+                    #if DEBUG
+                    print("✅ Loaded cached historical data for '\(exerciseName)': \(previousData.count) sets")
+                    #endif
+                }
+                return
+            }
+            
+            // Fetch from cloud
+            let allPreviousSets = await ExerciseHistoryService.shared.fetchPreviousSetsForExercises([exerciseName])
+            
+            if let cloudSets = allPreviousSets[exerciseName], !cloudSets.isEmpty {
+                let previousData = cloudSets.map { cloudSet in
+                    PreviousSetData(
+                        setNumber: cloudSet.setNumber,
+                        weight: cloudSet.weight,
+                        reps: cloudSet.reps
+                    )
+                }
+                
+                await MainActor.run {
+                    previousExerciseSets[exerciseId] = previousData
+                    #if DEBUG
+                    print("✅ Loaded cloud historical data for '\(exerciseName)': \(previousData.count) sets")
+                    #endif
+                }
+            } else if let user = currentUser {
+                // No historical data - generate smart recommendations
+                let recommendations = await MainActor.run {
+                    StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                        exerciseName: exerciseName,
+                        user: user,
+                        numberOfSets: 3,
+                        context: ctx
+                    )
+                }
+                
+                let smartPreviousData = recommendations.enumerated().map { index, rec in
+                    PreviousSetData(setNumber: index + 1, recommendation: rec)
+                }
+                
+                await MainActor.run {
+                    previousExerciseSets[exerciseId] = smartPreviousData
+                    #if DEBUG
+                    print("💡 Generated smart recommendations for '\(exerciseName)'")
+                    #endif
+                }
+            }
+        }
     }
     
     private func startTimer() {
@@ -1754,7 +1848,7 @@ struct ExerciseCard: View {
     let previousSets: [PreviousSetData]
     let onAddSet: () -> Void
     let onRemoveExercise: () -> Void
-    let onReplaceExercise: () -> Void
+    let onReplaceExercise: (Exercise) -> Void // Pass the new exercise for historical data loading
     let onShuffleExercise: (Exercise) -> Void // Callback to shuffle to a similar exercise
     let onSetRestTimer: (TimeInterval) -> Void
     let restDuration: TimeInterval
@@ -1871,7 +1965,8 @@ struct ExerciseCard: View {
                 onSelect: { newExercise in
                     // Replace this exercise with the selected one
                     WorkoutManager.shared.replaceExercise(exercise, with: newExercise)
-                    onReplaceExercise()
+                    // Pass the new exercise so historical data can be loaded
+                    onReplaceExercise(newExercise)
                 }
             )
             .environmentObject(WorkoutManager.shared)

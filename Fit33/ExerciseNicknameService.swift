@@ -29,7 +29,10 @@ class ExerciseNicknameService: ObservableObject {
     
     /// Get the display name for an Exercise object
     func displayName(for exercise: Exercise) -> String {
-        guard let name = exercise.name else { return "Unknown Exercise" }
+        guard let name = exercise.name else {
+            // If exercises are still loading, show loading state
+            return ExerciseLibraryService.shared.isExercisesReady ? "Exercise" : "Loading..."
+        }
         return displayName(for: name)
     }
     

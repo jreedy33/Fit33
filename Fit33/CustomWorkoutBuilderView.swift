@@ -7,6 +7,7 @@ struct CustomWorkoutBuilderView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
+    @ObservedObject private var exerciseLibrary = ExerciseLibraryService.shared
     
     // MARK: - Mode Configuration
     enum Mode {
@@ -821,8 +822,8 @@ struct CustomWorkoutBuilderView: View {
                         }
                         .frame(height: 0)
                         
-                        if isLoadingExercises {
-                            // Loading state
+                        if isLoadingExercises || !exerciseLibrary.isExercisesReady {
+                            // Loading state - exercises are syncing from cloud
                             VStack(spacing: 20) {
                                 ProgressView()
                                     .scaleEffect(1.5)
@@ -883,6 +884,16 @@ struct CustomWorkoutBuilderView: View {
                 .onDisappear {
                     workoutManager.isOnCustomWorkoutBuilder = false
                     workoutManager.selectedCustomWorkoutExercises = []
+                }
+                // 🔄 Reload when exercises become ready after sync
+                .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
+                    if isReady && exercises.isEmpty {
+                        print("✅ Exercises now ready - reloading list")
+                        loadExercises()
+                        lastFilterKey = "" // Force rebuild filters
+                        updateFilteredExercises()
+                        forceRenderID = UUID()
+                    }
                 }
                 // ⚡️ HIGH-PERFORMANCE: Instant filter updates
                 .onChange(of: searchText) { _, _ in updateFilteredExercises() }
@@ -1251,6 +1262,12 @@ struct CustomWorkoutBuilderView: View {
     
     // MARK: - Helper Functions
     private func loadExercises() {
+        // Only load if exercises are ready (have valid names)
+        guard exerciseLibrary.isExercisesReady else {
+            print("⏳ Waiting for exercises to be ready...")
+            return
+        }
+        
         exercises = ExerciseLibraryService.shared.getAllExercises()
         let customCount = exercises.filter { $0.instructions?.contains("[CUSTOM_EXERCISE") ?? false }.count
         print("📦 Loaded \(exercises.count) exercises for custom workout builder (including \(customCount) custom)")

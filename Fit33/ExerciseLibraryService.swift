@@ -21,6 +21,9 @@ class ExerciseLibraryService: ObservableObject {
     
     private let defaultExercises: [ExerciseData] = ComprehensiveExerciseDatabase.exercises
     
+    // MARK: - Loading State (for UI to know when exercises are ready)
+    @Published var isExercisesReady: Bool = false
+    
     // MARK: - Caching
     private var cachedExercises: [Exercise]?
     private var cachedExercisesByName: [String: Exercise]? // For O(1) name lookups
@@ -46,10 +49,19 @@ class ExerciseLibraryService: ObservableObject {
         // Run on main thread (Core Data requirement) but async so it doesn't block
         DispatchQueue.main.async { [weak self] in
             let startTime = CFAbsoluteTimeGetCurrent()
-            _ = self?.getAllExercises()
+            let exercises = self?.getAllExercises() ?? []
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             print("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms")
             self?.isPreWarming = false
+            
+            // Mark as ready if we have valid exercises (with names)
+            let validCount = exercises.filter { $0.name != nil && !$0.name!.isEmpty }.count
+            if validCount > 100 {
+                self?.isExercisesReady = true
+                print("✅ [ExerciseLibrary] Exercises ready: \(validCount) valid exercises")
+            } else {
+                print("⚠️ [ExerciseLibrary] Only \(validCount) valid exercises - waiting for sync")
+            }
         }
     }
     
@@ -103,6 +115,62 @@ class ExerciseLibraryService: ObservableObject {
         #if DEBUG
         print("🔥 [ExerciseLibrary] Cache rebuilt synchronously: \(elapsed)ms, \(cachedExercises?.count ?? 0) exercises")
         #endif
+        
+        // ⚡️ Repair nil exercise relationships in workouts
+        repairNilExerciseRelationships()
+    }
+    
+    /// Repairs WorkoutExercise objects that have nil exercise relationships
+    /// This happens when workouts sync before exercises are available
+    private func repairNilExerciseRelationships() {
+        guard isExercisesReady else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            let context = PersistenceController.shared.container.viewContext
+            
+            // Find WorkoutExercises with nil exercise relationship
+            let fetchRequest: NSFetchRequest<WorkoutExercise> = WorkoutExercise.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "exercise == nil")
+            
+            do {
+                let orphanedExercises = try context.fetch(fetchRequest)
+                
+                if orphanedExercises.isEmpty { return }
+                
+                #if DEBUG
+                print("🔧 [ExerciseLibrary] Found \(orphanedExercises.count) WorkoutExercises with nil relationships")
+                #endif
+                
+                var repaired = 0
+                
+                for workoutExercise in orphanedExercises {
+                    // Try to get the cached name
+                    guard let id = workoutExercise.id?.uuidString,
+                          let cachedName = ExerciseNameCache.shared.getName(forWorkoutExerciseId: id) else {
+                        continue
+                    }
+                    
+                    // Try to find the exercise by name
+                    if let exercise = self.getExercise(byName: cachedName) {
+                        workoutExercise.exercise = exercise
+                        repaired += 1
+                    }
+                }
+                
+                if repaired > 0 {
+                    try context.save()
+                    #if DEBUG
+                    print("✅ [ExerciseLibrary] Repaired \(repaired) exercise relationships")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("❌ [ExerciseLibrary] Error repairing relationships: \(error)")
+                #endif
+            }
+        }
     }
     
     private var isCacheValid: Bool {
@@ -202,6 +270,11 @@ class ExerciseLibraryService: ObservableObject {
     
     private func performSync(with cloudExercises: [ExerciseDTO]) async {
         print("✅ Processing \(cloudExercises.count) exercises for sync")
+        
+        // ⚠️ Mark exercises as not ready during sync (UI will show loading)
+        await MainActor.run {
+            isExercisesReady = false
+        }
         
         await MainActor.run {
             ExerciseIntelligenceService.shared.resetProfiles()
@@ -380,6 +453,12 @@ class ExerciseLibraryService: ObservableObject {
                 // Verify exercises are accessible
                 let verifyCount = getAllExercises().count
                 print("✅ [VERIFY] Cache now has \(verifyCount) exercises")
+                
+                // ✅ Mark exercises as ready now that sync is complete
+                if verifyCount > 100 {
+                    isExercisesReady = true
+                    print("✅ [SYNC] Exercises ready: \(verifyCount) exercises available")
+                }
             } catch {
                 print("❌ Error saving exercises to Core Data: \(error)")
             }
@@ -489,6 +568,13 @@ class ExerciseLibraryService: ObservableObject {
             #if DEBUG
             print("📦 [ExerciseLibrary] Built name cache with \(cachedExercisesByName?.count ?? 0) entries")
             #endif
+            
+            // ✅ Update exercises ready state based on valid entries
+            let validCount = cachedExercisesByName?.count ?? 0
+            if validCount > 100 && !isExercisesReady {
+                isExercisesReady = true
+                print("✅ [ExerciseLibrary] Exercises now ready: \(validCount) valid")
+            }
             
             return exercises
         } catch {

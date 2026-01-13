@@ -861,7 +861,7 @@ struct PremiumExerciseRow: View {
                     // Exercise details
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(workoutExercise.exercise?.name ?? "Unknown Exercise")
+                            Text(workoutExercise.safeDisplayName)
                                 .font(.body)
                                 .fontWeight(.medium)
                                 .foregroundColor(.primary)

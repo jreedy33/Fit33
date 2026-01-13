@@ -2480,22 +2480,31 @@ class SupabaseManager: ObservableObject {
                             
                             // Add exercises from cloud
                             for exerciseDTO in workoutDTO.exercises {
-                                // Try to find the exercise by name FIRST
+                                // Try to find the exercise by name
                                 let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                                 exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
+                                let exercise = try? viewContext.fetch(exerciseRequest).first
                                 
-                                guard let exercise = try? viewContext.fetch(exerciseRequest).first else {
-                                    // Skip this workout exercise if we can't find the exercise
-                                    print("⚠️ [WORKOUT SYNC] Skipping exercise '\(exerciseDTO.exerciseName)' - not found in database")
-                                    continue
-                                }
-                                
-                                // Only create WorkoutExercise if we found the Exercise
+                                // Create WorkoutExercise even if exercise relationship is nil
+                                // (we cache the name so the UI can still display it)
                                 let workoutExercise = WorkoutExercise(context: viewContext)
-                                workoutExercise.id = UUID(uuidString: exerciseDTO.id) ?? UUID()
+                                let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
+                                workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
                                 workoutExercise.workout = workout
-                                workoutExercise.exercise = exercise
+                                workoutExercise.exercise = exercise // May be nil, that's OK
+                                
+                                // ⚡️ Cache exercise name for fallback display
+                                ExerciseNameCache.shared.cacheName(
+                                    exerciseDTO.exerciseName,
+                                    forWorkoutExerciseId: workoutExerciseId.uuidString
+                                )
+                                
+                                if exercise == nil {
+                                    #if DEBUG
+                                    print("⚠️ [WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry relationship later")
+                                    #endif
+                                }
                                 
                                 // Create sets
                                 for setDTO in exerciseDTO.sets {
@@ -2524,22 +2533,30 @@ class SupabaseManager: ObservableObject {
                         
                         // Create exercises and sets
                         for exerciseDTO in workoutDTO.exercises {
-                            // Try to find the exercise by name FIRST
+                            // Try to find the exercise by name
                             let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                             exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
+                            let exercise = try? viewContext.fetch(exerciseRequest).first
                             
-                            guard let exercise = try? viewContext.fetch(exerciseRequest).first else {
-                                // Skip this workout exercise if we can't find the exercise
-                                print("⚠️ [WORKOUT SYNC] Skipping exercise '\(exerciseDTO.exerciseName)' - not found in database")
-                                continue
-                            }
-                            
-                            // Only create WorkoutExercise if we found the Exercise
+                            // Create WorkoutExercise even if exercise relationship is nil
                             let workoutExercise = WorkoutExercise(context: viewContext)
-                            workoutExercise.id = UUID(uuidString: exerciseDTO.id) ?? UUID()
+                            let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
+                            workoutExercise.id = workoutExerciseId
                             workoutExercise.order = Int16(exerciseDTO.order)
                             workoutExercise.workout = workout
-                            workoutExercise.exercise = exercise
+                            workoutExercise.exercise = exercise // May be nil
+                            
+                            // ⚡️ Cache exercise name for fallback display
+                            ExerciseNameCache.shared.cacheName(
+                                exerciseDTO.exerciseName,
+                                forWorkoutExerciseId: workoutExerciseId.uuidString
+                            )
+                            
+                            if exercise == nil {
+                                #if DEBUG
+                                print("⚠️ [WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry later")
+                                #endif
+                            }
                             
                             // Create sets
                             for setDTO in exerciseDTO.sets {

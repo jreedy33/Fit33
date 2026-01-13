@@ -3006,10 +3006,9 @@ struct RecentWorkoutCard: View {
         var muscleCount: [String: Int] = [:]
         
         for workoutExercise in workoutExercises {
-            if let muscleGroups = workoutExercise.exercise?.muscleGroups as? [String] {
-                for muscle in muscleGroups {
-                    muscleCount[muscle.lowercased(), default: 0] += 1
-                }
+            // Use safeMuscleGroups to handle nil exercise relationships
+            for muscle in workoutExercise.safeMuscleGroups {
+                muscleCount[muscle.lowercased(), default: 0] += 1
             }
         }
         
@@ -3047,8 +3046,8 @@ struct RecentWorkoutCard: View {
     }
     
     private var workoutGradient: [Color] {
-        // Color based on primary muscle group
-        let muscles = workoutExercises.compactMap { ($0.exercise?.muscleGroups as? [String])?.first?.lowercased() }
+        // Color based on primary muscle group (use safeMuscleGroups for nil-safety)
+        let muscles = workoutExercises.compactMap { $0.safeMuscleGroups.first?.lowercased() }
         let primaryMuscle = muscles.first ?? ""
         
         switch primaryMuscle {
@@ -3096,10 +3095,9 @@ struct RecentWorkoutCard: View {
     private var topMuscles: [String] {
         var muscleCount: [String: Int] = [:]
         for workoutExercise in workoutExercises {
-            if let muscleGroups = workoutExercise.exercise?.muscleGroups as? [String] {
-                for muscle in muscleGroups {
-                    muscleCount[muscle.capitalized, default: 0] += 1
-                }
+            // Use safeMuscleGroups for nil-safety
+            for muscle in workoutExercise.safeMuscleGroups {
+                muscleCount[muscle.capitalized, default: 0] += 1
             }
         }
         return muscleCount.sorted { $0.value > $1.value }.prefix(2).map { $0.key }
@@ -4422,7 +4420,7 @@ struct HistoryExerciseRowView: View {
         HStack(spacing: 12) {
             // Exercise name (uses nickname if user has one set)
             VStack(alignment: .leading, spacing: 1) {
-                Text(workoutExercise.exercise?.displayName ?? "Unknown Exercise")
+                Text(workoutExercise.safeDisplayName)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)

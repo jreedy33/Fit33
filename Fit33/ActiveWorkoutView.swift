@@ -1464,7 +1464,7 @@ struct ActiveWorkoutView: View {
             
             do {
                 try await ExerciseHistoryService.shared.saveExercisePerformance(
-                    exerciseName: exercise.name ?? "Unknown Exercise",
+                    exerciseName: exercise.name ?? "Exercise",
                     exerciseCategory: exercise.category,
                     workoutId: workout.id,
                     sets: Array(sets),
@@ -3420,7 +3420,7 @@ struct ExerciseReplacementRow: View {
         Button(action: onTap) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(exercise.name ?? "Unknown Exercise")
+                    Text(exercise.displayName)
                         .font(.headline)
                         .foregroundColor(.primary)
                     
@@ -3955,7 +3955,7 @@ struct AddExerciseDuringWorkoutView: View {
                                     
                                     // Exercise info
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(exercise.name ?? "Unknown")
+                                        Text(exercise.displayName)
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
                                             .foregroundColor(.primary)
@@ -4227,7 +4227,7 @@ struct RenameExerciseView: View {
     @FocusState private var isTextFieldFocused: Bool
     
     private var officialName: String {
-        exercise.name ?? "Unknown Exercise"
+        exercise.displayName
     }
     
     private var hasExistingNickname: Bool {

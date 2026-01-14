@@ -34,6 +34,9 @@ struct ProfileView: View {
     @State private var showingDeleteAccountConfirmation = false
     @State private var isDeleting = false
     
+    // Friend system
+    @StateObject private var friendService = FriendService.shared
+    
     let genderOptions = ["Male", "Female", "Other", "Prefer not to say"]
     let fitnessGoalOptions = ["Build Muscle", "Get Lean", "Maintain Weight", "Improve Endurance", "General Fitness"]
     let experienceLevelOptions = ["Beginner", "Intermediate", "Advanced"]
@@ -254,11 +257,102 @@ struct ProfileView: View {
                             .buttonStyle(PlainButtonStyle())
                         }
                         
+                        // Friends & Sharing Section
+                        ProfileSection(
+                            title: "FRIENDS & SHARING",
+                            icon: "person.2.fill",
+                            iconColor: .blue
+                        ) {
+                            VStack(spacing: 0) {
+                                // Friends List
+                                NavigationLink(destination: FriendsListView()) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.2.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.blue)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Friends")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("Manage friends & send workouts")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        // Badge for pending requests
+                                        if friendService.pendingRequests.count > 0 {
+                                            Text("\(friendService.pendingRequests.count)")
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Capsule().fill(Color.red))
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider().padding(.leading, 50)
+                                
+                                // Received Workouts
+                                NavigationLink(destination: ReceivedWorkoutsView()) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "tray.full.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.green)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Received Workouts")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("Workouts sent to you by friends")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        // Badge for unread workouts
+                                        if friendService.unreadWorkoutCount > 0 {
+                                            Text("\(friendService.unreadWorkoutCount)")
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Capsule().fill(Color.blue))
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
                         // Share & Invite Section
                         ProfileSection(
                             title: "SHARE & INVITE",
-                            icon: "person.2.fill",
-                            iconColor: .blue
+                            icon: "square.and.arrow.up.fill",
+                            iconColor: .purple
                         ) {
                             VStack(spacing: 0) {
                                 // Share App via Messages
@@ -457,6 +551,12 @@ struct ProfileView: View {
         .onAppear {
             SessionLogManager.shared.logScreen(.profile)
             loadUserData()
+            
+            // Load friend data for badges
+            Task {
+                await friendService.loadPendingRequests()
+                await friendService.loadReceivedWorkouts()
+            }
         }
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

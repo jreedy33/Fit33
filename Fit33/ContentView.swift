@@ -2,6 +2,7 @@ import SwiftUI
 import CoreData
 import Combine
 import Charts
+import UserNotifications
 
 // MARK: - Scroll To Top Environment Key
 private struct ScrollToTopTriggerKey: EnvironmentKey {
@@ -318,8 +319,13 @@ struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     @StateObject private var deepLinkManager = DeepLinkManager.shared
+    @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var lazyTabManager = LazyTabManager.shared
+    @StateObject private var tabSwitchOptimizer = TabSwitchOptimizer.shared
     @State private var selectedTab: Int = 0
     @State private var scrollToTopTrigger: UUID = UUID()
+    @State private var showNotificationPermissionPrompt = false
+    @State private var hasCheckedNotificationPermission = false
     
     private let tabs = [
         TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .blue),
@@ -339,18 +345,25 @@ struct MainTabView: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
+            // ⚡️ PERFORMANCE: Use TabView with lazy-loaded content
             TabView(selection: $selectedTab) {
-            DashboardView()
-                .tabItem {
-                    Label {
-                        Text(tabs[0].title)
-                    } icon: {
-                        Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
+                // Tab 0: Dashboard (always loaded - primary tab)
+                DashboardView()
+                    .tabContentOptimized()
+                    .tabItem {
+                        Label {
+                            Text(tabs[0].title)
+                        } icon: {
+                            Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
+                        }
                     }
+                    .tag(0)
+                
+                // Tab 1: Exercise Library (lazy loaded)
+                LazyTabContent(tab: .exercises) {
+                    ExerciseLibraryView()
                 }
-                .tag(0)
-            
-            ExerciseLibraryView()
+                .tabContentOptimized()
                 .tabItem {
                     Label {
                         Text(tabs[1].title)
@@ -359,8 +372,12 @@ struct MainTabView: View {
                     }
                 }
                 .tag(1)
-            
-            WorkoutTabView()
+                
+                // Tab 2: Workout (lazy loaded but prioritized)
+                LazyTabContent(tab: .workout) {
+                    WorkoutTabView()
+                }
+                .tabContentOptimized()
                 .tabItem {
                     if workoutManager.isWorkoutActive && selectedTab != 2 {
                         Label {
@@ -380,8 +397,12 @@ struct MainTabView: View {
                     }
                 }
                 .tag(2)
-            
-            SimpleMealPlanView()
+                
+                // Tab 3: Meals (lazy loaded)
+                LazyTabContent(tab: .nutrition) {
+                    SimpleMealPlanView()
+                }
+                .tabContentOptimized()
                 .tabItem {
                     Label {
                         Text(tabs[3].title)
@@ -390,8 +411,12 @@ struct MainTabView: View {
                     }
                 }
                 .tag(3)
-            
-            WorkoutProgressView()
+                
+                // Tab 4: Progress (lazy loaded - heavy view)
+                LazyTabContent(tab: .progress) {
+                    WorkoutProgressView()
+                }
+                .tabContentOptimized()
                 .tabItem {
                     Label {
                         Text(tabs[4].title)
@@ -400,7 +425,7 @@ struct MainTabView: View {
                     }
                 }
                 .tag(4)
-        }
+            }
         .tint(currentTabColor)
         .onChange(of: workoutManager.shouldNavigateToWorkoutTab) { _, shouldNavigate in
             if shouldNavigate {
@@ -472,8 +497,15 @@ struct MainTabView: View {
         }
         .onChange(of: selectedTab) { oldValue, newValue in
             if oldValue != newValue {
-                // ⚡️ Immediate haptic feedback on tab switch
-                HapticManager.selectionChanged()
+                // ⚡️ PERFORMANCE: Start optimized tab transition
+                tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
+                
+                // Mark tab as visited for lazy loading
+                if let tab = LazyTabManager.Tab(rawValue: newValue) {
+                    lazyTabManager.markVisited(tab)
+                    // Prefetch data for destination tab
+                    SmartPrefetch.shared.prefetchForTab(tab)
+                }
                 
                 // Log tab switch with screen IDs
                 let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
@@ -505,6 +537,11 @@ struct MainTabView: View {
                 // This ensures if they come back manually, they stay on Workout tab when pressing back
                 if oldValue == 2 && newValue != 2 {
                     workoutManager.autoGenCameFromHomeTab = false
+                }
+                
+                // ⚡️ End transition tracking (async to not block)
+                DispatchQueue.main.async {
+                    tabSwitchOptimizer.endTransition()
                 }
             }
             // Defer HealthKit fetches to not block tab switch animation
@@ -548,6 +585,59 @@ struct MainTabView: View {
                 .environment(\.managedObjectContext, viewContext)
                 .environmentObject(workoutManager)
             }
+        }
+        // MARK: - Notification Permission Prompt
+        .task {
+            // Check notification permission status on app launch
+            // Only prompt once per session to avoid being annoying
+            guard !hasCheckedNotificationPermission else { return }
+            hasCheckedNotificationPermission = true
+            
+            // Short delay to let the UI settle
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 second delay
+            
+            // Check current notification authorization status
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                // First time - request permission directly (iOS will show native prompt)
+                let granted = await notificationManager.requestAuthorization()
+                if !granted {
+                    // If user denied, show our custom prompt to guide to Settings
+                    await MainActor.run {
+                        showNotificationPermissionPrompt = true
+                    }
+                }
+            case .denied:
+                // Previously denied - show prompt to guide to Settings
+                // Only show this once per install (track with UserDefaults)
+                let hasShownDeniedPrompt = UserDefaults.standard.bool(forKey: "has_shown_notification_denied_prompt")
+                if !hasShownDeniedPrompt {
+                    UserDefaults.standard.set(true, forKey: "has_shown_notification_denied_prompt")
+                    await MainActor.run {
+                        showNotificationPermissionPrompt = true
+                    }
+                }
+            case .authorized, .provisional, .ephemeral:
+                // Already authorized - ensure notifications are scheduled
+                await MainActor.run {
+                    notificationManager.scheduleAllNotifications()
+                }
+            @unknown default:
+                break
+            }
+        }
+        .alert("Stay on Track with Notifications", isPresented: $showNotificationPermissionPrompt) {
+            Button("Enable Notifications") {
+                // Open iOS Settings for this app
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Maybe Later", role: .cancel) { }
+        } message: {
+            Text("Get workout reminders, streak alerts, and celebrate your achievements! Enable notifications in Settings to never miss a beat.")
         }
     }
     

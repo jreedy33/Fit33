@@ -1106,6 +1106,16 @@ struct ExerciseLibraryView: View {
             .onAppear {
                 let startTime = Date()
                 
+                // ⚡️ PERFORMANCE: Restore state from ViewStateCache for instant tab switch
+                let cachedState = ViewStateCache.shared.exerciseLibraryState
+                if !cachedState.searchText.isEmpty || cachedState.selectedCategory != "All" {
+                    // Restore previous state
+                    searchText = cachedState.searchText
+                    selectedCategory = cachedState.selectedCategory
+                    selectedEquipment = cachedState.selectedEquipment
+                    selectedMuscleGroup = cachedState.selectedMuscleGroup
+                }
+                
                 // Load exercises from cache first
                 loadExercises()
                 
@@ -1134,19 +1144,26 @@ struct ExerciseLibraryView: View {
                     }
                 }
             }
-            // ⚡️ HIGH-PERFORMANCE: Instant filter updates
-            .onChange(of: searchText) { _, _ in updateFilteredExercises() }
-            .onChange(of: selectedCategory) { _, _ in 
-                lastFilterKey = "" // Force filter rebuild
-                updateFilteredExercises() 
+            // ⚡️ HIGH-PERFORMANCE: Instant filter updates with state caching
+            .onChange(of: searchText) { _, newValue in
+                updateFilteredExercises()
+                // Save to ViewStateCache for tab persistence
+                ViewStateCache.shared.exerciseLibraryState.searchText = newValue
             }
-            .onChange(of: selectedEquipment) { _, _ in 
+            .onChange(of: selectedCategory) { _, newValue in 
                 lastFilterKey = "" // Force filter rebuild
-                updateFilteredExercises() 
+                updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedCategory = newValue
             }
-            .onChange(of: selectedMuscleGroup) { _, _ in 
+            .onChange(of: selectedEquipment) { _, newValue in 
                 lastFilterKey = "" // Force filter rebuild
-                updateFilteredExercises() 
+                updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedEquipment = newValue
+            }
+            .onChange(of: selectedMuscleGroup) { _, newValue in 
+                lastFilterKey = "" // Force filter rebuild
+                updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedMuscleGroup = newValue
             }
             .onChange(of: selectedExerciseTypes) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
@@ -1161,11 +1178,19 @@ struct ExerciseLibraryView: View {
                 updateFilteredExercises() 
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                // Refresh when app comes to foreground
-                viewContext.refreshAllObjects()
-                loadExercises()
-                updateFilteredExercises()
-                forceRenderID = UUID()
+                // ⚡️ PERFORMANCE: Only refresh if this tab was previously visited
+                // Prevents heavy work when user isn't on this tab
+                guard LazyTabManager.shared.shouldRenderContent(for: .exercises) else { return }
+                
+                // Debounced refresh - don't block foreground transition
+                Task {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                    await MainActor.run {
+                        viewContext.refreshAllObjects()
+                        loadExercises()
+                        updateFilteredExercises()
+                    }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FavoriteExerciseChanged"))) { _ in
                 // Refresh when favorites are changed

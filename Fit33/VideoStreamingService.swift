@@ -1,6 +1,7 @@
 import Foundation
 import AVKit
 import Combine
+import UIKit
 
 // MARK: - Video Streaming Service
 /// Handles fetching exercise videos from Cloudflare R2 with smart prefetching
@@ -263,6 +264,9 @@ class VideoStreamingService: ObservableObject {
                 let bothGenders = self.genderVideoCache.values.filter { $0.hasBothGenders }.count
                 print("📹 \(bothGenders) exercises have both male & female videos")
                 #endif
+                
+                // 🔄 Refresh GenderFilterService cache now that we have video mappings
+                GenderFilterService.shared.refreshCache()
             }
         } catch {
             print("⚠️ Failed to load video mappings from database: \(error)")
@@ -602,26 +606,31 @@ class VideoStreamingService: ObservableObject {
     }
     
     /// Get video URL for a specific exercise with gender preference
-    /// Uses the video_filename directly from the exercise record
+    /// ALWAYS uses gender-aware lookup first, then falls back to provided filename
     func getVideoURL(for exerciseName: String, videoFilename: String?) -> URL? {
         // First check local cache
         if let cachedURL = getLocalCachedVideo(for: exerciseName) {
             return cachedURL
         }
         
-        // Use provided filename if available
+        // ALWAYS try gender-aware lookup FIRST to respect user's gender preference
+        // This ensures male users see male videos and female users see female videos
+        if let url = getVideoURL(for: exerciseName) {
+            return url
+        }
+        
+        // Last resort: use provided filename if gender-aware lookup fails
         if let filename = videoFilename, !filename.isEmpty {
             let urlString = "\(storageBaseURL)/\(filename)"
             if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
                 #if DEBUG
-                print("📹 Direct video filename: \(exerciseName) -> \(filename)")
+                print("📹 Fallback to direct filename: \(exerciseName) -> \(filename)")
                 #endif
                 return url
             }
         }
         
-        // Fall back to standard lookup
-        return getVideoURL(for: exerciseName)
+        return nil
     }
     
     /// Get streaming URL (always remote, good for preview)
@@ -733,6 +742,39 @@ private struct ExerciseVideoMapping: Codable {
     let video_url: String
 }
 
+// MARK: - Video Player Without Controls
+
+struct VideoPlayerLayerView: UIViewRepresentable {
+    let player: AVPlayer
+    
+    func makeUIView(context: Context) -> PlayerContainerView {
+        let view = PlayerContainerView()
+        view.backgroundColor = .white
+        
+        let playerLayer = AVPlayerLayer(player: player)
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.frame = view.bounds
+        view.layer.addSublayer(playerLayer)
+        
+        view.playerLayer = playerLayer
+        
+        return view
+    }
+    
+    func updateUIView(_ uiView: PlayerContainerView, context: Context) {
+        // Frame will be updated in layoutSubviews
+    }
+    
+    class PlayerContainerView: UIView {
+        var playerLayer: AVPlayerLayer?
+        
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            playerLayer?.frame = bounds
+        }
+    }
+}
+
 // MARK: - Remote Video Player View (YouTube-Style Instant Start)
 
 import SwiftUI
@@ -758,7 +800,8 @@ struct RemoteVideoPlayerView: View {
             
             if let player = playerManager.player, showPlayer {
                 // 🎬 Video ready - show immediately with quick fade, aligned to top
-                VideoPlayer(player: player)
+                // Custom video view without native controls
+                VideoPlayerLayerView(player: player)
                     .aspectRatio(16/9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .transition(.opacity.animation(.easeIn(duration: 0.1)))
@@ -820,8 +863,9 @@ class RemoteVideoPlayerManager: ObservableObject {
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
         
-        // 👤 Get gender-appropriate video filename
-        let genderAwareFilename = videoFilename ?? GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true)
+        // 👤 ALWAYS check GenderFilterService FIRST to respect user's gender preference
+        // Only fall back to provided videoFilename if gender service has no match
+        let genderAwareFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) ?? videoFilename
         
         // 🚀 Use high-performance VideoPlaybackEngine (instant if cached)
         if let enginePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: genderAwareFilename) {

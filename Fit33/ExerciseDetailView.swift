@@ -1,11 +1,13 @@
 import SwiftUI
 import AVKit
 import CoreData
+import UIKit
 
 struct ExerciseDetailView: View {
     let exercise: Exercise
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.dismiss) private var dismiss
     
     // User history data
     @State private var personalRecord: (weight: Double, reps: Int, date: Date)?
@@ -147,7 +149,11 @@ struct ExerciseDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Video Section - solid white background extends behind status bar
+                // Status bar area with dark content style
+                DarkStatusBarArea()
+                    .frame(height: 80)
+                
+                // Video Section
                 videoSection
                 
                 // Content Section with dark background
@@ -181,30 +187,50 @@ struct ExerciseDetailView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
-                .background(Color(.systemBackground))
+                .background(Color(UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))) // Dark background
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ExerciseDetailScrollOffsetKey.self,
+                            value: geo.frame(in: .named("scroll")).minY
+                        )
+                    }
+                )
             }
         }
+        .coordinateSpace(name: "scroll")
         .scrollIndicators(.hidden)
         .ignoresSafeArea(edges: .top)
         .background(
             VStack(spacing: 0) {
-                // Solid white for video area (no blur, no effects)
-                Color.white.frame(height: 350)
-                // Dark for rest
-                Color(.systemBackground)
+                // White for top space + video area (80 + 240 = 320)
+                Color.white.frame(height: 320)
+                // Dark for rest of content (explicit dark color)
+                Color(UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))
             }
             .ignoresSafeArea()
         )
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                BackButton()
-            }
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.light, for: .navigationBar) // Light background = dark/black status bar icons
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.automatic, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar) // Light toolbar = dark status bar icons
+        .gesture(
+            // Swipe from left edge to go back
+            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                .onEnded { value in
+                    // Trigger dismiss if swiped far enough from left edge
+                    if value.startLocation.x < 50 && value.translation.width > 80 {
+                        HapticManager.tap()
+                        dismiss()
+                    }
+                }
+        )
         .onAppear {
+            // Force dark status bar icons for white video background
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                windowScene.windows.first?.overrideUserInterfaceStyle = .light
+            }
+            
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,
                 "exercise_id": exercise.id?.uuidString ?? "unknown"
@@ -214,6 +240,12 @@ struct ExerciseDetailView: View {
             // 🚀 Priority prefetch for this exercise video
             if let name = exercise.name {
                 VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
+            }
+        }
+        .onDisappear {
+            // Restore system appearance when leaving
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                windowScene.windows.first?.overrideUserInterfaceStyle = .unspecified
             }
         }
     }
@@ -886,9 +918,9 @@ class VideoPlayerManager: ObservableObject {
     }
 }
 
-// MARK: - Custom Back Button (Solid, No Blur)
+// MARK: - Native-Style Back Button (No Blur)
 
-struct BackButton: View {
+struct NativeStyleBackButton: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -896,15 +928,106 @@ struct BackButton: View {
             HapticManager.tap()
             dismiss()
         }) {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                Text("Back")
+                    .font(.system(size: 17, weight: .regular))
+            }
+            .foregroundColor(.blue) // iOS blue
+        }
+    }
+}
+
+// MARK: - Custom Back Button (Liquid Glass Effect)
+
+struct BackButton: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.tap()
+            dismiss()
+        }) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.black)
-                .frame(width: 36, height: 36)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(colorScheme == .dark ? .white : .black)
+                .frame(width: 40, height: 40)
                 .background(
-                    Circle()
-                        .fill(Color.white) // Fully solid white, no blur
-                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                    ZStack {
+                        // Liquid glass effect
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                        
+                        // Subtle border
+                        Circle()
+                            .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                        
+                        // Inner glow for depth
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.white.opacity(0.15),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 20
+                                )
+                            )
+                    }
                 )
+                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+        }
+    }
+}
+
+// MARK: - Scroll Offset Tracking
+
+struct ExerciseDetailScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Dark Status Bar Area
+
+struct DarkStatusBarArea: View {
+    var body: some View {
+        Color.white
+            .overlay(
+                StatusBarStyleSetter()
+                    .frame(width: 0, height: 0)
+            )
+    }
+}
+
+struct StatusBarStyleSetter: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> StatusBarHostController {
+        StatusBarHostController()
+    }
+    
+    func updateUIViewController(_ uiViewController: StatusBarHostController, context: Context) {
+        uiViewController.setNeedsStatusBarAppearanceUpdate()
+    }
+    
+    class StatusBarHostController: UIViewController {
+        override var preferredStatusBarStyle: UIStatusBarStyle {
+            .darkContent
+        }
+        
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            setNeedsStatusBarAppearanceUpdate()
+            
+            // Also try to update the navigation controller
+            navigationController?.setNeedsStatusBarAppearanceUpdate()
+            
+            // And the presenting controller
+            presentingViewController?.setNeedsStatusBarAppearanceUpdate()
         }
     }
 }

@@ -481,6 +481,15 @@ struct WorkoutProgressView: View {
     @State private var selectedTimeFrame: TimeFrame = .month
     @State private var showingDetailedStats = false
     
+    // ⚡️ PERFORMANCE: Deferred computation state - expensive operations run after view loads
+    @State private var cachedAchievements: [Achievement] = []
+    @State private var hasLoadedAchievements = false
+    @State private var cachedHeaviestWeight: Double = 0
+    @State private var cachedHighestReps: Int = 0
+    @State private var cachedMostSets: Int = 0
+    @State private var cachedLongestWorkoutMinutes: Int = 0
+    @State private var hasComputedPRs = false
+    
     enum TimeFrame: String, CaseIterable {
         case week = "Week"
         case month = "Month"
@@ -577,6 +586,89 @@ struct WorkoutProgressView: View {
                     .ignoresSafeArea(.all, edges: .top)
             }
         }
+        // ⚡️ PERFORMANCE: Deferred computation of expensive values
+        .task(id: "compute_stats") {
+            // Wait a tiny bit to let the view render first
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            
+            // Compute PRs in background if not already done
+            if !hasComputedPRs {
+                await computePRsInBackground()
+            }
+            
+            // Compute achievements with slight delay (very expensive)
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms more
+            if !hasLoadedAchievements {
+                await computeAchievementsInBackground()
+            }
+        }
+    }
+    
+    // ⚡️ PERFORMANCE: Background PR computation
+    private func computePRsInBackground() async {
+        // Compute on main thread since workouts is a @FetchRequest
+        // But do it after a tiny delay so UI renders first
+        var maxWeight: Double = 0
+        var maxReps: Int = 0
+        var maxSets: Int = 0
+        var maxMinutes: Int = 0
+        
+        // This iterates all workouts
+        for workout in workouts {
+            guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
+            maxSets = max(maxSets, exercises.count)
+            
+            let duration = workout.duration
+            if duration > 0 {
+                maxMinutes = max(maxMinutes, Int(duration / 60))
+            }
+            
+            for exercise in exercises {
+                guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { continue }
+                for set in sets {
+                    maxWeight = max(maxWeight, set.weight)
+                    maxReps = max(maxReps, Int(set.reps))
+                }
+            }
+        }
+        
+        cachedHeaviestWeight = maxWeight
+        cachedHighestReps = maxReps
+        cachedMostSets = maxSets
+        cachedLongestWorkoutMinutes = maxMinutes
+        hasComputedPRs = true
+    }
+    
+    // ⚡️ PERFORMANCE: Background achievement computation
+    private func computeAchievementsInBackground() async {
+        // Get values on main thread first
+        let totalWorkoutsCount = workouts.count
+        let streak = Int(userManager.currentUser?.currentStreak ?? 0)
+        let longest = Int(userManager.currentUser?.longestStreak ?? 0)
+        let heaviest = cachedHeaviestWeight
+        let reps = cachedHighestReps
+        let minutes = cachedLongestWorkoutMinutes
+        let sets = cachedMostSets
+        let monthWorkouts = workoutsThisMonth
+        let level = userManager.getLevel()
+        let xp = Int(userManager.currentUser?.xp ?? 0)
+        
+        // Generate achievements (can be done synchronously since AchievementService caches)
+        let achievements = AchievementService.shared.generateAllAchievements(
+            totalWorkouts: totalWorkoutsCount,
+            currentStreak: streak,
+            longestStreak: longest,
+            heaviestWeight: heaviest,
+            highestReps: reps,
+            longestWorkoutMinutes: minutes,
+            mostSetsInWorkout: sets,
+            workoutsThisMonth: monthWorkouts,
+            userLevel: level,
+            userXP: xp
+        )
+        
+        cachedAchievements = achievements
+        hasLoadedAchievements = true
     }
     
     // MARK: - Custom Header View
@@ -2588,16 +2680,13 @@ struct WorkoutProgressView: View {
         return milestones.sorted { $0.date > $1.date }.prefix(5).map { $0 }
     }
     
+    // ⚡️ PERFORMANCE: Use cached value (computed in background task)
     private var heaviestWeight: Double {
-        workouts.reduce(0.0) { maxWeight, workout in
-            guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { return maxWeight }
-            let workoutMax = exercises.reduce(0.0) { exerciseMax, exercise in
-                guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { return exerciseMax }
-                let exerciseMaxWeight = sets.map { $0.weight }.max() ?? 0
-                return max(exerciseMax, exerciseMaxWeight)
-            }
-            return max(maxWeight, workoutMax)
+        if hasComputedPRs {
+            return cachedHeaviestWeight
         }
+        // Quick fallback for initial render
+        return 0
     }
     
     private var heaviestWeightExercise: String {
@@ -2618,16 +2707,12 @@ struct WorkoutProgressView: View {
         return exerciseName
     }
     
+    // ⚡️ PERFORMANCE: Use cached value (computed in background task)
     private var highestReps: Int {
-        workouts.reduce(0) { maxReps, workout in
-            guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { return maxReps }
-            let workoutMax = exercises.reduce(0) { exerciseMax, exercise in
-                guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { return exerciseMax }
-                let exerciseMaxReps = sets.map { Int($0.reps) }.max() ?? 0
-                return max(exerciseMax, exerciseMaxReps)
-            }
-            return max(maxReps, workoutMax)
+        if hasComputedPRs {
+            return cachedHighestReps
         }
+        return 0
     }
     
     private var highestRepsExercise: String {
@@ -2648,34 +2733,31 @@ struct WorkoutProgressView: View {
         return exerciseName
     }
     
+    // ⚡️ PERFORMANCE: Use cached value (computed in background task)
     private var longestWorkoutMinutes: Int {
-        workouts.map { Int($0.duration / 60) }.max() ?? 0
-    }
-    
-    private var mostSetsInWorkout: Int {
-        workouts.reduce(0) { maxSets, workout in
-            guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { return maxSets }
-            let workoutSets = exercises.reduce(0) { total, exercise in
-                guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { return total }
-                return total + sets.count
-            }
-            return max(maxSets, workoutSets)
+        if hasComputedPRs {
+            return cachedLongestWorkoutMinutes
         }
+        return 0
     }
     
+    // ⚡️ PERFORMANCE: Use cached value (computed in background task)
+    private var mostSetsInWorkout: Int {
+        if hasComputedPRs {
+            return cachedMostSets
+        }
+        return 0
+    }
+    
+    // ⚡️ PERFORMANCE: Use cached achievements instead of recomputing on every render
     private var allAchievements: [Achievement] {
-        return AchievementService.shared.generateAllAchievements(
-            totalWorkouts: totalWorkouts,
-            currentStreak: currentStreak,
-            longestStreak: longestStreak,
-            heaviestWeight: heaviestWeight,
-            highestReps: highestReps,
-            longestWorkoutMinutes: longestWorkoutMinutes,
-            mostSetsInWorkout: mostSetsInWorkout,
-            workoutsThisMonth: workoutsThisMonth,
-            userLevel: userManager.getLevel(),
-            userXP: Int(userManager.currentUser?.xp ?? 0)
-        )
+        // Return cached if available
+        if hasLoadedAchievements && !cachedAchievements.isEmpty {
+            return cachedAchievements
+        }
+        
+        // Return a minimal placeholder while loading
+        return []
     }
     
     

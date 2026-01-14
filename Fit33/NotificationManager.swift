@@ -106,10 +106,23 @@ enum NotificationType: String, CaseIterable, Identifiable {
     
     var defaultEnabled: Bool {
         switch self {
-        case .dailyWorkoutReminder, .streakProtection, .personalRecord, 
-             .streakMilestone, .goalAchieved, .nutritionReminder:
+        // HIGH RETENTION NOTIFICATIONS - Default ON for maximum engagement
+        case .dailyWorkoutReminder,    // Core engagement - remind to work out
+             .streakProtection,        // Prevent churn by protecting streaks
+             .workoutComplete,         // Celebrate wins - positive reinforcement
+             .comebackReminder,        // Re-engage dormant users
+             .personalRecord,          // Celebrate achievements
+             .streakMilestone,         // Celebrate consistency
+             .levelUp,                 // Gamification engagement
+             .goalAchieved,            // Progress celebration
+             .nutritionReminder,       // Full app engagement
+             .morningMotivation,       // Daily engagement touchpoint
+             .weeklyProgress:          // Weekly recap keeps users invested
             return true
-        default:
+        // OPTIONAL NOTIFICATIONS - Default OFF to avoid notification fatigue
+        case .proteinGoal,             // Can feel nagging
+             .stepsGoal,               // Better handled by Apple Health
+             .waterReminder:           // Very frequent, opt-in only
             return false
         }
     }
@@ -304,6 +317,29 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     private func saveEnabledNotifications() {
         UserDefaults.standard.set(Array(enabledNotifications), forKey: "enabled_notifications")
+    }
+    
+    /// Enable all high-value notifications for new users
+    /// Called during onboarding to maximize engagement
+    func enableAllDefaultNotifications() {
+        enabledNotifications = Set(NotificationType.allCases.filter { $0.defaultEnabled }.map { $0.rawValue })
+        saveEnabledNotifications()
+        print("📬 [NOTIFICATIONS] Enabled all default notifications: \(enabledNotifications.count) types")
+    }
+    
+    /// Check if this is a returning user who previously had notifications enabled
+    /// but iOS permissions got reset (app reinstall, etc)
+    func checkAndPromptIfNeeded() async -> Bool {
+        // If user had notifications enabled before but iOS permissions are now denied
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let hadNotificationsEnabled = UserDefaults.standard.bool(forKey: "master_notifications_enabled")
+        
+        if hadNotificationsEnabled && settings.authorizationStatus == .denied {
+            // User wanted notifications but they're now blocked
+            return true // Should prompt to enable in Settings
+        }
+        
+        return false
     }
     
     // MARK: - Setup Categories

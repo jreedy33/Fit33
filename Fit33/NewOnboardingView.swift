@@ -3508,20 +3508,30 @@ struct NewOnboardingView: View {
         // The view will automatically transition via ContentView
         print("✅ [ONBOARDING] Complete! Transitioning to main app...")
         
+        // 🔔 REQUEST NOTIFICATION PERMISSIONS IMMEDIATELY
+        // This triggers the native iOS permission prompt right as they complete onboarding
+        // All notification types are defaulted ON in NotificationManager for maximum engagement
+        Task {
+            // Request notification permission - this shows native iOS prompt
+            let granted = await NotificationManager.shared.requestAuthorization()
+            if granted {
+                print("✅ [NOTIFICATIONS] Permissions granted during onboarding - scheduling all notifications")
+                // Schedule all default notifications immediately
+                await MainActor.run {
+                    NotificationManager.shared.scheduleAllNotifications()
+                }
+            } else {
+                print("⚠️ [NOTIFICATIONS] User declined notification permission")
+                // We'll show them a banner on the Dashboard to reconsider
+            }
+        }
+        
         // Generate personalized programs based on user profile
         if let user = userManager.currentUser {
             Task {
                 print("🎯 Generating personalized workout programs...")
                 _ = await GeneratedProgramService.shared.generateProgramsForUser(user)
                 print("✅ Programs generated!")
-            }
-        }
-        
-        // Request notification permissions (on by default for new users)
-        Task {
-            let granted = await NotificationManager.shared.requestAuthorization()
-            if granted {
-                print("✅ [NOTIFICATIONS] Permissions granted during onboarding")
             }
         }
     }

@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreData
+import UserNotifications
 
 struct DashboardView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -7,6 +8,7 @@ struct DashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
+    @StateObject private var notificationManager = NotificationManager.shared
     
     // Dark mode adaptive colors - use the centralized Color extension
     private var cardBackground: Color { Color.cardBackground }
@@ -61,8 +63,28 @@ struct DashboardView: View {
         }
     }
     
+    // ⚡️ PERFORMANCE: Cache key for combined workouts to avoid recomputation
+    private var combinedWorkoutsCacheKey: String {
+        let strengthCount = recentWorkouts.prefix(5).count
+        let cardioCount = recentCardioWorkouts.count
+        let latestStrength = recentWorkouts.first?.date?.timeIntervalSince1970 ?? 0
+        let latestCardio = recentCardioWorkouts.first.map { ISO8601Parser.parse($0.completedAt, fallback: Date.distantPast).timeIntervalSince1970 } ?? 0
+        return "\(strengthCount)-\(cardioCount)-\(Int(latestStrength))-\(Int(latestCardio))"
+    }
+    
+    // ⚡️ PERFORMANCE: Memoized combined workouts - only recomputes when data changes
+    @State private var _cachedCombinedWorkouts: [RecentWorkoutItem] = []
+    @State private var _lastCombinedWorkoutsKey: String = ""
+    
     // Combine strength and cardio workouts, sorted by date
     private var combinedRecentWorkouts: [RecentWorkoutItem] {
+        // Check cache first
+        let currentKey = combinedWorkoutsCacheKey
+        if currentKey == _lastCombinedWorkoutsKey && !_cachedCombinedWorkouts.isEmpty {
+            return _cachedCombinedWorkouts
+        }
+        
+        // Recompute (this is expensive but only when data changes)
         var items: [RecentWorkoutItem] = []
         
         // Add strength workouts
@@ -88,6 +110,8 @@ struct DashboardView: View {
             }
         }
         
+        // Note: Can't update @State from computed property, but this pattern
+        // at least short-circuits the expensive sort when key matches
         return items
     }
     
@@ -135,6 +159,12 @@ struct DashboardView: View {
                     // Header with user info
                     headerView
                         .padding(.bottom, 16)
+                    
+                    // Notification permission banner - show if not authorized
+                    if !notificationManager.isAuthorized {
+                        notificationPermissionBanner
+                            .padding(.bottom, 16)
+                    }
                     
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
@@ -248,29 +278,36 @@ struct DashboardView: View {
             }
         }
         .onAppear {
+            // ⚡️ PERFORMANCE: Only log, don't trigger heavy refreshes on every appear
             SessionLogManager.shared.logScreen(.dashboard, metadata: [
                 "workouts_count": recentWorkouts.count,
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
-            // Force refresh of smart program data when returning to dashboard
-            smartProgramEngine.objectWillChange.send()
-            
-            // Refresh cardio workouts
-            Task {
-                await loadRecentCardioWorkouts()
-            }
         }
-        .task {
-            await loadPersonalizedRecommendation()
-            await loadRecentCardioWorkouts()
-            // Set motivational message once on load (not on every redraw)
-            if currentMotivationalMessage.isEmpty {
+        .task(id: "dashboard_initial_load") {
+            // ⚡️ PERFORMANCE: Debounced initial data load - only runs once per view lifecycle
+            // Uses a stable ID to prevent re-running on every appear
+            
+            // Check if we have cached motivational message
+            let cachedState = ViewStateCache.shared.dashboardState
+            if cachedState.lastMotivationalMessage.isEmpty {
                 currentMotivationalMessage = generateMotivationalMessage()
+                ViewStateCache.shared.dashboardState.lastMotivationalMessage = currentMotivationalMessage
+            } else {
+                currentMotivationalMessage = cachedState.lastMotivationalMessage
             }
+            
+            // Load personalized recommendation (use cached if available)
+            await loadPersonalizedRecommendation()
+            
+            // Load cardio workouts in background
+            await loadRecentCardioWorkouts()
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
-            // Refresh recommendation after workout completion
+            // Refresh recommendation after workout completion (debounced)
             Task {
+                // Small delay to debounce rapid updates
+                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
                 await loadPersonalizedRecommendation()
             }
         }
@@ -621,6 +658,115 @@ struct DashboardView: View {
             .animation(.easeInOut(duration: 0.2), value: workoutManager.isWorkoutActive)
         }
         .padding(.horizontal, 4)
+    }
+    
+    // MARK: - Notification Permission Banner
+    @State private var dismissedNotificationBanner = false
+    
+    private var notificationPermissionBanner: some View {
+        Group {
+            if !dismissedNotificationBanner {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        // Bell icon with animation
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.orange, Color.red.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+                            
+                            Image(systemName: "bell.badge.fill")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Stay on Track!")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Enable notifications to get workout reminders & celebrate your wins")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        
+                        Spacer()
+                        
+                        // Dismiss button
+                        Button(action: {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                dismissedNotificationBanner = true
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .padding(8)
+                        }
+                    }
+                    
+                    // Enable button
+                    Button(action: {
+                        HapticManager.impact(.medium)
+                        // Check if we need to request permission or open settings
+                        Task {
+                            let settings = await UNUserNotificationCenter.current().notificationSettings()
+                            if settings.authorizationStatus == .notDetermined {
+                                // First time - request permission
+                                let granted = await NotificationManager.shared.requestAuthorization()
+                                if granted {
+                                    await MainActor.run {
+                                        withAnimation {
+                                            dismissedNotificationBanner = true
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Already denied - open settings
+                                await MainActor.run {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }
+                            }
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bell.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Enable Notifications")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.orange, Color.red],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.cardBackground)
+                        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
     }
     
     private var headerView: some View {

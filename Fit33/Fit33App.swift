@@ -101,6 +101,12 @@ struct Fit33App: App {
         // ⚡ Pre-warm haptic generators for instant tap feedback
         HapticManager.shared.prepareAll()
         
+        // 🚀 PERFORMANCE: Pre-warm startup cache (critical data for instant tab loads)
+        Task(priority: .userInitiated) {
+            let context = PersistenceController.shared.container.viewContext
+            await StartupCache.shared.warmUp(context: context)
+        }
+        
         // 👤 Initialize gender filter service (centralized gender management)
         _ = GenderFilterService.shared
         

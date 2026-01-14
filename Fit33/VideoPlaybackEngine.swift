@@ -147,8 +147,24 @@ final class VideoPlaybackEngine: ObservableObject {
         // Track as recent
         trackRecentExercise(key)
         
+        // Get the correct gender-aware filename we SHOULD be playing
+        let expectedFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true)
+        
         // 1. Check hot cache first (favorites, current)
         if let cached = hotCache[key] {
+            // ✅ VALIDATE: Ensure cached video matches current gender preference
+            if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
+                #if DEBUG
+                print("🔄 HOT cache INVALID (wrong gender): \(exerciseName)")
+                print("   Cached: \(cached.filename)")
+                print("   Expected: \(expected)")
+                #endif
+                // Remove invalid cache entry and create new player
+                hotCache.removeValue(forKey: key)
+                guard let url = getVideoURL(for: key, videoFilename: videoFilename) else { return nil }
+                return createInstantStartPlayer(url: url, exerciseName: key, filename: expected)
+            }
+            
             hotCache[key]?.lastAccessed = Date()
             cached.player.seek(to: .zero)
             cached.player.play()
@@ -160,8 +176,26 @@ final class VideoPlaybackEngine: ObservableObject {
         
         // 2. Check warm cache
         if let cached = warmCache[key] {
+            // ✅ VALIDATE: Ensure cached video matches current gender preference
+            if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
+                #if DEBUG
+                print("🔄 WARM cache INVALID (wrong gender): \(exerciseName)")
+                print("   Cached: \(cached.filename)")
+                print("   Expected: \(expected)")
+                #endif
+                // Remove invalid cache entry asynchronously (thread-safe)
+                cacheQueue.async(flags: .barrier) { [weak self] in
+                    self?.warmCache.removeValue(forKey: key)
+                    self?.warmCacheOrder.removeAll { $0 == key }
+                }
+                guard let url = getVideoURL(for: key, videoFilename: videoFilename) else { return nil }
+                return createInstantStartPlayer(url: url, exerciseName: key, filename: expected)
+            }
+            
             promoteToHotIfFavorite(key)
-            warmCache[key]?.lastAccessed = Date()
+            cacheQueue.async(flags: .barrier) { [weak self] in
+                self?.warmCache[key]?.lastAccessed = Date()
+            }
             updateWarmCacheLRU(key)
             cached.player.seek(to: .zero)
             cached.player.play()
@@ -183,7 +217,7 @@ final class VideoPlaybackEngine: ObservableObject {
         print("🆕 Creating player: \(exerciseName)")
         #endif
         
-        return createInstantStartPlayer(url: url, exerciseName: key, filename: videoFilename ?? "")
+        return createInstantStartPlayer(url: url, exerciseName: key, filename: expectedFilename ?? videoFilename ?? "")
     }
     
     /// Check if video is ready for instant playback (in cache)
@@ -237,12 +271,15 @@ final class VideoPlaybackEngine: ObservableObject {
         favoriteExercises.insert(key)
         saveFavorites()
         
-        // Immediately promote to hot cache if in warm
-        if let cached = warmCache.removeValue(forKey: key) {
-            var updated = cached
-            updated.tier = .hot
-            hotCache[key] = updated
-            warmCacheOrder.removeAll { $0 == key }
+        // Immediately promote to hot cache if in warm (thread-safe)
+        cacheQueue.async(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            if let cached = self.warmCache.removeValue(forKey: key) {
+                var updated = cached
+                updated.tier = .hot
+                self.hotCache[key] = updated
+                self.warmCacheOrder.removeAll { $0 == key }
+            }
         }
         
         // Or prefetch if not in cache at all
@@ -402,17 +439,23 @@ final class VideoPlaybackEngine: ObservableObject {
     }
     
     private func updateWarmCacheLRU(_ key: String) {
-        warmCacheOrder.removeAll { $0 == key }
-        warmCacheOrder.append(key)
+        cacheQueue.async(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            self.warmCacheOrder.removeAll { $0 == key }
+            self.warmCacheOrder.append(key)
+        }
     }
     
     private func promoteToHotIfFavorite(_ key: String) {
-        guard favoriteExercises.contains(key), let cached = warmCache[key] else { return }
-        warmCache.removeValue(forKey: key)
-        warmCacheOrder.removeAll { $0 == key }
-        var promoted = cached
-        promoted.tier = .hot
-        hotCache[key] = promoted
+        cacheQueue.async(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            guard self.favoriteExercises.contains(key), let cached = self.warmCache[key] else { return }
+            self.warmCache.removeValue(forKey: key)
+            self.warmCacheOrder.removeAll { $0 == key }
+            var promoted = cached
+            promoted.tier = .hot
+            self.hotCache[key] = promoted
+        }
     }
     
     private func evictFromHot(_ key: String) {
@@ -426,6 +469,7 @@ final class VideoPlaybackEngine: ObservableObject {
     }
     
     private func evictFromWarm(_ key: String) {
+        // Note: This is called from within cacheQueue already
         if let cached = warmCache.removeValue(forKey: key) {
             cached.player.pause()
             cached.player.replaceCurrentItem(with: nil)
@@ -541,16 +585,16 @@ final class VideoPlaybackEngine: ObservableObject {
     // MARK: - Private: Video URL Resolution
     
     private func getVideoURL(for exerciseName: String, videoFilename: String?) -> URL? {
-        // 1. Direct filename if provided (already gender-specific from database)
-        if let filename = videoFilename, !filename.isEmpty {
+        // 1. ALWAYS check GenderFilterService FIRST for correct gender video
+        // This ensures user's gender preference is respected even if videoFilename is provided
+        if let filename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) {
             let urlString = "\(r2BaseURL)/\(filename)"
             return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
         }
         
-        // 2. Use GenderFilterService for gender-aware video selection
-        if let filename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) {
-            let urlString = "\(r2BaseURL)/\(filename)"
-            return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
+        // 2. Fallback to VideoStreamingService with gender awareness
+        if let url = VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName) {
+            return url
         }
         
         // 3. Check our mapping cache
@@ -560,17 +604,29 @@ final class VideoPlaybackEngine: ObservableObject {
             return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
         }
         
-        // 4. Fallback to VideoStreamingService with gender awareness
-        return VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName)
+        // 4. Last resort: use provided filename if nothing else works
+        if let filename = videoFilename, !filename.isEmpty {
+            let urlString = "\(r2BaseURL)/\(filename)"
+            return URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString)
+        }
+        
+        return nil
     }
     
     private func getVideoFilename(for exerciseName: String) -> String? {
         let key = exerciseName.lowercased()
         
+        // ALWAYS use GenderFilterService for gender-aware video selection
+        if let filename = GenderFilterService.shared.getVideoFilename(for: key, fallbackToOpposite: true) {
+            return filename
+        }
+        
+        // Fallback to our mapping cache
         if let filename = videoMappings[key] {
             return filename
         }
         
+        // Last resort: legacy cache
         return VideoStreamingService.shared.videoFilenameCache[key]
     }
     

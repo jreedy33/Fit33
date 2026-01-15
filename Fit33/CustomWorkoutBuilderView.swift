@@ -815,6 +815,11 @@ struct CustomWorkoutBuilderView: View {
                     // Fixed search and filters (stays in place)
                     compactFiltersView
                     
+                    // Banner ad at top of exercise list
+                    BannerAdView()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    
                     // Scrollable exercise list
                     ScrollView {
                         GeometryReader { geometry in
@@ -935,13 +940,6 @@ struct CustomWorkoutBuilderView: View {
                         forceRenderID = UUID()
                     })
                 }
-                
-                // Banner ad at the bottom of the screen
-                VStack {
-                    Spacer()
-                    BannerAdView()
-                }
-                .ignoresSafeArea(.keyboard)
             }
             
             // Custom animated header

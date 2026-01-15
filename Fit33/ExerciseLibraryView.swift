@@ -1184,6 +1184,11 @@ struct ExerciseLibraryView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 12)
                 
+                // Banner ad below filters
+                BannerAdView()
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                
                 // Scrollable exercise list only
                 ScrollViewReader { scrollProxy in
                     ScrollView {

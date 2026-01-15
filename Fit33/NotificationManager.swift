@@ -892,18 +892,32 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 print("⏰ [NOTIFICATIONS] Snoozed for 1 hour")
                 
             case "VIEW_SHARED_WORKOUT", UNNotificationDefaultActionIdentifier:
-                // Handle shared workout notifications
+                // Handle various push notification types
                 if let notificationType = userInfo["type"] as? String {
-                    if notificationType == "shared_workout", let workoutId = userInfo["workout_id"] as? String {
+                    switch notificationType {
+                    case "shared_workout":
                         // Navigate to received workout preview
-                        DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
-                        print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
-                    } else if notificationType == "friend_request" {
-                        // Navigate to friends list
+                        if let workoutId = userInfo["workout_id"] as? String {
+                            DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
+                            print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
+                        }
+                        
+                    case "friend_request":
+                        // Navigate to friends list to see pending requests
                         DeepLinkManager.shared.pendingDestination = .friends
-                        print("👥 [NOTIFICATIONS] Opening friends list")
-                    } else {
-                        print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")
+                        // Refresh friend requests
+                        Task { await FriendService.shared.fetchPendingRequests() }
+                        print("👥 [NOTIFICATIONS] Opening friends list for friend request")
+                        
+                    case "friend_request_accepted":
+                        // Navigate to friends list to see new friend
+                        DeepLinkManager.shared.pendingDestination = .friends
+                        // Refresh friends list
+                        Task { await FriendService.shared.fetchFriends() }
+                        print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
+                        
+                    default:
+                        print("📱 [NOTIFICATIONS] User opened notification: \(notificationType)")
                     }
                 } else {
                     print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")

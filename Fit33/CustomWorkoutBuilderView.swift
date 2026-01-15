@@ -935,6 +935,13 @@ struct CustomWorkoutBuilderView: View {
                         forceRenderID = UUID()
                     })
                 }
+                
+                // Banner ad at the bottom of the screen
+                VStack {
+                    Spacer()
+                    BannerAdView()
+                }
+                .ignoresSafeArea(.keyboard)
             }
             
             // Custom animated header

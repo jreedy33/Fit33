@@ -676,7 +676,7 @@ struct DashboardView: View {
     
     // MARK: - Custom Header View
     private var customHeaderView: some View {
-        HStack {
+        HStack(alignment: .center) {
             Image("fit33-logo")
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -685,8 +685,22 @@ struct DashboardView: View {
             
             Spacer()
             
-            // Profile icon and timer grouped together
+            // Timer and profile icon grouped together
             HStack(spacing: 8) {
+                // Active workout timer (only shows when workout is active)
+                if workoutManager.isWorkoutActive {
+                    Text(workoutManager.formattedDuration)
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+                
                 // Profile button with hollow blue gradient ring and photo/person icon
                 NavigationLink(destination: ProfileView()) {
                     ZStack(alignment: .topTrailing) {
@@ -751,21 +765,6 @@ struct DashboardView: View {
                     }
                 }
                 .accessibilityLabel("Profile")
-                .offset(y: 4) // Align with Fit33 logo
-                
-                // Active workout timer (only shows when workout is active)
-                if workoutManager.isWorkoutActive {
-                    Text(workoutManager.formattedDuration)
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.ultraThinMaterial)
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                }
             }
             .animation(.easeInOut(duration: 0.2), value: workoutManager.isWorkoutActive)
         }
@@ -4064,6 +4063,8 @@ struct WorkoutHistoryFullView: View {
         animation: .none)  // Disable animation for faster scroll
     private var allWorkouts: FetchedResults<Workout>
     
+    @StateObject private var adManager = AdManager.shared
+    
     // Group workouts by date
     private var groupedWorkouts: [(Date, [Workout])] {
         let calendar = Calendar.current
@@ -4102,8 +4103,12 @@ struct WorkoutHistoryFullView: View {
                     } else {
                         LazyVStack(spacing: 20) {
                             ForEach(Array(groupedWorkouts.enumerated()), id: \.offset) { _, dayGroup in
-                                WorkoutHistoryDaySection(date: dayGroup.0, workouts: dayGroup.1)
-                                    .padding(.horizontal, 20)
+                                WorkoutHistoryDaySectionWithAds(
+                                    date: dayGroup.0,
+                                    workouts: dayGroup.1,
+                                    showAds: adManager.adsEnabled
+                                )
+                                .padding(.horizontal, 20)
                             }
                         }
                     }
@@ -4211,7 +4216,83 @@ struct HistoryStatPill: View {
     }
 }
 
-// MARK: - Workout History Day Section
+// MARK: - Workout History Day Section With Ads
+struct WorkoutHistoryDaySectionWithAds: View {
+    let date: Date
+    let workouts: [Workout]
+    let showAds: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var displayDate: String {
+        if Calendar.current.isDateInToday(date) {
+            return "Today"
+        } else if Calendar.current.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE, MMMM d"
+            return formatter.string(from: date)
+        }
+    }
+    
+    // Calculate total items including ads
+    private var totalItemsWithAds: Int {
+        guard showAds else { return workouts.count }
+        let workoutCount = workouts.count
+        let adCount = workoutCount / 2 // Ad after every 2 workouts
+        return workoutCount + adCount
+    }
+    
+    // Check if position should show an ad (positions 2, 5, 8...)
+    private func isAdPosition(_ index: Int) -> Bool {
+        guard showAds else { return false }
+        return (index + 1) % 3 == 0
+    }
+    
+    // Get the actual workout index accounting for ads
+    private func getWorkoutIndex(for displayIndex: Int) -> Int {
+        guard showAds else { return displayIndex }
+        let adsBeforeThisIndex = displayIndex / 3
+        return displayIndex - adsBeforeThisIndex
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Date header
+            HStack {
+                Text(displayDate)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("\(workouts.count) workout\(workouts.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 4)
+            
+            // Workout cards with ads inserted
+            VStack(spacing: 12) {
+                ForEach(0..<totalItemsWithAds, id: \.self) { index in
+                    if isAdPosition(index) && showAds {
+                        // Native ad card
+                        NativeAdCardView()
+                    } else {
+                        // Workout card
+                        let workoutIndex = getWorkoutIndex(for: index)
+                        if workoutIndex < workouts.count {
+                            RecentWorkoutCard(workout: workouts[workoutIndex])
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Workout History Day Section (Legacy - kept for compatibility)
 struct WorkoutHistoryDaySection: View {
     let date: Date
     let workouts: [Workout]

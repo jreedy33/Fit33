@@ -47,6 +47,24 @@ struct ActiveWorkoutView: View {
     // Shuffle ad tracking - show ad every 2nd shuffle
     @State private var shuffleCount: Int = 0
     
+    // MARK: - Ad Logic
+    
+    /// Determine if inline ads should show based on workout source
+    private var shouldShowInlineAds: Bool {
+        guard AdManager.shared.adsEnabled else { return false }
+        
+        // Check workout name to determine source
+        let workoutName = workout.name?.lowercased() ?? ""
+        
+        // Don't show ads for custom workouts (user built their own)
+        if workoutName.contains("custom workout") {
+            return false
+        }
+        
+        // Show ads for auto-generated, received, and program workouts
+        return true
+    }
+    
     init(isPresented: Binding<Bool>, workout: Workout, exercises: [Exercise]) {
         self._isPresented = isPresented
         self.workout = workout
@@ -182,6 +200,12 @@ struct ActiveWorkoutView: View {
                                     isActiveCard: activeExerciseId == exerciseId
                                 )
                                 .id(exerciseId) // For ScrollViewReader
+                                
+                                // Show inline ad after every 2nd exercise
+                                if shouldShowInlineAds && (index + 1) % 2 == 0 && index < exercises.count - 1 {
+                                    NativeAdCardView()
+                                        .id("inline_ad_\(index)")
+                                }
                             }
                         }
                         

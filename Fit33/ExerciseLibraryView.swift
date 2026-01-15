@@ -7,7 +7,6 @@ struct ExerciseLibraryView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var exercises: [Exercise] = []
     @State private var searchText = ""
-    @State private var selectedExerciseTypes: Set<ExerciseFilterService.ExerciseType> = [.strength] // Default to Strength, allows multiple
     @State private var selectedCategory = "All"
     @State private var selectedEquipment = "All"
     @State private var selectedMuscleGroup = "All"
@@ -31,9 +30,13 @@ struct ExerciseLibraryView: View {
     
     enum ExerciseFilterType: String, CaseIterable {
         case recommended = "Recommended"
-        case all = "All Exercises"
         case favorites = "Favorites"
         case custom = "Custom Added"
+        case strength = "Strength"
+        case cardio = "Cardio"
+        case plyometrics = "Plyometrics"
+        case stretching = "Stretching"
+        case all = "All Exercises"
     }
     
     // MARK: - Top 500 Recommended Exercises (Curated from database)
@@ -352,9 +355,24 @@ struct ExerciseLibraryView: View {
     // Categories filtered by selected exercise types (combines all selected)
     private var categories: [String] {
         var allCategories = Set<String>(["All"])
-        for type in selectedExerciseTypes {
-            allCategories.formUnion(ExerciseFilterService.categories(for: type))
+        
+        // Get categories based on current filter type
+        switch exerciseFilter {
+        case .strength:
+            allCategories.formUnion(ExerciseFilterService.categories(for: .strength))
+        case .cardio:
+            allCategories.formUnion(ExerciseFilterService.categories(for: .cardio))
+        case .plyometrics:
+            allCategories.formUnion(ExerciseFilterService.categories(for: .plyometrics))
+        case .stretching:
+            allCategories.formUnion(ExerciseFilterService.categories(for: .stretching))
+        case .recommended, .favorites, .custom, .all:
+            // Show all categories for these filters
+            for type in ExerciseFilterService.ExerciseType.allCases {
+                allCategories.formUnion(ExerciseFilterService.categories(for: type))
+            }
         }
+        
         return ["All"] + Array(allCategories).filter { $0 != "All" }.sorted()
     }
     
@@ -645,12 +663,20 @@ struct ExerciseLibraryView: View {
         switch exerciseFilter {
         case .recommended:
             return "star.circle.fill"
-        case .all:
-            return "line.3.horizontal.decrease.circle"
         case .favorites:
             return "heart.fill"
         case .custom:
             return "person.crop.circle.badge.plus"
+        case .strength:
+            return "dumbbell.fill"
+        case .cardio:
+            return "heart.text.square.fill"
+        case .plyometrics:
+            return "figure.jumprope"
+        case .stretching:
+            return "figure.flexibility"
+        case .all:
+            return "line.3.horizontal.decrease.circle"
         }
     }
     
@@ -658,12 +684,20 @@ struct ExerciseLibraryView: View {
         switch exerciseFilter {
         case .recommended:
             return Color(red: 0.0, green: 0.75, blue: 0.75)  // Vibrant teal to match theme
-        case .all:
-            return Color(.systemGray5)
         case .favorites:
             return .yellow
         case .custom:
             return .blue
+        case .strength:
+            return .purple
+        case .cardio:
+            return .red
+        case .plyometrics:
+            return .orange
+        case .stretching:
+            return .green
+        case .all:
+            return .secondary
         }
     }
     
@@ -678,7 +712,7 @@ struct ExerciseLibraryView: View {
         let startTime = CFAbsoluteTimeGetCurrent()
         
         // Build filter key for caching
-        let filterKey = "\(exerciseFilter.rawValue)|\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)|\(selectedExerciseTypes.map { $0.rawValue }.sorted().joined())"
+        let filterKey = "\(exerciseFilter.rawValue)|\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)"
         
         // If filters changed, rebuild pre-filtered cache
         if filterKey != lastFilterKey {
@@ -968,7 +1002,7 @@ struct ExerciseLibraryView: View {
     private func applyFiltersOnly(to exercises: [Exercise]) -> [Exercise] {
         var filtered = exercises
         
-        // Filter by exercise filter type (Recommended/All/Favorites/Custom)
+        // Filter by exercise filter type
         switch exerciseFilter {
         case .recommended:
             filtered = filtered.filter { exercise in
@@ -981,30 +1015,49 @@ struct ExerciseLibraryView: View {
             filtered = filtered.filter { $0.isFavorite }
         case .custom:
             filtered = filtered.filter { $0.instructions?.contains("[CUSTOM_EXERCISE") ?? false }
-        case .all:
-            break
-        }
-        
-        // Filter by exercise type(s)
-        if !selectedExerciseTypes.isEmpty {
+        case .strength:
             filtered = filtered.filter { exercise in
                 if let workoutType = exercise.workoutType, !workoutType.isEmpty {
-                    let normalizedType = workoutType.lowercased()
-                    for selectedType in selectedExerciseTypes {
-                        switch selectedType {
-                        case .strength: if normalizedType == "strength" { return true }
-                        case .cardio: if normalizedType == "cardio" { return true }
-                        case .plyometrics: if normalizedType == "plyometrics" { return true }
-                        case .stretching: if normalizedType == "stretch" || normalizedType == "stretching" { return true }
-                        }
-                    }
-                    return false
+                    return workoutType.lowercased() == "strength"
                 }
                 let smartType = ExerciseFilterService.classifyExerciseType(
                     name: exercise.name, category: exercise.category, equipment: exercise.equipment
                 )
-                return selectedExerciseTypes.contains(smartType)
+                return smartType == .strength
             }
+        case .cardio:
+            filtered = filtered.filter { exercise in
+                if let workoutType = exercise.workoutType, !workoutType.isEmpty {
+                    return workoutType.lowercased() == "cardio"
+                }
+                let smartType = ExerciseFilterService.classifyExerciseType(
+                    name: exercise.name, category: exercise.category, equipment: exercise.equipment
+                )
+                return smartType == .cardio
+            }
+        case .plyometrics:
+            filtered = filtered.filter { exercise in
+                if let workoutType = exercise.workoutType, !workoutType.isEmpty {
+                    return workoutType.lowercased() == "plyometrics"
+                }
+                let smartType = ExerciseFilterService.classifyExerciseType(
+                    name: exercise.name, category: exercise.category, equipment: exercise.equipment
+                )
+                return smartType == .plyometrics
+            }
+        case .stretching:
+            filtered = filtered.filter { exercise in
+                if let workoutType = exercise.workoutType, !workoutType.isEmpty {
+                    let normalizedType = workoutType.lowercased()
+                    return normalizedType == "stretch" || normalizedType == "stretching"
+                }
+                let smartType = ExerciseFilterService.classifyExerciseType(
+                    name: exercise.name, category: exercise.category, equipment: exercise.equipment
+                )
+                return smartType == .stretching
+            }
+        case .all:
+            break
         }
         
         // Filter by category
@@ -1237,10 +1290,6 @@ struct ExerciseLibraryView: View {
                 updateFilteredExercises()
                 ViewStateCache.shared.exerciseLibraryState.selectedMuscleGroup = newValue
             }
-            .onChange(of: selectedExerciseTypes) { _, _ in 
-                lastFilterKey = "" // Force filter rebuild
-                updateFilteredExercises() 
-            }
             .onChange(of: exerciseFilter) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
                 updateFilteredExercises() 
@@ -1275,8 +1324,6 @@ struct ExerciseLibraryView: View {
         }
     }
     
-    @State private var showStretchMode = false
-    
     // MARK: - Custom Header View
     private var customHeaderView: some View {
         HStack {
@@ -1293,28 +1340,6 @@ struct ExerciseLibraryView: View {
             
             Spacer()
             
-            // Stretch Mode button
-            Button(action: { HapticManager.selectionChanged(); showStretchMode = true }) {
-                HStack(spacing: 4) {
-                    Text("🧘")
-                        .font(.system(size: 14))
-                    Text("Stretch")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(.mint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color.mint.opacity(0.15))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.mint.opacity(0.3), lineWidth: 1)
-                        )
-                )
-            }
-            
             // Active workout timer (only shows when workout is active)
             if WorkoutManager.shared.isWorkoutActive {
                 Text(WorkoutManager.shared.formattedDuration)
@@ -1329,9 +1354,6 @@ struct ExerciseLibraryView: View {
             }
         }
         .padding(.leading, 4)
-        .fullScreenCover(isPresented: $showStretchMode) {
-            StretchModeView()
-        }
     }
     
     private var compactFiltersView: some View {
@@ -1433,43 +1455,7 @@ struct ExerciseLibraryView: View {
             
             // Compact filter categories
             VStack(alignment: .leading, spacing: 8) {
-                // Exercise Type row (Strength/Cardio/Plyometrics/Stretching)
-                HStack(spacing: 8) {
-                    Text("Type")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .frame(width: 70, alignment: .leading)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(ExerciseFilterService.ExerciseType.allCases, id: \.self) { exerciseType in
-                                ExerciseTypeChip(
-                                    exerciseType: exerciseType,
-                                    isSelected: selectedExerciseTypes.contains(exerciseType),
-                                    onTap: {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            // Toggle selection - allows multiple types
-                                            if selectedExerciseTypes.contains(exerciseType) {
-                                                // Keep at least one selected
-                                                if selectedExerciseTypes.count > 1 {
-                                                    selectedExerciseTypes.remove(exerciseType)
-                                                }
-                                            } else {
-                                                selectedExerciseTypes.insert(exerciseType)
-                                            }
-                                            selectedCategory = "All"
-                                            selectedMuscleGroup = "All"
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 2)
-                    }
-                }
-                
-                // Categories row (filtered by exercise type)
+                // Categories row
                 HStack(spacing: 8) {
                     Text("Category")
                         .font(.caption)

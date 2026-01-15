@@ -1,35 +1,47 @@
 #!/bin/bash
+# Bump version for Fit33 app
+# Usage: ./bump_version.sh 1.11.1 1
+# Or just: ./bump_version.sh (auto-increments patch version)
 
-# Manual version bump script
-# Run from project root: ./scripts/bump_version.sh
+set -e
 
-cd "$(dirname "$0")/.."
-PROJECT_FILE="./GoFit.xcodeproj/project.pbxproj"
+XCODEPROJ="Fit33.xcodeproj/project.pbxproj"
 
-# Get current marketing version (look for 1.5.x pattern - the main app)
-CURRENT_VERSION=$(grep "MARKETING_VERSION = 1\.5\." "$PROJECT_FILE" | head -1 | sed 's/.*MARKETING_VERSION = \([0-9.]*\);/\1/')
-
-if [ -z "$CURRENT_VERSION" ]; then
-    echo "❌ Could not find current version (looking for 1.5.x)"
+if [ ! -f "$XCODEPROJ" ]; then
+    echo "❌ Error: $XCODEPROJ not found"
     exit 1
 fi
 
-# Split version into components
-IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+# Get current versions
+CURRENT_MARKETING=$(grep -m1 "MARKETING_VERSION = " "$XCODEPROJ" | sed 's/.*MARKETING_VERSION = \(.*\);/\1/')
+CURRENT_BUILD=$(grep -m1 "CURRENT_PROJECT_VERSION = " "$XCODEPROJ" | sed 's/.*CURRENT_PROJECT_VERSION = \(.*\);/\1/')
 
-# Increment patch version
-NEW_PATCH=$((PATCH + 1))
-NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+echo "📱 Current version: $CURRENT_MARKETING (build $CURRENT_BUILD)"
 
-echo "📱 Current version: $CURRENT_VERSION"
-echo "🚀 New version: $NEW_VERSION"
+# If version provided, use it; otherwise auto-increment
+if [ -n "$1" ]; then
+    NEW_MARKETING="$1"
+    NEW_BUILD="${2:-1}"
+else
+    # Auto-increment patch version (1.11.1 -> 1.11.2)
+    IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_MARKETING"
+    MAJOR="${VERSION_PARTS[0]}"
+    MINOR="${VERSION_PARTS[1]}"
+    PATCH="${VERSION_PARTS[2]}"
+    NEW_PATCH=$((PATCH + 1))
+    NEW_MARKETING="$MAJOR.$MINOR.$NEW_PATCH"
+    NEW_BUILD="$NEW_PATCH"
+fi
+
+echo "⬆️  Bumping to: $NEW_MARKETING (build $NEW_BUILD)"
+
+# Update project file
+sed -i '' "s/MARKETING_VERSION = .*/MARKETING_VERSION = $NEW_MARKETING;/g" "$XCODEPROJ"
+sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$XCODEPROJ"
+
+echo "✅ Version updated to $NEW_MARKETING (build $NEW_BUILD)"
 echo ""
-
-# Update the project file
-sed -i '' "s/MARKETING_VERSION = ${CURRENT_VERSION};/MARKETING_VERSION = ${NEW_VERSION};/g" "$PROJECT_FILE"
-echo "✅ Version updated to $NEW_VERSION"
-
-# Commit the change
-git add "$PROJECT_FILE"
-git commit -m "Bump version to $NEW_VERSION"
-echo "✅ Committed version bump"
+echo "Next steps:"
+echo "  1. git add Fit33.xcodeproj/project.pbxproj"
+echo "  2. git commit -m 'Bump version to v$NEW_MARKETING'"
+echo "  3. Archive and upload to App Store Connect"

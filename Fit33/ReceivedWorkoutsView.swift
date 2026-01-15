@@ -13,6 +13,7 @@ struct ReceivedWorkoutsView: View {
     
     @StateObject private var friendService = FriendService.shared
     @StateObject private var deepLinkManager = DeepLinkManager.shared
+    @StateObject private var adManager = AdManager.shared
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
@@ -30,19 +31,32 @@ struct ReceivedWorkoutsView: View {
                 emptyState
             } else {
                 List {
-                    ForEach(friendService.receivedWorkouts) { workout in
-                        ReceivedWorkoutCard(workout: workout) {
-                            selectedWorkout = workout
-                            navigateToDetail = true
-                        }
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                deleteWorkout(workout)
-                            } label: {
-                                Label("Delete", systemImage: "trash.fill")
+                    ForEach(0..<totalItemsWithAds, id: \.self) { index in
+                        if isAdPosition(index) && adManager.adsEnabled {
+                            // Native ad card
+                            NativeAdCardView()
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                        } else {
+                            // Workout card
+                            let workoutIndex = getWorkoutIndex(for: index)
+                            if workoutIndex < friendService.receivedWorkouts.count {
+                                let workout = friendService.receivedWorkouts[workoutIndex]
+                                ReceivedWorkoutCard(workout: workout) {
+                                    selectedWorkout = workout
+                                    navigateToDetail = true
+                                }
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        deleteWorkout(workout)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash.fill")
+                                    }
+                                }
                             }
                         }
                     }
@@ -89,6 +103,35 @@ struct ReceivedWorkoutsView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Ad Helpers
+    
+    /// Calculate total items including ads (every 3rd position is an ad)
+    private var totalItemsWithAds: Int {
+        guard adManager.adsEnabled else {
+            return friendService.receivedWorkouts.count
+        }
+        
+        let workoutCount = friendService.receivedWorkouts.count
+        let adCount = workoutCount / 2 // Insert ad after every 2 workouts
+        return workoutCount + adCount
+    }
+    
+    /// Check if this position should show an ad (positions 2, 5, 8, 11, etc.)
+    private func isAdPosition(_ index: Int) -> Bool {
+        guard adManager.adsEnabled else { return false }
+        // Ad at positions 2, 5, 8, 11... (every 3rd position)
+        return (index + 1) % 3 == 0
+    }
+    
+    /// Get the actual workout index for a display index (accounting for ads)
+    private func getWorkoutIndex(for displayIndex: Int) -> Int {
+        guard adManager.adsEnabled else { return displayIndex }
+        
+        // Calculate how many ads appear before this position
+        let adsBeforeThisIndex = displayIndex / 3
+        return displayIndex - adsBeforeThisIndex
     }
     
     // MARK: - Actions

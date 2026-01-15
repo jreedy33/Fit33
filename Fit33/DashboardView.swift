@@ -10,6 +10,10 @@ struct DashboardView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @StateObject private var notificationManager = NotificationManager.shared
     
+    // Friend notification badge counts - use @State to prevent re-renders during navigation
+    @State private var friendPendingCount: Int = 0
+    @State private var friendUnreadWorkoutCount: Int = 0
+    
     // Dark mode adaptive colors - use the centralized Color extension
     private var cardBackground: Color { Color.cardBackground }
     
@@ -37,6 +41,9 @@ struct DashboardView: View {
     
     // Cardio workouts from Supabase
     @State private var recentCardioWorkouts: [CardioWorkoutDTO] = []
+    
+    // Profile photo for home icon
+    @State private var profilePhotoURL: String? = nil
     
     // Combined workout item for unified display
     enum RecentWorkoutItem: Identifiable {
@@ -143,7 +150,7 @@ struct DashboardView: View {
                     .ignoresSafeArea(.all, edges: .all)
                 
                 ScrollViewReader { scrollProxy in
-                    ScrollView {
+                    ScrollView(showsIndicators: false) {
                     GeometryReader { geometry in
                         Color.clear.preference(key: DashboardScrollOffsetKey.self, value: geometry.frame(in: .named("scroll")).minY)
                     }
@@ -153,11 +160,7 @@ struct DashboardView: View {
                     LazyVStack(spacing: 0) {
                     // Custom header with title and profile icon
                     customHeaderView
-                        .padding(.top, 4)
-                        .padding(.bottom, 16)
-                    
-                    // Header with user info
-                    headerView
+                        .padding(.top, 8)
                         .padding(.bottom, 16)
                     
                     // Notification permission banner - show if not authorized
@@ -165,6 +168,10 @@ struct DashboardView: View {
                         notificationPermissionBanner
                             .padding(.bottom, 16)
                     }
+                    
+                    // Header with user info
+                    headerView
+                        .padding(.bottom, 16)
                     
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
@@ -196,15 +203,16 @@ struct DashboardView: View {
                     statsOverview
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
                 .padding(.bottom, 100) // Add extra bottom padding to prevent tab bar overlap
                 }
+                .scrollContentBackground(.hidden)
                 .coordinateSpace(name: "scroll")
                 .onPreferenceChange(DashboardScrollOffsetKey.self) { value in
                     scrollOffset = value
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbarColorScheme(.dark, for: .navigationBar)
+                .contentMargins(.top, 0, for: .scrollContent)
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
                 }
@@ -302,6 +310,16 @@ struct DashboardView: View {
             
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
+            
+            // Load friend data for notification indicator (store in local state to prevent re-renders)
+            let friendService = FriendService.shared
+            await friendService.loadPendingRequests()
+            await friendService.loadReceivedWorkouts()
+            friendPendingCount = friendService.pendingRequests.count
+            friendUnreadWorkoutCount = friendService.unreadWorkoutCount
+            
+            // Load profile photo for home icon
+            await loadProfilePhoto()
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
             // Refresh recommendation after workout completion (debounced)
@@ -354,6 +372,57 @@ struct DashboardView: View {
             }
         } catch {
             print("⚠️ [DASHBOARD] Failed to load cardio workouts: \(error)")
+        }
+    }
+    
+    private func loadProfilePhoto() async {
+        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        
+        // Show cached image immediately for fast UX (but don't trust it - verify with database)
+        let hasCachedImage = ProfilePhotoCache.shared.cachedImage != nil
+        if hasCachedImage {
+            await MainActor.run {
+                self.profilePhotoURL = "cached"
+            }
+        }
+        
+        // ALWAYS fetch fresh from database to ensure correct photo for current user
+        do {
+            struct ProfilePhotoResult: Codable {
+                let profile_photo_url: String?
+            }
+            
+            let result: [ProfilePhotoResult] = try await SupabaseManager.shared.supabaseClient
+                .from("user_profiles")
+                .select("profile_photo_url")
+                .eq("id", value: userId.uuidString)
+                .execute()
+                .value
+            
+            if let photoUrl = result.first?.profile_photo_url {
+                // Download fresh from database and update cache
+                if let url = URL(string: photoUrl) {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        if let image = UIImage(data: data) {
+                            ProfilePhotoCache.shared.cacheImage(image)
+                            await MainActor.run {
+                                self.profilePhotoURL = photoUrl
+                            }
+                        }
+                    } catch {
+                        print("⚠️ [DASHBOARD] Failed to download profile photo: \(error)")
+                    }
+                }
+            } else {
+                // User has no profile photo - clear any stale cache
+                ProfilePhotoCache.shared.clearCache()
+                await MainActor.run {
+                    self.profilePhotoURL = nil
+                }
+            }
+        } catch {
+            print("⚠️ [DASHBOARD] Failed to load profile photo: \(error)")
         }
     }
     
@@ -618,28 +687,71 @@ struct DashboardView: View {
             
             // Profile icon and timer grouped together
             HStack(spacing: 8) {
-                // Profile button with hollow blue gradient ring and white person
+                // Profile button with hollow blue gradient ring and photo/person icon
                 NavigationLink(destination: ProfileView()) {
-                    ZStack {
-                        // Hollow ring with blue gradient
-                        Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.blue, .cyan],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2.5
-                            )
-                            .frame(width: 36, height: 36)
-                            .shadow(color: .blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                    ZStack(alignment: .topTrailing) {
+                        ZStack {
+                            // Hollow ring with blue gradient
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.blue, .cyan],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2.5
+                                )
+                                .frame(width: 36, height: 36)
+                                .shadow(color: .blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                            
+                            // Show profile photo if available (from cache or URL), otherwise person icon
+                            if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                Image(uiImage: cachedImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 28, height: 28)
+                                    .clipShape(Circle())
+                            } else if let photoURL = profilePhotoURL, photoURL != "cached", let url = URL(string: photoURL) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 28, height: 28)
+                                            .clipShape(Circle())
+                                    case .failure(_), .empty:
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    @unknown default:
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                            } else {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                        }
                         
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
+                        // Red indicator dot for pending requests or unread workouts
+                        if friendPendingCount > 0 || friendUnreadWorkoutCount > 0 {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 14, height: 14)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                                )
+                                .offset(x: 3, y: -3)
+                        }
                     }
                 }
                 .accessibilityLabel("Profile")
+                .offset(y: 4) // Align with Fit33 logo
                 
                 // Active workout timer (only shows when workout is active)
                 if workoutManager.isWorkoutActive {

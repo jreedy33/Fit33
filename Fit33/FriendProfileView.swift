@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreData
 
 // MARK: - Friend Profile View
 /// Shows a friend's profile with option to create and send workouts
@@ -7,7 +8,7 @@ struct FriendProfileView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var friendService = FriendService.shared
     
-    let friend: FriendDTO
+    let friend: Friend
     
     @State private var showingCreateWorkout = false
     @State private var showingUnfriendConfirmation = false
@@ -199,7 +200,7 @@ struct FriendProfileView: View {
                         )
                     )
                 
-                Text("\(friend.workoutsShared)")
+                Text("\(friend.totalWorkoutsShared)")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
@@ -245,7 +246,7 @@ struct FriendProfileView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Create Workout for \(friend.name?.components(separatedBy: " ").first ?? "Friend")")
+                    Text("Create Workout for \(friend.friendName?.components(separatedBy: " ").first ?? "Friend")")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
@@ -284,7 +285,7 @@ struct FriendProfileView: View {
             }
             .padding(.horizontal, 4)
             
-            if friend.workoutsShared == 0 {
+            if friend.totalWorkoutsShared == 0 {
                 VStack(spacing: 12) {
                     Image(systemName: "arrow.left.arrow.right.circle")
                         .font(.system(size: 32))
@@ -500,12 +501,10 @@ struct CreateWorkoutForFriendView: View {
                 SharedWorkoutPreviewView(
                     friend: friend,
                     workoutName: workoutName,
-                    description: workoutDescription,
+                    workoutDescription: workoutDescription,
+                    exercises: buildSelectedExercises(),
                     message: personalMessage,
-                    exercises: buildSharedExercises(),
-                    duration: estimatedDuration,
-                    difficulty: difficulty,
-                    onSend: sendWorkout
+                    onSent: { dismiss() }
                 )
             }
         }
@@ -860,21 +859,18 @@ struct CreateWorkoutForFriendView: View {
         }
     }
     
-    private func buildSharedExercises() -> [SharedExercise] {
+    private func buildSelectedExercises() -> [SelectedExerciseForFriend] {
         selectedExercises.map { exercise in
             let config = exerciseConfigs[exercise.id ?? UUID()] ?? ExerciseConfig()
-            return SharedExercise(
+            return SelectedExerciseForFriend(
                 name: exercise.name ?? "Unknown",
+                category: exercise.category,
                 sets: config.sets,
                 reps: config.reps,
-                restSeconds: config.restSeconds,
-                notes: config.notes
+                restSeconds: config.restSeconds ?? 90,
+                notes: config.notes ?? ""
             )
         }
-    }
-    
-    private func sendWorkout() {
-        dismiss()
     }
 }
 

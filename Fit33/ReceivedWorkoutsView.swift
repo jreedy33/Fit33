@@ -424,21 +424,21 @@ struct ReceivedWorkoutDetailView: View {
             }
             
             HStack(spacing: 20) {
-                StatBubble(
+                WorkoutStatBubble(
                     icon: "figure.strengthtraining.traditional",
                     value: "\(workout.exerciseCount)",
                     label: "Exercises",
                     color: .blue
                 )
                 
-                StatBubble(
+                WorkoutStatBubble(
                     icon: "flame.fill",
                     value: "\(totalSets)",
                     label: "Sets",
                     color: .orange
                 )
                 
-                StatBubble(
+                WorkoutStatBubble(
                     icon: "clock.fill",
                     value: "\(estimatedMinutes)",
                     label: "Minutes",
@@ -683,7 +683,7 @@ struct ReceivedWorkoutDetailView: View {
             do {
                 try await FriendService.shared.saveSharedWorkout(workoutId: workout.id)
                 showingSavedConfirmation = true
-                HapticManager.notificationOccurred(.success)
+                HapticManager.notification(.success)
             } catch {
                 print("❌ Error saving workout: \(error)")
             }
@@ -698,9 +698,9 @@ struct ReceivedWorkoutDetailView: View {
     }
 }
 
-// MARK: - Stat Bubble
+// MARK: - Workout Stat Bubble
 
-struct StatBubble: View {
+struct WorkoutStatBubble: View {
     let icon: String
     let value: String
     let label: String

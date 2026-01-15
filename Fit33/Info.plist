@@ -15,7 +15,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.9.3</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>0</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-8088994272034240~4928086133</string>
 	<key>LSApplicationCategoryType</key>
@@ -42,7 +42,9 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Fit33 uses Bluetooth to connect to fitness equipment and heart rate monitors.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs camera access to scan food barcodes for meal tracking.</string>
+	<string>Fit33 uses your camera to scan food barcodes and take profile photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Fit33 needs access to your photo library to set a profile picture.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Fit33 tracks your daily steps to help you reach your fitness goals.</string>
 	<key>NSHealthUpdateUsageDescription</key>

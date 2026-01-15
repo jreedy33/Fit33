@@ -55,6 +55,12 @@ struct NewOnboardingView: View {
     @State private var showTermsSheet = false
     @State private var passwordResetSent = false
     
+    // Username fields
+    @State private var username = ""
+    @State private var isCheckingUsername = false
+    @State private var usernameError = ""
+    @State private var isUsernameAvailable = false
+    
     // Social auth
     @StateObject private var socialAuthService = SocialAuthService.shared
     @State private var showGoogleSignIn = false
@@ -115,7 +121,7 @@ struct NewOnboardingView: View {
     
     // Focus states for keeping keyboard up
     enum FocusedField: Hashable {
-        case email, password, confirmPassword, name, birthday, height, weight
+        case email, password, confirmPassword, name, username, birthday, height, weight
     }
     @FocusState private var focusedField: FocusedField?
     
@@ -162,6 +168,7 @@ struct NewOnboardingView: View {
     private var stepDescription: String {
         switch currentStep {
         case .auth: return "Account"
+        case .username: return "Username"
         case .basics: return "About You"
         case .body: return "Measurements"
         case .goal: return "Goals"
@@ -188,17 +195,18 @@ struct NewOnboardingView: View {
     
     enum OnboardingStep: Int, CaseIterable {
         case auth = 0
-        case basics = 1      // Birthday + Gender
-        case body = 2        // Height + Weight
-        case goal = 3
-        case experience = 4
-        case strengthAssessment = 5  // How heavy can you lift?
-        case workoutLocation = 6     // Where do you workout?
-        case equipment = 7
-        case limitations = 8  // NEW: Injuries/limitations
-        case schedule = 9
-        case confirmation = 10  // Review all selections before creating account
-        case complete = 11
+        case username = 1    // NEW: Choose username (sign up only)
+        case basics = 2      // Birthday + Gender
+        case body = 3        // Height + Weight
+        case goal = 4
+        case experience = 5
+        case strengthAssessment = 6  // How heavy can you lift?
+        case workoutLocation = 7     // Where do you workout?
+        case equipment = 8
+        case limitations = 9  // Injuries/limitations
+        case schedule = 10
+        case confirmation = 11  // Review all selections before creating account
+        case complete = 12
     }
     
     // Validation for auth step
@@ -220,13 +228,22 @@ struct NewOnboardingView: View {
         } else {
             return !email.isEmpty && email.contains("@") && !password.isEmpty
         }
-        }
+    }
+    
+    // Username validation
+    private var isUsernameValid: Bool {
+        let cleanUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanUsername.count >= 3 && cleanUsername.count <= 30 else { return false }
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+        return cleanUsername.unicodeScalars.allSatisfy { allowedCharacters.contains($0) }
+    }
         
     // Navigate to step and set appropriate focus
     private func navigateTo(_ step: OnboardingStep, animated: Bool = true) {
         // Map onboarding step to screen ID
         let screenMap: [OnboardingStep: SessionLogManager.Screen] = [
             .auth: .authScreen,
+            .username: .authScreen, // Use auth screen for logging
             .basics: .onboardingBasics,
             .body: .onboardingBody,
             .goal: .onboardingGoal,
@@ -256,13 +273,16 @@ struct NewOnboardingView: View {
         )
         
         // Change step - with or without animation
+        print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
         if animated && !isEditingFromConfirmation {
         withAnimation(.easeInOut(duration: 0.25)) {
             currentStep = step
+            print("🔄 [NAV] currentStep now: \(currentStep)")
         }
         } else {
             // No animation when editing from confirmation
             currentStep = step
+            print("🔄 [NAV] currentStep now (no animation): \(currentStep)")
         }
     }
     
@@ -303,6 +323,7 @@ struct NewOnboardingView: View {
                         
                         // Content
                         ZStack {
+                            if currentStep == .username { usernameStepContent.transition(slideTransition) }
                             if currentStep == .basics { basicsStepContent.transition(slideTransition) }
                             if currentStep == .body { bodyStepContent.transition(slideTransition) }
                             if currentStep == .goal { goalStepContent.transition(slideTransition) }
@@ -418,6 +439,7 @@ struct NewOnboardingView: View {
                             
                             confirmationRowSimple(title: "Name", value: name.isEmpty ? "-" : name, editStep: .auth)
                             confirmationRowSimple(title: "Email", value: email.isEmpty ? "-" : email, editStep: .auth)
+                            confirmationRowSimple(title: "Username", value: username.isEmpty ? "-" : "@\(username)", editStep: .username)
                             confirmationRowSimple(title: "Birthday", value: birthday, editStep: .basics)
                             confirmationRowSimple(title: "Gender", value: selectedGender ?? "Not specified", editStep: .basics)
                             confirmationRowSimple(title: "Height", value: formatHeightDisplay(), editStep: .body)
@@ -450,6 +472,8 @@ struct NewOnboardingView: View {
             switch newStep {
             case .auth:
                 break
+            case .username:
+                focusedField = .username
             case .basics:
                 focusedField = .birthday
             case .body:
@@ -504,6 +528,7 @@ struct NewOnboardingView: View {
     private var onboardingStepTitle: String {
         switch currentStep {
         case .auth: return "Create Account"
+        case .username: return "Choose Username"
         case .basics: return "About You"
         case .body: return "Your Measurements"
         case .goal: return "Your Goals"
@@ -521,6 +546,7 @@ struct NewOnboardingView: View {
     private var onboardingStepSubtitle: String {
         switch currentStep {
         case .auth: return "Start your fitness journey"
+        case .username: return "How friends will find you"
         case .basics: return "Help us personalize your experience"
         case .body: return "For accurate recommendations"
         case .goal: return "What do you want to achieve?"
@@ -538,6 +564,7 @@ struct NewOnboardingView: View {
     private var onboardingStepExplanation: String {
         switch currentStep {
         case .auth: return ""
+        case .username: return "Friends can find and add you using your unique username"
         case .basics: return "We use your age to calculate calorie needs and tailor workout intensity"
         case .body: return "Height and weight help us recommend appropriate exercise loads"
         case .goal: return "Your goals shape the type of workouts we'll recommend"
@@ -602,6 +629,7 @@ struct NewOnboardingView: View {
     private var isCurrentStepValid: Bool {
         switch currentStep {
         case .auth: return isAuthFormValid
+        case .username: return isUsernameValid && isUsernameAvailable
         case .basics: return selectedGender != nil && !birthday.isEmpty
         case .body: return !heightFeetInchesDigits.isEmpty && !weight.isEmpty
         case .goal: return !selectedGoals.isEmpty
@@ -650,6 +678,144 @@ struct NewOnboardingView: View {
     // MARK: - Content-Only Step Views (for sliding)
     // These are simplified versions that just show the content portion
     // The existing full step views (basicsStep, bodyStep, etc.) are kept for reference
+    
+    // MARK: - Username Step Content
+    private var usernameStepContent: some View {
+        VStack(spacing: 28) {
+            // Username - matching Birthday field style exactly
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Username")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    // Status indicator in top right
+                    if isCheckingUsername {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                            Text("Checking...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if isUsernameAvailable && isUsernameValid {
+                        Text("Available ✓")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    } else if !usernameError.isEmpty {
+                        Text(usernameError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                // Username field - same style as OnboardingTextField (no checkmark inside)
+                HStack(spacing: 16) {
+                    // @ symbol instead of icon
+                    Text("@")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: isUsernameValid ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 26)
+                    
+                    TextField("username", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .username)
+                        .onChange(of: username) { _, newValue in
+                            // Clean the username - remove spaces and special chars
+                            let cleaned = newValue.lowercased()
+                                .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                            if cleaned != newValue {
+                                username = cleaned
+                            }
+                            // Reset availability when typing
+                            isUsernameAvailable = false
+                            usernameError = ""
+                        }
+                }
+                .font(.system(size: 16, weight: .medium))
+                .padding(.horizontal, 22)
+                .padding(.vertical, 18)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                        
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            .shadow(
+                                color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
+                                radius: focusedField == .username ? 12 : 8,
+                                x: 0,
+                                y: focusedField == .username ? 6 : 3
+                            )
+                    }
+                )
+            }
+            
+            // Check Availability Button
+            Button(action: checkUsernameAvailability) {
+                HStack(spacing: 8) {
+                    if isCheckingUsername {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    Text(isCheckingUsername ? "Checking..." : "Check Availability")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    Capsule()
+                        .fill(
+                            isUsernameValid && !isCheckingUsername
+                                ? LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
+                                : LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.4)], startPoint: .leading, endPoint: .trailing)
+                        )
+                )
+            }
+            .disabled(!isUsernameValid || isCheckingUsername)
+        }
+        .padding(.horizontal, 24)
+    }
+    
+    // Check username availability
+    private func checkUsernameAvailability() {
+        guard isUsernameValid else { return }
+        
+        isCheckingUsername = true
+        usernameError = ""
+        
+        Task {
+            do {
+                let available = try await supabaseManager.isUsernameAvailable(username)
+                
+                await MainActor.run {
+                    isUsernameAvailable = available
+                    if !available {
+                        usernameError = "This username is already taken"
+                    }
+                    isCheckingUsername = false
+                }
+            } catch {
+                await MainActor.run {
+                    usernameError = "Error checking username: \(error.localizedDescription)"
+                    isCheckingUsername = false
+                }
+            }
+        }
+    }
     
     private var basicsStepContent: some View {
         VStack(spacing: 28) {
@@ -3015,6 +3181,10 @@ struct NewOnboardingView: View {
                                 isEditingFromConfirmation = true
                                 navigateTo(.auth)
                             }
+                            ConfirmationListRow(icon: "at", label: "Username", value: username.isEmpty ? "Not set" : "@\(username)") {
+                                isEditingFromConfirmation = true
+                                navigateTo(.username)
+                            }
                         }
                         
                         // Personal Section
@@ -3149,10 +3319,32 @@ struct NewOnboardingView: View {
             // For sign up: Create the Supabase account first
             Task {
                 do {
+                    print("🔐 [ONBOARDING] Starting signup for: \(email)")
                     try await supabaseManager.signUp(email: email, password: password, name: name.isEmpty ? "User" : name)
+                    print("✅ [ONBOARDING] Signup successful, user authenticated: \(supabaseManager.isAuthenticated)")
+                    print("👤 [ONBOARDING] Current user ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")")
+                    
+                    // Set the username after account creation
+                    if !username.isEmpty {
+                        print("📝 [ONBOARDING] Attempting to set username: @\(username)")
+                        
+                        // Small delay to ensure profile is created
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+                        
+                        do {
+                            try await supabaseManager.setUsername(username)
+                            print("✅ [ONBOARDING] Username saved successfully: @\(username)")
+                        } catch {
+                            print("❌ [ONBOARDING] Failed to set username: \(error)")
+                            print("❌ [ONBOARDING] Error details: \(error.localizedDescription)")
+                        }
+                    } else {
+                        print("⚠️ [ONBOARDING] Username is empty, skipping")
+                    }
                     
                     await MainActor.run {
                         // Account created successfully, now complete onboarding
+                        print("🎉 [ONBOARDING] Completing onboarding flow...")
                         completeOnboarding()
                     }
                 } catch {
@@ -3310,9 +3502,9 @@ struct NewOnboardingView: View {
         showAuthProviderHint = false
         
         if isSignUp {
-            // For sign up: Just validate and proceed to next step
+            // For sign up: Just validate and proceed to username step
             // Account will be created on the confirmation screen
-            navigateTo(.basics)
+            navigateTo(.username)
         } else {
             // For sign in: First check if email is linked to Apple/Google
             Task {
@@ -3393,6 +3585,18 @@ struct NewOnboardingView: View {
             totalSteps: OnboardingStep.allCases.count,
             duration: 0 // We don't track duration yet
         )
+        
+        // Set username for social sign-in users (regular signup sets it during account creation)
+        if !username.isEmpty && supabaseManager.isAuthenticated {
+            Task {
+                do {
+                    try await supabaseManager.setUsername(username)
+                    print("✅ Username set for social auth user: @\(username)")
+                } catch {
+                    print("⚠️ Failed to set username: \(error.localizedDescription)")
+                }
+            }
+        }
         
         // Calculate age from birthday
         let ageInt = Int16(calculatedAge)
@@ -3539,9 +3743,12 @@ struct NewOnboardingView: View {
     // MARK: - Social Login Handlers
     
     private func handleAppleSignIn() {
+        print("🍎 [APPLE AUTH] handleAppleSignIn called")
         socialAuthService.signInWithApple { result in
+            print("🍎 [APPLE AUTH] socialAuthService callback received")
             switch result {
             case .success(let credentials):
+                print("🍎 [APPLE AUTH] Got Apple credentials, starting Supabase auth...")
                 // Use the credentials to sign in with Supabase
                 Task {
                     do {
@@ -3550,6 +3757,7 @@ struct NewOnboardingView: View {
                             idToken: credentials.identityToken,
                             nonce: credentials.nonce
                         )
+                        print("🍎 [APPLE AUTH] Supabase signInWithApple returned. isNewUser: \(isNewUser)")
                         
                         // Set name from Apple credentials if available
                         if let fullName = credentials.fullName {
@@ -3582,16 +3790,30 @@ struct NewOnboardingView: View {
                         }
                         
                         await MainActor.run {
+                            print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
+                            
                             if isNewUser {
-                                // New user - go to profile setup
-                                print("👤 [SOCIAL AUTH] New Apple user - directing to onboarding")
-                                navigateTo(.basics)
+                                // New user - go to username selection first
+                                print("👤 [SOCIAL AUTH] New Apple user - directing to username selection")
+                                navigateTo(.username)
                             } else {
-                                // Returning user - they'll be redirected to main app via ContentView
-                                print("✅ [SOCIAL AUTH] Returning Apple user signed in")
+                                // Returning user - force reload from Core Data to get latest onboarding status
+                                userManager.reloadCurrentUser()
+                                print("🍎 [APPLE AUTH] After reload - hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
+                                
+                                if userManager.hasCompletedOnboarding {
+                                    // They completed onboarding - ContentView will show main app automatically
+                                    // because it observes userManager.hasCompletedOnboarding
+                                    print("✅ [SOCIAL AUTH] Returning Apple user signed in - onboarding complete, switching to main app")
+                                } else {
+                                    // They started but didn't finish onboarding - continue from username
+                                    print("👤 [SOCIAL AUTH] Returning Apple user - continuing onboarding")
+                                    navigateTo(.username)
+                                }
                             }
                         }
                     } catch {
+                        print("❌ [APPLE AUTH] Error during sign-in: \(error)")
                         await MainActor.run {
                             errorMessage = "Apple Sign-In failed: \(error.localizedDescription)"
                             showError = true

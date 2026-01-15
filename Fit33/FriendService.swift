@@ -12,8 +12,7 @@ class FriendService: ObservableObject {
     @Published var friendDTOs: [FriendDTO] = [] // For compatibility with existing views
     @Published var pendingRequests: [FriendRequest] = []
     @Published var pendingRequestDTOs: [FriendRequestDTO] = [] // For compatibility
-    @Published var receivedWorkouts: [SharedWorkout] = []
-    @Published var receivedWorkoutDTOs: [ReceivedWorkoutDTO] = [] // For compatibility
+    @Published var receivedWorkouts: [ReceivedWorkoutDTO] = [] // Changed to DTO for compatibility
     @Published var sentWorkouts: [SentWorkout] = []
     @Published var notifications: [AppNotification] = []
     @Published var unreadNotificationCount: Int = 0
@@ -118,11 +117,13 @@ class FriendService: ObservableObject {
     
     func sendFriendRequest(toUserId: UUID, message: String? = nil) async -> Bool {
         do {
+            var params: [String: String] = ["target_user_id": toUserId.uuidString]
+            if let msg = message {
+                params["request_message"] = msg
+            }
+            
             let _: UUID = try await SupabaseManager.shared.supabaseClient
-                .rpc("send_friend_request", params: [
-                    "target_user_id": toUserId.uuidString,
-                    "request_message": message as Any
-                ])
+                .rpc("send_friend_request", params: params)
                 .execute()
                 .value
             
@@ -157,18 +158,42 @@ class FriendService: ObservableObject {
     
     func declineFriendRequest(requestId: UUID) async -> Bool {
         do {
-            try await SupabaseManager.shared.supabaseClient
-                .from("friend_requests")
-                .update(["status": "declined", "responded_at": ISO8601DateFormatter().string(from: Date())])
-                .eq("id", value: requestId.uuidString)
+            let success: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("decline_friend_request", params: ["request_id": requestId.uuidString])
                 .execute()
+                .value
             
-            // Update local state
-            pendingRequests.removeAll { $0.requestId == requestId }
-            print("✅ Friend request declined")
-            return true
+            if success {
+                // Update local state
+                pendingRequests.removeAll { $0.requestId == requestId }
+                print("✅ Friend request declined")
+            }
+            return success
         } catch {
             print("❌ Error declining friend request: \(error)")
+            return false
+        }
+    }
+    
+    /// Check if the current user is friends with another user
+    func areFriends(with userId: UUID) async -> Bool {
+        // Check local cache first
+        if friends.contains(where: { $0.friendId == userId }) {
+            return true
+        }
+        
+        // If not in cache, check server
+        do {
+            let result: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("are_friends", params: [
+                    "user_a": SupabaseManager.shared.currentUser?.id.uuidString ?? "",
+                    "user_b": userId.uuidString
+                ])
+                .execute()
+                .value
+            return result
+        } catch {
+            print("❌ Error checking friendship: \(error)")
             return false
         }
     }
@@ -182,8 +207,14 @@ class FriendService: ObservableObject {
         }
         
         do {
+            // Define params struct for type safety
+            struct SearchParams: Encodable {
+                let search_query: String
+                let result_limit: Int
+            }
+            
             let result: [UserSearchResult] = try await SupabaseManager.shared.supabaseClient
-                .rpc("search_users", params: ["search_query": query, "result_limit": 20])
+                .rpc("search_users", params: SearchParams(search_query: query, result_limit: 20))
                 .execute()
                 .value
             
@@ -199,7 +230,7 @@ class FriendService: ObservableObject {
     
     func fetchReceivedWorkouts() async {
         do {
-            let result: [SharedWorkout] = try await SupabaseManager.shared.supabaseClient
+            let result: [ReceivedWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_received_workouts")
                 .execute()
                 .value
@@ -240,16 +271,29 @@ class FriendService: ObservableObject {
             let exerciseData = try encoder.encode(exercises)
             let exerciseJson = String(data: exerciseData, encoding: .utf8) ?? "[]"
             
+            // Create params struct for type safety
+            struct SendWorkoutParams: Encodable {
+                let target_user_id: String
+                let p_workout_name: String
+                let p_exercises: String
+                let p_description: String?
+                let p_message: String?
+                let p_duration: Int?
+                let p_difficulty: String
+            }
+            
+            let params = SendWorkoutParams(
+                target_user_id: toUserId.uuidString,
+                p_workout_name: workoutName,
+                p_exercises: exerciseJson,
+                p_description: description,
+                p_message: message,
+                p_duration: duration,
+                p_difficulty: difficulty
+            )
+            
             let _: UUID = try await SupabaseManager.shared.supabaseClient
-                .rpc("send_workout_to_friend", params: [
-                    "target_user_id": toUserId.uuidString,
-                    "p_workout_name": workoutName,
-                    "p_exercises": exerciseJson,
-                    "p_description": description as Any,
-                    "p_message": message as Any,
-                    "p_duration": duration as Any,
-                    "p_difficulty": difficulty
-                ])
+                .rpc("send_workout_to_friend", params: params)
                 .execute()
                 .value
             
@@ -319,6 +363,21 @@ class FriendService: ObservableObject {
         }
     }
     
+    func markWorkoutViewed(workoutId: UUID) async {
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .from("shared_workouts")
+                .update(["viewed_at": ISO8601DateFormatter().string(from: Date())])
+                .eq("id", value: workoutId.uuidString)
+                .execute()
+            
+            await fetchReceivedWorkouts()
+            print("✅ Workout marked as viewed")
+        } catch {
+            print("❌ Error marking workout viewed: \(error)")
+        }
+    }
+    
     func markWorkoutStarted(workoutId: UUID) async -> Bool {
         do {
             try await SupabaseManager.shared.supabaseClient
@@ -356,6 +415,65 @@ class FriendService: ObservableObject {
         } catch {
             print("❌ Error marking workout completed: \(error)")
             return false
+        }
+    }
+    
+    // Overload for String id
+    func markWorkoutCompleted(workoutId: String) async -> Bool {
+        guard let uuid = UUID(uuidString: workoutId) else { return false }
+        return await markWorkoutCompleted(workoutId: uuid)
+    }
+    
+    // Save shared workout (marks as saved)
+    func saveSharedWorkout(workoutId: UUID) async throws {
+        struct SaveWorkoutUpdate: Encodable {
+            let status: String
+            let saved_to_favorites: Bool
+        }
+        
+        try await SupabaseManager.shared.supabaseClient
+            .from("shared_workouts")
+            .update(SaveWorkoutUpdate(status: "saved", saved_to_favorites: true))
+            .eq("id", value: workoutId.uuidString)
+            .execute()
+        
+        await fetchReceivedWorkouts()
+        print("✅ Workout saved")
+    }
+    
+    // Simplified sendWorkout method for SharedWorkoutPreviewView compatibility
+    func sendWorkout(
+        to friendId: String,
+        workoutName: String,
+        description: String?,
+        exercises: [SharedExerciseDTO],
+        message: String?
+    ) async throws {
+        guard let friendUUID = UUID(uuidString: friendId) else {
+            throw NSError(domain: "FriendService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid friend ID"])
+        }
+        
+        // Convert SharedExerciseDTO to SharedExercise
+        let sharedExercises = exercises.map { dto in
+            SharedExercise(
+                name: dto.name,
+                sets: dto.sets,
+                reps: dto.reps,
+                restSeconds: dto.restSeconds,
+                notes: dto.notes
+            )
+        }
+        
+        let success = await sendWorkoutToFriend(
+            toUserId: friendUUID,
+            workoutName: workoutName,
+            exercises: sharedExercises,
+            description: description,
+            message: message
+        )
+        
+        if !success {
+            throw NSError(domain: "FriendService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to send workout"])
         }
     }
     
@@ -434,19 +552,32 @@ struct Friend: Codable, Identifiable {
     let friendId: UUID
     let friendName: String?
     let friendEmail: String?
+    let friendUsername: String?
     let fitnessGoal: String?
     let experienceLevel: String?
+    let profilePhotoUrl: String?
     let friendsSince: Date
     let totalWorkoutsShared: Int
     
     var id: UUID { friendId }
     
     var displayName: String {
-        friendName ?? friendEmail ?? "Unknown"
+        // Show username first if available, then name, then email
+        if let username = friendUsername, !username.isEmpty {
+            return "@\(username)"
+        }
+        return friendName ?? friendEmail ?? "Unknown"
     }
     
     var initials: String {
-        guard let name = friendName, !name.isEmpty else { return "?" }
+        // Use name for initials, not username
+        guard let name = friendName, !name.isEmpty else { 
+            // Fall back to username initials
+            if let username = friendUsername, !username.isEmpty {
+                return String(username.prefix(2)).uppercased()
+            }
+            return "?" 
+        }
         let components = name.split(separator: " ")
         if components.count >= 2 {
             return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
@@ -459,8 +590,10 @@ struct Friend: Codable, Identifiable {
         case friendId = "friend_id"
         case friendName = "friend_name"
         case friendEmail = "friend_email"
+        case friendUsername = "friend_username"
         case fitnessGoal = "fitness_goal"
         case experienceLevel = "experience_level"
+        case profilePhotoUrl = "profile_photo_url"
         case friendsSince = "friends_since"
         case totalWorkoutsShared = "total_workouts_shared"
     }
@@ -471,13 +604,15 @@ struct FriendRequest: Codable, Identifiable {
     let fromUserId: UUID
     let fromUserName: String?
     let fromUserEmail: String?
+    let fromUserUsername: String?
+    let profilePhotoUrl: String?
     let message: String?
     let createdAt: Date
     
     var id: UUID { requestId }
     
     var displayName: String {
-        fromUserName ?? fromUserEmail ?? "Unknown"
+        fromUserName ?? fromUserUsername ?? "Unknown"
     }
     
     enum CodingKeys: String, CodingKey {
@@ -485,6 +620,8 @@ struct FriendRequest: Codable, Identifiable {
         case fromUserId = "from_user_id"
         case fromUserName = "from_user_name"
         case fromUserEmail = "from_user_email"
+        case fromUserUsername = "from_user_username"
+        case profilePhotoUrl = "profile_photo_url"
         case message
         case createdAt = "created_at"
     }
@@ -494,23 +631,45 @@ struct UserSearchResult: Codable, Identifiable {
     let userId: UUID
     let name: String?
     let email: String?
+    let username: String?
     let fitnessGoal: String?
     let experienceLevel: String?
+    let profilePhotoUrl: String?
     let isFriend: Bool
     let hasPendingRequest: Bool
     
     var id: UUID { userId }
     
     var displayName: String {
-        name ?? email ?? "Unknown"
+        // Show username with @ if available
+        if let username = username, !username.isEmpty {
+            return "@\(username)"
+        }
+        return name ?? "Unknown"
+    }
+    
+    var initials: String {
+        if let name = name, !name.isEmpty {
+            let components = name.split(separator: " ")
+            if components.count >= 2 {
+                return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
+            }
+            return String(name.prefix(2)).uppercased()
+        }
+        if let username = username, !username.isEmpty {
+            return String(username.prefix(2)).uppercased()
+        }
+        return "?"
     }
     
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case name
         case email
+        case username
         case fitnessGoal = "fitness_goal"
         case experienceLevel = "experience_level"
+        case profilePhotoUrl = "profile_photo_url"
         case isFriend = "is_friend"
         case hasPendingRequest = "has_pending_request"
     }
@@ -800,39 +959,77 @@ struct UserSearchResultDTO: Codable, Identifiable {
 }
 
 struct ReceivedWorkoutDTO: Codable, Identifiable {
-    let id: String
-    let fromUserId: String
-    let fromUserName: String?
+    let workoutId: UUID
+    let senderId: UUID
+    let senderName: String
+    let senderUsername: String?
     let workoutName: String
     let workoutDescription: String?
-    let exercises: [SharedExerciseDTO]
+    let exercises: [SharedExerciseDTO]?
+    let exerciseNamesArray: [String]?  // From database exercise_names column
     let message: String?
     let status: String
     let estimatedDuration: Int?
     let difficultyLevel: String?
     let createdAt: Date
-    let savedToFavorites: Bool
+    let viewedAt: Date?
+    let savedToFavorites: Bool?
+    
+    // Identifiable conformance
+    var id: UUID { workoutId }
+    
+    // Computed properties for exercise details
+    var exerciseCount: Int {
+        exercises?.count ?? exerciseNamesArray?.count ?? 0
+    }
+    
+    var exerciseNames: [String] {
+        // Prefer parsed exercises, fall back to exercise_names array
+        if let exercises = exercises, !exercises.isEmpty {
+            return exercises.map { $0.name }
+        }
+        return exerciseNamesArray ?? []
+    }
+    
+    var exerciseSets: [Int] {
+        exercises?.map { $0.sets } ?? []
+    }
+    
+    var exerciseReps: [String] {
+        exercises?.map { $0.reps } ?? []
+    }
+    
+    var exerciseNotes: [String] {
+        exercises?.map { $0.notes ?? "" } ?? []
+    }
     
     var senderDisplayName: String {
-        fromUserName ?? "Unknown"
+        senderName
     }
     
     var isPending: Bool {
         status == "pending"
     }
     
+    var isSavedToFavorites: Bool {
+        savedToFavorites ?? false
+    }
+    
     enum CodingKeys: String, CodingKey {
-        case id
-        case fromUserId = "from_user_id"
-        case fromUserName = "from_user_name"
+        case workoutId = "workout_id"
+        case senderId = "sender_id"
+        case senderName = "sender_name"
+        case senderUsername = "sender_username"
         case workoutName = "workout_name"
         case workoutDescription = "workout_description"
         case exercises
+        case exerciseNamesArray = "exercise_names"
         case message
         case status
         case estimatedDuration = "estimated_duration"
         case difficultyLevel = "difficulty_level"
         case createdAt = "created_at"
+        case viewedAt = "viewed_at"
         case savedToFavorites = "saved_to_favorites"
     }
 }
@@ -842,8 +1039,16 @@ struct SharedExerciseDTO: Codable, Identifiable {
     let name: String
     let sets: Int
     let reps: String
-    let restSeconds: Int?
-    let notes: String?
+    var restSeconds: Int? = nil
+    var notes: String? = nil
+    
+    init(name: String, sets: Int, reps: String, restSeconds: Int? = nil, notes: String? = nil) {
+        self.name = name
+        self.sets = sets
+        self.reps = reps
+        self.restSeconds = restSeconds
+        self.notes = notes
+    }
     
     enum CodingKeys: String, CodingKey {
         case name
@@ -857,9 +1062,12 @@ struct SharedExerciseDTO: Codable, Identifiable {
 struct SelectedExerciseForFriend: Identifiable {
     var id = UUID()
     let name: String
-    let category: String
+    var category: String?
     var sets: Int = 3
     var reps: String = "8-12"
     var restSeconds: Int = 90
     var notes: String = ""
 }
+
+// Type alias for compatibility
+typealias SharedWorkoutDTO = ReceivedWorkoutDTO

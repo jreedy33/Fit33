@@ -145,6 +145,11 @@ struct SettingsView: View {
                                     .padding(.horizontal, 16)
                                 }
                                 .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Onboarding Test
+                                onboardingTestRow()
                                 #endif
                                 
                                 Divider().padding(.leading, 52)
@@ -603,6 +608,95 @@ struct SettingsView: View {
     // MARK: - Reset App State Row
     @State private var showingResetConfirmation = false
     @State private var resetComplete = false
+    
+    #if DEBUG
+    @State private var showOnboardingTest = false
+    @State private var onboardingTestRunning = false
+    @State private var onboardingTestResult: String = ""
+    
+    private func onboardingTestRow() -> some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            showOnboardingTest = true
+        }) {
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(0.15), Color.pink.opacity(0.15)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "testtube.2")
+                        .font(.system(size: 16))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.purple, Color.pink],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Onboarding Test")
+                        .font(.body)
+                        .foregroundColor(.primary)
+                    Text("Test username saving flow")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if onboardingTestRunning {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+        .alert("Run Onboarding Test?", isPresented: $showOnboardingTest) {
+            Button("Cancel", role: .cancel) { }
+            Button("Run Test") {
+                runOnboardingTest()
+            }
+        } message: {
+            Text("This will create a REAL test user in the database. The username saving flow will be tested and logged to console.")
+        }
+        .alert("Test Complete", isPresented: .constant(!onboardingTestResult.isEmpty)) {
+            Button("OK") {
+                onboardingTestResult = ""
+            }
+        } message: {
+            Text(onboardingTestResult)
+        }
+    }
+    
+    private func runOnboardingTest() {
+        onboardingTestRunning = true
+        Task {
+            let result = await OnboardingTestHelper.shared.runFullOnboardingTest()
+            await MainActor.run {
+                onboardingTestRunning = false
+                if result.isSuccess {
+                    onboardingTestResult = "✅ All tests passed!\n\nEmail: \(result.testEmail)\nUsername: @\(result.testUsername)"
+                } else {
+                    onboardingTestResult = "❌ Test failed!\n\nErrors:\n" + result.errors.joined(separator: "\n")
+                }
+            }
+        }
+    }
+    #endif
     
     private func resetAppStateRow() -> some View {
         Button(action: {

@@ -10,9 +10,8 @@ struct FriendsListView: View {
     
     @State private var selectedTab = 0 // 0: Friends, 1: Requests, 2: Search
     @State private var searchText = ""
-    @State private var searchResults: [UserSearchResultDTO] = []
     @State private var isSearching = false
-    @State private var showingFriendProfile: FriendDTO?
+    @State private var showingFriendProfile: Friend?
     @State private var showingReceivedWorkouts = false
     
     // Adaptive colors
@@ -222,28 +221,13 @@ struct FriendsListView: View {
                             .padding(.leading, 4)
                         
                         ForEach(friendService.pendingRequests) { request in
-                            FriendRequestCard(request: request, isIncoming: true)
-                        }
-                    }
-                }
-                
-                // Sent Requests
-                if !friendService.sentRequests.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("SENT REQUESTS")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .padding(.leading, 4)
-                        
-                        ForEach(friendService.sentRequests) { request in
-                            FriendRequestCard(request: request, isIncoming: false)
+                            FriendRequestCard(request: request)
                         }
                     }
                 }
                 
                 // Empty state
-                if friendService.pendingRequests.isEmpty && friendService.sentRequests.isEmpty {
+                if friendService.pendingRequests.isEmpty {
                     emptyRequestsState
                         .padding(.top, 50)
                 }
@@ -262,7 +246,7 @@ struct FriendsListView: View {
             Text("No Pending Requests")
                 .font(.headline)
             
-            Text("Friend requests you send and receive\nwill appear here")
+            Text("Friend requests you receive\nwill appear here")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -278,9 +262,9 @@ struct FriendsListView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                 
-                TextField("Search by email...", text: $searchText)
+                TextField("Search by @username...", text: $searchText)
                     .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
+                    .keyboardType(.twitter) // Good for @mentions
                     .onSubmit {
                         performSearch()
                     }
@@ -288,7 +272,6 @@ struct FriendsListView: View {
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
-                        searchResults = []
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
@@ -306,7 +289,7 @@ struct FriendsListView: View {
                     if isSearching {
                         ProgressView("Searching...")
                             .padding(.top, 30)
-                    } else if searchResults.isEmpty && !searchText.isEmpty {
+                    } else if friendService.searchResults.isEmpty && !searchText.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "person.crop.circle.badge.questionmark")
                                 .font(.system(size: 50))
@@ -315,28 +298,28 @@ struct FriendsListView: View {
                             Text("No users found")
                                 .font(.headline)
                             
-                            Text("Try a different email address")
+                            Text("Try a different username")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
                         .padding(.top, 50)
                     } else if searchText.isEmpty {
                         VStack(spacing: 12) {
-                            Image(systemName: "envelope.badge.person.crop")
+                            Image(systemName: "at")
                                 .font(.system(size: 50))
                                 .foregroundColor(.blue.opacity(0.5))
                             
                             Text("Find Friends")
                                 .font(.headline)
                             
-                            Text("Enter an email address to find\nand add friends")
+                            Text("Search by username to find\nand add friends")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                         }
                         .padding(.top, 50)
                     } else {
-                        ForEach(searchResults) { user in
+                        ForEach(friendService.searchResults) { user in
                             UserSearchResultCard(user: user)
                         }
                     }
@@ -363,7 +346,7 @@ struct FriendsListView: View {
         
         isSearching = true
         Task {
-            searchResults = await friendService.searchUsers(email: searchText)
+            await friendService.searchUsers(query: searchText)
             isSearching = false
         }
     }
@@ -373,7 +356,7 @@ struct FriendsListView: View {
 
 struct FriendCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    let friend: FriendDTO
+    let friend: Friend
     let onTap: () -> Void
     
     private var cardBackground: Color {
@@ -383,31 +366,43 @@ struct FriendCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
-                // Avatar
+                // Avatar with profile photo
                 ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.purple.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 50, height: 50)
-                    
-                    Text(friend.initials)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+                    if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 50, height: 50)
+                                    .clipShape(Circle())
+                            case .failure(_), .empty:
+                                defaultFriendAvatar
+                            @unknown default:
+                                defaultFriendAvatar
+                            }
+                        }
+                    } else {
+                        defaultFriendAvatar
+                    }
                 }
+                .frame(width: 50, height: 50)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(friend.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    // Username (primary)
+                    if let username = friend.friendUsername, !username.isEmpty {
+                        Text("@\(username)")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                    }
                     
-                    Text(friend.email)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Name (secondary)
+                    if let name = friend.friendName, !name.isEmpty {
+                        Text(name)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
                 }
                 
                 Spacer()
@@ -425,6 +420,24 @@ struct FriendCard: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
+    
+    private var defaultFriendAvatar: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 50, height: 50)
+            
+            Text(friend.initials)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+        }
+    }
 }
 
 // MARK: - Friend Request Card
@@ -432,8 +445,7 @@ struct FriendCard: View {
 struct FriendRequestCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var friendService = FriendService.shared
-    let request: FriendRequestDTO
-    let isIncoming: Bool
+    let request: FriendRequest
     
     @State private var isProcessing = false
     
@@ -441,75 +453,78 @@ struct FriendRequestCard: View {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
     }
     
+    private var initials: String {
+        guard let name = request.fromUserName, !name.isEmpty else { return "?" }
+        let components = name.split(separator: " ")
+        if components.count >= 2 {
+            return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+    
     var body: some View {
         HStack(spacing: 14) {
-            // Avatar
+            // Avatar with profile photo support
             ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: isIncoming ? [Color.green, Color.cyan] : [Color.orange, Color.yellow],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                
-                Text(request.initials)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
+                if let photoUrl = request.profilePhotoUrl, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 50, height: 50)
+                                .clipShape(Circle())
+                        case .failure(_), .empty:
+                            defaultAvatar
+                        @unknown default:
+                            defaultAvatar
+                        }
+                    }
+                } else {
+                    defaultAvatar
+                }
             }
+            .frame(width: 50, height: 50)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(request.name)
+                // Name
+                Text(request.displayName)
                     .font(.headline)
                     .foregroundColor(.primary)
                 
-                Text(request.email)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Username
+                if let username = request.fromUserUsername {
+                    Text("@\(username)")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
                 
-                Text(timeAgoString(from: request.requestedAt))
-                    .font(.caption2)
+                // Time ago
+                Text(timeAgoString(from: request.createdAt))
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            if isIncoming {
-                // Accept/Decline buttons
-                HStack(spacing: 8) {
-                    Button(action: { declineRequest() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.red)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(Color.red.opacity(0.15)))
-                    }
-                    .disabled(isProcessing)
-                    
-                    Button(action: { acceptRequest() }) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.green)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(Color.green.opacity(0.15)))
-                    }
-                    .disabled(isProcessing)
+            // Accept/Decline buttons
+            HStack(spacing: 8) {
+                Button(action: { declineRequest() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.red)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.red.opacity(0.15)))
                 }
-            } else {
-                // Cancel button
-                Button(action: { cancelRequest() }) {
-                    Text("Cancel")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .stroke(Color.orange, lineWidth: 1)
-                        )
+                .disabled(isProcessing)
+                
+                Button(action: { acceptRequest() }) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.green)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.green.opacity(0.15)))
                 }
                 .disabled(isProcessing)
             }
@@ -522,19 +537,35 @@ struct FriendRequestCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(isIncoming ? Color.green.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
         )
+    }
+    
+    private var defaultAvatar: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.green, Color.cyan],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 50, height: 50)
+            
+            Text(initials)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+        }
     }
     
     private func acceptRequest() {
         isProcessing = true
         HapticManager.impact(.medium)
         Task {
-            do {
-                try await friendService.acceptFriendRequest(requestId: request.id)
-                HapticManager.notificationOccurred(.success)
-            } catch {
-                print("❌ Error accepting request: \(error)")
+            let success = await friendService.acceptFriendRequest(requestId: request.requestId)
+            if success {
+                HapticManager.notification(.success)
             }
             isProcessing = false
         }
@@ -544,24 +575,7 @@ struct FriendRequestCard: View {
         isProcessing = true
         HapticManager.impact(.light)
         Task {
-            do {
-                try await friendService.declineFriendRequest(requestId: request.id)
-            } catch {
-                print("❌ Error declining request: \(error)")
-            }
-            isProcessing = false
-        }
-    }
-    
-    private func cancelRequest() {
-        isProcessing = true
-        HapticManager.impact(.light)
-        Task {
-            do {
-                try await friendService.cancelFriendRequest(requestId: request.id)
-            } catch {
-                print("❌ Error cancelling request: \(error)")
-            }
+            _ = await friendService.declineFriendRequest(requestId: request.requestId)
             isProcessing = false
         }
     }
@@ -578,47 +592,54 @@ struct FriendRequestCard: View {
 struct UserSearchResultCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var friendService = FriendService.shared
-    let user: UserSearchResultDTO
+    let user: UserSearchResult
     
     @State private var isProcessing = false
-    @State private var localStatus: FriendshipStatus
+    @State private var requestSent = false
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
     }
     
-    init(user: UserSearchResultDTO) {
-        self.user = user
-        self._localStatus = State(initialValue: user.friendshipStatus)
-    }
-    
     var body: some View {
         HStack(spacing: 14) {
-            // Avatar
+            // Avatar with profile photo
             ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.indigo, Color.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                
-                Text(user.initials)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
+                if let photoUrl = user.profilePhotoUrl, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 50, height: 50)
+                                .clipShape(Circle())
+                        case .failure(_), .empty:
+                            defaultAvatar
+                        @unknown default:
+                            defaultAvatar
+                        }
+                    }
+                } else {
+                    defaultAvatar
+                }
             }
+            .frame(width: 50, height: 50)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(user.name)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                // Username (primary)
+                if let username = user.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                }
                 
-                Text(user.email)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Name (secondary)
+                if let name = user.name, !name.isEmpty {
+                    Text(name)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
             }
             
             Spacer()
@@ -634,10 +655,47 @@ struct UserSearchResultCard: View {
         )
     }
     
+    private var defaultAvatar: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.indigo, Color.purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 50, height: 50)
+            
+            Text(user.initials)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+        }
+    }
+    
     @ViewBuilder
     private var actionButton: some View {
-        switch localStatus {
-        case .none:
+        if user.isFriend {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                Text("Friends")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.green)
+        } else if user.hasPendingRequest || requestSent {
+            Text("Pending")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.orange)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .stroke(Color.orange, lineWidth: 1)
+                )
+        } else {
             Button(action: { sendRequest() }) {
                 HStack(spacing: 4) {
                     Image(systemName: "person.badge.plus")
@@ -659,45 +717,6 @@ struct UserSearchResultCard: View {
                 )
             }
             .disabled(isProcessing)
-            
-        case .requestSent:
-            Text("Pending")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .stroke(Color.orange, lineWidth: 1)
-                )
-            
-        case .requestReceived:
-            Text("Accept?")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.green)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .stroke(Color.green, lineWidth: 1)
-                )
-            
-        case .friends:
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
-                Text("Friends")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-            }
-            .foregroundColor(.green)
-            
-        case .blocked:
-            Text("Blocked")
-                .font(.caption)
-                .foregroundColor(.gray)
         }
     }
     
@@ -705,14 +724,19 @@ struct UserSearchResultCard: View {
         isProcessing = true
         HapticManager.impact(.medium)
         Task {
-            do {
-                try await friendService.sendFriendRequest(to: user.id)
-                localStatus = .requestSent
-                HapticManager.notificationOccurred(.success)
-            } catch {
-                print("❌ Error sending request: \(error)")
+            print("📤 Sending friend request to user: \(user.userId)")
+            let success = await friendService.sendFriendRequest(toUserId: user.userId)
+            await MainActor.run {
+                if success {
+                    requestSent = true
+                    HapticManager.notification(.success)
+                    print("✅ Friend request sent successfully!")
+                } else {
+                    HapticManager.notification(.error)
+                    print("❌ Failed to send friend request")
+                }
+                isProcessing = false
             }
-            isProcessing = false
         }
     }
 }

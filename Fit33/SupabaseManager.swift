@@ -339,6 +339,9 @@ class SupabaseManager: ObservableObject {
                 // Clear Core Data and UserDefaults
                 PersistenceController.shared.clearAllUserData()
                 
+                // Clear profile photo cache - critical for multi-user scenarios
+                ProfilePhotoCache.shared.clearCache()
+                
                 // Mark that user manually signed out (for development mode)
                 UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
                 
@@ -368,6 +371,9 @@ class SupabaseManager: ObservableObject {
         await MainActor.run { isLoading = true }
         
         do {
+            // Delete profile photo from Supabase Storage first
+            await deleteProfilePhotoFromStorage(userId: userId)
+            
             // Call the database function that deletes the user from auth.users
             // This function also deletes from all related tables
             print("📡 Calling RPC delete_user_account...")
@@ -392,6 +398,8 @@ class SupabaseManager: ObservableObject {
             
             await MainActor.run {
                 PersistenceController.shared.clearAllUserData()
+                // Clear profile photo cache - critical for multi-user scenarios
+                ProfilePhotoCache.shared.clearCache()
                 UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
                 currentUser = nil
                 isAuthenticated = false
@@ -407,6 +415,20 @@ class SupabaseManager: ObservableObject {
             // Fallback: If RPC fails, try manual deletion (won't delete from auth.users though)
             print("⚠️ Attempting fallback deletion...")
             try await fallbackDeleteAccount(userId: userId)
+        }
+    }
+    
+    /// Delete profile photo from Supabase Storage
+    private func deleteProfilePhotoFromStorage(userId: UUID) async {
+        do {
+            let filePath = "profile_photos/\(userId.uuidString).jpg"
+            try await client.storage
+                .from("avatars")
+                .remove(paths: [filePath])
+            print("🗑️ Profile photo deleted from storage")
+        } catch {
+            // Photo might not exist, which is fine
+            print("⚠️ Could not delete profile photo from storage: \(error.localizedDescription)")
         }
     }
     
@@ -456,10 +478,15 @@ class SupabaseManager: ObservableObject {
             }
         }
         
+        // Delete profile photo from storage
+        await deleteProfilePhotoFromStorage(userId: userId)
+        
         try? await client.auth.signOut()
         
         await MainActor.run {
             PersistenceController.shared.clearAllUserData()
+            // Clear profile photo cache - critical for multi-user scenarios
+            ProfilePhotoCache.shared.clearCache()
             UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
             currentUser = nil
             isAuthenticated = false
@@ -501,12 +528,13 @@ class SupabaseManager: ObservableObject {
             has_completed_onboarding: hasCompletedOnboarding
         )
         
+        // Use upsert to handle edge cases where profile might partially exist
         try await client
             .from("user_profiles")
-            .insert(profile)
+            .upsert(profile, onConflict: "id")
             .execute()
         
-        // Create initial progress record
+        // Create initial progress record (also uses upsert)
         try await createUserProgress(userId: userId)
         
         print("✅ User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))")
@@ -563,6 +591,88 @@ class SupabaseManager: ObservableObject {
         print("✅ User profile updated - Equipment: \(equipment ?? []), Days: \(availableDays ?? 0)")
     }
     
+    // MARK: - Profile Photo
+    
+    /// Upload a profile photo and update the user profile with the URL
+    func uploadProfilePhoto(imageData: Data) async throws -> String {
+        guard let userId = currentUser?.id else {
+            throw NSError(domain: "SupabaseManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
+        }
+        
+        let fileName = "\(userId.uuidString)/profile.jpg"
+        let bucket = "profile-photos"
+        
+        // Upload to Supabase Storage
+        try await client.storage
+            .from(bucket)
+            .upload(
+                path: fileName,
+                file: imageData,
+                options: FileOptions(
+                    cacheControl: "3600",
+                    contentType: "image/jpeg",
+                    upsert: true
+                )
+            )
+        
+        // Get the public URL
+        let publicUrl = try client.storage
+            .from(bucket)
+            .getPublicURL(path: fileName)
+        
+        // Update the user profile with the photo URL
+        struct PhotoUpdate: Encodable {
+            let profile_photo_url: String
+            let updated_at: String
+        }
+        
+        let update = PhotoUpdate(
+            profile_photo_url: publicUrl.absoluteString,
+            updated_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("user_profiles")
+            .update(update)
+            .eq("id", value: userId.uuidString)
+            .execute()
+        
+        print("✅ Profile photo uploaded: \(publicUrl.absoluteString)")
+        return publicUrl.absoluteString
+    }
+    
+    /// Delete the current profile photo
+    func deleteProfilePhoto() async throws {
+        guard let userId = currentUser?.id else { return }
+        
+        let fileName = "\(userId.uuidString)/profile.jpg"
+        let bucket = "profile-photos"
+        
+        // Delete from storage
+        try await client.storage
+            .from(bucket)
+            .remove(paths: [fileName])
+        
+        // Update the user profile to remove the photo URL
+        struct PhotoUpdate: Encodable {
+            let profile_photo_url: String?
+            let updated_at: String
+        }
+        
+        let update = PhotoUpdate(
+            profile_photo_url: nil,
+            updated_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("user_profiles")
+            .update(update)
+            .eq("id", value: userId.uuidString)
+            .execute()
+        
+        print("✅ Profile photo deleted")
+    }
+    
     /// Mark onboarding as complete in the cloud
     func markOnboardingComplete() async throws {
         guard let userId = currentUser?.id else { return }
@@ -584,6 +694,180 @@ class SupabaseManager: ObservableObject {
             .execute()
         
         print("✅ Onboarding marked as complete in cloud")
+    }
+    
+    // MARK: - Username Management
+    
+    /// Check if a username is available (case-insensitive)
+    func isUsernameAvailable(_ username: String) async throws -> Bool {
+        // Client-side validation first
+        let cleanUsername = username.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard cleanUsername.count >= 3 else { return false }
+        guard cleanUsername.count <= 30 else { return false }
+        
+        // Check alphanumeric + underscore only
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+        guard cleanUsername.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+            return false
+        }
+        
+        // Check with database
+        let result: Bool = try await client
+            .rpc("is_username_available", params: ["check_username": cleanUsername])
+            .execute()
+            .value
+        
+        return result
+    }
+    
+    /// Set the username for the current user
+    func setUsername(_ username: String) async throws {
+        print("🔧 [USERNAME] ========== SET USERNAME START ==========")
+        print("🔧 [USERNAME] Input username: '\(username)'")
+        
+        guard let user = currentUser else {
+            print("❌ [USERNAME] Not authenticated - currentUser is nil")
+            throw NSError(domain: "SupabaseManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        print("👤 [USERNAME] Current user ID: \(user.id.uuidString)")
+        print("👤 [USERNAME] User email: \(user.email ?? "nil")")
+        
+        // Debug: Check profile state before setting username
+        await debugProfileState()
+        
+        let cleanUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        print("🧹 [USERNAME] Cleaned username: '\(cleanUsername)'")
+        
+        // Validate on client side first
+        guard cleanUsername.count >= 3 else {
+            print("❌ [USERNAME] Username too short: \(cleanUsername.count) chars")
+            throw NSError(domain: "SupabaseManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Username must be at least 3 characters"])
+        }
+        
+        var rpcSucceeded = false
+        
+        // Try RPC first
+        do {
+            print("📡 [USERNAME] Trying Method 1: RPC set_username with: '\(cleanUsername)'")
+            let success: Bool = try await client
+                .rpc("set_username", params: ["new_username": cleanUsername])
+                .execute()
+                .value
+            
+            print("📡 [USERNAME] RPC returned: \(success)")
+            
+            if success {
+                rpcSucceeded = true
+                print("✅ [USERNAME] RPC success!")
+            } else {
+                print("⚠️ [USERNAME] RPC returned false, will try direct update")
+            }
+            
+        } catch {
+            print("⚠️ [USERNAME] RPC failed: \(error.localizedDescription)")
+            print("⚠️ [USERNAME] Will try direct table update as fallback...")
+        }
+        
+        // Fallback: Direct table update if RPC failed
+        if !rpcSucceeded {
+            do {
+                print("📡 [USERNAME] Trying Method 2: Direct table update")
+                
+                try await client
+                    .from("user_profiles")
+                    .update(["username": cleanUsername])
+                    .eq("id", value: user.id.uuidString)
+                    .execute()
+                
+                print("✅ [USERNAME] Direct update executed")
+                
+            } catch {
+                print("❌ [USERNAME] Direct update also failed: \(error.localizedDescription)")
+                throw error
+            }
+        }
+        
+        // Verify the username was actually saved
+        print("🔍 [USERNAME] Verifying save...")
+        let savedUsername = try await getCurrentUsername()
+        if savedUsername == cleanUsername {
+            print("✅ [USERNAME] VERIFIED: Username saved as '@\(cleanUsername)'")
+        } else if let saved = savedUsername {
+            print("⚠️ [USERNAME] Mismatch! Expected '\(cleanUsername)' but got '\(saved)'")
+        } else {
+            print("❌ [USERNAME] FAILED: Username is still NULL after save attempt!")
+            throw NSError(domain: "SupabaseManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Username failed to save to database"])
+        }
+        
+        print("🔧 [USERNAME] ========== SET USERNAME END ==========")
+    }
+    
+    /// Get the current user's username
+    func getCurrentUsername() async throws -> String? {
+        guard let userId = currentUser?.id else { return nil }
+        
+        struct UsernameResult: Decodable {
+            let username: String?
+        }
+        
+        let response: [UsernameResult] = try await client
+            .from("user_profiles")
+            .select("username")
+            .eq("id", value: userId.uuidString)
+            .execute()
+            .value
+        
+        return response.first?.username
+    }
+    
+    /// Debug: Check profile state and username
+    func debugProfileState() async {
+        print("🔍 [DEBUG] ============= PROFILE STATE CHECK =============")
+        
+        guard let user = currentUser else {
+            print("❌ [DEBUG] No current user - not authenticated")
+            return
+        }
+        
+        print("✅ [DEBUG] Current User ID: \(user.id.uuidString)")
+        print("✅ [DEBUG] User Email: \(user.email ?? "nil")")
+        print("✅ [DEBUG] Is Authenticated: \(isAuthenticated)")
+        
+        // Check if profile exists
+        do {
+            struct ProfileCheck: Decodable {
+                let id: String
+                let username: String?
+                let name: String?
+                let email: String?
+                let has_completed_onboarding: Bool?
+            }
+            
+            let profiles: [ProfileCheck] = try await client
+                .from("user_profiles")
+                .select("id, username, name, email, has_completed_onboarding")
+                .eq("id", value: user.id.uuidString)
+                .execute()
+                .value
+            
+            if let profile = profiles.first {
+                print("✅ [DEBUG] Profile EXISTS in database:")
+                print("   - ID: \(profile.id)")
+                print("   - Username: \(profile.username ?? "NULL")")
+                print("   - Name: \(profile.name ?? "NULL")")
+                print("   - Email: \(profile.email ?? "NULL")")
+                print("   - Onboarding Complete: \(profile.has_completed_onboarding ?? false)")
+            } else {
+                print("❌ [DEBUG] Profile NOT FOUND in user_profiles table!")
+                print("   Searched for id = '\(user.id.uuidString)'")
+            }
+        } catch {
+            print("❌ [DEBUG] Failed to query profile: \(error)")
+        }
+        
+        print("🔍 [DEBUG] ============================================")
     }
     
     func fetchUserProfile() async throws -> UserProfileDTO? {
@@ -1233,9 +1517,10 @@ class SupabaseManager: ObservableObject {
             last_workout_date: nil
         )
         
+        // Use upsert to handle existing records (e.g., when user profile was deleted but progress remained)
         try await client
             .from("user_progress")
-            .insert(progress)
+            .upsert(progress, onConflict: "user_id,date")
             .execute()
     }
     
@@ -2850,6 +3135,7 @@ struct UserProfileDTO: Codable {
     let lastWorkoutDate: String?
     let updatedAt: String?
     let hasCompletedOnboarding: Bool?
+    let profilePhotoUrl: String?
     // Unit preferences
     let weightUnit: String?
     let heightUnit: String?
@@ -2883,6 +3169,7 @@ struct UserProfileDTO: Codable {
         case distanceUnit = "distance_unit"
         case weekStartDay = "week_start_day"
         case hasCompletedOnboarding = "has_completed_onboarding"
+        case profilePhotoUrl = "profile_photo_url"
     }
 }
 

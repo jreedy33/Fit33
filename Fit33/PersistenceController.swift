@@ -246,7 +246,11 @@ struct PersistenceController {
         container.viewContext.reset()
         print("🔄 Core Data context reset")
         
-        // 4. Clear singleton service in-memory state
+        // 4. Clear profile photo cache - critical for multi-user scenarios
+        ProfilePhotoCache.shared.clearCache()
+        print("🗑️ Profile photo cache cleared")
+        
+        // 5. Clear singleton service in-memory state
         // This is critical - clearing UserDefaults alone won't reset @Published properties
         // Use DispatchQueue.main.async since some services are @MainActor isolated
         DispatchQueue.main.async {

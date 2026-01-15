@@ -29,6 +29,13 @@
 		7C0C426A2F16E22700F02E84 /* ExerciseNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */; };
 		7C0C426C2F16E23000F02E84 /* CoreDataExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C426B2F16E23000F02E84 /* CoreDataExtensions.swift */; };
 		7C0C427A2F182C6500F02E84 /* AppPerformanceSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */; };
+		7C0C427C2F1833C100F02E84 /* FriendProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */; };
+		7C0C427E2F1833CB00F02E84 /* FriendService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427D2F1833CB00F02E84 /* FriendService.swift */; };
+		7C0C42802F1833DA00F02E84 /* FriendsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */; };
+		7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */; };
+		7C0C42842F18340E00F02E84 /* ReceivedWorkoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */; };
+		7C0C42862F184C0B00F02E84 /* OnboardingTestHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */; };
+		7C0C42882F186B4A00F02E84 /* ProfilePhotoCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */; };
 		7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */; };
 		7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */; };
 		7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */; };
@@ -216,6 +223,13 @@
 		7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNameCache.swift; sourceTree = "<group>"; };
 		7C0C426B2F16E23000F02E84 /* CoreDataExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataExtensions.swift; sourceTree = "<group>"; };
 		7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPerformanceSystem.swift; sourceTree = "<group>"; };
+		7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendProfileView.swift; sourceTree = "<group>"; };
+		7C0C427D2F1833CB00F02E84 /* FriendService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendService.swift; sourceTree = "<group>"; };
+		7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsListView.swift; sourceTree = "<group>"; };
+		7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWorkoutPreviewView.swift; sourceTree = "<group>"; };
+		7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedWorkoutsView.swift; sourceTree = "<group>"; };
+		7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTestHelper.swift; sourceTree = "<group>"; };
+		7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoCache.swift; sourceTree = "<group>"; };
 		7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicProgramGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartDayGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleRecoveryTracker.swift; sourceTree = "<group>"; };
@@ -447,11 +461,10 @@
 				7CB08C772ED816FF00236ECB /* AdManager.swift */,
 				7C8405C72EE685400009ED0F /* AdvancedIntelligenceService.swift */,
 				7C8405CD2EE7C0EC0009ED0F /* AlternativeExerciseEngine.swift */,
-				7C0C426B2F16E23000F02E84 /* CoreDataExtensions.swift */,
 				7CB08C722ED810A500236ECB /* AppearanceManager.swift */,
+				7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */,
 				A1234567890123456789012F /* Assets.xcassets */,
 				149F1F9A361C4E178E9EF77A /* AuthView.swift */,
-				7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */,
 				7CB08C662ED6A34F00236ECB /* AutoWorkoutPreviewView.swift */,
 				7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */,
 				7CB08CA22EDE395600236ECB /* BugReportService.swift */,
@@ -461,7 +474,6 @@
 				7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */,
 				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
 				7CEAFD082EF9C0C400874B57 /* CloudBackupView.swift */,
-				7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */,
 				7CB08C682ED73A6F00236ECB /* CloudProgramLibraryView.swift */,
 				7CB08C692ED73A6F00236ECB /* CloudProgramScheduleView.swift */,
 				7CB08C6A2ED73A6F00236ECB /* CloudProgramService.swift */,
@@ -469,6 +481,7 @@
 				7C8405C52EE65E490009ED0F /* CommunityIntelligenceService.swift */,
 				A12345678901234567890201 /* ComprehensiveExerciseDatabase.swift */,
 				7C558B152ED4D3AD00A01E1F /* ContentView.swift */,
+				7C0C426B2F16E23000F02E84 /* CoreDataExtensions.swift */,
 				7C4F15052ED3785A00439932 /* CoreDataExtensions.swift */,
 				7CB08C702ED80DDD00236ECB /* CoreIcon.swift */,
 				7CB08C6E2ED802F300236ECB /* CoreIcon.swift */,
@@ -493,6 +506,7 @@
 				A12345678901234567890231 /* ExerciseLibraryView.swift */,
 				7CAFD5632EE1138800920F0D /* ExerciseMappingService.swift */,
 				7C0C41D12F00B21600F02E84 /* ExerciseMetadataClassifier.swift */,
+				7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */,
 				7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */,
 				7CAFD56B2EE2109500920F0D /* ExercisePopularityService.swift */,
 				A12345678901234567890185 /* ExerciseSelectionView.swift */,
@@ -501,6 +515,7 @@
 				7C8405C92EE70AFB0009ED0F /* FavoriteBasedDiscoveryEngine.swift */,
 				7CB08C7C2ED8B78A00236ECB /* FavoriteRoutinesView.swift */,
 				A1234567890123456789012B /* Fit33App.swift */,
+				7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */,
 				7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */,
 				7C54AC0E2ED4C097004DD918 /* FoodDatabaseService.swift */,
 				7C558B1E2ED5027200A01E1F /* FoodDetailsView.swift */,
@@ -509,6 +524,9 @@
 				7C558B1C2ED5025C00A01E1F /* FoodSearchView.swift */,
 				7C0C41E52F098DF600F02E84 /* ForceExerciseRefresh.swift */,
 				7C98FABD2EEBC81D001AE1F3 /* FoundationalExerciseDatabase.swift */,
+				7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */,
+				7C0C427D2F1833CB00F02E84 /* FriendService.swift */,
+				7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */,
 				7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */,
 				7C47F9DE2EE336FB00BEC4D7 /* GeneratedProgramService.swift */,
 				7C558B172ED4D63500A01E1F /* GoFit.entitlements */,
@@ -516,6 +534,9 @@
 				7CAFD5592EDF780500920F0D /* HydrationService.swift */,
 				7CAFD55B2EDF780B00920F0D /* HydrationWidget.swift */,
 				7CB08C7B2ED81D0700236ECB /* Info.plist */,
+				7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */,
+				7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */,
+				7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */,
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
@@ -752,6 +773,7 @@
 				7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */,
 				7C81611A2EF867D6007556A7 /* RunningManager.swift in Sources */,
 				A12345678901234567890132 /* DataModel.xcdatamodeld in Sources */,
+				7C0C42842F18340E00F02E84 /* ReceivedWorkoutsView.swift in Sources */,
 				7C4F15062ED3785A00439932 /* CoreDataExtensions.swift in Sources */,
 				A1234567890123456789012A /* Fit33App.swift in Sources */,
 				7CB08C992EDBBCD800236ECB /* ProgramStartService.swift in Sources */,
@@ -817,14 +839,17 @@
 				7CB08CA12EDE248F00236ECB /* ProgramCustomizationView.swift in Sources */,
 				7C0C41E42F09796D00F02E84 /* SharedWorkoutView.swift in Sources */,
 				7CB08C932EDABADE00236ECB /* SmartProgramRecommender.swift in Sources */,
+				7C0C427C2F1833C100F02E84 /* FriendProfileView.swift in Sources */,
 				7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */,
 				7CB08C972EDBB88200236ECB /* ProgramExplorerView.swift in Sources */,
 				7C0C41D22F00B21600F02E84 /* ExerciseMetadataClassifier.swift in Sources */,
+				7C0C42802F1833DA00F02E84 /* FriendsListView.swift in Sources */,
 				7C558B212ED63BFC00A01E1F /* FoodSearchView.swift in Sources */,
 				7C558B0E2ED4D37B00A01E1F /* HealthKitManager.swift in Sources */,
 				7CEAFD0E2EF9C86C00874B57 /* UnitSettingsManager.swift in Sources */,
 				7CEAFD0F2EF9C86C00874B57 /* UnitSettingsView.swift in Sources */,
 				A12345678901234567890250 /* WorkoutTabView.swift in Sources */,
+				7C0C42882F186B4A00F02E84 /* ProfilePhotoCache.swift in Sources */,
 				7CB08C732ED810A500236ECB /* AppearanceManager.swift in Sources */,
 				7CB08CA52EDE397200236ECB /* BugReportView.swift in Sources */,
 				7C81611C2EF86925007556A7 /* RunningWorkoutView.swift in Sources */,
@@ -846,7 +871,9 @@
 				7CB08C8F2EDAB01300236ECB /* NotificationSettingsView.swift in Sources */,
 				7C8405CE2EE7C0EC0009ED0F /* AlternativeExerciseEngine.swift in Sources */,
 				7CB08C6C2ED73A6F00236ECB /* CloudProgramLibraryView.swift in Sources */,
+				7C0C427E2F1833CB00F02E84 /* FriendService.swift in Sources */,
 				7C47F9DF2EE336FB00BEC4D7 /* GeneratedProgramService.swift in Sources */,
+				7C0C42862F184C0B00F02E84 /* OnboardingTestHelper.swift in Sources */,
 				7CAFD5682EE1FB9F00920F0D /* SmartExercisePairingEngine.swift in Sources */,
 				7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */,
 				7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */,
@@ -861,6 +888,7 @@
 				7CB08C712ED80DDD00236ECB /* CoreIcon.swift in Sources */,
 				7C8405C62EE65E490009ED0F /* CommunityIntelligenceService.swift in Sources */,
 				7CAFD5602EE10EA700920F0D /* VideoPreloadManager.swift in Sources */,
+				7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */,
 				7C558B162ED4D3AD00A01E1F /* ContentView.swift in Sources */,
 				B1234567890123456789A005 /* ProgramScheduleView.swift in Sources */,
 				7C8405E62EE8EDCA0009ED0F /* WorkoutQualityAudit.swift in Sources */,

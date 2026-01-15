@@ -7,7 +7,7 @@ struct SharedWorkoutPreviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     
-    let friend: FriendDTO
+    let friend: Friend
     let workoutName: String
     let workoutDescription: String
     let exercises: [SelectedExerciseForFriend]
@@ -98,7 +98,7 @@ struct SharedWorkoutPreviewView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Review your workout before sending to \(friend.name)")
+            Text("Review your workout before sending to \(friend.displayName)")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -133,7 +133,7 @@ struct SharedWorkoutPreviewView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    Text(friend.name)
+                    Text(friend.displayName)
                         .font(.headline)
                 }
                 
@@ -332,19 +332,19 @@ struct SharedWorkoutPreviewView: View {
                 }
                 
                 try await FriendService.shared.sendWorkout(
-                    to: friend.id,
+                    to: friend.friendId.uuidString,
                     workoutName: workoutName,
                     description: workoutDescription.isEmpty ? nil : workoutDescription,
                     exercises: sharedExercises,
                     message: message.isEmpty ? nil : message
                 )
                 
-                HapticManager.notificationOccurred(.success)
+                HapticManager.notification(.success)
                 onSent()
             } catch {
                 errorMessage = error.localizedDescription
                 showingError = true
-                HapticManager.notificationOccurred(.error)
+                HapticManager.notification(.error)
             }
             
             isSending = false
@@ -355,12 +355,17 @@ struct SharedWorkoutPreviewView: View {
 #Preview {
     NavigationView {
         SharedWorkoutPreviewView(
-            friend: FriendDTO(
-                id: "test",
-                name: "John Doe",
-                email: "john@example.com",
-                friendshipId: "test",
-                friendsSince: Date()
+            friend: Friend(
+                friendshipId: UUID(),
+                friendId: UUID(),
+                friendName: "John Doe",
+                friendEmail: "john@example.com",
+                friendUsername: "johndoe",
+                fitnessGoal: nil,
+                experienceLevel: nil,
+                profilePhotoUrl: nil,
+                friendsSince: Date(),
+                totalWorkoutsShared: 0
             ),
             workoutName: "Chest Day",
             workoutDescription: "A great chest workout to build strength",

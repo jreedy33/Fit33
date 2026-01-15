@@ -11,11 +11,15 @@ class DeepLinkManager: ObservableObject {
         case workout
         case dashboard
         case sharedWorkout(workoutId: String)
+        case receivedWorkout(workoutId: String)
+        case friends
+        case receivedWorkouts
     }
     
     @Published var pendingDestination: Destination?
     @Published var showSharedWorkoutSheet = false
     @Published var pendingSharedWorkoutId: String?
+    @Published var pendingReceivedWorkoutId: String?
     
     private init() {}
     

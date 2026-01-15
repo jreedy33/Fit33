@@ -56,8 +56,25 @@ private func resetOnboardingForTesting() {
 }
 #endif
 
+// MARK: - App Delegate for Push Notifications
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { @MainActor in
+            PushNotificationService.shared.handleDeviceToken(deviceToken)
+        }
+    }
+    
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        Task { @MainActor in
+            PushNotificationService.shared.handleRegistrationError(error)
+        }
+    }
+}
+
 @main
 struct Fit33App: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     let persistenceController = PersistenceController.shared
     let premiumManager = PremiumManager.shared
     @StateObject private var supabaseManager = SupabaseManager.shared
@@ -65,6 +82,7 @@ struct Fit33App: App {
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var shakeManager = ShakeDetectionManager.shared
     @StateObject private var sessionLogManager = SessionLogManager.shared
+    @StateObject private var pushNotificationService = PushNotificationService.shared
     
     @Environment(\.scenePhase) private var scenePhase
     
@@ -299,6 +317,9 @@ struct Fit33App: App {
                         SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
                             "user_id": supabaseManager.currentUser?.id ?? "unknown"
                         ])
+                        
+                        // Register for push notifications (after auth so we can save token)
+                        await pushNotificationService.registerForPushNotifications()
                     }
                     
                     // Check notification authorization and schedule if authorized
@@ -396,6 +417,11 @@ struct Fit33App: App {
                         
                         // ⚡️ PERSISTENCE: Check if workout expired while app was closed
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
+                        
+                        // 📬 Check for new shared workouts from friends
+                        Task {
+                            await FriendService.shared.checkForNewWorkouts()
+                        }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")
                         // 🔧 DEV: Persist logs on inactive (in case of crash)

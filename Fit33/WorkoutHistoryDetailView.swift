@@ -7,6 +7,7 @@ struct WorkoutHistoryDetailView: View {
     let workout: Workout
     
     @State private var showingRepeatPreview = false
+    @State private var showingShareSheet = false
     
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -233,7 +234,7 @@ struct WorkoutHistoryDetailView: View {
                         // Share button
                         Button(action: {
                             HapticManager.impact(.light)
-                            WorkoutSharingService.shared.shareWorkout(workout: workout)
+                            showingShareSheet = true
                         }) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 18, weight: .medium))
@@ -303,6 +304,9 @@ struct WorkoutHistoryDetailView: View {
             }
             .hidden()
         )
+        .sheet(isPresented: $showingShareSheet) {
+            ShareWorkoutSheet(workout: workout, accentColor: accentColor)
+        }
     }
     
     // MARK: - Stats Grid
@@ -572,7 +576,7 @@ struct WorkoutHistoryDetailView: View {
             // Share button
             Button(action: {
                 HapticManager.impact(.light)
-                WorkoutSharingService.shared.shareWorkout(workout: workout)
+                showingShareSheet = true
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: "square.and.arrow.up")

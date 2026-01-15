@@ -10,6 +10,10 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case workoutComplete = "workout_complete"
     case comebackReminder = "comeback_reminder"
     
+    // Social / Friends
+    case sharedWorkout = "shared_workout"
+    case friendRequest = "friend_request"
+    
     // Progress & Achievements
     case personalRecord = "personal_record"
     case streakMilestone = "streak_milestone"
@@ -34,6 +38,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .streakProtection: return "Streak Protection Alert"
         case .workoutComplete: return "Workout Completion"
         case .comebackReminder: return "Comeback Motivation"
+        case .sharedWorkout: return "Shared Workouts"
+        case .friendRequest: return "Friend Requests"
         case .personalRecord: return "Personal Records"
         case .streakMilestone: return "Streak Celebrations"
         case .levelUp: return "Level Up Alerts"
@@ -53,6 +59,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .streakProtection: return "Alert when your streak is at risk"
         case .workoutComplete: return "Celebrate when you finish a workout"
         case .comebackReminder: return "Motivate you to return after time away"
+        case .sharedWorkout: return "Notify when friends send you workouts"
+        case .friendRequest: return "Notify when you receive friend requests"
         case .personalRecord: return "Celebrate when you beat your best"
         case .streakMilestone: return "Celebrate streak milestones"
         case .levelUp: return "Notify when you level up"
@@ -72,6 +80,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .streakProtection: return "flame.fill"
         case .workoutComplete: return "checkmark.circle.fill"
         case .comebackReminder: return "arrow.counterclockwise"
+        case .sharedWorkout: return "paperplane.fill"
+        case .friendRequest: return "person.badge.plus"
         case .personalRecord: return "trophy.fill"
         case .streakMilestone: return "flame.fill"
         case .levelUp: return "star.fill"
@@ -91,6 +101,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .streakProtection: return .orange
         case .workoutComplete: return .green
         case .comebackReminder: return .purple
+        case .sharedWorkout: return .blue
+        case .friendRequest: return .green
         case .personalRecord: return .yellow
         case .streakMilestone: return .orange
         case .levelUp: return .purple
@@ -111,6 +123,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .streakProtection,        // Prevent churn by protecting streaks
              .workoutComplete,         // Celebrate wins - positive reinforcement
              .comebackReminder,        // Re-engage dormant users
+             .sharedWorkout,           // Social engagement - friends sending workouts
+             .friendRequest,           // Social engagement - new friends
              .personalRecord,          // Celebrate achievements
              .streakMilestone,         // Celebrate consistency
              .levelUp,                 // Gamification engagement
@@ -131,6 +145,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
 // MARK: - Notification Categories
 enum NotificationCategory: String, CaseIterable, Identifiable {
     case workout = "Workouts"
+    case social = "Social"
     case achievements = "Achievements"
     case health = "Health & Nutrition"
     case motivation = "Motivation"
@@ -140,6 +155,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .workout: return "dumbbell.fill"
+        case .social: return "person.2.fill"
         case .achievements: return "trophy.fill"
         case .health: return "heart.fill"
         case .motivation: return "sparkles"
@@ -149,6 +165,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .workout: return .blue
+        case .social: return .green
         case .achievements: return .yellow
         case .health: return .pink
         case .motivation: return .purple
@@ -159,6 +176,8 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         switch self {
         case .workout:
             return [.dailyWorkoutReminder, .streakProtection, .workoutComplete, .comebackReminder]
+        case .social:
+            return [.sharedWorkout, .friendRequest]
         case .achievements:
             return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
         case .health:
@@ -374,9 +393,23 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             intentIdentifiers: []
         )
         
+        // Shared workout category - tap to view the workout
+        let viewWorkoutAction = UNNotificationAction(
+            identifier: "VIEW_SHARED_WORKOUT",
+            title: "View Workout",
+            options: [.foreground]
+        )
+        
+        let sharedWorkoutCategory = UNNotificationCategory(
+            identifier: "SHARED_WORKOUT",
+            actions: [viewWorkoutAction],
+            intentIdentifiers: []
+        )
+        
         UNUserNotificationCenter.current().setNotificationCategories([
             workoutCategory,
-            nutritionCategory
+            nutritionCategory,
+            sharedWorkoutCategory
         ])
     }
     
@@ -684,6 +717,44 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "goal_\(Date().timeIntervalSince1970)")
     }
     
+    /// Shared workout notification - when a friend sends you a workout
+    func sendSharedWorkoutNotification(senderName: String, workoutName: String, workoutId: String) {
+        guard isNotificationEnabled(.sharedWorkout) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(senderName) sent you a workout! 💪"
+        content.body = "Tap to check out \"\(workoutName)\" and start training."
+        content.sound = .default
+        content.categoryIdentifier = "SHARED_WORKOUT"
+        
+        // Store workout ID in userInfo for deep linking
+        content.userInfo = [
+            "type": "shared_workout",
+            "workout_id": workoutId,
+            "sender_name": senderName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "shared_workout_\(workoutId)")
+    }
+    
+    /// Friend request notification
+    func sendFriendRequestNotification(fromName: String, requestId: String) {
+        guard isNotificationEnabled(.friendRequest) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "New Friend Request! 👋"
+        content.body = "\(fromName) wants to be your workout buddy."
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "friend_request",
+            "request_id": requestId,
+            "sender_name": fromName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "friend_request_\(requestId)")
+    }
+    
     /// Workout completed - cancel today's reminders
     func workoutCompleted() {
         // Cancel today's workout reminders since they did it
@@ -802,6 +873,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     ) {
         let actionIdentifier = response.actionIdentifier
         let categoryIdentifier = response.notification.request.content.categoryIdentifier
+        let userInfo = response.notification.request.content.userInfo
         
         Task { @MainActor in
             switch actionIdentifier {
@@ -819,9 +891,23 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 self.snoozeNotification(categoryIdentifier: categoryIdentifier, hours: 1)
                 print("⏰ [NOTIFICATIONS] Snoozed for 1 hour")
                 
-            case UNNotificationDefaultActionIdentifier:
-                // User tapped the notification itself
-                print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")
+            case "VIEW_SHARED_WORKOUT", UNNotificationDefaultActionIdentifier:
+                // Handle shared workout notifications
+                if let notificationType = userInfo["type"] as? String {
+                    if notificationType == "shared_workout", let workoutId = userInfo["workout_id"] as? String {
+                        // Navigate to received workout preview
+                        DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
+                        print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
+                    } else if notificationType == "friend_request" {
+                        // Navigate to friends list
+                        DeepLinkManager.shared.pendingDestination = .friends
+                        print("👥 [NOTIFICATIONS] Opening friends list")
+                    } else {
+                        print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")
+                    }
+                } else {
+                    print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")
+                }
                 
             default:
                 break

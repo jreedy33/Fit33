@@ -36,6 +36,8 @@
 		7C0C42842F18340E00F02E84 /* ReceivedWorkoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */; };
 		7C0C42862F184C0B00F02E84 /* OnboardingTestHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */; };
 		7C0C42882F186B4A00F02E84 /* ProfilePhotoCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */; };
+		7C0C428A2F1897E400F02E84 /* ShareWorkoutSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */; };
+		7C0C428C2F18A4DA00F02E84 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */; };
 		7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */; };
 		7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */; };
 		7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */; };
@@ -230,6 +232,8 @@
 		7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedWorkoutsView.swift; sourceTree = "<group>"; };
 		7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTestHelper.swift; sourceTree = "<group>"; };
 		7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoCache.swift; sourceTree = "<group>"; };
+		7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareWorkoutSheet.swift; sourceTree = "<group>"; };
+		7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
 		7C47F9D82EE336D500BEC4D7 /* DynamicProgramGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicProgramGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartDayGenerator.swift; sourceTree = "<group>"; };
 		7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleRecoveryTracker.swift; sourceTree = "<group>"; };
@@ -464,6 +468,7 @@
 				7CB08C722ED810A500236ECB /* AppearanceManager.swift */,
 				7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */,
 				A1234567890123456789012F /* Assets.xcassets */,
+				7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */,
 				149F1F9A361C4E178E9EF77A /* AuthView.swift */,
 				7CB08C662ED6A34F00236ECB /* AutoWorkoutPreviewView.swift */,
 				7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */,
@@ -475,6 +480,7 @@
 				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
 				7CEAFD082EF9C0C400874B57 /* CloudBackupView.swift */,
 				7CB08C682ED73A6F00236ECB /* CloudProgramLibraryView.swift */,
+				7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */,
 				7CB08C692ED73A6F00236ECB /* CloudProgramScheduleView.swift */,
 				7CB08C6A2ED73A6F00236ECB /* CloudProgramService.swift */,
 				7C8405D92EE8AF830009ED0F /* CollaborativeLearningEngine.swift */,
@@ -785,6 +791,7 @@
 				A12345678901234567890162 /* UserManager.swift in Sources */,
 				7C8405C82EE685400009ED0F /* AdvancedIntelligenceService.swift in Sources */,
 				7CAFD5662EE1F50C00920F0D /* ExerciseSubstitutionView.swift in Sources */,
+				7C0C428A2F1897E400F02E84 /* ShareWorkoutSheet.swift in Sources */,
 				7CB08C9B2EDBC32900236ECB /* MealService.swift in Sources */,
 				7CAFD5582EDF3A8B00920F0D /* ExerciseHistoryService.swift in Sources */,
 				7C0C41E62F098DF600F02E84 /* ForceExerciseRefresh.swift in Sources */,
@@ -863,6 +870,7 @@
 				7CAFD5642EE1138800920F0D /* ExerciseMappingService.swift in Sources */,
 				7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */,
 				7CB08C7D2ED8B78A00236ECB /* FavoriteRoutinesView.swift in Sources */,
+				7C0C428C2F18A4DA00F02E84 /* PushNotificationService.swift in Sources */,
 				7C0C41D42F00C36D00F02E84 /* WorkoutComboRules.swift in Sources */,
 				7C8405D22EE7D2ED0009ED0F /* PersonalizedProgramsView.swift in Sources */,
 				7CAFD56C2EE2109500920F0D /* ExercisePopularityService.swift in Sources */,
@@ -942,7 +950,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -953,7 +961,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.10.2;
+				MARKETING_VERSION = 1.10.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -972,7 +980,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -983,7 +991,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.10.2;
+				MARKETING_VERSION = 1.10.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1126,7 +1134,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1147,7 +1155,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.10.2;
+				MARKETING_VERSION = 1.10.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1163,7 +1171,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1184,7 +1192,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.10.2;
+				MARKETING_VERSION = 1.10.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -62,6 +62,10 @@ struct WorkoutTabView: View {
                                 .environmentObject(workoutManager)
                                 .environmentObject(userManager)
                             }
+                        } else if destination == "ReceivedWorkouts" {
+                            ReceivedWorkoutsView()
+                        } else if destination == "FriendsList" {
+                            FriendsListView()
                         }
                     }
             }
@@ -118,6 +122,22 @@ struct WorkoutTabView: View {
                 // Just consume the destination here
                 deepLinkManager.pendingDestination = nil
                 print("🔗 Deep link: Shared workout will be displayed in sheet")
+            case .receivedWorkout(let workoutId):
+                // Navigate to received workouts and open specific workout
+                deepLinkManager.pendingReceivedWorkoutId = workoutId
+                navigationPath.append("ReceivedWorkouts")
+                deepLinkManager.pendingDestination = nil
+                print("📬 Deep link: Navigating to received workout \(workoutId)")
+            case .receivedWorkouts:
+                // Navigate to received workouts list
+                navigationPath.append("ReceivedWorkouts")
+                deepLinkManager.pendingDestination = nil
+                print("📬 Deep link: Navigating to received workouts")
+            case .friends:
+                // Navigate to friends list
+                navigationPath.append("FriendsList")
+                deepLinkManager.pendingDestination = nil
+                print("👥 Deep link: Navigating to friends list")
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in

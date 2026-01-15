@@ -21,12 +21,55 @@ class FriendService: ObservableObject {
     @Published var searchResults: [UserSearchResult] = []
     @Published var searchResultDTOs: [UserSearchResultDTO] = [] // For compatibility
     
-    // Computed property for unread workout count
+    // Computed property for unread workout count (unviewed pending workouts)
     var unreadWorkoutCount: Int {
-        receivedWorkouts.filter { $0.isPending }.count
+        receivedWorkouts.filter { $0.viewedAt == nil && $0.isPending }.count
     }
     
+    // Track last known workout count for detecting new workouts
+    private var lastKnownWorkoutCount: Int = 0
+    private var lastCheckedWorkoutIds: Set<UUID> = []
+    
     private init() {}
+    
+    // MARK: - Check for New Workouts
+    
+    /// Check for new shared workouts and show notification if found
+    /// Call this when app becomes active or periodically
+    func checkForNewWorkouts() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        let previousIds = lastCheckedWorkoutIds
+        
+        // Fetch latest workouts
+        await fetchReceivedWorkouts()
+        
+        // Find truly new workouts (ones we haven't seen before)
+        let currentIds = Set(receivedWorkouts.map { $0.id })
+        let newWorkoutIds = currentIds.subtracting(previousIds)
+        
+        // Update tracking
+        lastCheckedWorkoutIds = currentIds
+        
+        // Show notifications for new workouts
+        for newId in newWorkoutIds {
+            if let workout = receivedWorkouts.first(where: { $0.id == newId }) {
+                // Only notify for unviewed workouts
+                if workout.viewedAt == nil {
+                    print("📬 [NEW WORKOUT] Detected new workout from \(workout.senderName)")
+                    
+                    NotificationManager.shared.sendSharedWorkoutNotification(
+                        senderName: workout.senderName,
+                        workoutName: workout.workoutName,
+                        workoutId: workout.id.uuidString
+                    )
+                    
+                    // Haptic feedback
+                    HapticManager.notification(.success)
+                }
+            }
+        }
+    }
     
     // MARK: - Load All Data (for compatibility)
     func loadAllData() async {
@@ -422,6 +465,28 @@ class FriendService: ObservableObject {
     func markWorkoutCompleted(workoutId: String) async -> Bool {
         guard let uuid = UUID(uuidString: workoutId) else { return false }
         return await markWorkoutCompleted(workoutId: uuid)
+    }
+    
+    // Delete received workout (removes from database)
+    func deleteReceivedWorkout(workoutId: UUID) async -> Bool {
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .from("shared_workouts")
+                .delete()
+                .eq("id", value: workoutId.uuidString)
+                .execute()
+            
+            // Remove from local array immediately for snappy UI
+            await MainActor.run {
+                self.receivedWorkouts.removeAll { $0.id == workoutId }
+            }
+            
+            print("✅ Workout deleted")
+            return true
+        } catch {
+            print("❌ Error deleting workout: \(error)")
+            return false
+        }
     }
     
     // Save shared workout (marks as saved)
@@ -963,6 +1028,7 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
     let senderId: UUID
     let senderName: String
     let senderUsername: String?
+    let senderProfilePhotoUrl: String?
     let workoutName: String
     let workoutDescription: String?
     let exercises: [SharedExerciseDTO]?
@@ -1020,6 +1086,7 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
         case senderId = "sender_id"
         case senderName = "sender_name"
         case senderUsername = "sender_username"
+        case senderProfilePhotoUrl = "sender_profile_photo_url"
         case workoutName = "workout_name"
         case workoutDescription = "workout_description"
         case exercises

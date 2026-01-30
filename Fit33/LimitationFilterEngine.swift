@@ -29,6 +29,7 @@ enum LimitationArea: String, Codable, CaseIterable, Hashable {
     case elbows = "Elbows"
     case ankles = "Ankles"
     case upperBack = "Upper Back"
+    case pregnancy = "Pregnancy"
     case other = "Other"
     
     var displayName: String { rawValue }
@@ -45,6 +46,7 @@ enum LimitationArea: String, Codable, CaseIterable, Hashable {
         if lower.contains("wrist") { return .wrists }
         if lower.contains("elbow") { return .elbows }
         if lower.contains("ankle") { return .ankles }
+        if lower.contains("pregnan") { return .pregnancy }
         return .other
     }
 }
@@ -524,6 +526,15 @@ class LimitationFilterEngine {
         case .ankles:
             return metadata.impactLevel >= .moderate ||
                    metadata.balanceDemand == .high
+            
+        case .pregnancy:
+            // Avoid exercises with high impact, spinal load, prone positions, or heavy overhead work
+            return metadata.impactLevel >= .moderate ||
+                   metadata.spinalLoad >= .moderate ||
+                   metadata.axialLoading == .high ||
+                   metadata.overheadWork == .full ||
+                   metadata.balanceDemand == .high ||
+                   metadata.unsupportedTorso
             
         case .other:
             return false  // No automatic detection for "other"

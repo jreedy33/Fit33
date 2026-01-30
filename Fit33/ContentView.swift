@@ -97,17 +97,64 @@ struct ContentView: View {
     @StateObject private var userManager = UserManager.shared
     @StateObject private var workoutManager = WorkoutManager.shared
     
+    // Welcome tutorial state - shown once per session when user completes onboarding
+    @State private var showWelcomeTutorial = false
+    @State private var hasShownTutorialThisSession = false
+    
+    // Track the last known onboarding state to detect transitions
+    @State private var lastKnownOnboardingState: Bool? = nil
+    
     var body: some View {
-        Group {
-            if userManager.hasCompletedOnboarding {
-                MainTabView()
-            } else {
-                NewOnboardingView()
+        ZStack {
+            Group {
+                if userManager.hasCompletedOnboarding {
+                    MainTabView()
+                } else {
+                    NewOnboardingView()
+                }
             }
+            .environmentObject(userManager)
+            .environmentObject(workoutManager)
         }
-        .environmentObject(userManager)
-        .environmentObject(workoutManager)
+        .fullScreenCover(isPresented: $showWelcomeTutorial) {
+            WelcomeTutorialView(isPresented: $showWelcomeTutorial)
+        }
+        .onChange(of: userManager.hasCompletedOnboarding) { oldValue, newValue in
+            print("🎓 [TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))")
+            
+            // Detect actual onboarding completion (user went from not-onboarded to onboarded)
+            if newValue && !oldValue {
+                print("🎓 [TUTORIAL] Onboarding completed! lastKnown: \(String(describing: lastKnownOnboardingState)), shownThisSession: \(hasShownTutorialThisSession)")
+                
+                // Show tutorial if:
+                // 1. Haven't shown it already this session, AND
+                // 2. This is a real onboarding completion (not just app loading existing user)
+                //    - lastKnownOnboardingState being nil means app just launched with existing user (skip)
+                //    - lastKnownOnboardingState being false means user actually went through onboarding flow
+                if !hasShownTutorialThisSession && lastKnownOnboardingState == false {
+                    print("🎓 [TUTORIAL] ✅ Showing welcome tutorial!")
+                    hasShownTutorialThisSession = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        showWelcomeTutorial = true
+                    }
+                }
+            }
+            
+            // Update our tracking state
+            lastKnownOnboardingState = newValue
+        }
         .task {
+            // Wait for UserManager to fully initialize
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            
+            await MainActor.run {
+                // Record the initial state AFTER UserManager has loaded
+                // If user is already onboarded, we won't show tutorial (returning user)
+                // If user is not onboarded, we'll show tutorial when they complete it
+                print("🎓 [TUTORIAL] Initial state captured: hasCompletedOnboarding = \(userManager.hasCompletedOnboarding)")
+                lastKnownOnboardingState = userManager.hasCompletedOnboarding
+            }
+            
             // 🔄 ONE-TIME FORCE SYNC: Check if we need to refresh exercise data
             // This ensures users get the latest improved exercise data
             let needsRefresh = UserDefaults.standard.string(forKey: "exerciseDataVersion") != "v2.0"
@@ -122,9 +169,10 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Notification for GO Button visibility
+// MARK: - Notification Names
 extension Notification.Name {
     static let goButtonVisibilityChanged = Notification.Name("goButtonVisibilityChanged")
+    static let scrollToWidget = Notification.Name("scrollToWidget")
 }
 
 // MARK: - GO Button State (Singleton)
@@ -328,8 +376,8 @@ struct MainTabView: View {
     @State private var hasCheckedNotificationPermission = false
     
     private let tabs = [
-        TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .blue),
-        TabItem(icon: "book", selectedIcon: "book.fill", title: "Exercises", color: Color(red: 0.0, green: 0.75, blue: 0.75)),
+        TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .white),
+        TabItem(icon: "book", selectedIcon: "book.fill", title: "Exercises", color: .blue),
         TabItem(icon: "dumbbell", selectedIcon: "dumbbell.fill", title: "Workout", color: .green),
         TabItem(icon: "leaf", selectedIcon: "leaf.fill", title: "Meals", color: .mint),
         TabItem(icon: "chart.line.uptrend.xyaxis", selectedIcon: "chart.line.uptrend.xyaxis", title: "Stats", color: .purple)
@@ -570,6 +618,13 @@ struct MainTabView: View {
                 updateTabBarScale(isGoButtonVisible: isVisible)
             }
         }
+        // MARK: - Deep Link Tab Navigation
+        .onReceive(deepLinkManager.$pendingDestination) { destination in
+            guard let destination = destination else { return }
+            handleDeepLinkDestination(destination)
+        }
+        // ✅ SwiftUI handles orientation changes naturally
+        // ⚠️ DO NOT add .id() here - it destroys active workout state on rotation!
         .preferredColorScheme(.light)
             
             // GO! Button overlay - isolated view that observes its own state
@@ -638,6 +693,81 @@ struct MainTabView: View {
             Button("Maybe Later", role: .cancel) { }
         } message: {
             Text("Get workout reminders, streak alerts, and celebrate your achievements! Enable notifications in Settings to never miss a beat.")
+        }
+    }
+    
+    // MARK: - Deep Link Handling
+    
+    /// Handle deep link destinations by switching tabs and posting notifications for widget scrolling
+    private func handleDeepLinkDestination(_ destination: DeepLinkManager.Destination) {
+        switch destination {
+        // Tab Navigation
+        case .dashboard:
+            selectedTab = 0
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Home tab")
+            
+        case .workout, .running:
+            selectedTab = 2
+            // Don't clear destination - WorkoutTabView needs to handle specific navigation
+            print("🔗 [DEEPLINK] Switched to Workout tab")
+            
+        case .mealsTab:
+            selectedTab = 3
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Meals tab")
+            
+        case .statsTab, .personalRecord:
+            selectedTab = 4
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Stats tab")
+            
+        // Dashboard Widget Navigation (Home tab + scroll to widget)
+        case .hydration:
+            selectedTab = 3  // Meals tab contains Hydration widget
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .scrollToWidget, object: "hydration")
+            }
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Navigating to Hydration widget on Meals tab")
+            
+        case .stepTracker:
+            selectedTab = 0  // Home tab contains Step Tracker
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .scrollToWidget, object: "stepTracker")
+            }
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Navigating to Step Tracker widget on Home tab")
+            
+        case .weightTracker:
+            selectedTab = 3  // Meals tab contains Weight Tracker
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .scrollToWidget, object: "weightTracker")
+            }
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Navigating to Weight Tracker widget on Meals tab")
+            
+        case .workoutHistory:
+            selectedTab = 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .scrollToWidget, object: "workoutHistory")
+            }
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Navigating to Workout History")
+            
+        case .streakInfo:
+            selectedTab = 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .scrollToWidget, object: "streakInfo")
+            }
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Navigating to Streak Info")
+            
+        // Social - handled by WorkoutTabView
+        case .friends, .friendRequests, .receivedWorkouts, .receivedWorkout, .sharedWorkout:
+            selectedTab = 2
+            // Don't clear - WorkoutTabView handles the navigation
+            print("🔗 [DEEPLINK] Switched to Workout tab for social feature")
         }
     }
     
@@ -731,6 +861,12 @@ struct SimpleMealPlanView: View {
         }
     }
     
+    // Quick Action States
+    @State private var showMealPlanGenerator = false
+    @State private var showRecipeImport = false
+    @State private var showRestaurantSearch = false
+    @State private var showShoppingList = false
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -802,11 +938,26 @@ struct SimpleMealPlanView: View {
                     .padding(.bottom, 100)
                 }
                 .background(
-                    AdaptiveGradient.meals(for: colorScheme)
-                    .ignoresSafeArea(.all, edges: .all)
+                    AnimatedOrbBackground.meals(colorScheme: colorScheme)
                 )
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
+                }
+                // Handle deep link scroll-to-widget notifications
+                .onReceive(NotificationCenter.default.publisher(for: .scrollToWidget)) { notification in
+                    guard let widgetId = notification.object as? String else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        switch widgetId {
+                        case "hydration":
+                            scrollProxy.scrollTo("hydration", anchor: .center)
+                            print("💧 [MEALS] Scrolled to Hydration widget")
+                        case "weightTracker":
+                            scrollProxy.scrollTo("weightTracker", anchor: .center)
+                            print("⚖️ [MEALS] Scrolled to Weight Tracker widget")
+                        default:
+                            break
+                        }
+                    }
                 }
             }
             .navigationBarHidden(true)
@@ -828,6 +979,20 @@ struct SimpleMealPlanView: View {
         }
         .sheet(isPresented: $showingMacroGoalsExplainer) {
             MacroGoalsExplainerView()
+        }
+        .sheet(isPresented: $showMealPlanGenerator) {
+            MealPlanGeneratorSheet()
+                .environmentObject(userManager)
+        }
+        .sheet(isPresented: $showRecipeImport) {
+            RecipeImportSheet()
+        }
+        .sheet(isPresented: $showRestaurantSearch) {
+            RestaurantSearchSheet()
+                .environmentObject(userManager)
+        }
+        .sheet(isPresented: $showShoppingList) {
+            ShoppingListSheet()
         }
     }
     
@@ -1258,10 +1423,26 @@ struct SimpleMealPlanView: View {
             // 2. Track Your Meals (most important - right after macros)
             mealSectionsCard
             
-            // 3. Hydration Tracking
-            HydrationWidget()
+            // 3. Quick Actions - Meal Plan, Import, Restaurant, Shopping (same style as workout buttons)
+            MealsQuickActionsView(
+                showMealPlanGenerator: $showMealPlanGenerator,
+                showRecipeImport: $showRecipeImport,
+                showRestaurantSearch: $showRestaurantSearch,
+                showShoppingList: $showShoppingList
+            )
             
-            // 4. Daily Summary
+            // 4. Healthy Recipes Carousel - Swipeable recipe cards from Spoonacular
+            HealthyRecipesCarousel()
+            
+            // 5. Weight Tracking - Daily weigh-ins and progress
+            WeightTrackerWidget()
+                .id("weightTracker")
+            
+            // 6. Hydration Tracking
+            HydrationWidget()
+                .id("hydration")
+            
+            // 7. Daily Summary
             dailySummaryMainCard
         }
     }
@@ -2626,314 +2807,9 @@ struct MacroBadge: View {
     }
 }
 
-// MARK: - Legacy Meal Widget Card (kept for compatibility)
-struct MealWidgetCard: View {
-    let mealType: MealType
-    let meals: [MealEntryData]
-    let onAddFood: () -> Void
-    let onDelete: (MealEntryData) -> Void
-    
-    @State private var isExpanded = false
-    
-    private var totalCalories: Int {
-        meals.reduce(0) { $0 + $1.calories }
-    }
-    
-    private var mealIcon: String {
-        switch mealType {
-        case .breakfast: return "sunrise.fill"
-        case .lunch: return "sun.max.fill"
-        case .dinner: return "moon.stars.fill"
-        case .snacks: return "leaf.fill"
-        }
-    }
-    
-    private var mealColor: Color {
-        switch mealType {
-        case .breakfast: return .orange
-        case .lunch: return .yellow
-        case .dinner: return .indigo
-        case .snacks: return .green
-        }
-    }
-    
-    private var gradientColors: [Color] {
-        switch mealType {
-        case .breakfast: return [.orange, .yellow]
-        case .lunch: return [.yellow, .orange]
-        case .dinner: return [.indigo, .purple]
-        case .snacks: return [.green, .mint]
-        }
-    }
-    
-    private var timeHint: String {
-        switch mealType {
-        case .breakfast: return "6-10 AM"
-        case .lunch: return "11-2 PM"
-        case .dinner: return "5-9 PM"
-        case .snacks: return "Anytime"
-        }
-    }
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Main card content
-            VStack(spacing: 10) {
-                // Floating colored icon
-                Image(systemName: mealIcon)
-                    .font(.system(size: 32, weight: .medium))
-                    .foregroundColor(mealColor)
-                    .frame(width: 44, height: 44)
-                
-                // Meal name and time
-                VStack(spacing: 2) {
-                    Text(mealType.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Text(timeHint)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                // Status indicator
-                if meals.isEmpty {
-                    // Empty state - Add button (solid color)
-                    Button(action: onAddFood) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(mealColor)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                } else {
-                    // Has items - show calories and count
-                    VStack(spacing: 6) {
-                        HStack(spacing: 4) {
-                            Text("\(totalCalories)")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                            Text("cal")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        // Item count badge
-                        Text("\(meals.count) item\(meals.count == 1 ? "" : "s")")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundColor(mealColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(mealColor.opacity(0.12))
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(meals.isEmpty ? Color.gray.opacity(0.15) : mealColor.opacity(0.25), lineWidth: 1.5)
-            )
-            .onTapGesture {
-                if !meals.isEmpty {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        isExpanded.toggle()
-                    }
-                } else {
-                    onAddFood()
-                }
-            }
-            
-            // Expanded meal items
-            if isExpanded && !meals.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(meals, id: \.id) { meal in
-                        MealItemRow(meal: meal, color: mealColor) {
-                            onDelete(meal)
-                        }
-                    }
-                    
-                    // Add more button
-                    Button(action: onAddFood) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.caption)
-                            Text("Add more")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundColor(mealColor)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.top, 6)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-}
 
-// MARK: - Meal Item Row
-struct MealItemRow: View {
-    let meal: MealEntryData
-    let color: Color
-    let onDelete: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(meal.foodName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                Text("\(meal.displayQuantity) \(meal.unit)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Text("\(meal.calories)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(color)
-            
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(.red.opacity(0.6))
-            }
-            .buttonStyle(PlainButtonStyle())
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Meal Quick Stat
-struct MealQuickStat: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(color)
-                
-                Text(value)
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-            }
-            
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// Legacy component kept for compatibility
-struct MealSectionWithItems: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let meals: [MealEntryData]
-    let onAddFood: () -> Void
-    let onDelete: (MealEntryData) -> Void
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            // Header with Add button
-            HStack {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundColor(color)
-                
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Button(action: onAddFood) {
-                    HStack(spacing: 4) {
-                        Text("Add Food")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                        Image(systemName: "plus.circle.fill")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            
-            // Meal items list
-            if !meals.isEmpty {
-                VStack(spacing: 4) {
-                    ForEach(meals, id: \.id) { meal in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(meal.foodName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                                
-                                Text("\(Int(meal.quantity)) \(meal.unit)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Text("\(meal.calories) cal")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            
-                            Button(action: {
-                                onDelete(meal)
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.red.opacity(0.6))
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(8)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-            }
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-    }
-}
+// NOTE: Legacy meal components removed (MealWidgetCard, MealItemRow, MealQuickStat, MealSectionWithItems)
+// Active meal tracking uses the newer components in MealPlanView.swift
 
 struct SimpleProfileSetupView: View {
     @EnvironmentObject var userManager: UserManager
@@ -3875,16 +3751,19 @@ struct ProgressRow: View {
                     .foregroundColor(color)
             }
             
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(.systemGray5))
-                    .frame(height: 8)
-                
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(color)
-                    .frame(width: UIScreen.main.bounds.width * 0.75 * progress, height: 8)
-                    .animation(.easeInOut(duration: 0.5), value: progress)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(.systemGray5))
+                        .frame(height: 8)
+                    
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color)
+                        .frame(width: geometry.size.width * progress, height: 8)
+                        .animation(.easeInOut(duration: 0.5), value: progress)
+                }
             }
+            .frame(height: 8)
         }
     }
 }

@@ -552,14 +552,7 @@ struct WorkoutProgressView: View {
                     .padding(.bottom, 100)
                 }
                 .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: colorScheme == .dark
-                            ? [Color(red: 0.10, green: 0.06, blue: 0.15), Color(red: 0.06, green: 0.04, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                            : [Color.purple.opacity(0.3), Color.blue.opacity(0.2), Color.white]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea(.all, edges: .all)
+                    AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 )
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)

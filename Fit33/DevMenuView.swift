@@ -166,13 +166,16 @@ struct DevMenuView: View {
                     #if DEBUG
                     LearningEngineDebugView()
                         .tag(2)
-                    #else
-                    Text("Learning Engine Debug (Debug builds only)")
-                        .tag(2)
-                    #endif
                     
                     QualityAuditTabContent()
                         .tag(3)
+                    #else
+                    Text("Learning Engine Debug (Debug builds only)")
+                        .tag(2)
+                    
+                    Text("Quality Audit (Debug builds only)")
+                        .tag(3)
+                    #endif
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
@@ -305,6 +308,9 @@ struct InsightsTabContent: View {
                 // Force Workout State Reset (for stuck workouts)
                 forceWorkoutResetCard
                 
+                // Performance Monitor Card
+                performanceMonitorCard
+                
                 // Refresh Button
                 refreshButton
             }
@@ -313,6 +319,41 @@ struct InsightsTabContent: View {
         .task {
             await viewModel.loadAnalytics()
         }
+    }
+    
+    private var performanceMonitorCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "speedometer")
+                    .font(.title2)
+                    .foregroundColor(.blue)
+                Text("Performance Monitor")
+                    .font(.headline)
+            }
+            
+            Text("Track FPS, memory, CPU, view load times, and navigation performance in real-time")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            // Status indicator
+            HStack {
+                Circle()
+                    .fill(Color.gray)
+                    .frame(width: 8, height: 8)
+                Text("Not Available")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text("Add PerformanceMonitoringSystem.swift to enable")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .italic()
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
     private var forceExerciseRefreshCard: some View {
@@ -1501,6 +1542,7 @@ struct FullScreenScreenshotView: View {
 }
 
 // MARK: - Quality Audit Tab
+#if DEBUG
 struct QualityAuditTabContent: View {
     @State private var isRunningAudit = false
     @State private var auditProgress: String = ""
@@ -1742,6 +1784,7 @@ struct QualityAuditTabContent: View {
         }
     }
 }
+#endif
 
 #Preview("Dev Menu") {
     NavigationView {

@@ -503,7 +503,11 @@ struct DataDownloadView: View {
                                 let sortedSets = sets.sorted { $0.setNumber < $1.setNumber }
                                 for set in sortedSets {
                                     let completedMark = set.isCompleted ? "✓" : "○"
-                                    let weightStr = set.weight > 0 ? "\(Int(set.weight)) lbs" : "Bodyweight"
+                                    // Preserve decimals (e.g., 180.5 lbs)
+                                    let weightFormatted = set.weight.truncatingRemainder(dividingBy: 1) == 0 
+                                        ? "\(Int(set.weight))" 
+                                        : String(format: "%.1f", set.weight)
+                                    let weightStr = set.weight > 0 ? "\(weightFormatted) lbs" : "Bodyweight"
                                     report += "     \(completedMark) Set \(set.setNumber): \(set.reps) reps × \(weightStr)\n"
                                 }
                             }

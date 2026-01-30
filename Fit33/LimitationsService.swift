@@ -179,6 +179,7 @@ enum AffectedArea: String, Codable, CaseIterable, Identifiable {
     case ankles = "Ankles"
     case core = "Core/Abdomen"
     case chest = "Chest"
+    case pregnancy = "Pregnancy"
     case other = "Other"
     
     var id: String { rawValue }
@@ -195,6 +196,7 @@ enum AffectedArea: String, Codable, CaseIterable, Identifiable {
         case .leftAnkle, .rightAnkle, .ankles: return "shoe.fill"
         case .core: return "figure.core.training"
         case .chest: return "figure.strengthtraining.traditional"
+        case .pregnancy: return "heart.circle.fill"
         case .other: return "questionmark.circle.fill"
         }
     }
@@ -211,6 +213,7 @@ enum AffectedArea: String, Codable, CaseIterable, Identifiable {
         case .leftAnkle, .rightAnkle, .ankles: return .teal
         case .core: return .yellow
         case .chest: return .mint
+        case .pregnancy: return .pink
         case .other: return .gray
         }
     }
@@ -232,7 +235,7 @@ enum AffectedArea: String, Codable, CaseIterable, Identifiable {
     
     /// Common areas shown during onboarding (simplified selection)
     static var commonAreas: [AffectedArea] {
-        [.lowerBack, .shoulders, .knees, .hips, .neck, .wrists, .elbows, .ankles, .other]
+        [.lowerBack, .shoulders, .knees, .hips, .neck, .wrists, .elbows, .ankles, .pregnancy, .other]
     }
 }
 
@@ -572,7 +575,10 @@ class LimitationsService: ObservableObject {
             "Core/Abdomen": ["crunch", "sit up", "plank", "ab ", "core", "twist", "russian", 
                            "leg raise", "hollow", "v-up", "woodchop"],
             "Chest": ["bench", "chest", "fly", "push up", "pushup", "dip", "pec", "crossover", 
-                     "incline", "decline"]
+                     "incline", "decline"],
+            "Pregnancy": ["crunch", "sit up", "twist", "russian", "leg raise", "v-up", "prone", 
+                         "lying face down", "jump", "hop", "box jump", "burpee", "heavy squat", 
+                         "heavy deadlift", "overhead press", "handstand", "inversion"]
         ]
         
         let normalizedArea = area.normalizedArea
@@ -826,6 +832,13 @@ extension LimitationsService {
             return metadata.elbowStress
         case .ankles:
             return metadata.impactLevel >= .moderate || metadata.balanceDemand == .high
+        case .pregnancy:
+            // Avoid exercises with high impact, spinal load, prone positions, or twisting
+            return metadata.impactLevel >= .moderate ||
+                   metadata.spinalLoad >= .moderate ||
+                   metadata.axialLoading == .high ||
+                   metadata.overheadWork == .full ||
+                   metadata.balanceDemand == .high
         case .other:
             return false
         }
@@ -843,6 +856,7 @@ extension LimitationsService {
         case .leftWrist, .rightWrist, .wrists: return .wrists
         case .leftElbow, .rightElbow, .elbows: return .elbows
         case .leftAnkle, .rightAnkle, .ankles: return .ankles
+        case .pregnancy: return .pregnancy
         case .core, .chest, .other: return .other
         }
     }

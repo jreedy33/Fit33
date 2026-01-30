@@ -19,15 +19,41 @@ class PushNotificationService: ObservableObject {
         // First, request notification authorization
         let granted = await NotificationManager.shared.requestAuthorization()
         
-        guard granted else {
-            print("❌ [PUSH] Notification permission not granted")
+        if !granted {
+            print("⚠️ [PUSH] Notification permission not granted via prompt")
+            // Don't return early - check if user enabled in Settings later
+        }
+        
+        // Always check current authorization status (user might have enabled in Settings)
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        
+        guard settings.authorizationStatus == .authorized || 
+              settings.authorizationStatus == .provisional else {
+            print("❌ [PUSH] Notifications not authorized (status: \(settings.authorizationStatus.rawValue))")
             return
         }
         
-        // Register with APNs
+        // Register with APNs - this will trigger handleDeviceToken on success
         await MainActor.run {
             UIApplication.shared.registerForRemoteNotifications()
             print("📱 [PUSH] Registered for remote notifications")
+        }
+    }
+    
+    /// Re-check and register if user enabled notifications after initial denial
+    /// Call this on app foreground to catch Settings changes
+    func recheckAndRegister() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        
+        if settings.authorizationStatus == .authorized || 
+           settings.authorizationStatus == .provisional {
+            // User has notifications enabled, make sure we're registered
+            if deviceToken == nil {
+                print("📱 [PUSH] Notifications enabled but no token - registering...")
+                await MainActor.run {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
         }
     }
     

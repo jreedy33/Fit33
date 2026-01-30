@@ -51,7 +51,6 @@ struct ProfileView: View {
     @State private var showingPhotoOptions = false
     @State private var showingPhotoPicker = false
     @State private var showingCamera = false
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var isUploadingPhoto = false
     
     let genderOptions = ["Male", "Female", "Other", "Prefer not to say"]
@@ -485,6 +484,48 @@ struct ProfileView: View {
                             }
                         }
                         
+                        // Connected Apps Section
+                        ProfileSection(
+                            title: "CONNECTED APPS",
+                            icon: "app.connected.to.app.below.fill",
+                            iconColor: .orange
+                        ) {
+                            VStack(spacing: 0) {
+                                NavigationLink(destination: StravaSettingsView()) {
+                                    HStack(spacing: 12) {
+                                        // Strava orange icon
+                                        Image(systemName: "figure.run")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(Color(red: 252/255, green: 76/255, blue: 2/255))
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Strava")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text(StravaService.shared.isConnected ? "Connected" : "Sync cardio activities")
+                                                .font(.caption)
+                                                .foregroundColor(StravaService.shared.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if StravaService.shared.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
                         // Account Actions Section
                         ProfileSection(
                             title: "ACCOUNT",
@@ -748,11 +789,10 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotoItem, matching: .images)
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            Task {
-                if let newItem = newItem {
-                    await loadAndUploadPhoto(from: newItem)
+        .sheet(isPresented: $showingPhotoPicker) {
+            ProfilePhotoPicker { image in
+                Task {
+                    await processAndUploadImage(image)
                 }
             }
         }
@@ -948,22 +988,6 @@ struct ProfileView: View {
         }
     }
     
-    private func loadAndUploadPhoto(from item: PhotosPickerItem) async {
-        await MainActor.run { isUploadingPhoto = true }
-        
-        do {
-            guard let data = try await item.loadTransferable(type: Data.self),
-                  let image = UIImage(data: data) else {
-                await MainActor.run { isUploadingPhoto = false }
-                return
-            }
-            
-            await processAndUploadImage(image)
-        } catch {
-            print("❌ Error loading photo: \(error)")
-            await MainActor.run { isUploadingPhoto = false }
-        }
-    }
     
     private func processAndUploadImage(_ image: UIImage) async {
         await MainActor.run { isUploadingPhoto = true }
@@ -1492,8 +1516,8 @@ struct UsernameSetupSheet: View {
                                 .padding(.vertical, 16)
                                 .padding(.trailing, 16)
                                 .onChange(of: username) { _, newValue in
-                                    // Filter to only allow valid characters
-                                    let filtered = newValue.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                                    // Filter to only allow valid characters (allow uppercase and lowercase)
+                                    let filtered = newValue.filter { $0.isLetter || $0.isNumber || $0 == "_" }
                                     if filtered != newValue {
                                         username = filtered
                                     }
@@ -2001,6 +2025,49 @@ struct ProfilePhotoResult: Codable {
     let profile_photo_url: String?
 }
 
+// MARK: - Photo Picker View (with cropping support)
+
+struct ProfilePhotoPicker: UIViewControllerRepresentable {
+    let onImagePicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
+        picker.allowsEditing = true  // Enable cropping
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ProfilePhotoPicker
+        
+        init(_ parent: ProfilePhotoPicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            // Prefer edited/cropped image, fallback to original
+            if let editedImage = info[.editedImage] as? UIImage {
+                parent.onImagePicked(editedImage)
+            } else if let originalImage = info[.originalImage] as? UIImage {
+                parent.onImagePicked(originalImage)
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
 // MARK: - Camera Picker View
 
 struct CameraPickerView: UIViewControllerRepresentable {
@@ -2011,7 +2078,7 @@ struct CameraPickerView: UIViewControllerRepresentable {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
         picker.sourceType = .camera
-        picker.allowsEditing = true
+        picker.allowsEditing = true  // Enable cropping
         return picker
     }
     

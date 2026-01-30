@@ -11,7 +11,7 @@ import UserNotifications
 //   - Deleted accounts WILL show onboarding (respects server state)
 // When SKIP_ONBOARDING_FOR_DEVELOPMENT = false:
 //   - Every app launch will show onboarding (for testing the flow)
-private let SKIP_ONBOARDING_FOR_DEVELOPMENT = false
+private let SKIP_ONBOARDING_FOR_DEVELOPMENT = true
 
 // 🚀 FAST STARTUP MODE - Skip heavy cloud syncs during development
 // PRODUCTION: Set to FALSE for full cloud sync behavior
@@ -115,6 +115,9 @@ struct Fit33App: App {
         // Start session logging
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
+        
+        // 🚀 PERFORMANCE: Initialize performance optimizations (memory monitoring, throttling)
+        initializePerformanceOptimizations()
         
         // ⚡ Pre-warm haptic generators for instant tap feedback
         HapticManager.shared.prepareAll()
@@ -254,38 +257,87 @@ struct Fit33App: App {
         #endif
     }
     
+    /// ⚡️ PERFORMANCE: Coordinated startup sequence
+    /// Staggers heavy operations to prevent CPU spikes and maintain smooth UI
     private func scheduleIntelligenceInit() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { // Increased delay
-            Task(priority: .background) {
-                print("🧠 [INIT] Starting background intelligence initialization...")
-                ExerciseIntelligenceEngine.shared.loadExerciseData()
-                print("🧠 [INIT] Intelligence engine data loading started")
-                
-                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
-                await ExerciseMappingService.shared.buildMaps()
-                print("🧠 [INIT] Exercise mapping service initialized")
-                
-                // Initialize smart pairing engine for exercise substitutions
-                SmartExercisePairingEngine.shared.initialize()
-                print("🧠 [INIT] Smart exercise pairing engine initialized")
-                
-                // Refresh exercise popularity data from cloud
-                await ExercisePopularityService.shared.refreshFromServer()
-                print("📊 [INIT] Exercise popularity data loaded")
-                
-                // Sync collaborative learning data (cross-user intelligence)
-                await CollaborativeLearningEngine.shared.syncGlobalData()
-                print("🌐 [INIT] Collaborative learning engine synced")
-                
-                // 🧠 Analyze user behavior to build personalized recommendations
-                // This learns from workout history, favorites, and exercise completion patterns
-                let context = PersistenceController.shared.container.viewContext
-                await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
-                print("🧠 [INIT] User behavior learning engine initialized")
-                
-                print("🧠 [INIT] Exercise intelligence systems fully initialized")
+        // Wait for essential phase to complete (user data synced)
+        Task { @MainActor in
+            StartupCoordinator.shared.onPhaseComplete(.intelligence) {
+                Task(priority: .utility) {
+                    await self.runIntelligenceInit()
+                }
             }
         }
+    }
+    
+    /// Run intelligence initialization with proper CPU protection
+    private func runIntelligenceInit() async {
+        // Signal heavy work starting
+        HeavyWorkSentinel.shared.beginHeavyWork(reason: "Intelligence initialization")
+        defer { HeavyWorkSentinel.shared.endHeavyWork(reason: "Intelligence initialization") }
+        
+        print("🧠 [INIT] Starting background intelligence initialization...")
+        
+        // Wait for CPU to settle before starting heavy work
+        await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
+        
+        // Step 1: Load exercise data (light)
+        ExerciseIntelligenceEngine.shared.loadExerciseData()
+        print("🧠 [INIT] Intelligence engine data loading started")
+        
+        // Yield and wait before next heavy operation
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        
+        // Step 2: Build exercise maps (CPU intensive - staggered)
+        if !CPUProtection.shared.isCPUCritical() {
+            await ExerciseMappingService.shared.buildMaps()
+            print("🧠 [INIT] Exercise mapping service initialized")
+        }
+        
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+        
+        // Step 3: Initialize pairing engine (moderate)
+        if !CPUProtection.shared.isCPUCritical() {
+            SmartExercisePairingEngine.shared.initialize()
+            print("🧠 [INIT] Smart exercise pairing engine initialized")
+        }
+        
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        
+        // Step 4: Popularity data (network + light processing)
+        if !CPUProtection.shared.isCPUTooHigh() {
+            await ExercisePopularityService.shared.refreshFromServer()
+            print("📊 [INIT] Exercise popularity data loaded")
+        }
+        
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        
+        // Step 5: Collaborative learning (network + moderate processing)
+        if !CPUProtection.shared.isCPUTooHigh() {
+            await CollaborativeLearningEngine.shared.syncGlobalData()
+            print("🌐 [INIT] Collaborative learning engine synced")
+        }
+        
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        
+        // Step 6: User behavior analysis (CPU intensive - was taking 5.7 seconds!)
+        // Only run if CPU is settled
+        await CPUProtection.shared.waitForCPUSettled(maxWait: 5.0)
+        
+        if !CPUProtection.shared.isCPUCritical() {
+            let context = PersistenceController.shared.container.viewContext
+            await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
+            print("🧠 [INIT] User behavior learning engine initialized")
+        } else {
+            print("⚠️ [INIT] Skipping behavior analysis - CPU too high")
+        }
+        
+        print("🧠 [INIT] Exercise intelligence systems fully initialized")
     }
     
     var body: some Scene {
@@ -383,8 +435,14 @@ struct Fit33App: App {
                         // Handle OAuth callback
                         Task {
                             do {
-                                try await supabaseManager.handleOAuthCallback(url: url)
-                                print("✅ OAuth callback handled successfully")
+                                let (isNewUser, socialUsername) = try await supabaseManager.handleOAuthCallback(url: url)
+                                print("✅ OAuth callback handled successfully (new user: \(isNewUser))")
+                                
+                                // Store social username for onboarding pre-fill (Facebook/Instagram)
+                                if let username = socialUsername, isNewUser {
+                                    UserDefaults.standard.set(username, forKey: "pending_social_username")
+                                    print("📘 Stored social username for onboarding: @\(username)")
+                                }
                                 
                                 // Force UI update after successful OAuth
                                 await MainActor.run {
@@ -421,6 +479,19 @@ struct Fit33App: App {
                         // 📬 Check for new shared workouts from friends
                         Task {
                             await FriendService.shared.checkForNewWorkouts()
+                        }
+                        
+                        // 📱 Re-check push notification registration (in case user enabled in Settings)
+                        Task {
+                            await pushNotificationService.recheckAndRegister()
+                        }
+                        
+                        // ☁️ Retry profile sync if user completed onboarding but sync may have failed
+                        Task {
+                            if SupabaseManager.shared.isAuthenticated,
+                               UserManager.shared.hasCompletedOnboarding {
+                                try? await UserManager.shared.syncProfileToCloud()
+                            }
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

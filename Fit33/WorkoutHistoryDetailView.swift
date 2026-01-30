@@ -4,10 +4,12 @@ import CoreData
 struct WorkoutHistoryDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.managedObjectContext) private var viewContext
     let workout: Workout
     
     @State private var showingRepeatPreview = false
     @State private var showingShareSheet = false
+    @State private var refreshTrigger = UUID()
     
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -288,6 +290,8 @@ struct WorkoutHistoryDetailView: View {
             )
             .ignoresSafeArea()
         )
+        // 🔄 Force view refresh when data changes
+        .id(refreshTrigger)
         .navigationTitle(smartTitle)
         .navigationBarTitleDisplayMode(.large)
         .background(
@@ -487,7 +491,7 @@ struct WorkoutHistoryDetailView: View {
                             Image(systemName: "flame.fill")
                                 .font(.caption2)
                                 .foregroundColor(.orange)
-                            Text("\(Int(pr.weight)) lbs × \(pr.reps)")
+                            Text("\(formatSetWeight(pr.weight)) lbs × \(pr.reps)")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.orange)
@@ -739,6 +743,15 @@ struct WorkoutHistoryDetailView: View {
         }
     }
     
+    /// Format weight preserving decimals when needed (e.g., 180.5 → "180.5", 180.0 → "180")
+    private func formatSetWeight(_ weight: Double) -> String {
+        if weight.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(weight))"
+        } else {
+            return String(format: "%.1f", weight)
+        }
+    }
+    
     private func repeatWorkout() {
         // Show preview screen instead of starting directly
         showingRepeatPreview = true
@@ -912,7 +925,7 @@ struct PremiumExerciseRow: View {
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                                 
-                                Text("\(Int(best.weight)) × \(best.reps)")
+                                Text("\(formatSetWeight(best.weight)) × \(best.reps)")
                                     .font(.caption)
                                     .foregroundColor(accentColor)
                                     .fontWeight(.medium)
@@ -955,7 +968,7 @@ struct PremiumExerciseRow: View {
                                         HStack(spacing: 8) {
                                             ForEach(Array(previousSets.enumerated()), id: \.offset) { index, set in
                                                 VStack(spacing: 4) {
-                                                    Text("\(Int(set.weight))")
+                                                    Text("\(formatSetWeight(set.weight))")
                                                         .font(.caption)
                                                         .fontWeight(.bold)
                                                     Text("×\(set.reps)")
@@ -1005,7 +1018,7 @@ struct PremiumExerciseRow: View {
                                             Spacer()
                                             
                                             if set.weight > 0 {
-                                                Text("\(Int(set.weight)) lbs")
+                                                Text("\(formatSetWeight(set.weight)) lbs")
                                                     .font(.caption)
                                                     .fontWeight(isBest ? .bold : .medium)
                                             }
@@ -1189,6 +1202,15 @@ struct PremiumExerciseRow: View {
         default: return "dumbbell.fill"
         }
     }
+    
+    /// Format weight preserving decimals when needed (e.g., 180.5 → "180.5", 180.0 → "180")
+    private func formatSetWeight(_ weight: Double) -> String {
+        if weight.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(weight))"
+        } else {
+            return String(format: "%.1f", weight)
+        }
+    }
 }
 
 // MARK: - Repeat Workout Preview View
@@ -1205,6 +1227,7 @@ struct RepeatWorkoutPreviewView: View {
     
     @State private var showingExerciseDetail = false
     @State private var selectedExercise: Exercise?
+    @State private var refreshTrigger = UUID() // Forces view refresh when changed
     
     private var accentGradient: [Color] {
         [accentColor, accentColor == .green ? .teal : accentColor.opacity(0.7)]
@@ -1324,6 +1347,11 @@ struct RepeatWorkoutPreviewView: View {
                 "exercise_count": workout.exercises?.count ?? 0
             ])
             print("🔁 [REPEAT PREVIEW] View appeared - isWorkoutActive: \(workoutManager.isWorkoutActive)")
+            
+            // 🔄 Force refresh Core Data to show latest set data
+            viewContext.refreshAllObjects()
+            refreshTrigger = UUID()
+            
             showGoButton()
         }
         .onDisappear {

@@ -156,13 +156,13 @@ struct OnboardingLargeCard: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white)
+                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                     
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.clear]
+                                    ? [Color.white.opacity(0.15), Color.clear]
                                     : [Color.white.opacity(0.8), Color.clear],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -173,7 +173,7 @@ struct OnboardingLargeCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? color.opacity(0.6) : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.clear), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: isSelected ? 14 : 6, x: 0, y: isSelected ? 8 : 4)
         }
@@ -255,13 +255,13 @@ struct OnboardingWideCard: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white)
+                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                     
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.clear]
+                                    ? [Color.white.opacity(0.15), Color.clear]
                                     : [Color.white.opacity(0.8), Color.clear],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -272,7 +272,7 @@ struct OnboardingWideCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? color.opacity(0.5) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? color.opacity(0.5) : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.clear), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: isSelected ? color.opacity(0.35) : .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
         }

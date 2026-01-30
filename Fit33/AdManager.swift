@@ -2,17 +2,19 @@ import SwiftUI
 import GoogleMobileAds
 
 /// Manages interstitial ads for the workout app
-/// Ads are shown between sets during the rest timer for free users
+/// Ads are shown between sets during the rest timer for FREE users only
+/// Premium users will never see ads
 class AdManager: NSObject, ObservableObject {
     static let shared = AdManager()
     
     // MARK: - Published Properties
     
     /// Whether ads are enabled (for testing toggle in settings)
+    /// Note: Premium users will never see ads regardless of this setting
     @Published var adsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(adsEnabled, forKey: "adsEnabled")
-            if adsEnabled && isSDKInitialized {
+            if adsEnabled && isSDKInitialized && !PremiumManager.shared.isPremiumUser {
                 loadInterstitialAd()
             }
         }
@@ -40,11 +42,11 @@ class AdManager: NSObject, ObservableObject {
     
     // Ad Unit IDs
     // Test ID: ca-app-pub-3940256099942544/4411468910 (use during development)
-    // Production ID: ca-app-pub-8088994272034240/1040812015 (use for release)
+    // Production ID: ca-app-pub-8809892203317185/3674561599 (use for release)
     #if DEBUG
     private let adUnitID = "ca-app-pub-3940256099942544/4411468910" // Test ads for development
     #else
-    private let adUnitID = "ca-app-pub-8088994272034240/1040812015" // Production ads for release
+    private let adUnitID = "ca-app-pub-8809892203317185/3674561599" // Production ads for release
     #endif
     
     // MARK: - Initialization
@@ -67,13 +69,29 @@ class AdManager: NSObject, ObservableObject {
     private var sdkInitStartTime: Date?
     
     func initializeSDK() {
-        guard !isSDKInitialized else { return }
-        guard adsEnabled else {
-            print("📺 Ads disabled, skipping SDK initialization")
+        print("📺 [SDK] initializeSDK called - isSDKInitialized: \(isSDKInitialized)")
+        guard !isSDKInitialized else {
+            print("📺 [SDK] Already initialized, skipping")
             return
         }
         
-        print("📺 Initializing AdMob SDK (lazy)...")
+        // Check premium status
+        let isPremium = PremiumManager.shared.isPremiumUser
+        print("📺 [SDK] isPremiumUser: \(isPremium)")
+        
+        // Premium users don't need ads SDK
+        guard !isPremium else {
+            print("📺 [SDK] Premium user, skipping SDK initialization")
+            return
+        }
+        
+        print("📺 [SDK] adsEnabled: \(adsEnabled)")
+        guard adsEnabled else {
+            print("📺 [SDK] Ads disabled, skipping SDK initialization")
+            return
+        }
+        
+        print("📺 [SDK] ✅ All checks passed, initializing AdMob SDK...")
         sdkInitStartTime = Date()
         
         MobileAds.shared.start { [weak self] status in
@@ -97,6 +115,8 @@ class AdManager: NSObject, ObservableObject {
     /// Prepare ads before they're needed (call when user is about to start a workout)
     /// This gives the SDK time to initialize and load an ad in the background
     func prepareForWorkout() {
+        // Premium users don't need ads
+        guard !PremiumManager.shared.isPremiumUser else { return }
         guard adsEnabled else { return }
         
         if !isSDKInitialized {
@@ -113,6 +133,8 @@ class AdManager: NSObject, ObservableObject {
     
     /// Load a new interstitial ad
     func loadInterstitialAd() {
+        // Premium users don't need ads
+        guard !PremiumManager.shared.isPremiumUser else { return }
         guard adsEnabled else { return }
         
         // Initialize SDK if not already done
@@ -152,6 +174,13 @@ class AdManager: NSObject, ObservableObject {
     ///   - viewController: The view controller to present the ad from
     ///   - completion: Called when the ad is dismissed (either naturally or after minimum duration)
     func showInterstitialAd(from viewController: UIViewController, completion: @escaping () -> Void) {
+        // Premium users never see ads
+        guard !PremiumManager.shared.isPremiumUser else {
+            print("📺 Premium user, skipping ad")
+            completion()
+            return
+        }
+        
         guard adsEnabled else {
             print("📺 Ads disabled, skipping ad")
             completion()
@@ -179,6 +208,12 @@ class AdManager: NSObject, ObservableObject {
     
     /// Check if an ad should be shown (for free users with ads enabled)
     func shouldShowAd() -> Bool {
+        // Premium users never see ads
+        if PremiumManager.shared.isPremiumUser {
+            print("📺 Premium user - no ads")
+            return false
+        }
+        
         print("📺 shouldShowAd check: adsEnabled=\(adsEnabled), isAdReady=\(isAdReady), isSDKInitialized=\(isSDKInitialized)")
         if !adsEnabled {
             print("📺 Ads are disabled in settings")

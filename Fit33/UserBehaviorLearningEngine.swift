@@ -185,78 +185,136 @@ class UserBehaviorLearningEngine: ObservableObject {
     
     // MARK: - Main Analysis Entry Point
     
+    /// 🔒 Track in-flight analysis to prevent duplicates
+    private static var analysisTask: Task<UserBehaviorProfile, Never>?
+    private static var lastAnalysisStart: Date?
+    private static let minAnalysisInterval: TimeInterval = 60 // Min 60 seconds between full analyses
+    
     /// Analyze user's complete workout history to build preference profile
+    /// ⚡️ PERFORMANCE: Now runs heavy work on background thread with deduplication and CPU protection
     func analyzeUserBehavior(context: NSManagedObjectContext) async -> UserBehaviorProfile {
-        isAnalyzing = true
-        defer { isAnalyzing = false }
+        // 🛡️ Return cached if we have recent analysis
+        if let existing = userPreferences,
+           let lastStart = UserBehaviorLearningEngine.lastAnalysisStart,
+           Date().timeIntervalSince(lastStart) < UserBehaviorLearningEngine.minAnalysisInterval {
+            print("⚡️ [LEARNING ENGINE] Using cached profile (analyzed \(Int(Date().timeIntervalSince(lastStart)))s ago)")
+            return existing
+        }
         
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("🧠 [LEARNING ENGINE] Starting comprehensive behavior analysis...")
-        let startTime = CFAbsoluteTimeGetCurrent()
+        // 🛡️ Skip if CPU is critical (> 200%)
+        if CPUProtection.shared.isCPUCritical() {
+            print("⚠️ [LEARNING ENGINE] Skipping analysis - CPU critical")
+            return userPreferences ?? UserBehaviorProfile.empty
+        }
         
-        // Try to load from cloud first (for cross-device sync)
-        if let cloudProfile = await loadFromCloud() {
-            print("🧠 [LEARNING ENGINE] Loaded profile from cloud (\(cloudProfile.totalWorkoutsAnalyzed) workouts)")
-            self.userPreferences = cloudProfile
-            updateCaches(from: cloudProfile)
-            saveCachedPreferences()
+        // 🛡️ Reuse in-flight analysis
+        if let existingTask = UserBehaviorLearningEngine.analysisTask {
+            print("⚡️ [LEARNING ENGINE] Reusing in-flight analysis")
+            return await existingTask.value
+        }
+        
+        // 🔴 Wait for CPU to settle before heavy analysis
+        await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
+        
+        UserBehaviorLearningEngine.lastAnalysisStart = Date()
+        
+        // Create analysis task
+        let task = Task<UserBehaviorProfile, Never> { [weak self] in
+            guard let self = self else {
+                return UserBehaviorProfile.empty
+            }
             
-            // Still analyze local data to merge any new workouts
-            // But use cloud as base
+            await MainActor.run { self.isAnalyzing = true }
+            defer { 
+                Task { @MainActor in 
+                    self.isAnalyzing = false 
+                    UserBehaviorLearningEngine.analysisTask = nil
+                }
+            }
+            
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("🧠 [LEARNING ENGINE] Starting comprehensive behavior analysis...")
+            let startTime = CFAbsoluteTimeGetCurrent()
+            
+            // Try to load from cloud first (for cross-device sync)
+            if let cloudProfile = await self.loadFromCloud() {
+                print("🧠 [LEARNING ENGINE] Loaded profile from cloud (\(cloudProfile.totalWorkoutsAnalyzed) workouts)")
+                await MainActor.run {
+                    self.userPreferences = cloudProfile
+                }
+                self.updateCaches(from: cloudProfile)
+                self.saveCachedPreferences()
+            }
+            
+            // ⚡️ PERFORMANCE: Yield to let UI breathe
+            await Task.yield()
+            
+            // Fetch completed workouts
+            let workouts = await self.fetchCompletedWorkouts(context: context)
+            print("🧠 [LEARNING ENGINE] Analyzing \(workouts.count) completed workouts")
+            
+            // ⚡️ PERFORMANCE: Yield between heavy operations
+            await Task.yield()
+            
+            // Fetch favorited exercises
+            let favoritedExercises = await self.fetchFavoritedExercises(context: context)
+            print("🧠 [LEARNING ENGINE] Found \(favoritedExercises.count) favorited exercises")
+            
+            // Fetch favorited workouts
+            let favoritedWorkouts = await self.fetchFavoritedWorkouts(context: context)
+            print("🧠 [LEARNING ENGINE] Found \(favoritedWorkouts.count) favorited workout routines")
+            
+            // Fetch program day completions from cloud (for comprehensive learning)
+            let programCompletions = await self.fetchProgramCompletions()
+            print("🧠 [LEARNING ENGINE] Found \(programCompletions.count) program day completions")
+            
+            // ⚡️ PERFORMANCE: Yield before heavy profile building
+            await Task.yield()
+            
+            // Build comprehensive profile
+            let profile = await self.buildUserProfile(
+                workouts: workouts,
+                favoritedExercises: favoritedExercises,
+                favoritedWorkouts: favoritedWorkouts,
+                programCompletions: programCompletions,
+                context: context
+            )
+            
+            // Update caches
+            self.updateCaches(from: profile)
+            
+            // ⚡️ PERFORMANCE: Defer similarity map to background
+            Task(priority: .utility) {
+                await self.buildExerciseSimilarityMap(context: context)
+            }
+            
+            await MainActor.run {
+                self.userPreferences = profile
+                self.lastAnalysisDate = Date()
+            }
+            
+            // Save to local cache
+            self.saveCachedPreferences()
+            
+            // Sync to cloud in background (low priority)
+            Task(priority: .background) {
+                await self.saveToCloud(profile)
+            }
+            
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            print("🧠 [LEARNING ENGINE] Analysis complete in \(String(format: "%.0f", elapsed))ms")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            
+            // 🌟 Also trigger progressive unlock service analysis (deferred)
+            Task(priority: .utility) { @MainActor in
+                _ = await ProgressiveExerciseUnlockService.shared.analyzeUserMaturity(context: context)
+            }
+            
+            return profile
         }
         
-        // Fetch completed workouts
-        let workouts = await fetchCompletedWorkouts(context: context)
-        print("🧠 [LEARNING ENGINE] Analyzing \(workouts.count) completed workouts")
-        
-        // Fetch favorited exercises
-        let favoritedExercises = await fetchFavoritedExercises(context: context)
-        print("🧠 [LEARNING ENGINE] Found \(favoritedExercises.count) favorited exercises")
-        
-        // Fetch favorited workouts
-        let favoritedWorkouts = await fetchFavoritedWorkouts(context: context)
-        print("🧠 [LEARNING ENGINE] Found \(favoritedWorkouts.count) favorited workout routines")
-        
-        // Fetch program day completions from cloud (for comprehensive learning)
-        let programCompletions = await fetchProgramCompletions()
-        print("🧠 [LEARNING ENGINE] Found \(programCompletions.count) program day completions")
-        
-        // Build comprehensive profile
-        let profile = await buildUserProfile(
-            workouts: workouts,
-            favoritedExercises: favoritedExercises,
-            favoritedWorkouts: favoritedWorkouts,
-            programCompletions: programCompletions,
-            context: context
-        )
-        
-        // Update caches
-        updateCaches(from: profile)
-        
-        // Build exercise similarity map
-        await buildExerciseSimilarityMap(context: context)
-        
-        self.userPreferences = profile
-        self.lastAnalysisDate = Date()
-        
-        // Save to local cache
-        saveCachedPreferences()
-        
-        // Sync to cloud in background
-        Task {
-            await saveToCloud(profile)
-        }
-        
-        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("🧠 [LEARNING ENGINE] Analysis complete in \(String(format: "%.0f", elapsed))ms")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        
-        // 🌟 Also trigger progressive unlock service analysis
-        Task { @MainActor in
-            _ = await ProgressiveExerciseUnlockService.shared.analyzeUserMaturity(context: context)
-        }
-        
-        return profile
+        UserBehaviorLearningEngine.analysisTask = task
+        return await task.value
     }
     
     // MARK: - Cloud Persistence
@@ -911,7 +969,11 @@ class UserBehaviorLearningEngine: ObservableObject {
         var recentExercises: Set<String> = [] // Exercises done in last 14 days (expanded)
         
         // Process each workout with recency weighting
+        // ⚡️ PERFORMANCE: Yield every 10 workouts to prevent blocking
         for (index, workout) in workouts.enumerated() {
+            if index > 0 && index % 10 == 0 {
+                await Task.yield()
+            }
             let recencyWeight = pow(recencyDecayFactor, Double(index))
             
             // Track workout duration
@@ -969,6 +1031,9 @@ class UserBehaviorLearningEngine: ObservableObject {
                 }
             }
         }
+        
+        // ⚡️ Yield after workout processing
+        await Task.yield()
         
         // Process favorited exercises (major boost)
         for exercise in favoritedExercises {
@@ -1188,6 +1253,28 @@ struct ExerciseSwapData: Codable {
 }
 
 struct UserBehaviorProfile: Codable {
+    
+    /// ⚡️ PERFORMANCE: Empty profile for fallback
+    static let empty = UserBehaviorProfile(
+        exerciseAffinityScores: [:],
+        equipmentPreferences: [:],
+        muscleGroupPreferences: [:],
+        categoryPreferences: [:],
+        movementPatternPreferences: [:],
+        exerciseCompletionCounts: [:],
+        fullSetExercises: [],
+        favoritedExerciseNames: [],
+        recentlyDoneExercises: [],
+        preferredWorkoutDuration: 45,
+        preferredTimeOfDay: "morning",
+        totalWorkoutsAnalyzed: 0,
+        insights: [],
+        lastUpdated: Date(),
+        swapHistory: [:],
+        customWorkoutAdditions: [],
+        explicitlySelectedExercises: []
+    )
+    
     /// Affinity scores for specific exercises (0.0 - 1.0)
     var exerciseAffinityScores: [String: Double]
     

@@ -3,7 +3,10 @@
 //  Fit33
 //
 //  Created for debugging onboarding flow issues
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
 //
+
+#if DEBUG
 
 import Foundation
 
@@ -216,3 +219,5 @@ struct OnboardingTestResult {
         return signupSuccess && authenticationVerified && usernameSetSuccess && usernameVerified && profileUpdateSuccess
     }
 }
+
+#endif

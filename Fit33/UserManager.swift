@@ -218,12 +218,23 @@ class UserManager: ObservableObject {
                     
                     // Sync full profile to cloud immediately after onboarding
                     print("☁️ [ONBOARDING] Syncing full profile to cloud...")
-                    try? await syncProfileToCloud()
+                    do {
+                        try await syncProfileToCloud()
+                        print("✅ [ONBOARDING] Profile synced to cloud successfully")
+                    } catch {
+                        print("❌ [ONBOARDING] Failed to sync profile to cloud: \(error)")
+                        print("❌ [ONBOARDING] Will retry sync on next app launch")
+                    }
                     
                     // Mark onboarding as complete in cloud (important for social sign-in users)
-                    try? await SupabaseManager.shared.markOnboardingComplete()
-                    print("☁️ [ONBOARDING] Onboarding status synced to cloud")
+                    do {
+                        try await SupabaseManager.shared.markOnboardingComplete()
+                        print("☁️ [ONBOARDING] Onboarding status synced to cloud")
+                    } catch {
+                        print("❌ [ONBOARDING] Failed to mark onboarding complete: \(error)")
+                    }
                 } else {
+                    print("⚠️ [ONBOARDING] User not authenticated after signup - this is unexpected!")
                     // Fall back to local exercises if not authenticated
                     await MainActor.run {
                         ExerciseLibraryService.shared.initializeDefaultExercises()

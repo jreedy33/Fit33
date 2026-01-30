@@ -30,9 +30,10 @@ class HealthKitManager: ObservableObject {
     @Published var lastSavedWorkoutName: String?
     @Published var showHealthSaveConfirmation: Bool = false
     
-    // Debounce mechanism for cloud sync to prevent rapid consecutive syncs
+    // ⚡️ PERFORMANCE: Debounce mechanism for cloud sync to prevent rapid consecutive syncs
     private var lastStepSyncTime: Date?
     private let stepSyncDebounceInterval: TimeInterval = 30 // Only sync every 30 seconds max
+    private var isSyncingSteps = false // Prevent concurrent syncs
     
     // Step data structure
     struct DailySteps: Identifiable {
@@ -474,11 +475,19 @@ class HealthKitManager: ObservableObject {
             return
         }
         
+        // ⚡️ PERFORMANCE: Prevent concurrent syncs AND enforce cooldown
+        guard !isSyncingSteps else { return } // Already syncing
+        
         // Debounce: Skip if we synced recently
         if let lastSync = lastStepSyncTime,
            Date().timeIntervalSince(lastSync) < stepSyncDebounceInterval {
             return // Silently skip - don't spam logs
         }
+        
+        // Mark as syncing BEFORE async work to prevent race conditions
+        isSyncingSteps = true
+        lastStepSyncTime = Date() // Set time immediately to block concurrent calls
+        defer { isSyncingSteps = false }
         
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -489,7 +498,6 @@ class HealthKitManager: ObservableObject {
                 steps: todaySteps,
                 goal: stepGoal
             )
-            lastStepSyncTime = Date()
             print("✅ Synced \(todaySteps) steps to cloud")
             
             // 🧠 ADVANCED INTELLIGENCE: Track activity for recovery correlation

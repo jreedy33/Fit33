@@ -883,8 +883,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 print("🏋️ [NOTIFICATIONS] User tapped Start Workout")
                 
             case "LOG_FOOD":
-                // Deep link to nutrition (if implemented)
-                print("🍎 [NOTIFICATIONS] User tapped Log Food")
+                // Deep link to meals tab
+                DeepLinkManager.shared.pendingDestination = .mealsTab
+                print("🍎 [NOTIFICATIONS] User tapped Log Food - navigating to meals")
                 
             case "SNOOZE_1H":
                 // Reschedule notification for 1 hour later
@@ -892,35 +893,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 print("⏰ [NOTIFICATIONS] Snoozed for 1 hour")
                 
             case "VIEW_SHARED_WORKOUT", UNNotificationDefaultActionIdentifier:
-                // Handle various push notification types
+                // Handle notification tap based on type or category
+                // First check userInfo for push notification type
                 if let notificationType = userInfo["type"] as? String {
-                    switch notificationType {
-                    case "shared_workout":
-                        // Navigate to received workout preview
-                        if let workoutId = userInfo["workout_id"] as? String {
-                            DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
-                            print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
-                        }
-                        
-                    case "friend_request":
-                        // Navigate to friends list to see pending requests
-                        DeepLinkManager.shared.pendingDestination = .friends
-                        // Refresh friend requests
-                        Task { await FriendService.shared.fetchPendingRequests() }
-                        print("👥 [NOTIFICATIONS] Opening friends list for friend request")
-                        
-                    case "friend_request_accepted":
-                        // Navigate to friends list to see new friend
-                        DeepLinkManager.shared.pendingDestination = .friends
-                        // Refresh friends list
-                        Task { await FriendService.shared.fetchFriends() }
-                        print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
-                        
-                    default:
-                        print("📱 [NOTIFICATIONS] User opened notification: \(notificationType)")
-                    }
+                    self.handleNotificationType(notificationType, userInfo: userInfo)
                 } else {
-                    print("📱 [NOTIFICATIONS] User opened notification: \(categoryIdentifier)")
+                    // Fall back to category identifier for local notifications
+                    self.handleNotificationCategory(categoryIdentifier)
                 }
                 
             default:
@@ -929,6 +908,107 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         }
         
         completionHandler()
+    }
+    
+    // MARK: - Deep Link Handlers for Notifications
+    
+    /// Handle push notification types (from userInfo["type"])
+    private func handleNotificationType(_ type: String, userInfo: [AnyHashable: Any]) {
+        switch type {
+        // Social notifications
+        case "shared_workout":
+            if let workoutId = userInfo["workout_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
+                print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .receivedWorkouts
+                print("📬 [NOTIFICATIONS] Opening received workouts list")
+            }
+            
+        case "friend_request":
+            DeepLinkManager.shared.pendingDestination = .friendRequests
+            Task { await FriendService.shared.fetchPendingRequests() }
+            print("👥 [NOTIFICATIONS] Opening friend requests tab")
+            
+        case "friend_request_accepted":
+            DeepLinkManager.shared.pendingDestination = .friends
+            Task { await FriendService.shared.fetchFriends() }
+            print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
+            
+        // Achievement notifications
+        case "personal_record":
+            DeepLinkManager.shared.pendingDestination = .personalRecord
+            print("🏆 [NOTIFICATIONS] Opening personal records")
+            
+        case "streak_milestone":
+            DeepLinkManager.shared.pendingDestination = .streakInfo
+            print("🔥 [NOTIFICATIONS] Opening streak info")
+            
+        case "level_up", "goal_achieved":
+            DeepLinkManager.shared.pendingDestination = .statsTab
+            print("⭐️ [NOTIFICATIONS] Opening stats tab for achievement")
+            
+        // Health/Nutrition notifications
+        case "nutrition_reminder", "protein_goal":
+            DeepLinkManager.shared.pendingDestination = .mealsTab
+            print("🍎 [NOTIFICATIONS] Opening meals tab")
+            
+        case "water_reminder":
+            DeepLinkManager.shared.pendingDestination = .hydration
+            print("💧 [NOTIFICATIONS] Opening hydration widget")
+            
+        case "steps_goal":
+            DeepLinkManager.shared.pendingDestination = .stepTracker
+            print("👟 [NOTIFICATIONS] Opening step tracker")
+            
+        // Workout notifications
+        case "daily_workout_reminder", "streak_protection", "comeback_reminder", "morning_motivation":
+            DeepLinkManager.shared.pendingDestination = .workout
+            print("🏋️ [NOTIFICATIONS] Opening workout tab")
+            
+        case "workout_complete":
+            DeepLinkManager.shared.pendingDestination = .workoutHistory
+            print("✅ [NOTIFICATIONS] Opening workout history")
+            
+        case "weekly_progress":
+            DeepLinkManager.shared.pendingDestination = .statsTab
+            print("📊 [NOTIFICATIONS] Opening stats tab for weekly progress")
+            
+        default:
+            print("📱 [NOTIFICATIONS] Unhandled notification type: \(type)")
+        }
+    }
+    
+    /// Handle local notification categories (fallback when no userInfo type)
+    private func handleNotificationCategory(_ category: String) {
+        switch category {
+        case "WORKOUT_REMINDER":
+            DeepLinkManager.shared.pendingDestination = .workout
+            print("🏋️ [NOTIFICATIONS] Opening workout tab from reminder")
+            
+        case "NUTRITION_REMINDER":
+            DeepLinkManager.shared.pendingDestination = .mealsTab
+            print("🍎 [NOTIFICATIONS] Opening meals tab from nutrition reminder")
+            
+        case "SHARED_WORKOUT":
+            DeepLinkManager.shared.pendingDestination = .receivedWorkouts
+            print("📬 [NOTIFICATIONS] Opening received workouts")
+            
+        case "HYDRATION_REMINDER":
+            DeepLinkManager.shared.pendingDestination = .hydration
+            print("💧 [NOTIFICATIONS] Opening hydration widget")
+            
+        case "STEPS_REMINDER":
+            DeepLinkManager.shared.pendingDestination = .stepTracker
+            print("👟 [NOTIFICATIONS] Opening step tracker")
+            
+        case "ACHIEVEMENT":
+            DeepLinkManager.shared.pendingDestination = .statsTab
+            print("🏆 [NOTIFICATIONS] Opening stats for achievement")
+            
+        default:
+            print("📱 [NOTIFICATIONS] User opened notification: \(category)")
+        }
     }
     
     private func snoozeNotification(categoryIdentifier: String, hours: Int) {

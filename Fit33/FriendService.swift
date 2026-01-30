@@ -30,7 +30,40 @@ class FriendService: ObservableObject {
     private var lastKnownWorkoutCount: Int = 0
     private var lastCheckedWorkoutIds: Set<UUID> = []
     
+    // Track addressed workout IDs (started, saved, or deleted) to prevent reappearing
+    // This ensures widgets disappear immediately and stay gone even if server is slow
+    private var addressedWorkoutIds: Set<UUID> = []
+    
+    /// Track last known request IDs for detecting new friend requests
+    private var lastCheckedRequestIds: Set<UUID> = []
+    
     private init() {}
+    
+    // MARK: - Refresh Friend Data (Event-Driven)
+    
+    /// Refresh workouts and friend requests
+    /// Call this on: pull-to-refresh, tab switch, app open, notification tap
+    func refreshHomeScreenData() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        print("🔄 [REFRESH] Refreshing home screen friend data...")
+        
+        // Initialize tracking sets if empty
+        if lastCheckedWorkoutIds.isEmpty {
+            lastCheckedWorkoutIds = Set(receivedWorkouts.map { $0.id })
+        }
+        if lastCheckedRequestIds.isEmpty {
+            lastCheckedRequestIds = Set(pendingRequests.map { $0.requestId })
+        }
+        
+        // Fetch both in parallel
+        async let workoutsTask: () = checkForNewWorkouts()
+        async let requestsTask: () = checkForNewFriendRequests()
+        
+        _ = await (workoutsTask, requestsTask)
+        
+        print("✅ [REFRESH] Home screen data refreshed")
+    }
     
     // MARK: - Check for New Workouts
     
@@ -51,7 +84,7 @@ class FriendService: ObservableObject {
         // Update tracking
         lastCheckedWorkoutIds = currentIds
         
-        // Show notifications for new workouts
+        // Show notifications and haptic for new workouts
         for newId in newWorkoutIds {
             if let workout = receivedWorkouts.first(where: { $0.id == newId }) {
                 // Only notify for unviewed workouts
@@ -64,9 +97,38 @@ class FriendService: ObservableObject {
                         workoutId: workout.id.uuidString
                     )
                     
-                    // Haptic feedback
+                    // Haptic feedback for new workout
                     HapticManager.notification(.success)
                 }
+            }
+        }
+    }
+    
+    // MARK: - Check for New Friend Requests
+    
+    /// Check for new friend requests and provide feedback
+    func checkForNewFriendRequests() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        let previousIds = lastCheckedRequestIds
+        
+        // Fetch latest requests
+        await fetchPendingRequests()
+        
+        // Find truly new requests (ones we haven't seen before)
+        let currentIds = Set(pendingRequests.map { $0.requestId })
+        let newRequestIds = currentIds.subtracting(previousIds)
+        
+        // Update tracking
+        lastCheckedRequestIds = currentIds
+        
+        // Haptic feedback for new friend requests
+        for newId in newRequestIds {
+            if let request = pendingRequests.first(where: { $0.requestId == newId }) {
+                print("👋 [NEW REQUEST] Detected new friend request from \(request.displayName)")
+                
+                // Haptic feedback for new request
+                HapticManager.notification(.success)
             }
         }
     }
@@ -278,8 +340,12 @@ class FriendService: ObservableObject {
                 .execute()
                 .value
             
-            self.receivedWorkouts = result
-            print("✅ Fetched \(result.count) received workouts")
+            // Filter out any workouts that were addressed (started, saved, or deleted)
+            // This prevents zombie workouts from reappearing
+            let filteredResult = result.filter { !addressedWorkoutIds.contains($0.id) }
+            
+            self.receivedWorkouts = filteredResult
+            print("✅ Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)")
         } catch {
             print("❌ Error fetching received workouts: \(error)")
         }
@@ -422,6 +488,12 @@ class FriendService: ObservableObject {
     }
     
     func markWorkoutStarted(workoutId: UUID) async -> Bool {
+        // Track as addressed immediately - removes from pending widgets
+        addressedWorkoutIds.insert(workoutId)
+        
+        // Optimistic update: Remove from local array for immediate UI feedback
+        receivedWorkouts.removeAll { $0.id == workoutId }
+        
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("shared_workouts")
@@ -432,12 +504,12 @@ class FriendService: ObservableObject {
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
-            await fetchReceivedWorkouts()
-            print("✅ Workout marked as started")
+            print("✅ Workout marked as started: \(workoutId)")
             return true
         } catch {
             print("❌ Error marking workout started: \(error)")
-            return false
+            // Keep it addressed locally even if server fails
+            return true
         }
     }
     
@@ -469,6 +541,12 @@ class FriendService: ObservableObject {
     
     // Delete received workout (removes from database)
     func deleteReceivedWorkout(workoutId: UUID) async -> Bool {
+        // Track as addressed immediately - removes from pending widgets
+        addressedWorkoutIds.insert(workoutId)
+        
+        // Optimistic update: Remove from local array FIRST for snappy UI
+        receivedWorkouts.removeAll { $0.id == workoutId }
+        
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("shared_workouts")
@@ -476,34 +554,47 @@ class FriendService: ObservableObject {
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
-            // Remove from local array immediately for snappy UI
-            await MainActor.run {
-                self.receivedWorkouts.removeAll { $0.id == workoutId }
-            }
-            
-            print("✅ Workout deleted")
+            print("✅ Workout deleted from server: \(workoutId)")
             return true
         } catch {
             print("❌ Error deleting workout: \(error)")
-            return false
+            // Keep it addressed locally even if server delete fails
+            print("⚠️ Keeping workout marked as addressed locally despite server error")
+            return true  // Return true so UI treats it as deleted
         }
+    }
+    
+    /// Clear addressed workout tracking (call when user logs out)
+    func clearAddressedWorkoutTracking() {
+        addressedWorkoutIds.removeAll()
     }
     
     // Save shared workout (marks as saved)
     func saveSharedWorkout(workoutId: UUID) async throws {
+        // Track as addressed immediately - removes from pending widgets
+        addressedWorkoutIds.insert(workoutId)
+        
+        // Optimistic update: Remove from local array for immediate UI feedback
+        receivedWorkouts.removeAll { $0.id == workoutId }
+        
         struct SaveWorkoutUpdate: Encodable {
             let status: String
             let saved_to_favorites: Bool
         }
         
-        try await SupabaseManager.shared.supabaseClient
-            .from("shared_workouts")
-            .update(SaveWorkoutUpdate(status: "saved", saved_to_favorites: true))
-            .eq("id", value: workoutId.uuidString)
-            .execute()
-        
-        await fetchReceivedWorkouts()
-        print("✅ Workout saved")
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .from("shared_workouts")
+                .update(SaveWorkoutUpdate(status: "saved", saved_to_favorites: true))
+                .eq("id", value: workoutId.uuidString)
+                .execute()
+            
+            print("✅ Workout saved: \(workoutId)")
+        } catch {
+            print("❌ Error saving workout to server: \(error)")
+            // Keep it addressed locally even if server fails
+            // Don't re-throw - the user sees it as saved
+        }
     }
     
     // Simplified sendWorkout method for SharedWorkoutPreviewView compatibility

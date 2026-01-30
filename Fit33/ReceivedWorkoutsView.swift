@@ -11,12 +11,17 @@ struct ReceivedWorkoutsView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
     
+    // Use StateObject wrapper to prevent unnecessary re-renders during navigation
+    // The view will still observe changes, but won't be recreated
     @StateObject private var friendService = FriendService.shared
-    @StateObject private var deepLinkManager = DeepLinkManager.shared
-    @StateObject private var adManager = AdManager.shared
+    
+    // Only read DeepLinkManager and AdManager values when needed, don't observe
+    private var deepLinkManager: DeepLinkManager { DeepLinkManager.shared }
+    private var adsEnabled: Bool { AdManager.shared.adsEnabled }
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
+    @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
@@ -32,7 +37,7 @@ struct ReceivedWorkoutsView: View {
             } else {
                 List {
                     ForEach(0..<totalItemsWithAds, id: \.self) { index in
-                        if isAdPosition(index) && adManager.adsEnabled {
+                        if isAdPosition(index) && adsEnabled {
                             // Native ad card
                             NativeAdCardView()
                                 .listRowBackground(Color.clear)
@@ -88,6 +93,10 @@ struct ReceivedWorkoutsView: View {
             }
         }
         .onAppear {
+            // Only load data on first appear to prevent navigation disruption
+            guard !hasLoadedInitialData else { return }
+            hasLoadedInitialData = true
+            
             Task {
                 await friendService.loadReceivedWorkouts()
                 
@@ -109,7 +118,7 @@ struct ReceivedWorkoutsView: View {
     
     /// Calculate total items including ads (every 3rd position is an ad)
     private var totalItemsWithAds: Int {
-        guard adManager.adsEnabled else {
+        guard adsEnabled else {
             return friendService.receivedWorkouts.count
         }
         
@@ -120,14 +129,14 @@ struct ReceivedWorkoutsView: View {
     
     /// Check if this position should show an ad (positions 2, 5, 8, 11, etc.)
     private func isAdPosition(_ index: Int) -> Bool {
-        guard adManager.adsEnabled else { return false }
+        guard adsEnabled else { return false }
         // Ad at positions 2, 5, 8, 11... (every 3rd position)
         return (index + 1) % 3 == 0
     }
     
     /// Get the actual workout index for a display index (accounting for ads)
     private func getWorkoutIndex(for displayIndex: Int) -> Int {
-        guard adManager.adsEnabled else { return displayIndex }
+        guard adsEnabled else { return displayIndex }
         
         // Calculate how many ads appear before this position
         let adsBeforeThisIndex = displayIndex / 3
@@ -175,11 +184,20 @@ struct ReceivedWorkoutsView: View {
 
 struct ReceivedWorkoutCard: View {
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var premiumManager = PremiumManager.shared
+    
     let workout: ReceivedWorkoutDTO
     let onTap: () -> Void
     
+    @State private var showingPremiumUpgrade = false
+    
     private var isUnread: Bool {
         workout.viewedAt == nil && workout.status == "pending"
+    }
+    
+    /// Check if this saved workout requires premium to open
+    private var requiresPremium: Bool {
+        workout.status == "saved" && !premiumManager.isPremiumUser
     }
     
     // Workout accent gradient (blue/purple for received workouts)
@@ -198,7 +216,14 @@ struct ReceivedWorkoutCard: View {
     }
     
     var body: some View {
-        Button(action: onTap) {
+        Button(action: {
+            if requiresPremium {
+                HapticManager.impact(.light)
+                showingPremiumUpgrade = true
+            } else {
+                onTap()
+            }
+        }) {
             VStack(alignment: .leading, spacing: 0) {
                 // Top section - Sender photo, Workout Name, Date
                 HStack(alignment: .top, spacing: 12) {
@@ -330,71 +355,21 @@ struct ReceivedWorkoutCard: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingPremiumUpgrade) {
+            PremiumUpgradeView(triggeringFeature: .savedWorkouts)
+        }
     }
     
     // MARK: - Sender Avatar View
     private var senderAvatarView: some View {
-        ZStack {
-            // Gradient ring around avatar
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: workoutGradient,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2.5
-                )
-                .frame(width: 52, height: 52)
-            
-            // Photo or initials
-            if let photoUrl = workout.senderProfilePhotoUrl, let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .clipShape(Circle())
-                    case .failure(_), .empty:
-                        initialsView
-                    @unknown default:
-                        initialsView
-                    }
-                }
-            } else {
-                initialsView
-            }
-        }
-    }
-    
-    private var initialsView: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: workoutGradient,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 44, height: 44)
-            
-            Text(senderInitials)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-        }
-    }
-    
-    private var senderInitials: String {
-        let components = workout.senderName.split(separator: " ")
-        if components.count >= 2 {
-            return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
-        } else if let first = components.first {
-            return String(first.prefix(2)).uppercased()
-        }
-        return "??"
+        CachedFriendPhoto(
+            friendId: workout.senderId.uuidString,
+            photoUrl: workout.senderProfilePhotoUrl,
+            name: workout.senderName,
+            size: 44,
+            showGradientRing: true,
+            gradientColors: workoutGradient
+        )
     }
     
     @ViewBuilder
@@ -409,17 +384,40 @@ struct ReceivedWorkoutCard: View {
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Color.blue))
         case "saved":
-            HStack(spacing: 4) {
-                Image(systemName: "bookmark.fill")
-                    .font(.system(size: 10))
-                Text("Saved")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
+            // Show PRO badge for free users, Saved badge for premium users
+            if requiresPremium {
+                HStack(spacing: 3) {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 9))
+                    Text("PRO")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                }
+                .foregroundColor(.black.opacity(0.8))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(
+                        LinearGradient(
+                            colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+            } else {
+                HStack(spacing: 4) {
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 10))
+                    Text("Saved")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().stroke(Color.green, lineWidth: 1))
             }
-            .foregroundColor(.green)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().stroke(Color.green, lineWidth: 1))
         default:
             EmptyView()
         }
@@ -454,16 +452,24 @@ struct ReceivedWorkoutDetailView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
     
+    @ObservedObject private var premiumManager = PremiumManager.shared
+    
     let workout: ReceivedWorkoutDTO
     
     @State private var isStartingWorkout = false
     @State private var showingExerciseDetail = false
     @State private var selectedCoreDataExercise: Exercise? = nil
     @State private var showingSavedConfirmation = false
+    @State private var showingPremiumUpgrade = false
     
     // Theme colors (blue/purple gradient for received workouts)
     private let themeColor: Color = .blue
     private let secondaryThemeColor: Color = .purple
+    
+    /// Check if user needs premium to start this received workout
+    private var requiresPremiumToStart: Bool {
+        !premiumManager.isPremiumUser
+    }
     
     private var totalSets: Int {
         workout.exerciseSets.reduce(0, +)
@@ -537,7 +543,13 @@ struct ReceivedWorkoutDetailView: View {
             ) {
                 let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
                 heavyImpact.impactOccurred()
-                startWorkout()
+                
+                // Check if this is a saved workout and user is not premium
+                if requiresPremiumToStart {
+                    showingPremiumUpgrade = true
+                } else {
+                    startWorkout()
+                }
             }
             
             // Prefetch exercise history
@@ -566,6 +578,9 @@ struct ReceivedWorkoutDetailView: View {
             Button("OK") {}
         } message: {
             Text("This workout has been saved. You can find it in your received workouts anytime.")
+        }
+        .sheet(isPresented: $showingPremiumUpgrade) {
+            PremiumUpgradeView(triggeringFeature: .savedWorkouts)
         }
     }
     
@@ -621,48 +636,27 @@ struct ReceivedWorkoutDetailView: View {
             
             // Sender info section
             HStack(spacing: 12) {
-                // Sender avatar
-                ZStack {
-                    Circle()
-                        .stroke(
-                            LinearGradient(
-                                colors: [themeColor, secondaryThemeColor],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 2
-                        )
-                        .frame(width: 40, height: 40)
-                    
-                    if let photoUrl = workout.senderProfilePhotoUrl, let url = URL(string: photoUrl) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 34, height: 34)
-                                    .clipShape(Circle())
-                            default:
-                                senderInitialsView
-                            }
-                        }
-                    } else {
-                        senderInitialsView
-                    }
-                        }
+                // Sender avatar with cached photo
+                CachedFriendPhoto(
+                    friendId: workout.senderId.uuidString,
+                    photoUrl: workout.senderProfilePhotoUrl,
+                    name: workout.senderName,
+                    size: 34,
+                    showGradientRing: true,
+                    gradientColors: [themeColor, secondaryThemeColor]
+                )
                         
-                        VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Sent by \(workout.senderName)")
-                                .font(.subheadline)
+                        .font(.subheadline)
                         .fontWeight(.medium)
                             
                     Text(formatSmartDate(workout.createdAt))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                         
-                        Spacer()
+                Spacer()
                 
                 // Status badge
                 statusBadge
@@ -672,34 +666,6 @@ struct ReceivedWorkoutDetailView: View {
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 8, x: 0, y: 3)
-    }
-    
-    private var senderInitialsView: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [themeColor, secondaryThemeColor],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 34, height: 34)
-            
-            Text(senderInitials)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white)
-        }
-    }
-    
-    private var senderInitials: String {
-        let components = workout.senderName.split(separator: " ")
-        if components.count >= 2 {
-            return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
-        } else if let first = components.first {
-            return String(first.prefix(2)).uppercased()
-        }
-        return "??"
     }
     
     @ViewBuilder
@@ -848,6 +814,13 @@ struct ReceivedWorkoutDetailView: View {
     }
     
     private func saveWorkout() {
+        // Check if user is premium - free users must upgrade to save workouts
+        guard premiumManager.isPremiumUser else {
+            HapticManager.impact(.light)
+            showingPremiumUpgrade = true
+            return
+        }
+        
         HapticManager.impact(.medium)
         Task {
             do {

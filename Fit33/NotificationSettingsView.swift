@@ -3,9 +3,10 @@ import UserNotifications
 
 struct NotificationSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var notificationManager = NotificationManager.shared
+    @ObservedObject private var notificationManager = NotificationManager.shared
     @State private var showingPermissionAlert = false
     @State private var expandedCategories: Set<String> = []
+    @State private var hasAppeared = false
     
     // Clean gradient card background matching app style
     private var cardBackground: Color {
@@ -62,7 +63,14 @@ struct NotificationSettingsView: View {
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            notificationManager.checkAuthorizationStatus()
+            // Only check once to prevent state changes causing navigation flicker
+            guard !hasAppeared else { return }
+            hasAppeared = true
+            
+            // Delay the check slightly to let navigation complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                notificationManager.checkAuthorizationStatus()
+            }
         }
         .alert("Notifications Disabled", isPresented: $showingPermissionAlert) {
             Button("Open Settings") {

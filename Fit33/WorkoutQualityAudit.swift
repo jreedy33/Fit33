@@ -6,6 +6,10 @@
 //  Generates 200 diverse test users and grades workout outputs against
 //  a detailed scorecard covering equipment, safety, practicality, and more.
 //
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
+//
+
+#if DEBUG
 
 import Foundation
 import CoreData
@@ -1022,6 +1026,8 @@ extension WorkoutQualityAudit {
         }
     }
 }
+
+#endif
 
 
 

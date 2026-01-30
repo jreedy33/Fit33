@@ -301,31 +301,38 @@ struct WorkoutGeneratorSelectionView: View {
             
             // Main button - hollow outline style (no icons)
             Button(action: handleMainAction) {
-                Text(mainButtonTitle)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(
-                        isMainButtonDisabled
-                            ? AnyShapeStyle(Color.gray)
-                            : AnyShapeStyle(LinearGradient(colors: mainButtonGradient, startPoint: .leading, endPoint: .trailing))
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        Capsule()
-                            .fill(Color.darkBackground)
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(
-                                isMainButtonDisabled
-                                    ? AnyShapeStyle(Color.gray.opacity(0.3))
-                                    : AnyShapeStyle(LinearGradient(colors: mainButtonGradient, startPoint: .leading, endPoint: .trailing)),
-                                lineWidth: 2
-                            )
-                    )
+                HStack(spacing: 8) {
+                    if isGenerating && currentStep == .equipment {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .purple))
+                            .scaleEffect(0.8)
+                    }
+                    Text(isGenerating && currentStep == .equipment ? "Generating..." : mainButtonTitle)
+                }
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundStyle(
+                    isMainButtonDisabled || isGenerating
+                        ? AnyShapeStyle(Color.gray)
+                        : AnyShapeStyle(LinearGradient(colors: mainButtonGradient, startPoint: .leading, endPoint: .trailing))
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    Capsule()
+                        .fill(Color.darkBackground)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            isMainButtonDisabled || isGenerating
+                                ? AnyShapeStyle(Color.gray.opacity(0.3))
+                                : AnyShapeStyle(LinearGradient(colors: mainButtonGradient, startPoint: .leading, endPoint: .trailing)),
+                            lineWidth: 2
+                        )
+                )
             }
-            .disabled(isMainButtonDisabled)
+            .disabled(isMainButtonDisabled || isGenerating)
         }
     }
     
@@ -431,6 +438,7 @@ struct WorkoutGeneratorSelectionView: View {
     }
     
     private func handleMainAction() {
+        print("🔘 [AUTOGEN] handleMainAction called - step: \(currentStep)")
         impactFeedback.impactOccurred()
         switch currentStep {
         case .duration:
@@ -447,6 +455,7 @@ struct WorkoutGeneratorSelectionView: View {
             }
             advanceToStep(.equipment)
         case .equipment:
+            print("🔘 [AUTOGEN] Equipment step - calling generateCustomWorkout()")
             generateCustomWorkout()
         default:
             break
@@ -474,15 +483,6 @@ struct WorkoutGeneratorSelectionView: View {
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-            
-            // Hidden navigation link for preview
-            NavigationLink(
-                destination: previewDestination,
-                isActive: $navigateToPreview
-            ) {
-                EmptyView()
-            }
-            .hidden()
             
             // Welcome Step (full screen, own layout)
             if currentStep == .welcome {
@@ -576,7 +576,7 @@ struct WorkoutGeneratorSelectionView: View {
                 }
             }
             
-            // Loading overlay
+            // Loading overlay            
             if isGenerating {
                 Color.black.opacity(0.3)
                     .ignoresSafeArea()
@@ -609,6 +609,19 @@ struct WorkoutGeneratorSelectionView: View {
                 "has_seen_onboarding": hasSeenOnboarding
             ])
             
+            // 🔧 FIX: Reset navigation state when view appears
+            // This ensures we can generate a new workout even if user navigated back from preview
+            if navigateToPreview {
+                print("🔧 [AUTOGEN] Resetting navigateToPreview on appear (was stuck as true)")
+                navigateToPreview = false
+            }
+            
+            // 🔧 FIX: Reset isGenerating state if it got stuck
+            if isGenerating {
+                print("🔧 [AUTOGEN] Resetting isGenerating on appear (was stuck as true)")
+                isGenerating = false
+            }
+            
             // Only set initial step if not navigating to preview
             if !navigateToPreview {
                 if !hasSeenOnboarding {
@@ -627,7 +640,6 @@ struct WorkoutGeneratorSelectionView: View {
                     if env.contains("home") { equipmentLocation = .home }
                     else if env.contains("outdoor") { equipmentLocation = .outdoor }
                     else if env.contains("hybrid") { equipmentLocation = .hybrid }
-                    else if env.contains("vacation") || env.contains("travel") { equipmentLocation = .vacation }
                     else { equipmentLocation = .gym }
                 }
             }
@@ -658,10 +670,32 @@ struct WorkoutGeneratorSelectionView: View {
                 navigateToPreview = false
             }
         }
+        .onChange(of: generatedExercises) { oldValue, newValue in
+            // 🔧 DEBUG: Track when exercises are generated
+            print("🔘 [AUTOGEN] generatedExercises changed: \(oldValue.count) → \(newValue.count)")
+            
+            // 🔧 FIX: Backup navigation trigger if exercises are generated but navigation didn't fire
+            if !newValue.isEmpty && !navigateToPreview && !isGenerating && currentStep == .equipment {
+                print("🔧 [AUTOGEN] Backup trigger: navigating to preview")
+                navigateToPreview = true
+            }
+        }
+        .onChange(of: navigateToPreview) { _, shouldNavigate in
+            // 🔧 DEBUG: Track navigation state changes
+            print("🔘 [AUTOGEN] navigateToPreview changed to: \(shouldNavigate)")
+            if shouldNavigate {
+                print("   └─ generatedExercises count: \(generatedExercises.count)")
+            }
+        }
         .alert("Error", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
+        }
+        // 🐛 FIX: navigationDestination MUST be on the ZStack, not on EmptyView inside it
+        // EmptyView inside ZStack doesn't reliably trigger navigation
+        .navigationDestination(isPresented: $navigateToPreview) {
+            previewDestination
         }
     }
     
@@ -746,15 +780,29 @@ struct WorkoutGeneratorSelectionView: View {
     }
     
     private func generateCustomWorkout() {
-        // 🔧 Guard against rapid re-generation (crash prevention)
+        print("🔘 [AUTOGEN] generateCustomWorkout() called")
+        print("   └─ isGenerating: \(isGenerating)")
+        print("   └─ navigateToPreview: \(navigateToPreview)")
+        print("   └─ isWorkoutActive: \(workoutManager.isWorkoutActive)")
+        
+        // 🔧 Safety: If navigateToPreview is somehow stuck, reset it
+        if navigateToPreview && generatedExercises.isEmpty {
+            print("🔧 [AUTOGEN] Resetting stuck navigateToPreview (no exercises)")
+            navigateToPreview = false
+        }
+        
+        // 🔧 Guard against rapid re-generation (but allow if previous was stuck)
         guard !isGenerating, !navigateToPreview, !workoutManager.isWorkoutActive else {
             print("⚠️ [Generator] Blocked duplicate generation request")
+            print("   ❌ isGenerating=\(isGenerating), navigateToPreview=\(navigateToPreview), isWorkoutActive=\(workoutManager.isWorkoutActive)")
             return
         }
         isGenerating = true
+        print("🔘 [AUTOGEN] Starting Task for workout generation...")
 
         Task {
             do {
+                print("🔘 [AUTOGEN] Task started - about to call generatorService.generateWorkout")
                 // Use user's profile equipment if nothing selected
                 let userEquipment = (userManager.currentUser?.equipment as? [String]) ?? ["Barbell", "Dumbbells", "Bodyweight", "Cables"]
                 var equipment: [String] = selectedEquipment.isEmpty ? userEquipment : Array(selectedEquipment)
@@ -788,21 +836,31 @@ struct WorkoutGeneratorSelectionView: View {
                     }
                 }
                 
+                print("🔘 [AUTOGEN] Calling generatorService.generateWorkout with:")
+                print("   └─ primaryMuscles: \(Array(selectedPrimaryMuscles))")
+                print("   └─ secondaryMuscles: \(Array(selectedSecondaryMuscles))")
+                print("   └─ equipment: \(equipment)")
+                print("   └─ count: \(effectiveExerciseCount)")
+                
                 let exercises = try await generatorService.generateWorkout(
                     primaryMuscles: Array(selectedPrimaryMuscles),
                     secondaryMuscles: Array(selectedSecondaryMuscles),
                     equipment: equipment,
                     count: effectiveExerciseCount
                 )
+                
+                print("🔘 [AUTOGEN] generateWorkout returned \(exercises.count) exercises")
 
                 await MainActor.run {
                     generatedExercises = exercises
                     isGenerating = false
 
                     if exercises.isEmpty {
+                        print("⚠️ [AUTOGEN] No exercises generated - showing error")
                         errorMessage = "No exercises found. Please try different options."
                         showingError = true
                     } else {
+                        print("✅ [AUTOGEN] Generated \(exercises.count) exercises - navigating to preview")
                         // 🚀 PERF: Dispatch prefetch to background immediately
                         // Uses Task.detached to avoid blocking navigation
                         let exerciseNames = exercises.map { $0.name }
@@ -819,7 +877,7 @@ struct WorkoutGeneratorSelectionView: View {
                     isGenerating = false
                     errorMessage = "Failed to generate workout: \(error.localizedDescription)"
                     showingError = true
-                    print("❌ Failed to generate custom workout: \(error)")
+                    print("❌ [AUTOGEN] Failed to generate custom workout: \(error)")
                 }
             }
         }
@@ -1897,7 +1955,6 @@ enum EquipmentLocation: String, CaseIterable {
     case home = "Home"
     case outdoor = "Outdoor"
     case hybrid = "Hybrid"
-    case vacation = "Vacation"
     
     var icon: String {
         switch self {
@@ -1905,7 +1962,6 @@ enum EquipmentLocation: String, CaseIterable {
         case .home: return "house.fill"
         case .outdoor: return "leaf.fill"
         case .hybrid: return "arrow.triangle.2.circlepath"
-        case .vacation: return "airplane"
         }
     }
     
@@ -1920,8 +1976,6 @@ enum EquipmentLocation: String, CaseIterable {
             return ["Bodyweight", "Kettlebell", "Bands"]
         case .hybrid:
             return ["Dumbbells", "Bodyweight", "Bands", "Kettlebell"]
-        case .vacation:
-            return ["Bodyweight", "Bands"]
         }
     }
     
@@ -1974,18 +2028,6 @@ enum EquipmentLocation: String, CaseIterable {
                 ("Barbell", "figure.strengthtraining.traditional", .purple),
                 ("Smith Machine", "rectangle.stack.fill", .indigo),
                 ("TRX/Rings", "link", .mint)
-            ]
-        case .vacation:
-            return [
-                ("Bodyweight", "figure.walk", .teal),
-                ("Bands", "circle.hexagongrid.fill", .pink),
-                ("Towel", "rectangle.compress.vertical", .brown),
-                ("Chair", "chair.fill", .gray),
-                ("Wall", "rectangle.portrait.fill", .gray),
-                ("Dumbbells", "dumbbell.fill", .blue),
-                ("Kettlebell", "scalemass.fill", .orange),
-                ("TRX/Rings", "link", .mint),
-                ("Jump Rope", "figure.jumprope", .red)
             ]
         }
     }
@@ -2187,8 +2229,6 @@ struct EquipmentStepView: View {
                     selectedLocation = .outdoor
                 } else if env.contains("hybrid") {
                     selectedLocation = .hybrid
-                } else if env.contains("vacation") || env.contains("travel") {
-                    selectedLocation = .vacation
                 } else {
                     selectedLocation = .gym
                 }
@@ -2732,7 +2772,6 @@ struct EquipmentContentView: View {
                 if env.contains("home") { selectedLocation = .home }
                 else if env.contains("outdoor") { selectedLocation = .outdoor }
                 else if env.contains("hybrid") { selectedLocation = .hybrid }
-                else if env.contains("vacation") || env.contains("travel") { selectedLocation = .vacation }
                 else { selectedLocation = .gym }
             }
             

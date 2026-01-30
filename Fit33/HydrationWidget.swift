@@ -711,12 +711,66 @@ struct WaterPresetButton: View {
 struct AddWaterSheet: View {
     @ObservedObject var hydrationService: HydrationService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var customAmount: String = ""
+    
+    // Unit preference - synced across app
+    @AppStorage("hydrationUnitPreference") private var usesOz: Bool = true
+    
+    private let mlPerOz = 29.5735
+    private let gradientColors: [Color] = [.cyan, .blue]
+    
+    // Quick add amounts
+    private let quickAddAmountsOz = [8, 12, 16, 20, 24, 32]
+    private let quickAddAmountsMl = [100, 200, 250, 300, 500, 750]
     
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
+                    // Unit Toggle
+                    HStack(spacing: 0) {
+                        Button(action: {
+                            HapticManager.selectionChanged()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                usesOz = true
+                            }
+                        }) {
+                            Text("oz")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(usesOz ? .white : .secondary)
+                                .frame(width: 60, height: 36)
+                                .background(
+                                    usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .cornerRadius(8)
+                        }
+                        
+                        Button(action: {
+                            HapticManager.selectionChanged()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                usesOz = false
+                            }
+                        }) {
+                            Text("ml")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(!usesOz ? .white : .secondary)
+                                .frame(width: 60, height: 36)
+                                .background(
+                                    !usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.systemGray6))
+                    )
+                    .padding(.top, 8)
+                    
                     // Custom amount input
                     VStack(spacing: 12) {
                         Text("Custom Amount")
@@ -733,9 +787,10 @@ struct AddWaterSheet: View {
                                 .background(Color(.systemGray6))
                                 .cornerRadius(12)
                             
-                            Text("ml")
+                            Text(usesOz ? "oz" : "ml")
                                 .font(.title2)
                                 .foregroundColor(.secondary)
+                                .frame(width: 40)
                         }
                     }
                     .padding(.horizontal)
@@ -751,28 +806,56 @@ struct AddWaterSheet: View {
                             GridItem(.flexible()),
                             GridItem(.flexible())
                         ], spacing: 12) {
-                            ForEach([100, 200, 250, 300, 500, 750], id: \.self) { amount in
-                                Button(action: {
-                                    HapticManager.impact(.light)
-                                    Task {
-                                        await hydrationService.logWater(amountMl: amount)
-                                        dismiss()
-                                    }
-                                }) {
-                                    Text("\(amount)ml")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 14)
-                                        .background(
-                                            LinearGradient(
-                                                colors: [.cyan, .blue],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
+                            if usesOz {
+                                ForEach(quickAddAmountsOz, id: \.self) { oz in
+                                    Button(action: {
+                                        HapticManager.impact(.light)
+                                        let ml = Int(Double(oz) * mlPerOz)
+                                        Task {
+                                            await hydrationService.logWater(amountMl: ml)
+                                            dismiss()
+                                        }
+                                    }) {
+                                        Text("\(oz) oz")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .background(
+                                                LinearGradient(
+                                                    colors: gradientColors,
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
                                             )
-                                        )
-                                        .cornerRadius(12)
+                                            .cornerRadius(12)
+                                    }
+                                }
+                            } else {
+                                ForEach(quickAddAmountsMl, id: \.self) { amount in
+                                    Button(action: {
+                                        HapticManager.impact(.light)
+                                        Task {
+                                            await hydrationService.logWater(amountMl: amount)
+                                            dismiss()
+                                        }
+                                    }) {
+                                        Text("\(amount) ml")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .background(
+                                                LinearGradient(
+                                                    colors: gradientColors,
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                            .cornerRadius(12)
+                                    }
                                 }
                             }
                         }
@@ -793,8 +876,10 @@ struct AddWaterSheet: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Add") {
                         guard let amount = Int(customAmount), amount > 0 else { return }
+                        // Convert to ml if using oz
+                        let ml = usesOz ? Int(Double(amount) * mlPerOz) : amount
                         Task {
-                            await hydrationService.logWater(amountMl: amount)
+                            await hydrationService.logWater(amountMl: ml)
                             dismiss()
                         }
                     }

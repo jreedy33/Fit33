@@ -108,20 +108,40 @@ class SupabaseManager: ObservableObject {
     }
     
     /// Verifies that a user actually exists in the database (not just has a session)
+    /// Check if a user profile exists AND has meaningful data (not just an empty row)
+    /// Returns false if profile is missing OR if critical fields are null
     private func verifyUserExists(userId: UUID) async -> Bool {
         do {
+            // Select critical fields to verify the profile has actual data
             let response: [UserProfileDTO] = try await client
                 .from("user_profiles")
-                .select("id")
+                .select("id, name, email, has_completed_onboarding")
                 .eq("id", value: userId.uuidString)
                 .execute()
                 .value
             
-            return !response.isEmpty
-        } catch {
-            print("⚠️ Error verifying user exists: \(error)")
-            // If we can't verify, assume user exists to avoid accidental sign-outs
+            // Check if profile exists AND has meaningful data
+            guard let profile = response.first else {
+                print("📝 [VERIFY] No profile found for user \(userId.uuidString)")
+                return false
+            }
+            
+            // If name and email are both null/empty, treat as incomplete profile
+            let hasName = profile.name != nil && !profile.name!.isEmpty
+            let hasEmail = profile.email != nil && !profile.email!.isEmpty
+            
+            if !hasName && !hasEmail {
+                print("⚠️ [VERIFY] Profile exists but has no name or email - treating as new user")
+                return false
+            }
+            
+            print("✅ [VERIFY] Valid profile found - Name: \(profile.name ?? "nil"), Email: \(profile.email ?? "nil")")
             return true
+        } catch {
+            print("⚠️ [VERIFY] Error checking user profile: \(error)")
+            // IMPORTANT: If we can't verify, assume user is NEW so profile gets created
+            // This is safer than assuming they exist and leaving them with null data
+            return false
         }
     }
     
@@ -217,8 +237,12 @@ class SupabaseManager: ObservableObject {
     
     /// Sign in with Apple using the identity token from ASAuthorizationAppleIDCredential
     /// Returns true if this is a NEW user who needs onboarding
+    /// - Parameters:
+    ///   - idToken: The identity token from Apple
+    ///   - nonce: The nonce used for the request
+    ///   - appleProvidedName: The full name provided by Apple (only available on first sign-in)
     @discardableResult
-    func signInWithApple(idToken: String, nonce: String) async throws -> Bool {
+    func signInWithApple(idToken: String, nonce: String, appleProvidedName: String? = nil) async throws -> Bool {
         await MainActor.run { isLoading = true }
         
         do {
@@ -238,15 +262,31 @@ class SupabaseManager: ObservableObject {
                 // Get email from Supabase session (Apple provides this to Supabase)
                 let appleEmail = session.user.email ?? "apple_user_\(session.user.id.uuidString.prefix(8))@private.appleid.com"
                 
-                // Try to get name from various sources
-                var appleName = "Apple User"
-                if let fullName = session.user.userMetadata["full_name"] as? String, !fullName.isEmpty {
+                // Priority for name:
+                // 1. appleProvidedName (directly from Apple credentials - only first sign-in)
+                // 2. Persisted name from previous sign-in (UserDefaults)
+                // 3. Supabase user metadata
+                // 4. Email prefix (if not private relay)
+                // 5. Fallback "Apple User"
+                var appleName: String
+                
+                if let providedName = appleProvidedName, !providedName.isEmpty, providedName != "Apple User" {
+                    appleName = providedName
+                    // Persist for future sign-ins (Apple only provides name once)
+                    UserDefaults.standard.set(providedName, forKey: "apple_user_name_\(session.user.id.uuidString)")
+                    print("💾 [APPLE] Persisted user name for future sign-ins: \(providedName)")
+                } else if let persistedName = UserDefaults.standard.string(forKey: "apple_user_name_\(session.user.id.uuidString)"), !persistedName.isEmpty {
+                    appleName = persistedName
+                    print("📂 [APPLE] Using persisted name from previous sign-in: \(persistedName)")
+                } else if let fullName = session.user.userMetadata["full_name"] as? String, !fullName.isEmpty {
                     appleName = fullName
                 } else if let name = session.user.userMetadata["name"] as? String, !name.isEmpty {
                     appleName = name
                 } else if let email = session.user.email, !email.contains("privaterelay") {
                     // Use part of email as name if no name provided
                     appleName = email.components(separatedBy: "@").first ?? "Apple User"
+                } else {
+                    appleName = "Apple User"
                 }
                 
                 print("📧 Apple Sign-In - Email: \(appleEmail), Name: \(appleName)")
@@ -277,8 +317,8 @@ class SupabaseManager: ObservableObject {
         }
     }
     
-    /// Handle OAuth callback URL (for Google Sign-In)
-    func handleOAuthCallback(url: URL) async throws {
+    /// Handle OAuth callback URL (for Google/Facebook Sign-In)
+    func handleOAuthCallback(url: URL) async throws -> (isNewUser: Bool, socialUsername: String?) {
         await MainActor.run { isLoading = true }
         
         do {
@@ -286,14 +326,39 @@ class SupabaseManager: ObservableObject {
             
             // Check if this is a new user (no profile exists yet)
             let profileExists = await verifyUserExists(userId: session.user.id)
+            var isNewUser = false
+            var socialUsername: String? = nil
             
             if !profileExists {
-                // Create a new profile for this Google Sign-In user
-                let googleEmail = session.user.email ?? "google_user_\(session.user.id.uuidString.prefix(8))@gmail.com"
-                let googleName = session.user.userMetadata["full_name"] as? String 
-                    ?? session.user.userMetadata["name"] as? String 
-                    ?? "Google User"
-                try await createUserProfile(userId: session.user.id, name: googleName, email: googleEmail)
+                // Determine provider from metadata
+                let provider = session.user.appMetadata["provider"] as? String ?? "unknown"
+                
+                let userEmail: String
+                let userName: String
+                
+                if provider == "facebook" {
+                    // Facebook-specific data extraction
+                    userEmail = session.user.email ?? "facebook_user_\(session.user.id.uuidString.prefix(8))@facebook.com"
+                    userName = session.user.userMetadata["full_name"] as? String 
+                        ?? session.user.userMetadata["name"] as? String 
+                        ?? "Facebook User"
+                    
+                    // Extract username if available (could be Facebook or connected Instagram username)
+                    socialUsername = session.user.userMetadata["user_name"] as? String 
+                        ?? session.user.userMetadata["username"] as? String
+                    
+                    print("📘 Facebook Sign-In - Username: @\(socialUsername ?? "unknown"), Name: \(userName)")
+                } else {
+                    // Google or other OAuth provider
+                    userEmail = session.user.email ?? "oauth_user_\(session.user.id.uuidString.prefix(8))@email.com"
+                    userName = session.user.userMetadata["full_name"] as? String 
+                        ?? session.user.userMetadata["name"] as? String 
+                        ?? "User"
+                    print("🔐 OAuth Sign-In - Provider: \(provider), Name: \(userName)")
+                }
+                
+                try await createUserProfile(userId: session.user.id, name: userName, email: userEmail, hasCompletedOnboarding: false)
+                isNewUser = true
             }
             
             await MainActor.run {
@@ -302,13 +367,17 @@ class SupabaseManager: ObservableObject {
                 isLoading = false
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
-            print("✅ Google Sign-In successful: \(session.user.email ?? "unknown")")
+            print("✅ OAuth Sign-In successful: \(session.user.email ?? "unknown")")
             
-            // Sync all data from cloud
-            await syncAllDataFromCloud()
+            // Only sync for existing users
+            if !isNewUser {
+                await syncAllDataFromCloud()
+            }
+            
+            return (isNewUser, socialUsername)
         } catch {
             await MainActor.run { isLoading = false }
-            print("❌ Google OAuth callback error: \(error.localizedDescription)")
+            print("❌ OAuth callback error: \(error.localizedDescription)")
             throw error
         }
     }
@@ -320,6 +389,19 @@ class SupabaseManager: ObservableObject {
         var components = URLComponents(string: "\(supabaseURL)/auth/v1/authorize")
         components?.queryItems = [
             URLQueryItem(name: "provider", value: "google"),
+            URLQueryItem(name: "redirect_to", value: redirectURL)
+        ]
+        
+        return components?.url
+    }
+    
+    /// Get the OAuth URL for Facebook Sign-In
+    func getFacebookOAuthURL() -> URL? {
+        let redirectURL = "fit33://login-callback"
+        
+        var components = URLComponents(string: "\(supabaseURL)/auth/v1/authorize")
+        components?.queryItems = [
+            URLQueryItem(name: "provider", value: "facebook"),
             URLQueryItem(name: "redirect_to", value: redirectURL)
         ]
         
@@ -599,8 +681,8 @@ class SupabaseManager: ObservableObject {
             throw NSError(domain: "SupabaseManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
         }
         
-        let fileName = "\(userId.uuidString)/profile.jpg"
-        let bucket = "profile-photos"
+        let fileName = "profile_photos/\(userId.uuidString).jpg"
+        let bucket = "avatars"
         
         // Upload to Supabase Storage
         try await client.storage
@@ -645,8 +727,8 @@ class SupabaseManager: ObservableObject {
     func deleteProfilePhoto() async throws {
         guard let userId = currentUser?.id else { return }
         
-        let fileName = "\(userId.uuidString)/profile.jpg"
-        let bucket = "profile-photos"
+        let fileName = "profile_photos/\(userId.uuidString).jpg"
+        let bucket = "avatars"
         
         // Delete from storage
         try await client.storage
@@ -885,11 +967,16 @@ class SupabaseManager: ObservableObject {
     
     // MARK: - Profile Sync from Core Data
     
+    /// Syncs the local Core Data user profile to Supabase cloud
+    /// Uses UPSERT to ensure data is saved even if profile row is missing or empty
     func syncCoreDataProfile(from user: User) async throws {
-        guard currentUser != nil else {
-            print("⚠️ No authenticated user to sync profile")
+        guard let authUser = currentUser else {
+            print("⚠️ [SYNC] No authenticated Supabase user - cannot sync profile")
             return
         }
+        
+        print("☁️ [SYNC] Starting profile sync for user: \(authUser.id.uuidString)")
+        print("☁️ [SYNC] Core Data user: name=\(user.name ?? "nil"), email=\(user.email ?? "nil")")
         
         struct ProfileSync: Encodable {
             let name: String?
@@ -954,29 +1041,90 @@ class SupabaseManager: ObservableObject {
             week_start_day: unitSettings.startWeekOn.rawValue
         )
         
-        guard let userId = currentUser?.id else { return }
-        
-        do {
-            try await client
-                .from("user_profiles")
-                .update(profile)
-                .eq("id", value: userId.uuidString)
-                .execute()
-            let ft = user.heightInches / 12
-            let inches = user.heightInches % 12
-            print("✅ Full profile synced to cloud:")
-            print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil"), Age: \(user.age)")
-            print("   Gender: \(user.gender ?? "nil")")
-            print("   Height: \(ft)'\(inches)\" (\(user.heightInches) in / \(user.height)cm)")
-            print("   Weight: \(user.weightLbs) lbs (\(user.weight)kg)")
-            print("   Goal: \(user.fitnessGoal ?? "nil"), Level: \(user.experienceLevel ?? "nil")")
-            print("   Strength: \(user.strengthLevel ?? "nil"), Environment: \(user.workoutEnvironment ?? "nil")")
-            print("   Equipment: \(equipmentArray), Days: \(user.availableDays)")
-            print("   XP: \(user.xp), Streak: \(user.currentStreak), Workouts: \(user.totalWorkouts)")
-        } catch {
-            print("❌ Error syncing Core Data profile: \(error)")
-            // Don't throw - we don't want to block the app if sync fails
+        guard let userId = currentUser?.id else { 
+            print("❌ [SYNC] No authenticated user ID - cannot sync profile")
+            return 
         }
+        
+        // Use UPSERT instead of UPDATE to ensure data is saved even if profile doesn't exist
+        // This fixes the issue where UPDATE silently fails if no matching row exists
+        struct ProfileUpsert: Encodable {
+            let id: String
+            let name: String?
+            let email: String?
+            let birthday: String?
+            let age: Int?
+            let gender: String?
+            let height_cm: Double?
+            let height_inches: Int?
+            let weight_kg: Double?
+            let weight_lbs: Double?
+            let fitness_goal: String?
+            let experience_level: String?
+            let strength_level: String?
+            let workout_environment: String?
+            let equipment: [String]?
+            let available_days: Int?
+            let current_streak: Int?
+            let longest_streak: Int?
+            let total_workouts: Int?
+            let xp: Int?
+            let last_workout_date: String?
+            let updated_at: String
+            let weight_unit: String?
+            let height_unit: String?
+            let distance_unit: String?
+            let week_start_day: String?
+            let has_completed_onboarding: Bool
+        }
+        
+        let upsertProfile = ProfileUpsert(
+            id: userId.uuidString,
+            name: profile.name,
+            email: profile.email,
+            birthday: profile.birthday,
+            age: profile.age,
+            gender: profile.gender,
+            height_cm: profile.height_cm,
+            height_inches: profile.height_inches,
+            weight_kg: profile.weight_kg,
+            weight_lbs: profile.weight_lbs,
+            fitness_goal: profile.fitness_goal,
+            experience_level: profile.experience_level,
+            strength_level: profile.strength_level,
+            workout_environment: profile.workout_environment,
+            equipment: profile.equipment,
+            available_days: profile.available_days,
+            current_streak: profile.current_streak,
+            longest_streak: profile.longest_streak,
+            total_workouts: profile.total_workouts,
+            xp: profile.xp,
+            last_workout_date: profile.last_workout_date,
+            updated_at: profile.updated_at,
+            weight_unit: profile.weight_unit,
+            height_unit: profile.height_unit,
+            distance_unit: profile.distance_unit,
+            week_start_day: profile.week_start_day,
+            has_completed_onboarding: true
+        )
+        
+        try await client
+            .from("user_profiles")
+            .upsert(upsertProfile, onConflict: "id")
+            .execute()
+        
+        print("✅ [SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)")
+        let ft = user.heightInches / 12
+        let inches = user.heightInches % 12
+        print("✅ Full profile synced to cloud:")
+        print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil"), Age: \(user.age)")
+        print("   Gender: \(user.gender ?? "nil")")
+        print("   Height: \(ft)'\(inches)\" (\(user.heightInches) in / \(user.height)cm)")
+        print("   Weight: \(user.weightLbs) lbs (\(user.weight)kg)")
+        print("   Goal: \(user.fitnessGoal ?? "nil"), Level: \(user.experienceLevel ?? "nil")")
+        print("   Strength: \(user.strengthLevel ?? "nil"), Environment: \(user.workoutEnvironment ?? "nil")")
+        print("   Equipment: \(equipmentArray), Days: \(user.availableDays)")
+        print("   XP: \(user.xp), Streak: \(user.currentStreak), Workouts: \(user.totalWorkouts)")
     }
     
     // MARK: - Custom Exercises
@@ -1033,7 +1181,46 @@ class SupabaseManager: ObservableObject {
             .execute()
     }
     
+    /// 🔒 Track in-flight exercise fetch to prevent duplicates
+    private static var exerciseFetchTask: Task<[ExerciseDTO], Error>?
+    private static var cachedExercises: [ExerciseDTO]?
+    private static var cacheTimestamp: Date?
+    private static let exerciseCacheTTL: TimeInterval = 60 // 60 second cache
+    
     func fetchAllExercises() async throws -> [ExerciseDTO] {
+        // ⚡️ PERFORMANCE: Check cache first
+        if let cached = SupabaseManager.cachedExercises,
+           let timestamp = SupabaseManager.cacheTimestamp,
+           Date().timeIntervalSince(timestamp) < SupabaseManager.exerciseCacheTTL {
+            print("⚡️ [EXERCISES] Returning \(cached.count) cached exercises")
+            return cached
+        }
+        
+        // ⚡️ PERFORMANCE: Reuse in-flight request if one exists
+        if let existingTask = SupabaseManager.exerciseFetchTask {
+            print("⚡️ [EXERCISES] Reusing in-flight fetch request")
+            return try await existingTask.value
+        }
+        
+        // Create new fetch task
+        let task = Task<[ExerciseDTO], Error> {
+            defer { SupabaseManager.exerciseFetchTask = nil }
+            return try await self.performExerciseFetch()
+        }
+        
+        SupabaseManager.exerciseFetchTask = task
+        
+        let result = try await task.value
+        
+        // Cache the result
+        SupabaseManager.cachedExercises = result
+        SupabaseManager.cacheTimestamp = Date()
+        
+        return result
+    }
+    
+    /// Internal exercise fetch implementation
+    private func performExerciseFetch() async throws -> [ExerciseDTO] {
         // ⚡️ PERFORMANCE: Use materialized view for public exercises (60-90% faster)
         // Fetch ALL exercises from Supabase using pagination
         // Supabase default limit is 1000, so we need to paginate to get all ~7000 exercises
@@ -2487,8 +2674,39 @@ class SupabaseManager: ObservableObject {
     
     // MARK: - Comprehensive Data Sync
     
+    /// 🔒 Sync state tracking to prevent duplicate syncs
+    private static var isSyncInProgress = false
+    private static var lastSyncTime: Date?
+    private static let minSyncInterval: TimeInterval = 30 // Minimum 30 seconds between syncs
+    
     /// Syncs all user data from cloud to Core Data
+    /// ⚡️ PERFORMANCE: Now with deduplication, throttling, and heavy work signaling
     func syncAllDataFromCloud() async {
+        // 🛡️ DEDUPLICATION: Prevent concurrent syncs
+        guard !SupabaseManager.isSyncInProgress else {
+            print("⚠️ [SYNC] Skipping - sync already in progress")
+            return
+        }
+        
+        // 🛡️ THROTTLING: Prevent too-frequent syncs
+        if let lastSync = SupabaseManager.lastSyncTime,
+           Date().timeIntervalSince(lastSync) < SupabaseManager.minSyncInterval {
+            print("⚠️ [SYNC] Skipping - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (min: \(Int(SupabaseManager.minSyncInterval))s)")
+            return
+        }
+        
+        SupabaseManager.isSyncInProgress = true
+        
+        // 🔴 Signal heavy work - pauses video prefetching to reduce CPU load
+        HeavyWorkSentinel.shared.beginHeavyWork(reason: "Data sync from cloud")
+        
+        defer { 
+            SupabaseManager.isSyncInProgress = false 
+            SupabaseManager.lastSyncTime = Date()
+            // 🟢 Signal heavy work complete - resumes video prefetching
+            HeavyWorkSentinel.shared.endHeavyWork(reason: "Data sync from cloud")
+        }
+        
         print("🔄 Starting comprehensive data sync from cloud...")
         
         do {
@@ -2500,7 +2718,7 @@ class SupabaseManager: ObservableObject {
             
             // 🛡️ Only sync exercises if no workout is active (prevents data loss!)
             if !WorkoutManager.shared.isWorkoutActive {
-            await ExerciseLibraryService.shared.syncExercisesFromCloud()
+                await ExerciseLibraryService.shared.syncExercisesFromCloud()
             } else {
                 print("⚠️ [SYNC] Skipping exercise sync during active workout")
             }

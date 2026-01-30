@@ -447,7 +447,11 @@ struct SmartProgramExerciseCard: View {
                             Text("•")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                            Text("\(Int(weight)) lbs")
+                            // Preserve decimals (e.g., 180.5 lbs)
+                            let weightStr = weight.truncatingRemainder(dividingBy: 1) == 0 
+                                ? "\(Int(weight))" 
+                                : String(format: "%.1f", weight)
+                            Text("\(weightStr) lbs")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

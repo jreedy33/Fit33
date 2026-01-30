@@ -21,6 +21,8 @@ struct StretchModeView: View {
     
     // Video state
     @State private var player: AVPlayer?
+    @State private var queuePlayer: AVQueuePlayer?
+    @State private var playerLooper: AVPlayerLooper?
     @State private var currentExerciseName: String = "Loading..."
     @State private var isLoadingVideo = true
     
@@ -49,7 +51,12 @@ struct StretchModeView: View {
         }
         .onDisappear {
             stopTimer()
+            // Proper cleanup of AVPlayerLooper
+            playerLooper?.disableLooping()
+            queuePlayer?.pause()
             player?.pause()
+            playerLooper = nil
+            queuePlayer = nil
             player = nil
         }
     }
@@ -551,21 +558,17 @@ struct StretchModeView: View {
     
     private func setupPlayer(with url: URL) {
         let playerItem = AVPlayerItem(url: url)
-        let newPlayer = AVPlayer(playerItem: playerItem)
-        newPlayer.isMuted = true
         
-        // Loop the video continuously
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
+        // Use AVQueuePlayer + AVPlayerLooper for seamless looping (no gaps)
+        let newQueuePlayer = AVQueuePlayer(playerItem: playerItem)
+        newQueuePlayer.isMuted = true
         
-        player = newPlayer
-        newPlayer.play()
+        // ⚡️ CRITICAL: Store looper reference to prevent deallocation
+        playerLooper = AVPlayerLooper(player: newQueuePlayer, templateItem: playerItem)
+        
+        queuePlayer = newQueuePlayer
+        player = newQueuePlayer
+        newQueuePlayer.play()
         print("🎬 Video playing: \(url.lastPathComponent)")
     }
 }

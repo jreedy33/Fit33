@@ -4,16 +4,15 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var notificationManager = NotificationManager.shared
     
-    #if DEBUG
     @State private var versionTapCount = 0
     @State private var showDevMenu = false
     @State private var showAdminPassword = false
     @State private var isAdminAuthenticated = false
-    #endif
     
     @State private var showBugReportSheet = false
     @StateObject private var appearanceManager = AppearanceManager.shared
     @StateObject private var adManager = AdManager.shared
+    @StateObject private var premiumManager = PremiumManager.shared
     
     // Clean gradient card background matching app style
     private var cardBackground: Color {
@@ -155,6 +154,10 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 adsToggleRow()
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                freeUserToggleRow()
                                 
                                 Divider().padding(.leading, 52)
                                 
@@ -363,7 +366,6 @@ struct SettingsView: View {
                         // About Section
                         settingsSection(title: "About") {
                             VStack(spacing: 0) {
-                                #if DEBUG
                                 // Tappable version row (5 taps for dev menu)
                                 Button(action: {
                                     versionTapCount += 1
@@ -398,17 +400,6 @@ struct SettingsView: View {
                                 .hidden()
                                 
                                 Divider().padding(.leading, 52)
-                                #else
-                                // Production: Simple version row (no dev menu access)
-                                infoRow(
-                                    icon: "info.circle.fill",
-                                    title: "Version",
-                                    value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0",
-                                    color: .gray
-                                )
-                                
-                                Divider().padding(.leading, 52)
-                                #endif
                                 
                                 NavigationLink(destination: TermsConditionsView()) {
                                     HStack(spacing: 16) {
@@ -485,7 +476,6 @@ struct SettingsView: View {
         .onAppear {
             SessionLogManager.shared.logScreen(.settings)
         }
-        #if DEBUG
         .sheet(isPresented: $showAdminPassword) {
             AdminPasswordView(isAuthenticated: $isAdminAuthenticated)
         }
@@ -498,7 +488,6 @@ struct SettingsView: View {
                 }
             }
         }
-        #endif
         .sheet(isPresented: $showBugReportSheet) {
             ManualBugReportView()
         }
@@ -601,6 +590,57 @@ struct SettingsView: View {
             
             Toggle("", isOn: $adManager.adsEnabled)
                 .labelsHidden()
+        }
+        .padding(16)
+    }
+    
+    private func freeUserToggleRow() -> some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: premiumManager.isPremiumUser 
+                                ? [Color.green.opacity(0.15), Color.mint.opacity(0.15)]
+                                : [Color.orange.opacity(0.15), Color.yellow.opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 36, height: 36)
+                Image(systemName: premiumManager.isPremiumUser ? "crown.fill" : "person.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: premiumManager.isPremiumUser 
+                                ? [Color.green, Color.mint]
+                                : [Color.orange, Color.yellow],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Free User Mode")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Text(premiumManager.isPremiumUser ? "Premium features unlocked" : "Testing as free user")
+                    .font(.caption)
+                    .foregroundColor(premiumManager.isPremiumUser ? .green : .orange)
+            }
+            
+            Spacer()
+            
+            // Toggle is inverted: ON = Free user (not premium), OFF = Premium user
+            Toggle("", isOn: Binding(
+                get: { !premiumManager.isPremiumUser },
+                set: { premiumManager.setPremiumStatus(!$0) }
+            ))
+            .labelsHidden()
+            .tint(.orange)
         }
         .padding(16)
     }

@@ -43,6 +43,10 @@ class AdvancedIntelligenceService: ObservableObject {
         iso8601.string(from: date)
     }
     
+    // ⚡️ PERFORMANCE: Activity tracking deduplication
+    private var lastActivityTrackDate: String?
+    private var isTrackingActivity = false
+    
     private init() {
         print("🧠 [ADVANCED INTELLIGENCE] Service initialized")
     }
@@ -404,8 +408,17 @@ class AdvancedIntelligenceService: ObservableObject {
     // MARK: - 5. STEPS ↔ RECOVERY
     
     /// Track daily activity for recovery analysis
+    /// ⚡️ PERFORMANCE: Deduplicated to prevent multiple calls for same date
     func trackActivityForRecovery(userId: UUID, date: Date, steps: Int) async {
         let dateString = formatDate(date)
+        
+        // ⚡️ PERFORMANCE: Skip if already tracking or already tracked this date
+        guard !isTrackingActivity else { return }
+        guard lastActivityTrackDate != dateString else { return }
+        
+        isTrackingActivity = true
+        defer { isTrackingActivity = false }
+        
         let activityLevel = getActivityLevel(steps: steps)
         
         do {
@@ -421,6 +434,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,date")
                 .execute()
             
+            lastActivityTrackDate = dateString
             print("👣 [INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))")
         } catch {
             print("⚠️ [INTELLIGENCE] Failed to track activity: \(error)")
@@ -1097,6 +1111,11 @@ class AdvancedIntelligenceService: ObservableObject {
         let optimalTime = await timeData
         let topExercises = await effectiveExercises
         
+        // Priority 0: Weight trend insights (if user is tracking)
+        if let weightRecommendation = getWeightTrendRecommendation() {
+            return weightRecommendation
+        }
+        
         // Priority 1: Recovery status (most critical)
         if recovery.status == .fatigued {
             return PersonalizedRecommendation(
@@ -1171,6 +1190,63 @@ class AdvancedIntelligenceService: ObservableObject {
         
         // Fallback: Streak-based motivation
         return getStreakBasedRecommendation(streak: streak)
+    }
+    
+    // MARK: - Weight Trend Recommendations
+    
+    /// Get a recommendation based on user's weight tracking progress
+    private func getWeightTrendRecommendation() -> PersonalizedRecommendation? {
+        let weightService = WeightTrackingService.shared
+        
+        // Only provide weight-based recommendations if user has been tracking
+        guard weightService.recentLogs.count >= 3,
+              let goal = weightService.weightGoal else {
+            return nil
+        }
+        
+        let (trend, weeklyChange, isOnTrack) = weightService.getWeightTrendForRecommendations()
+        let suffix = weightService.weightUnitSuffix
+        
+        // Get any workout adjustment suggestion
+        if let suggestion = weightService.getWorkoutAdjustmentSuggestion() {
+            // Return workout adjustment recommendations with high priority
+            return PersonalizedRecommendation(
+                message: suggestion,
+                icon: "scalemass.fill",
+                priority: 88,
+                actionType: .workout(muscleGroup: nil)
+            )
+        }
+        
+        // Celebrate being on track (but with lower priority so it doesn't always show)
+        if isOnTrack && abs(weeklyChange) > 0.1 {
+            switch goal.goalType {
+            case .lose:
+                return PersonalizedRecommendation(
+                    message: "Great progress! Down \(String(format: "%.1f", abs(weeklyChange))) \(suffix) this week 🎯",
+                    icon: "arrow.down.heart.fill",
+                    priority: 55, // Lower priority - nice to know, not critical
+                    actionType: .celebrate
+                )
+            case .gain:
+                return PersonalizedRecommendation(
+                    message: "Gaining steadily! Up \(String(format: "%.1f", weeklyChange)) \(suffix) this week 💪",
+                    icon: "arrow.up.heart.fill",
+                    priority: 55,
+                    actionType: .celebrate
+                )
+            case .maintain:
+                return PersonalizedRecommendation(
+                    message: "Weight holding steady - perfect maintenance! ⚖️",
+                    icon: "checkmark.seal.fill",
+                    priority: 55,
+                    actionType: .celebrate
+                )
+            }
+        }
+        
+        // Don't return weight recommendations if nothing notable
+        return nil
     }
     
     private func getStreakBasedRecommendation(streak: Int) -> PersonalizedRecommendation {

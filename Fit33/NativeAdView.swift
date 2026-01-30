@@ -7,6 +7,7 @@ import GoogleMobileAds
 struct NativeAdCardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var adLoader = NativeAdLoader()
+    @StateObject private var premiumManager = PremiumManager.shared
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
@@ -14,16 +15,20 @@ struct NativeAdCardView: View {
     
     var body: some View {
         Group {
-            if let nativeAd = adLoader.nativeAd {
-                // Native ad loaded - show custom layout
-                NativeAdContentView(nativeAd: nativeAd, cardBackground: cardBackground)
-            } else {
-                // Loading state
-                LoadingAdCard(cardBackground: cardBackground)
+            // Only show ads for free users
+            if !premiumManager.isPremiumUser {
+                if let nativeAd = adLoader.nativeAd {
+                    // Native ad loaded - show custom layout
+                    NativeAdContentView(nativeAd: nativeAd, cardBackground: cardBackground)
+                }
+                // If no ad loaded, show nothing (no grey placeholder)
             }
         }
         .onAppear {
-            adLoader.loadAd()
+            // Only load ads for free users
+            if !premiumManager.isPremiumUser {
+                adLoader.loadAd()
+            }
         }
     }
 }
@@ -203,6 +208,9 @@ class NativeAdLoader: NSObject, ObservableObject, NativeAdLoaderDelegate {
             return
         }
         
+        // Ensure SDK is initialized before loading ads
+        AdManager.shared.initializeSDK()
+        
         guard let rootVC = RootViewControllerFinder.find() else {
             print("📺 [NATIVE] No root view controller found")
             return
@@ -246,22 +254,28 @@ class NativeAdLoader: NSObject, ObservableObject, NativeAdLoaderDelegate {
 
 // MARK: - Workout Native Ad Card (for Active Workout)
 /// Native ad card styled for the active workout view
+/// Only shows content when an ad has loaded - no placeholder/skeleton
 struct WorkoutNativeAdCard: View {
     @StateObject private var adLoader = NativeAdLoader()
+    @StateObject private var premiumManager = PremiumManager.shared
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         Group {
-            if let nativeAd = adLoader.nativeAd {
-                // Native ad loaded
-                WorkoutNativeAdContent(nativeAd: nativeAd)
-            } else {
-                // Loading state - compact skeleton
-                WorkoutAdLoadingCard()
+            // Only show ads for free users
+            if !premiumManager.isPremiumUser {
+                if let nativeAd = adLoader.nativeAd {
+                    // Native ad loaded - show it
+                    WorkoutNativeAdContent(nativeAd: nativeAd)
+                }
+                // If no ad loaded, show nothing (no grey placeholder)
             }
         }
         .onAppear {
-            adLoader.loadAd()
+            // Only load ads for free users
+            if !premiumManager.isPremiumUser {
+                adLoader.loadAd()
+            }
         }
     }
 }
@@ -420,76 +434,133 @@ struct NativeAdUIKitWrapper: UIViewRepresentable {
 
 // MARK: - Banner Ad View
 /// A standard banner ad that sits at the bottom of the screen
+/// Only shows content when an ad has actually loaded
 struct BannerAdView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var bannerState = BannerAdState()
+    @StateObject private var premiumManager = PremiumManager.shared
     
     var body: some View {
-        // Only show if ads are enabled
-        if AdManager.shared.adsEnabled {
-            BannerAdRepresentable()
+        // Only show for free users with ads enabled
+        let shouldShow = !premiumManager.isPremiumUser && AdManager.shared.adsEnabled
+        
+        if shouldShow {
+            BannerAdRepresentable(bannerState: bannerState)
                 .frame(height: 50)
-                .background(
-                    colorScheme == .dark 
-                        ? Color(white: 0.1) 
-                        : Color.white
-                )
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
+// MARK: - Banner Ad State
+/// Tracks whether a banner ad has loaded successfully
+class BannerAdState: ObservableObject {
+    @Published var isAdLoaded = false
+    @Published var hasAttemptedLoad = false
+}
+
 // MARK: - Banner Ad UIKit Wrapper
 struct BannerAdRepresentable: UIViewRepresentable {
+    @ObservedObject var bannerState: BannerAdState
     
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(bannerState: bannerState)
     }
     
     func makeUIView(context: Context) -> BannerView {
+        print("📢 [Banner] makeUIView called")
+        
+        // Ensure SDK is initialized before loading ads
+        AdManager.shared.initializeSDK()
+        print("📢 [Banner] SDK initialization requested")
+        
         let bannerView = BannerView()
+        
+        // CRITICAL: Set frame AND ad size BEFORE setting ad unit ID
+        // Use full screen width for adaptive banner
+        let screenWidth = UIScreen.main.bounds.width
+        bannerView.frame = CGRect(x: 0, y: 0, width: screenWidth, height: 50)
+        
+        // Use adaptive banner size matching screen width  
+        bannerView.adSize = portraitAnchoredAdaptiveBanner(width: screenWidth)
+        print("📢 [Banner] Set frame: \(bannerView.frame) and adaptive banner for width: \(screenWidth)")
         
         // Use test ad unit ID in debug, production ID in release
         #if DEBUG
         bannerView.adUnitID = "ca-app-pub-3940256099942544/2934735716" // Google test banner
+        print("📢 [Banner] Using TEST ad unit ID")
         #else
-        bannerView.adUnitID = "ca-app-pub-8809892203317185/7456758464" // Build Workout Banner
+        bannerView.adUnitID = "ca-app-pub-8809892203317185/7456758464" // Production banner
+        print("📢 [Banner] Using PRODUCTION ad unit ID")
         #endif
         
         // Set the root view controller
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootViewController = windowScene.windows.first?.rootViewController {
             bannerView.rootViewController = rootViewController
+            print("📢 [Banner] Root view controller set")
+        } else {
+            print("⚠️ [Banner] Could not find root view controller")
         }
         
         // Set delegate
         bannerView.delegate = context.coordinator
+        print("📢 [Banner] Delegate set")
         
         // Load the ad
         let request = Request()
         bannerView.load(request)
+        print("📢 [Banner] Ad load requested with size: \(bannerView.adSize.size)")
+        
+        // Mark that we've attempted to load
+        DispatchQueue.main.async {
+            self.bannerState.hasAttemptedLoad = true
+            print("📢 [Banner] hasAttemptedLoad set to true")
+        }
         
         return bannerView
     }
     
     func updateUIView(_ bannerView: BannerView, context: Context) {
-        // No updates needed
+        // Update frame if screen width changed (rotation)
+        let screenWidth = UIScreen.main.bounds.width
+        if bannerView.frame.width != screenWidth {
+            bannerView.frame = CGRect(x: 0, y: 0, width: screenWidth, height: 50)
+            bannerView.adSize = portraitAnchoredAdaptiveBanner(width: screenWidth)
+            print("📢 [Banner] Updated frame and size for new width: \(screenWidth)")
+        }
     }
     
     // MARK: - Coordinator
     class Coordinator: NSObject, BannerViewDelegate {
+        let bannerState: BannerAdState
+        
+        init(bannerState: BannerAdState) {
+            self.bannerState = bannerState
+        }
+        
         func bannerViewDidReceiveAd(_ bannerView: BannerView) {
-            print("📢 Banner ad loaded successfully")
+            print("📢 [Banner] ✅ Banner ad loaded successfully!")
+            DispatchQueue.main.async {
+                self.bannerState.isAdLoaded = true
+                print("📢 [Banner] bannerState.isAdLoaded set to TRUE")
+            }
         }
         
         func bannerView(_ bannerView: BannerView, didFailToReceiveAdWithError error: Error) {
-            print("❌ Banner ad failed to load: \(error.localizedDescription)")
+            print("❌ [Banner] Banner ad failed to load: \(error.localizedDescription)")
+            print("❌ [Banner] Error code: \((error as NSError).code)")
+            DispatchQueue.main.async {
+                self.bannerState.isAdLoaded = false
+            }
         }
         
         func bannerViewDidRecordImpression(_ bannerView: BannerView) {
-            print("👁️ Banner ad impression recorded")
+            print("👁️ [Banner] Banner ad impression recorded")
         }
         
         func bannerViewDidRecordClick(_ bannerView: BannerView) {
-            print("👆 Banner ad clicked")
+            print("👆 [Banner] Banner ad clicked")
         }
     }
 }

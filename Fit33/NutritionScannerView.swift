@@ -15,17 +15,9 @@ struct NutritionScannerView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(red: 0.85, green: 0.92, blue: 1.0),
-                    Color(red: 0.95, green: 0.97, blue: 1.0),
-                    Color.white
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Dark background
+            Color(red: 0.06, green: 0.07, blue: 0.09)
+                .ignoresSafeArea()
             
             VStack(spacing: 24) {
                 if let image = capturedImage, isProcessing {
@@ -80,7 +72,7 @@ struct NutritionScannerView: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(Color.blue.opacity(0.2))
                     .frame(width: 120, height: 120)
                 
                 Image(systemName: "camera.viewfinder")
@@ -92,11 +84,11 @@ struct NutritionScannerView: View {
                 Text("Scan Nutrition Facts")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 
                 Text("Take a photo of the nutrition label on your food packaging. We'll automatically extract the nutritional information.")
                     .font(.body)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
@@ -104,7 +96,7 @@ struct NutritionScannerView: View {
             VStack(spacing: 12) {
                 Text("Tips for best results:")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     TipRow(icon: "checkmark.circle.fill", text: "Ensure good lighting")
@@ -116,8 +108,7 @@ struct NutritionScannerView: View {
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .fill(Color(white: 0.12))
             )
             
             Spacer()
@@ -152,7 +143,7 @@ struct NutritionScannerView: View {
                 .scaledToFit()
                 .frame(maxHeight: 300)
                 .cornerRadius(16)
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
             
             VStack(spacing: 16) {
                 ProgressView()
@@ -161,11 +152,11 @@ struct NutritionScannerView: View {
                 
                 Text("Analyzing Nutrition Label...")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 
                 Text("This may take a few seconds")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
             
             Spacer()
@@ -550,7 +541,7 @@ struct TipRow: View {
                 .foregroundColor(.green)
             Text(text)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(.gray)
             Spacer()
         }
     }
@@ -631,17 +622,9 @@ struct NutritionEditorView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(red: 0.85, green: 0.92, blue: 1.0),
-                    Color(red: 0.95, green: 0.97, blue: 1.0),
-                    Color.white
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Dark background
+            Color(red: 0.06, green: 0.07, blue: 0.09)
+                .ignoresSafeArea()
             
             ScrollView {
                 VStack(spacing: 24) {
@@ -654,10 +637,11 @@ struct NutritionEditorView: View {
                         Text("Review & Edit")
                             .font(.title2)
                             .fontWeight(.bold)
+                            .foregroundColor(.white)
                         
                         Text("Verify the extracted information and make any corrections")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.top, 20)
@@ -668,41 +652,39 @@ struct NutritionEditorView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Food Name *")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             TextField("Enter food name", text: $nutrition.foodName)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, 14)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(.white)
-                                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                        .fill(Color(white: 0.15))
                                 )
+                                .foregroundColor(.white)
                         }
                         
                         // Serving Size
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Serving Size")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             TextField("e.g., 1 cup, 100g", text: $nutrition.servingSize)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, 14)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(.white)
-                                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                        .fill(Color(white: 0.15))
                                 )
+                                .foregroundColor(.white)
                         }
                         
                         // How Many Servings?
                         VStack(alignment: .leading, spacing: 12) {
                             Text("How many servings are you having?")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             HStack(spacing: 16) {
                                 // Minus button
@@ -724,7 +706,7 @@ struct NutritionEditorView: View {
                                     
                                     Text(nutrition.servingUnit)
                                         .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.gray)
                                 }
                                 .frame(maxWidth: .infinity)
                                 
@@ -740,8 +722,7 @@ struct NutritionEditorView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(.white)
-                                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                                    .fill(Color(white: 0.15))
                             )
                             
                             // Quick serving buttons
@@ -758,7 +739,7 @@ struct NutritionEditorView: View {
                                             .padding(.vertical, 10)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 10)
-                                                    .fill(nutrition.servingQuantity == serving ? Color.blue : Color.blue.opacity(0.1))
+                                                    .fill(nutrition.servingQuantity == serving ? Color.blue : Color.blue.opacity(0.2))
                                             )
                                     }
                                 }
@@ -767,13 +748,13 @@ struct NutritionEditorView: View {
                             // Info text
                             Text("All nutrition values will be multiplied by this amount")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.gray)
                                 .italic()
                         }
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.blue.opacity(0.05))
+                                .fill(Color.blue.opacity(0.1))
                         )
                         
                         // Servings Per Container
@@ -781,18 +762,17 @@ struct NutritionEditorView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Servings Per Container")
                                     .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.gray)
                                 
                                 TextField("e.g., 2", text: $nutrition.servingsPerContainer)
                                     .keyboardType(.decimalPad)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    .padding(.vertical, 14)
                                     .background(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .fill(.white)
-                                            .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                            .fill(Color(white: 0.15))
                                     )
+                                    .foregroundColor(.white)
                             }
                         }
                         
@@ -801,11 +781,11 @@ struct NutritionEditorView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Your Total Nutrition")
                                     .font(.headline)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                 
                                 Text("Based on \(String(format: "%.2f", nutrition.servingQuantity)) servings")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.gray)
                                 
                                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                                     CalculatedNutritionDisplay(
@@ -844,7 +824,7 @@ struct NutritionEditorView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.green.opacity(0.1))
+                                    .fill(Color.green.opacity(0.15))
                             )
                         }
                         
@@ -853,13 +833,13 @@ struct NutritionEditorView: View {
                             HStack {
                                 Text("Nutrition Per Serving")
                                     .font(.headline)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                 
                                 Spacer()
                                 
                                 Text("(Editable)")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.gray)
                             }
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
@@ -897,7 +877,7 @@ struct NutritionEditorView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Fats Breakdown")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                                 NutritionField(
@@ -920,7 +900,7 @@ struct NutritionEditorView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Other Nutrients")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                                 NutritionField(
@@ -943,7 +923,7 @@ struct NutritionEditorView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Carbs Breakdown")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                                 NutritionField(
@@ -973,7 +953,7 @@ struct NutritionEditorView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Vitamins & Minerals")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                                 NutritionField(
@@ -1009,8 +989,7 @@ struct NutritionEditorView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(.white)
-                            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                            .fill(Color(white: 0.12))
                     )
                     
                     // Save Button
@@ -1069,7 +1048,7 @@ struct NutritionField: View {
                 Text(label)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
             }
             
             HStack {
@@ -1077,14 +1056,15 @@ struct NutritionField: View {
                     .keyboardType(.decimalPad)
                     .font(.title3)
                     .fontWeight(.bold)
+                    .foregroundColor(.white)
                 Text(unit)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.1))
+                    .fill(color.opacity(0.2))
             )
         }
     }
@@ -1112,7 +1092,7 @@ struct CalculatedNutritionDisplay: View {
                 Text(label)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
             }
             
             HStack {
@@ -1122,16 +1102,16 @@ struct CalculatedNutritionDisplay: View {
                     .foregroundColor(color)
                 Text(unit)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.15))
+                    .fill(color.opacity(0.2))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(color.opacity(0.3), lineWidth: 2)
+                            .strokeBorder(color.opacity(0.4), lineWidth: 2)
                     )
             )
         }

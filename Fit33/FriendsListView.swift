@@ -6,13 +6,18 @@ import SwiftUI
 struct FriendsListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    // Use StateObject wrapper to prevent unnecessary re-renders during navigation
     @StateObject private var friendService = FriendService.shared
+    
+    // Initial tab can be set via deep link (0: Friends, 1: Requests, 2: Search)
+    var initialTab: Int = 0
     
     @State private var selectedTab = 0 // 0: Friends, 1: Requests, 2: Search
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var showingFriendProfile: Friend?
     @State private var showingReceivedWorkouts = false
+    @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
     
     // Adaptive colors
     private var cardBackground: Color {
@@ -80,8 +85,30 @@ struct FriendsListView: View {
             }
         }
         .onAppear {
+            // Set initial tab from deep link if specified
+            if initialTab != 0 {
+                selectedTab = initialTab
+            }
+            
+            // Only load data on first appear to prevent navigation disruption
+            // Subsequent appears (e.g., returning from detail view) skip the load
+            guard !hasLoadedInitialData else { return }
+            hasLoadedInitialData = true
+            
             Task {
                 await friendService.loadAllData()
+                // Preload friend photos for fast display
+                preloadFriendPhotos()
+            }
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            // Refresh friends when switching to Friends tab (tab 0)
+            // This ensures new friends appear immediately after accepting a request
+            if newTab == 0 {
+                Task {
+                    await friendService.fetchFriends()
+                    preloadFriendPhotos()
+                }
             }
         }
     }
@@ -341,6 +368,14 @@ struct FriendsListView: View {
         }
     }
     
+    /// Preload friend profile photos for fast display
+    private func preloadFriendPhotos() {
+        let friendsWithPhotos = friendService.friends.map { friend in
+            (id: friend.friendId.uuidString, url: friend.profilePhotoUrl)
+        }
+        FriendPhotoCache.shared.preloadPhotos(for: friendsWithPhotos)
+    }
+    
     private func performSearch() {
         guard !searchText.isEmpty else { return }
         
@@ -366,28 +401,15 @@ struct FriendCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
-                // Avatar with profile photo
-                ZStack {
-                    if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 50, height: 50)
-                                    .clipShape(Circle())
-                            case .failure(_), .empty:
-                                defaultFriendAvatar
-                            @unknown default:
-                                defaultFriendAvatar
-                            }
-                        }
-                    } else {
-                        defaultFriendAvatar
-                    }
-                }
-                .frame(width: 50, height: 50)
+                // Avatar with cached profile photo
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 50,
+                    showGradientRing: false,
+                    gradientColors: [.blue, .purple.opacity(0.8)]
+                )
                 
                 VStack(alignment: .leading, spacing: 4) {
                     // Username (primary)
@@ -420,24 +442,6 @@ struct FriendCard: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
-    private var defaultFriendAvatar: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 50, height: 50)
-            
-            Text(friend.initials)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
-        }
-    }
 }
 
 // MARK: - Friend Request Card
@@ -464,28 +468,15 @@ struct FriendRequestCard: View {
     
     var body: some View {
         HStack(spacing: 14) {
-            // Avatar with profile photo support
-            ZStack {
-                if let photoUrl = request.profilePhotoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 50)
-                                .clipShape(Circle())
-                        case .failure(_), .empty:
-                            defaultAvatar
-                        @unknown default:
-                            defaultAvatar
-                        }
-                    }
-                } else {
-                    defaultAvatar
-                }
-            }
-            .frame(width: 50, height: 50)
+            // Avatar with cached profile photo
+            CachedFriendPhoto(
+                friendId: request.fromUserId.uuidString,
+                photoUrl: request.profilePhotoUrl,
+                name: request.fromUserName ?? request.fromUserUsername ?? "User",
+                size: 50,
+                showGradientRing: false,
+                gradientColors: [.green, .cyan]
+            )
             
             VStack(alignment: .leading, spacing: 4) {
                 // Name
@@ -541,6 +532,7 @@ struct FriendRequestCard: View {
         )
     }
     
+    // Keeping for backwards compatibility with initials property
     private var defaultAvatar: some View {
         ZStack {
             Circle()

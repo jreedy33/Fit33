@@ -6,13 +6,11 @@ struct DashboardView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
     @StateObject private var notificationManager = NotificationManager.shared
     
-    // Friend notification badge counts - use @State to prevent re-renders during navigation
-    @State private var friendPendingCount: Int = 0
-    @State private var friendUnreadWorkoutCount: Int = 0
     
     // Dark mode adaptive colors - use the centralized Color extension
     private var cardBackground: Color { Color.cardBackground }
@@ -125,6 +123,11 @@ struct DashboardView: View {
     // Streak info popup
     @State private var showStreakInfo = false
     
+    // Widget settings
+    @State private var showingWidgetSettings = false
+    @AppStorage("showWeightTrackerWidget") private var showWeightTrackerWidget = true  // Default ON
+    @AppStorage("showHydrationWidget") private var showHydrationWidget = false
+    
     // Used to force NavigationView to reset when switching tabs
     @State private var navigationViewId = UUID()
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
@@ -142,12 +145,12 @@ struct DashboardView: View {
         Array(recentWorkouts.prefix(10))
     }
     
+    
     var body: some View {
         NavigationView {
             ZStack {
-                // Background gradient - extends through safe area
-                AdaptiveGradient.home(for: colorScheme)
-                    .ignoresSafeArea(.all, edges: .all)
+                // Animated background with colored orbs
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
                 
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
@@ -160,7 +163,7 @@ struct DashboardView: View {
                     LazyVStack(spacing: 0) {
                     // Custom header with title and profile icon
                     customHeaderView
-                        .padding(.top, 8)
+                        .padding(.top, 0)
                         .padding(.bottom, 16)
                     
                     // Notification permission banner - show if not authorized
@@ -171,6 +174,16 @@ struct DashboardView: View {
                     
                     // Header with user info
                     headerView
+                        .padding(.bottom, 16)
+                    
+                    // Friend Request Preview Widget (shows pending friend requests)
+                    FriendRequestPreviewContainer()
+                        .padding(.bottom, 16)
+                    
+                    // Received Workout Preview Widget (shows pending shared workouts)
+                    ReceivedWorkoutPreviewContainer()
+                        .environmentObject(workoutManager)
+                        .environmentObject(userManager)
                         .padding(.bottom, 16)
                     
                     // "Ready for today's workout?" title
@@ -191,16 +204,19 @@ struct DashboardView: View {
                     
                     // Step Tracker Card
                     StepTrackerCard()
+                        .id("stepTracker")
                         .padding(.bottom, 20)
                     
                     // Recent workouts section
                     if !recentWorkouts.isEmpty {
                         recentWorkoutsSection
+                            .id("workoutHistory")
                             .padding(.bottom, 20)
                     }
                     
                     // Stats overview
                     statsOverview
+                        .id("statsOverview")
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 100) // Add extra bottom padding to prevent tab bar overlap
@@ -216,6 +232,39 @@ struct DashboardView: View {
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
                 }
+                // Handle deep link scroll-to-widget notifications
+                .onReceive(NotificationCenter.default.publisher(for: .scrollToWidget)) { notification in
+                    guard let widgetId = notification.object as? String else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        switch widgetId {
+                        case "stepTracker":
+                            scrollProxy.scrollTo("stepTracker", anchor: .top)
+                        case "workoutHistory":
+                            scrollProxy.scrollTo("workoutHistory", anchor: .top)
+                        case "streakInfo":
+                            // Scroll to header then show streak popup
+                            scrollProxy.scrollTo("top", anchor: .top)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                showStreakInfo = true
+                            }
+                        case "hydration", "weightTracker":
+                            // These are in SimpleMealPlanView, not Dashboard
+                            // But if user lands on Dashboard, scroll to top
+                            scrollProxy.scrollTo("top", anchor: .top)
+                        default:
+                            break
+                        }
+                    }
+                    print("📜 [DASHBOARD] Scrolled to widget: \(widgetId)")
+                }
+                }
+                .refreshable {
+                    // Pull-to-refresh: fetch new workouts and friend requests
+                    await FriendService.shared.refreshHomeScreenData()
+                    
+                    // Also refresh other data
+                    await loadRecentCardioWorkouts()
+                    await loadPersonalizedRecommendation()
                 }
             }
             .navigationBarHidden(true)
@@ -225,6 +274,14 @@ struct DashboardView: View {
             .sheet(isPresented: $showStreakInfo) {
                 StreakInfoSheet()
                     .environmentObject(userManager)
+            }
+            .sheet(isPresented: $showingWidgetSettings) {
+                WidgetSettingsSheet(
+                    showWeightTracker: $showWeightTrackerWidget,
+                    showHydration: $showHydrationWidget
+                )
+                .presentationDetents([.height(420)])
+                .presentationDragIndicator(.visible)
             }
             .background(
                 Group {
@@ -291,19 +348,19 @@ struct DashboardView: View {
                 "workouts_count": recentWorkouts.count,
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
+            
+            // Refresh friend data when returning to home tab
+            // Red dot reads directly from FriendService so no need to cache counts
+            Task {
+                await FriendService.shared.refreshHomeScreenData()
+            }
         }
         .task(id: "dashboard_initial_load") {
             // ⚡️ PERFORMANCE: Debounced initial data load - only runs once per view lifecycle
             // Uses a stable ID to prevent re-running on every appear
             
-            // Check if we have cached motivational message
-            let cachedState = ViewStateCache.shared.dashboardState
-            if cachedState.lastMotivationalMessage.isEmpty {
-                currentMotivationalMessage = generateMotivationalMessage()
-                ViewStateCache.shared.dashboardState.lastMotivationalMessage = currentMotivationalMessage
-            } else {
-                currentMotivationalMessage = cachedState.lastMotivationalMessage
-            }
+            // Generate fresh motivational message each time app opens
+            currentMotivationalMessage = generateMotivationalMessage()
             
             // Load personalized recommendation (use cached if available)
             await loadPersonalizedRecommendation()
@@ -311,12 +368,9 @@ struct DashboardView: View {
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
             
-            // Load friend data for notification indicator (store in local state to prevent re-renders)
-            let friendService = FriendService.shared
-            await friendService.loadPendingRequests()
-            await friendService.loadReceivedWorkouts()
-            friendPendingCount = friendService.pendingRequests.count
-            friendUnreadWorkoutCount = friendService.unreadWorkoutCount
+            // Load friend data for notification indicator
+            await FriendService.shared.loadPendingRequests()
+            await FriendService.shared.loadReceivedWorkouts()
             
             // Load profile photo for home icon
             await loadProfilePhoto()
@@ -327,6 +381,15 @@ struct DashboardView: View {
                 // Small delay to debounce rapid updates
                 try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
                 await loadPersonalizedRecommendation()
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // Only refresh when coming from background (not from inactive which happens during navigation)
+            // This prevents refresh from interfering with navigation
+            if oldPhase == .background && newPhase == .active {
+                Task {
+                    await FriendService.shared.refreshHomeScreenData()
+                }
             }
         }
         .onChange(of: smartProgramEngine.userPrograms.count) { _, _ in
@@ -685,7 +748,7 @@ struct DashboardView: View {
             
             Spacer()
             
-            // Timer and profile icon grouped together
+            // Timer, widget settings, and profile icon grouped together
             HStack(spacing: 8) {
                 // Active workout timer (only shows when workout is active)
                 if workoutManager.isWorkoutActive {
@@ -700,6 +763,22 @@ struct DashboardView: View {
                         )
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
+                
+                // Widget settings button (three dots)
+                Button(action: {
+                    HapticManager.tap()
+                    showingWidgetSettings = true
+                }) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Add spacing between ... and profile icon
+                Spacer()
+                    .frame(width: 4)
                 
                 // Profile button with hollow blue gradient ring and photo/person icon
                 NavigationLink(destination: ProfileView()) {
@@ -751,20 +830,13 @@ struct DashboardView: View {
                             }
                         }
                         
-                        // Red indicator dot for pending requests or unread workouts
-                        if friendPendingCount > 0 || friendUnreadWorkoutCount > 0 {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 14, height: 14)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
-                                )
-                                .offset(x: 3, y: -3)
-                        }
+                        // Red indicator dot - isolated component to prevent DashboardView re-renders
+                        FriendNotificationBadge()
+                            .offset(x: 3, y: -3)
                     }
                 }
                 .accessibilityLabel("Profile")
+                .offset(y: 2) // Nudge profile icon down slightly
             }
             .animation(.easeInOut(duration: 0.2), value: workoutManager.isWorkoutActive)
         }
@@ -1025,6 +1097,7 @@ struct DashboardView: View {
     }
     
     private var startWorkoutButton: some View {
+        VStack(spacing: 12) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
                 // Custom Workout Button
                 Button(action: {
@@ -1212,6 +1285,39 @@ struct DashboardView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             
+            }
+            
+            // Optional Widget Row
+            if showWeightTrackerWidget || showHydrationWidget {
+                dashboardWidgetsRow
+            }
+        }
+    }
+    
+    // MARK: - Dashboard Widgets Row
+    private var dashboardWidgetsRow: some View {
+        let showBoth = showWeightTrackerWidget && showHydrationWidget
+        
+        return Group {
+            if showBoth {
+                // Two widgets side by side
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
+                    if showWeightTrackerWidget {
+                        DashboardWeightWidget(isCompact: true, cardBackgroundGradient: cardBackgroundGradient)
+                    }
+                    if showHydrationWidget {
+                        DashboardHydrationWidget(isCompact: true, cardBackgroundGradient: cardBackgroundGradient)
+                    }
+                }
+            } else {
+                // Single widget expanded
+                if showWeightTrackerWidget {
+                    DashboardWeightWidget(isCompact: false, cardBackgroundGradient: cardBackgroundGradient)
+                }
+                if showHydrationWidget {
+                    DashboardHydrationWidget(isCompact: false, cardBackgroundGradient: cardBackgroundGradient)
+                }
+            }
         }
     }
     
@@ -1284,8 +1390,9 @@ struct DashboardView: View {
             }
             
             // Combined workout cards - mix strength and cardio workouts, sorted by date
+            // Show at most 3 recent workouts
             VStack(spacing: 12) {
-                ForEach(combinedRecentWorkouts.prefix(4), id: \.id) { item in
+                ForEach(combinedRecentWorkouts.prefix(3), id: \.id) { item in
                     switch item {
                     case .strength(let workout, let isMostRecent):
                         RecentWorkoutCard(workout: workout, isMostRecent: isMostRecent)
@@ -1533,6 +1640,30 @@ struct DashboardView: View {
                 "Weekend warriors separate themselves here. ⚡"
             ])
         }
+        
+        // Health & wellness reminders (always included for variety)
+        messages.append(contentsOf: [
+            "Your core could use some work today. 🎯",
+            "Time to hydrate! Aim for 8 glasses today. 💧",
+            "Hit your step goal? Keep moving! 👟",
+            "Don't skip leg day! Your future self thanks you. 🦵",
+            "Protein is key! Are you hitting your macros? 🥩",
+            "Stretch it out! Flexibility = longevity. 🧘",
+            "Sleep is gains! Aim for 7-8 hours tonight. 😴",
+            "Upper body needs attention! Push yourself. 💪",
+            "Recovery day? Active rest still counts! 🌿",
+            "Cardio calling! Get that heart rate up. ❤️",
+            "Posture check! Sit up straight, king. 👑",
+            "Meal prep Sunday = success all week. 🥗",
+            "Back day? Build that V-taper! 🔱",
+            "Arms looking small? Time for curls! 💪",
+            "Shoulders make the frame! Press it out. 🏋️",
+            "Core strength = better everything. 🎯",
+            "Glutes are the powerhouse! Don't neglect them. 🍑",
+            "Water before coffee! Hydrate first. ☕",
+            "Walking counts! 10K steps for the win. 🚶",
+            "Rest days build muscle too! Listen to your body. 🛏️"
+        ])
         
         return messages.randomElement() ?? "Let's make today count! 💪"
     }
@@ -3548,9 +3679,59 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                // Premium layered background for ALL workout cards (consistent styling)
+                ZStack {
+                    // Bottom shadow layer (deepest) - color glow
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 6)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 3)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    : [Color.white, Color.white.opacity(0.95)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border for ALL cards
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
             )
+            // Shadow effects for all workout cards
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -3936,9 +4117,59 @@ struct RecentCardioWorkoutCard: View {
                 }
                 .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                    // Premium layered background for ALL cardio workout cards (consistent styling)
+                    ZStack {
+                        // Bottom shadow layer (deepest) - color glow
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(activityInfo.color.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                            .offset(y: 6)
+                            .blur(radius: 4)
+                        
+                        // Middle shadow layer
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                            .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                            .offset(y: 3)
+                        
+                        // Main card background with gradient
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: colorScheme == .dark
+                                        ? [Color(white: 0.18), Color(white: 0.12)]
+                                        : [Color.white, Color.white.opacity(0.95)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        // Inner highlight (top edge glow)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: colorScheme == .dark
+                                        ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1.5
+                            )
+                        
+                        // Colored accent border for ALL cards
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [activityInfo.color.opacity(colorScheme == .dark ? 0.4 : 0.3), activityInfo.color.opacity(colorScheme == .dark ? 0.25 : 0.15)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
                 )
+                // Shadow effects for all cardio workout cards
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+                .shadow(color: activityInfo.color.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
             }
             .buttonStyle(PlainButtonStyle())
     }
@@ -4337,522 +4568,23 @@ struct WorkoutHistoryDaySection: View {
     }
 }
 
-// MARK: - Workout History View (Sheet - Legacy)
-struct WorkoutHistoryView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.managedObjectContext) private var viewContext
-    
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == true"),
-        animation: .none)  // Disable animation for faster scroll
-    private var allWorkouts: FetchedResults<Workout>
-    
-    // Group workouts by date
-    private var groupedWorkouts: [(Date, [Workout])] {
-        let calendar = Calendar.current
-        let grouped = Dictionary(grouping: allWorkouts) { workout in
-            calendar.startOfDay(for: workout.date ?? Date())
-        }
-        return grouped.sorted { $0.key > $1.key } // Most recent first
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background gradient matching home tab and workout complete
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.85, green: 0.92, blue: 1.0),
-                        Color(red: 0.95, green: 0.97, blue: 1.0),
-                        Color.white
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea(.all)
-                
-                ScrollViewReader { scrollProxy in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 0) {
-                            // Custom header
-                            customHeaderView
-                            
-                            // Main content
-                            LazyVStack(spacing: 24) {
-                                if groupedWorkouts.isEmpty {
-                                    emptyStateView
-                                } else {
-                                    ForEach(Array(groupedWorkouts.enumerated()), id: \.offset) { index, dayGroup in
-                                        WorkoutDaySection(date: dayGroup.0, workouts: dayGroup.1)
-                                            .padding(.horizontal, 20)
-                                    }
-                                }
-                            }
-                            .padding(.top, 20)
-                            .padding(.bottom, 100)
-                        }
-                        .id("top")
-                    }
-                }
-                
-                // Status bar overlay
-                VStack {
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.85, green: 0.92, blue: 1.0).opacity(0.9),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 80)
-                    .ignoresSafeArea(.all, edges: .top)
-                    Spacer()
-                }
-            }
-            .navigationBarHidden(true)
-        }
-    }
-    
-    // MARK: - Custom Header View
-    private var customHeaderView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Page title with Close button
-            HStack {
-                Text("Workout History")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
-                
-                Spacer()
-                
-                // Close button
-                Button(action: {
-                    dismiss()
-                }) {
-                    Text("Close")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.blue)
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 20)
-    }
-    
-    // MARK: - Empty State
-    private var emptyStateView: some View {
-        VStack(spacing: 24) {
-            // Trophy icon with gradient like workout complete
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.0, green: 0.8, blue: 0.8),
-                                Color(red: 0.0, green: 0.9, blue: 1.0)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 80, height: 80)
-                
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 32, weight: .medium))
-                    .foregroundColor(.white)
-            }
-            
-            VStack(spacing: 12) {
-                Text("No Workouts Yet")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Text("Complete your first workout to see it here!\nYour fitness journey starts with a single step.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-            }
-        }
-        .padding(.horizontal, 40)
-        .padding(.top, 80)
-        .padding(.bottom, 40)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
-        )
-        .padding(.horizontal, 20)
-    }
-}
+// MARK: - Legacy code removed (WorkoutHistoryView, WorkoutDaySection, ExpandedWorkoutCard, HistoryExerciseRowView, HistoryStatItem, DashboardStatBadge)
+// These components were unused - WorkoutHistoryFullView is the active implementation
 
-// MARK: - Workout Day Section
-struct WorkoutDaySection: View {
-    let date: Date
-    let workouts: [Workout]
-    
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter
-    }
-    
-    private var isToday: Bool {
-        Calendar.current.isDateInToday(date)
-    }
-    
-    private var isYesterday: Bool {
-        Calendar.current.isDateInYesterday(date)
-    }
-    
-    private var displayDate: String {
-        if isToday {
-            return "Today"
-        } else if isYesterday {
-            return "Yesterday"
-        } else {
-            return dateFormatter.string(from: date)
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            // Date header with home page styling
-            HStack {
-                Text(displayDate)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(
-                        LinearGradient(
-                            stops: [
-                                .init(color: Color(red: 0.2, green: 0.4, blue: 0.8), location: 0.0),
-                                .init(color: Color(red: 0.2, green: 0.4, blue: 0.8), location: 0.7),
-                                .init(color: Color(red: 0.2, green: 0.4, blue: 0.8), location: 0.85),
-                                .init(color: Color.blue.opacity(0.5), location: 1.0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: .white.opacity(0.3), radius: 1, x: 0, y: 1)
-                
-                Spacer()
-                
-                Text("\(workouts.count) workout\(workouts.count == 1 ? "" : "s")")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.ultraThinMaterial.opacity(0.5))
-                    )
-            }
-            .padding(.horizontal, 4)
-            
-            // Workout cards
-            VStack(spacing: 16) {
-                ForEach(workouts, id: \.id) { workout in
-                    ExpandedWorkoutCard(workout: workout)
-                }
-            }
-        }
-    }
-}
+// NOTE: Legacy components removed (WorkoutHistoryView, WorkoutDaySection, ExpandedWorkoutCard, 
+// HistoryExerciseRowView, HistoryStatItem, DashboardStatBadge) - WorkoutHistoryFullView is the active implementation
 
-// MARK: - Expanded Workout Card
-struct ExpandedWorkoutCard: View {
-    let workout: Workout
-    @Environment(\.colorScheme) private var colorScheme
-    
-    // Convert workout exercises to array for easier handling
-    private var workoutExercises: [WorkoutExercise] {
-        (workout.exercises?.allObjects as? [WorkoutExercise]) ?? []
-    }
-    
-    // Calculate total stats
-    private var totalSets: Int {
-        workoutExercises.reduce(0) { total, workoutExercise in
-            total + (workoutExercise.sets?.count ?? 0)
-        }
-    }
-    
-    private var totalReps: Int {
-        workoutExercises.reduce(0) { total, workoutExercise in
-            let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] ?? []
-            return total + sets.reduce(0) { $0 + Int($1.reps) }
-        }
-    }
-    
-    private var totalWeight: Double {
-        workoutExercises.reduce(0) { total, workoutExercise in
-            let sets = workoutExercise.sets?.allObjects as? [WorkoutSet] ?? []
-            return total + sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) }
-        }
-    }
-    
-    // Get unique muscle groups (using safe accessors)
-    private var muscleGroups: [String] {
-        let allMuscleGroups = workoutExercises.flatMap { $0.safeMuscleGroups }
-        return Array(Set(allMuscleGroups)).sorted()
-    }
-    
-    var body: some View {
-        NavigationLink(destination: WorkoutHistoryDetailView(workout: workout)) {
-            HStack(spacing: 16) {
-                // Workout icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.green, Color.blue]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 50, height: 50)
-                        .shadow(color: .green.opacity(0.3), radius: 4, x: 0, y: 2)
-                    
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    // Day and date combined (smaller and different grey)
-                    Text("\(getDayName(for: workout.date ?? Date())) · \(formatFullDate(workout.date ?? Date()))")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(Color(.systemGray2))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .truncationMode(.tail)
-                    
-                    // Workout type (main title)
-                    Text(getWorkoutType(for: workout.date ?? Date()))
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .truncationMode(.tail)
-                    
-                    // Workout metrics with icons
-                    HStack(spacing: 16) {
-                        // Duration
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock.fill")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                            Text(formatDuration(workout.duration))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
-                        }
-                        
-                        // Exercises count
-                        HStack(spacing: 4) {
-                            Image(systemName: "list.bullet")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("\(workout.exercises?.count ?? 0)")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
-                        }
-                        
-                        // XP earned
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            Text("+\(Int(workout.xpEarned))")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
-                        }
-                        
-                        Spacer()
-                    }
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(16)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.clear, lineWidth: 1)
-            )
-            .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.1), radius: 5, x: 0, y: 2)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    // MARK: - Helper Functions
-    private func getDayName(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter.string(from: date)
-    }
-    
-    private func formatFullDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d, yyyy"
-        return formatter.string(from: date)
-    }
-    
-    private func getWorkoutType(for date: Date) -> String {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: date)
-        
-        switch hour {
-        case 5..<12:
-            return "Morning Workout"
-        case 12..<17:
-            return "Afternoon Workout"
-        case 17..<21:
-            return "Evening Workout"
-        default:
-            return "Night Workout"
-        }
-    }
-    
-    private func formatDuration(_ duration: Int32) -> String {
-        let totalMinutes = Int(duration) / 60
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-}
-
-// MARK: - History Exercise Row View
-struct HistoryExerciseRowView: View {
-    let workoutExercise: WorkoutExercise
-    
-    private var sets: [WorkoutSet] {
-        (workoutExercise.sets?.allObjects as? [WorkoutSet]) ?? []
-    }
-    
-    private var completedSets: [WorkoutSet] {
-        sets.filter { $0.isCompleted }
-    }
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Exercise name (uses nickname if user has one set)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(workoutExercise.safeDisplayName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                Text("\(completedSets.count) sets")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            // Best set info
-            if let bestSet = completedSets.max(by: { $0.weight < $1.weight }) {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("\(Int(bestSet.weight)) lbs")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    
-                    Text("\(bestSet.reps) reps")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 2)
-    }
-}
-
-// MARK: - History Stat Item
-struct HistoryStatItem: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color)
-                .frame(width: 14)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Text(label)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Helper Components for Program Widget
-
-struct DashboardStatBadge: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(color)
-            
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.primary)
-                
-                Text(label)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
+// NOTE: Legacy code removed (WorkoutHistoryView, WorkoutDaySection, ExpandedWorkoutCard,
+// HistoryExerciseRowView, HistoryStatItem, DashboardStatBadge) - WorkoutHistoryFullView is the active implementation
 
 // MARK: - Streak Info Sheet
 struct StreakInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
+    @StateObject private var premiumManager = PremiumManager.shared
+    @State private var showingEditStreak = false
+    @State private var showingPremiumUpgrade = false
     
     private var currentStreak: Int {
         Int(userManager.currentUser?.currentStreak ?? 0)
@@ -4915,6 +4647,15 @@ struct StreakInfoSheet: View {
                     .fontWeight(.semibold)
                 }
             }
+            .sheet(isPresented: $showingEditStreak) {
+                EditStreakSheet(currentStreak: currentStreak)
+                    .environmentObject(userManager)
+                    .presentationDetents([.height(320)])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showingPremiumUpgrade) {
+                PremiumUpgradeView(triggeringFeature: .streakEdit)
+            }
         }
     }
     
@@ -4969,6 +4710,41 @@ struct StreakInfoSheet: View {
             Text(currentStreak == 1 ? "Workout Streak" : "Workout Streak")
                 .font(.title2)
                 .fontWeight(.bold)
+            
+            // Edit Streak button (Premium feature)
+            Button(action: {
+                HapticManager.tap()
+                if premiumManager.isPremiumUser {
+                    showingEditStreak = true
+                } else {
+                    showingPremiumUpgrade = true
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 14))
+                    Text("Edit Streak")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    if !premiumManager.isPremiumUser {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.yellow)
+                    }
+                }
+                .foregroundColor(.orange)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.orange.opacity(0.15))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
+            }
             
             // Best streak
             if longestStreak > currentStreak {
@@ -5155,6 +4931,161 @@ struct StreakInfoSheet: View {
     }
 }
 
+// MARK: - Edit Streak Sheet
+struct EditStreakSheet: View {
+    let currentStreak: Int
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+    @State private var newStreak: Int
+    @State private var isSaving = false
+    
+    init(currentStreak: Int) {
+        self.currentStreak = currentStreak
+        _newStreak = State(initialValue: currentStreak)
+    }
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            HStack {
+                Text("Edit Streak")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            
+            // Streak input
+            VStack(spacing: 12) {
+                ZStack {
+                    // Glow
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [Color.orange.opacity(0.3), Color.clear],
+                                center: .center,
+                                startRadius: 20,
+                                endRadius: 60
+                            )
+                        )
+                        .frame(width: 120, height: 120)
+                    
+                    // Flame
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom)
+                        )
+                }
+                
+                // Stepper for streak
+                HStack(spacing: 20) {
+                    Button(action: {
+                        if newStreak > 0 {
+                            HapticManager.selectionChanged()
+                            newStreak -= 1
+                        }
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(newStreak > 0 ? .orange : .gray.opacity(0.3))
+                    }
+                    .disabled(newStreak <= 0)
+                    
+                    Text("\(newStreak)")
+                        .font(.system(size: 48, weight: .black, design: .rounded))
+                        .foregroundColor(.primary)
+                        .frame(minWidth: 80)
+                    
+                    Button(action: {
+                        HapticManager.selectionChanged()
+                        newStreak += 1
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.orange)
+                    }
+                }
+                
+                Text("days")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Save button
+            Button(action: saveStreak) {
+                HStack {
+                    if isSaving {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("Save Streak")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [.orange, .red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(14)
+            }
+            .disabled(isSaving || newStreak == currentStreak)
+            .opacity(newStreak == currentStreak ? 0.5 : 1)
+            .padding(.horizontal, 20)
+            
+            Spacer()
+        }
+    }
+    
+    private func saveStreak() {
+        isSaving = true
+        HapticManager.success()
+        
+        // Update the streak in Core Data
+        if let user = userManager.currentUser {
+            user.currentStreak = Int16(newStreak)
+            
+            // Update longest streak if needed
+            if newStreak > user.longestStreak {
+                user.longestStreak = Int16(newStreak)
+            }
+            
+            // Save context
+            do {
+                try user.managedObjectContext?.save()
+                
+                // Sync to Supabase
+                Task {
+                    do {
+                        try await SupabaseManager.shared.syncCoreDataProfile(from: user)
+                    } catch {
+                        print("❌ Failed to sync streak to cloud: \(error)")
+                    }
+                }
+            } catch {
+                print("❌ Failed to save streak: \(error)")
+            }
+        }
+        
+        dismiss()
+    }
+}
+
 struct WorkoutDetailBadge: View {
     let icon: String
     let value: String
@@ -5185,6 +5116,1090 @@ struct WorkoutDetailBadge: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Dashboard Weight Widget
+struct DashboardWeightWidget: View {
+    let isCompact: Bool
+    let cardBackgroundGradient: [Color]
+    
+    @ObservedObject private var weightService = WeightTrackingService.shared
+    @StateObject private var premiumManager = PremiumManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingInput = false
+    @State private var showingPremiumUpgrade = false
+    @State private var weightInput = ""
+    @FocusState private var isInputFocused: Bool
+    
+    // Match the WeightTrackerWidget color scheme (orange/yellow)
+    private let gradientColors: [Color] = [.orange, .yellow]
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.tap()
+            if premiumManager.isPremiumUser {
+                showingInput = true
+            } else {
+                showingPremiumUpgrade = true
+            }
+        }) {
+            widgetContentWithPremiumBadge
+        }
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingInput) {
+            WeightInputSheet(weightService: weightService)
+                .presentationDetents([.height(280)])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingPremiumUpgrade) {
+            PremiumUpgradeView(triggeringFeature: .weightTracking)
+        }
+        .onAppear {
+            // Refresh weight data when widget appears
+            Task {
+                await weightService.loadAllData()
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var widgetContentWithPremiumBadge: some View {
+        ZStack(alignment: .topTrailing) {
+            widgetContent
+            
+            // Premium badge for free users
+            if !premiumManager.isPremiumUser {
+                HStack(spacing: 4) {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("PRO")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue, .purple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .shadow(color: .blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                )
+                .offset(x: -8, y: 8)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var widgetContent: some View {
+        Group {
+            if isCompact {
+                compactLayout
+            } else {
+                expandedLayout
+            }
+        }
+        .frame(width: isCompact ? 160 : nil, height: isCompact ? 140 : 80)
+        .frame(maxWidth: isCompact ? nil : .infinity)
+        .padding(.horizontal, isCompact ? 0 : 20)
+        .background(widgetBackground)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+    }
+    
+    private var compactLayout: some View {
+        VStack(spacing: 10) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: gradientColors),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 50, height: 50)
+                    .shadow(color: gradientColors[0].opacity(0.4), radius: 8, x: 0, y: 4)
+                
+                Image(systemName: "scalemass.fill")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+            }
+            
+            // Weight display
+            VStack(spacing: 4) {
+                if let todayWeight = weightService.todayLog {
+                    let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
+                    let unit = weightService.usesLbs ? "lbs" : "kg"
+                    
+                    Text("\(String(format: "%.1f", displayWeight)) \(unit)")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .id(todayWeight.id) // Force refresh when weight changes
+                    
+                    // 7-day trend
+                    trendLabel
+                } else {
+                    Text("_ _")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary.opacity(0.5))
+                    
+                    Text("Tap to log")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var trendLabel: some View {
+        let weeklyChange = weightService.weeklyChange
+        
+        if abs(weeklyChange) < 0.1 {
+            // Essentially no change
+            Text("7-day: maintaining")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        } else if weeklyChange < 0 {
+            // Losing weight
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.down.right")
+                    .font(.system(size: 9, weight: .bold))
+                Text("7-day: losing")
+                    .font(.caption2)
+            }
+            .foregroundColor(.green)
+        } else {
+            // Gaining weight
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .bold))
+                Text("7-day: gaining")
+                    .font(.caption2)
+            }
+            .foregroundColor(.orange)
+        }
+    }
+    
+    private var expandedLayout: some View {
+        HStack(spacing: 16) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: gradientColors),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 50, height: 50)
+                    .shadow(color: gradientColors[0].opacity(0.4), radius: 8, x: 0, y: 4)
+                
+                Image(systemName: "scalemass.fill")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Weight")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                // 7-day trend for expanded view
+                expandedTrendLabel
+            }
+            
+            Spacer()
+            
+            // Show weight or placeholder
+            if let todayWeight = weightService.todayLog {
+                let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
+                let unit = weightService.usesLbs ? "lbs" : "kg"
+                Text("\(String(format: "%.1f", displayWeight)) \(unit)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(
+                        LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
+                    )
+                    .id(todayWeight.id) // Force refresh when weight changes
+            } else {
+                Text("_ _")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary.opacity(0.4))
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var expandedTrendLabel: some View {
+        if weightService.todayLog == nil {
+            Text("Tap to log today's weight")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } else {
+            let weeklyChange = weightService.weeklyChange
+            
+            if abs(weeklyChange) < 0.1 {
+                Text("7-day: maintaining")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if weeklyChange < 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("7-day: losing weight")
+                        .font(.caption)
+                }
+                .foregroundColor(.green)
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("7-day: gaining weight")
+                        .font(.caption)
+                }
+                .foregroundColor(.orange)
+            }
+        }
+    }
+    
+    private var widgetBackground: some View {
+        ZStack {
+            // Bottom shadow layer (deepest) - color glow
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(gradientColors[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 8)
+                .blur(radius: 4)
+            
+            // Middle shadow layer
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 4)
+            
+            // Main card background with gradient
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: cardBackgroundGradient,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            // Inner highlight (top edge glow)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            // Colored accent border
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [gradientColors[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradientColors[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+}
+
+// MARK: - Weight Input Sheet
+struct WeightInputSheet: View {
+    @ObservedObject var weightService: WeightTrackingService
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var weightInput = ""
+    @FocusState private var isInputFocused: Bool
+    
+    // Match the WeightTrackerWidget color scheme (orange/yellow)
+    private let gradientColors: [Color] = [.orange, .yellow]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            HStack {
+                Text("Log Weight")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            
+            // Weight input
+            HStack(spacing: 8) {
+                TextField("0.0", text: $weightInput)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .focused($isInputFocused)
+                    .frame(maxWidth: 200)
+                
+                Text(weightService.usesLbs ? "lbs" : "kg")
+                    .font(.title)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            
+            // Save button
+            Button(action: saveWeight) {
+                Text("Save")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        LinearGradient(
+                            colors: gradientColors,
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(14)
+            }
+            .disabled(weightInput.isEmpty)
+            .opacity(weightInput.isEmpty ? 0.5 : 1)
+            .padding(.horizontal, 20)
+            
+            Spacer()
+        }
+        .onAppear {
+            isInputFocused = true
+            // Pre-fill with current weight if logged today
+            if weightService.hasLoggedToday, let todayWeight = weightService.todayLog {
+                let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
+                weightInput = String(format: "%.1f", displayWeight)
+            }
+        }
+    }
+    
+    private func saveWeight() {
+        guard let weight = Double(weightInput) else {
+            print("❌ [Widget] Invalid weight input: '\(weightInput)'")
+            return
+        }
+        
+        print("💾 [Widget] Saving weight: \(weight) \(weightService.usesLbs ? "lbs" : "kg")")
+        HapticManager.success()
+        
+        Task {
+            let success = await weightService.logWeight(weight)
+            if success {
+                print("✅ [Widget] Weight saved successfully")
+                print("✅ [Widget] todayLog is now: \(weightService.todayLog != nil ? "SET" : "NIL")")
+                print("✅ [Widget] hasLoggedToday: \(weightService.hasLoggedToday)")
+                // Small delay to ensure UI updates propagate
+                try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+            } else {
+                print("❌ [Widget] Failed to save weight to cloud")
+            }
+            await MainActor.run {
+                print("🚪 [Widget] Dismissing sheet, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")")
+                dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - Dashboard Hydration Widget
+struct DashboardHydrationWidget: View {
+    let isCompact: Bool
+    let cardBackgroundGradient: [Color]
+    
+    @ObservedObject private var hydrationService = HydrationService.shared
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingQuickAdd = false
+    
+    // Unit preference - synced with quick add sheet
+    @AppStorage("hydrationUnitPreference") private var usesOz: Bool = true
+    
+    private let gradientColors: [Color] = [.cyan, .blue]
+    private let mlPerOz = 29.5735
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.tap()
+            showingQuickAdd = true
+        }) {
+            widgetContent
+        }
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingQuickAdd) {
+            HydrationQuickAddSheet(hydrationService: hydrationService)
+                .presentationDetents([.height(380)])
+                .presentationDragIndicator(.visible)
+        }
+    }
+    
+    @ViewBuilder
+    private var widgetContent: some View {
+        Group {
+            if isCompact {
+                compactLayout
+            } else {
+                expandedLayout
+            }
+        }
+        .frame(width: isCompact ? 160 : nil, height: isCompact ? 140 : 80)
+        .frame(maxWidth: isCompact ? nil : .infinity)
+        .padding(.horizontal, isCompact ? 0 : 20)
+        .background(widgetBackground)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+    }
+    
+    private var compactLayout: some View {
+        VStack(spacing: 12) {
+            // Icon with progress ring
+            ZStack {
+                // Background ring
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 4)
+                    .frame(width: 50, height: 50)
+                
+                // Progress ring
+                Circle()
+                    .trim(from: 0, to: hydrationService.todayProgress)
+                    .stroke(
+                        LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom)
+                    )
+            }
+            
+            // Water display - respects unit preference
+            VStack(spacing: 4) {
+                if usesOz {
+                    let totalOz = Int(Double(hydrationService.todayTotal) / mlPerOz)
+                    let goalOz = Int(Double(hydrationService.settings.dailyGoalMl) / mlPerOz)
+                    
+                    Text("\(totalOz)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("of \(goalOz) oz")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("\(hydrationService.todayTotal)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("of \(hydrationService.settings.dailyGoalMl) ml")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    private var expandedLayout: some View {
+        HStack(spacing: 16) {
+            // Icon with progress ring
+            ZStack {
+                // Background ring
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 5)
+                    .frame(width: 50, height: 50)
+                
+                // Progress ring
+                Circle()
+                    .trim(from: 0, to: hydrationService.todayProgress)
+                    .stroke(
+                        LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                    )
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom)
+                    )
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Hydration")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                if usesOz {
+                    let totalOz = Int(Double(hydrationService.todayTotal) / mlPerOz)
+                    let goalOz = Int(Double(hydrationService.settings.dailyGoalMl) / mlPerOz)
+                    Text("\(totalOz) of \(goalOz) oz")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("\(hydrationService.todayTotal) of \(hydrationService.settings.dailyGoalMl) ml")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Progress percentage
+            Text("\(Int(hydrationService.todayProgress * 100))%")
+                .font(.title)
+                .fontWeight(.bold)
+                .foregroundStyle(
+                    LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
+                )
+        }
+    }
+    
+    private var widgetBackground: some View {
+        ZStack {
+            // Bottom shadow layer (deepest) - color glow
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(gradientColors[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 8)
+                .blur(radius: 4)
+            
+            // Middle shadow layer
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 4)
+            
+            // Main card background with gradient
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: cardBackgroundGradient,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            // Inner highlight (top edge glow)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            // Colored accent border
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [gradientColors[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradientColors[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+}
+
+// MARK: - Hydration Quick Add Sheet
+struct HydrationQuickAddSheet: View {
+    @ObservedObject var hydrationService: HydrationService
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var customAmount = ""
+    @FocusState private var isInputFocused: Bool
+    
+    // Unit preference - persisted to UserDefaults
+    @AppStorage("hydrationUnitPreference") private var usesOz: Bool = true
+    
+    private let gradientColors: [Color] = [.cyan, .blue]
+    
+    // Quick add amounts
+    private let quickAddAmountsOz = [8, 12, 16, 24]
+    private let quickAddAmountsMl = [250, 350, 500, 750]
+    
+    // Conversion constants
+    private let mlPerOz = 29.5735
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header
+            HStack {
+                Text("Add Water")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            
+            // Unit Toggle
+            HStack(spacing: 0) {
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        usesOz = true
+                    }
+                }) {
+                    Text("oz")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(usesOz ? .white : .secondary)
+                        .frame(width: 60, height: 32)
+                        .background(
+                            usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(8)
+                }
+                
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        usesOz = false
+                    }
+                }) {
+                    Text("ml")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(!usesOz ? .white : .secondary)
+                        .frame(width: 60, height: 32)
+                        .background(
+                            !usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(8)
+                }
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.92))
+            )
+            
+            // Current progress
+            if usesOz {
+                let totalOz = Int(Double(hydrationService.todayTotal) / mlPerOz)
+                let goalOz = Int(Double(hydrationService.settings.dailyGoalMl) / mlPerOz)
+                Text("\(totalOz) / \(goalOz) oz today")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("\(hydrationService.todayTotal) / \(hydrationService.settings.dailyGoalMl) ml today")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Quick add buttons
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                if usesOz {
+                    ForEach(quickAddAmountsOz, id: \.self) { oz in
+                        quickAddButton(amount: oz, unit: "oz")
+                    }
+                } else {
+                    ForEach(quickAddAmountsMl, id: \.self) { ml in
+                        quickAddButton(amount: ml, unit: "ml")
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            // Divider
+            HStack {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+                Text("or")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 20)
+            
+            // Custom input
+            HStack(spacing: 8) {
+                TextField("Custom", text: $customAmount)
+                    .font(.headline)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(width: 100)
+                    .focused($isInputFocused)
+                
+                Text(usesOz ? "oz" : "ml")
+                    .foregroundColor(.secondary)
+                    .frame(width: 30)
+                
+                Button(action: {
+                    if let amount = Int(customAmount) {
+                        addWater(amount: amount, isOz: usesOz)
+                    }
+                }) {
+                    Text("Add")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(10)
+                }
+                .disabled(customAmount.isEmpty)
+                .opacity(customAmount.isEmpty ? 0.5 : 1)
+            }
+            .padding(.horizontal, 20)
+            
+            Spacer()
+        }
+    }
+    
+    @ViewBuilder
+    private func quickAddButton(amount: Int, unit: String) -> some View {
+        Button(action: {
+            addWater(amount: amount, isOz: unit == "oz")
+        }) {
+            VStack(spacing: 4) {
+                Image(systemName: "drop.fill")
+                    .font(.title3)
+                Text("\(amount) \(unit)")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 60)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.95))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .foregroundStyle(
+            LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom)
+        )
+    }
+    
+    private func addWater(amount: Int, isOz: Bool) {
+        // Always store in ml for consistency
+        let ml: Int
+        if isOz {
+            ml = Int(Double(amount) * mlPerOz)
+        } else {
+            ml = amount
+        }
+        
+        HapticManager.success()
+        
+        Task {
+            _ = await hydrationService.logWater(amountMl: ml)
+            await MainActor.run {
+                dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - Widget Settings Sheet
+struct WidgetSettingsSheet: View {
+    @Binding var showWeightTracker: Bool
+    @Binding var showHydration: Bool
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var premiumManager = PremiumManager.shared
+    @State private var showingPremiumUpgrade = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Add Widgets")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+            .padding(.bottom, 12)
+            
+            // Subtitle
+            if premiumManager.isPremiumUser {
+                Text("Customize your dashboard with quick-access widgets")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
+                    .lineLimit(2)
+            } else {
+                VStack(spacing: 8) {
+                    Text("Customize your dashboard with quick-access widgets")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.yellow)
+                        Text("Premium Required")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
+            
+            // Widget options
+            VStack(spacing: 16) {
+                widgetOptionRow(
+                    icon: "scalemass.fill",
+                    title: "Weight Tracker",
+                    subtitle: "Track your weight progress",
+                    gradientColors: [Color.orange, Color.yellow],
+                    isSelected: $showWeightTracker
+                )
+                
+                widgetOptionRow(
+                    icon: "drop.fill",
+                    title: "Hydration Tracker",
+                    subtitle: "Track your daily water intake",
+                    gradientColors: [Color.cyan, Color.blue],
+                    isSelected: $showHydration
+                )
+            }
+            .padding(.horizontal, 24)
+            
+            Spacer(minLength: 24)
+            
+            // Done button
+            Button(action: {
+                HapticManager.tap()
+                dismiss()
+            }) {
+                Text("Done")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(14)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .sheet(isPresented: $showingPremiumUpgrade) {
+            PremiumUpgradeView(triggeringFeature: .homescreenWidgets)
+        }
+    }
+    
+    @ViewBuilder
+    private func widgetOptionRow(icon: String, title: String, subtitle: String, gradientColors: [Color], isSelected: Binding<Bool>) -> some View {
+        Button(action: {
+            // Check if user is premium
+            if premiumManager.isPremiumUser {
+                HapticManager.selectionChanged()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSelected.wrappedValue.toggle()
+                }
+            } else {
+                // Show premium upgrade for free users
+                HapticManager.tap()
+                showingPremiumUpgrade = true
+            }
+        }) {
+            HStack(spacing: 14) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        // PRO badge for free users
+                        if !premiumManager.isPremiumUser {
+                            HStack(spacing: 3) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("PRO")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .tracking(0.5)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.blue, .purple],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            )
+                        }
+                    }
+                    
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Show lock icon for free users or checkbox for premium users
+                if !premiumManager.isPremiumUser {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                } else {
+                    // Checkbox for premium users
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isSelected.wrappedValue ? LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing) : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 26, height: 26)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(isSelected.wrappedValue ? Color.clear : Color.secondary.opacity(0.4), lineWidth: 2)
+                            )
+                        
+                        if isSelected.wrappedValue {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        // Show lock color for free users, or selected color for premium users
+                        !premiumManager.isPremiumUser
+                            ? LinearGradient(colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            : (isSelected.wrappedValue
+                                ? LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)),
+                        lineWidth: 2
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(!premiumManager.isPremiumUser ? 0.8 : 1.0)
+    }
+}
+
+// MARK: - Friend Notification Badge (Isolated to prevent parent re-renders)
+/// Small isolated view that observes FriendService for notification badges
+/// This prevents the entire DashboardView from re-rendering when friend data changes
+struct FriendNotificationBadge: View {
+    @ObservedObject private var friendService = FriendService.shared
+    
+    var body: some View {
+        if friendService.pendingRequests.count > 0 || friendService.unreadWorkoutCount > 0 {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 14, height: 14)
+                .overlay(
+                    Circle()
+                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                )
+        }
     }
 }
 

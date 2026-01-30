@@ -449,7 +449,25 @@ class WorkoutManager: ObservableObject {
             return
         }
         
+        // ⚠️ SAFETY: Verify exercises are valid before saving
+        // This prevents saving corrupted state that can't be restored
+        guard !currentExercises.isEmpty else {
+            #if DEBUG
+            print("⚠️ [WORKOUT] Cannot save workout state with empty exercises - potential data corruption")
+            #endif
+            // Don't clear storage yet - this might be a temporary state
+            return
+        }
+        
         let exerciseIds = currentExercises.compactMap { $0.id?.uuidString }
+        
+        // Additional safety check - ensure we got valid IDs
+        guard exerciseIds.count == currentExercises.count else {
+            #if DEBUG
+            print("⚠️ [WORKOUT] Some exercises have nil IDs - cannot save workout state safely")
+            #endif
+            return
+        }
         
         let state = ActiveWorkoutState(
             workoutId: workoutId,
@@ -568,6 +586,15 @@ class WorkoutManager: ObservableObject {
             return
         }
         
+        // ⚠️ CRITICAL FIX: Reset isCompleted to false for restored workouts
+        // This ensures the user can finish the workout even if it was previously marked complete
+        // (e.g., app crashed after saveWorkoutData() but before completion view dismissed)
+        if resolvedWorkout.isCompleted {
+            print("⚠️ [WORKOUT] Restored workout was marked as completed - resetting to allow finishing")
+            resolvedWorkout.isCompleted = false
+            try? context.save()
+        }
+        
         // Fetch exercises
         let exerciseIds = state.exerciseIds.compactMap { UUID(uuidString: $0) }
         print("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseIds.map { $0.uuidString.prefix(8) })")
@@ -585,14 +612,30 @@ class WorkoutManager: ObservableObject {
         
         if exercises.isEmpty {
             print("⚠️ [WORKOUT] Could not find any saved exercises in Core Data")
-            print("⚠️ [WORKOUT] NOT clearing workout - sets data may still be valid")
-            // Don't clear - user might still want to see their progress
-            // They can manually finish or cancel
+            print("⚠️ [WORKOUT] This means the workout data is corrupted - clearing to prevent crash loop")
+            clearActiveWorkoutStorage()
+            
+            // Show notification to user that workout was lost
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("WorkoutDataCorrupted"),
+                    object: nil,
+                    userInfo: ["message": "Your previous workout could not be restored. This can happen if the app was interrupted unexpectedly."]
+                )
+            }
+            return
         }
         
         // Sort exercises to match original order
         let orderedExercises = state.exerciseIds.compactMap { id -> Exercise? in
             exercises.first { $0.id?.uuidString == id }
+        }
+        
+        // Final safety check - ensure we have exercises after ordering
+        if orderedExercises.isEmpty {
+            print("⚠️ [WORKOUT] No exercises after ordering - clearing to prevent crash loop")
+            clearActiveWorkoutStorage()
+            return
         }
         
         // Load sets data (this is the most important data to preserve!)

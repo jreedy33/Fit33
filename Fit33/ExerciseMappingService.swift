@@ -65,17 +65,29 @@ final class ExerciseMappingService {
     
     // MARK: - Initialization
     
+    /// 🔒 Track if map building is in progress
+    private var isBuildingMaps = false
+    private var mapBuildTask: Task<Void, Never>?
+    
     private init() {}
     
     /// Build all maps from exercise database (call once on app launch)
-    /// OPTIMIZED: Builds maps incrementally to prevent blocking
+    /// ⚡️ OPTIMIZED: Now uses deduplication, chunking, and yielding
     func buildMaps() async {
-        guard !isInitialized else {
+        // 🛡️ Prevent duplicate builds
+        guard !isInitialized && !isBuildingMaps else {
             #if DEBUG
-            print("🗺️ ExerciseMappingService: Already initialized, skipping")
+            if isInitialized {
+                print("🗺️ [MAPPING] Already initialized, skipping")
+            } else {
+                print("🗺️ [MAPPING] Build already in progress, skipping")
+            }
             #endif
             return
         }
+        
+        isBuildingMaps = true
+        defer { isBuildingMaps = false }
         
         #if DEBUG
         let startTime = Date()
@@ -83,37 +95,66 @@ final class ExerciseMappingService {
         #endif
         
         do {
-            // Limit initial fetch for faster startup
+            // ⚡️ Use cached/deduplicated fetch
             let exercises = try await SupabaseManager.shared.fetchAllExercises()
             
             #if DEBUG
-            print("🗺️ [MAPPING] Fetched \(exercises.count) exercises, building maps...")
+            print("🗺️ [MAPPING] Using \(exercises.count) exercises for map building...")
             #endif
             
-            // Build maps in chunks with yields to prevent blocking
-            await Task.yield()
+            // ⚡️ PERFORMANCE: Build maps incrementally on background queue
+            // This prevents blocking the main thread for 19+ seconds
             
-            buildQueue.async { [weak self] in
+            mapBuildTask = Task(priority: .utility) { [weak self] in
                 guard let self = self else { return }
                 
-                // Build only essential maps first
+                // Build pattern map first (fast, essential)
+                await Task.yield()
                 self.buildPatternMap(from: exercises)
                 
                 #if DEBUG
                 print("🗺️ [MAPPING] Pattern map built")
                 #endif
                 
-                // Build other maps with lower priority
+                // Yield to let UI breathe
+                await Task.yield()
+                
+                // Build effectiveness map (used for recommendations)
                 self.buildMuscleEffectivenessMap(from: exercises)
                 
                 #if DEBUG
                 print("🗺️ [MAPPING] Effectiveness map built")
                 #endif
                 
-                // These are expensive - build only first 1000 exercises
-                let limitedExercises = Array(exercises.prefix(1000))
-                self.buildSubstitutionMap(from: limitedExercises)
-                self.buildPairingMap(from: limitedExercises)
+                // Yield again
+                await Task.yield()
+                
+                // ⚡️ OPTIMIZATION: Aggressive limiting for faster startup
+                // Build maps for only the most commonly used exercises
+                let limitedExercises = Array(exercises.prefix(500)) // Reduced from 1000
+                
+                // Build in chunks with yields and CPU checks
+                let chunkSize = 100 // Smaller chunks for better responsiveness
+                for i in stride(from: 0, to: limitedExercises.count, by: chunkSize) {
+                    // Skip if CPU is critical
+                    if CPUProtection.shared.isCPUCritical() {
+                        print("⚠️ [MAPPING] Pausing - CPU critical")
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 500ms pause
+                    }
+                    
+                    let chunk = Array(limitedExercises[i..<min(i + chunkSize, limitedExercises.count)])
+                    self.buildSubstitutionMapChunk(from: chunk)
+                    await Task.yield()
+                }
+                
+                // ⚡️ Skip pairing map if CPU is still high - it's N² complexity
+                if !CPUProtection.shared.isCPUTooHigh() {
+                    self.buildPairingMapOptimized(from: limitedExercises)
+                } else {
+                    print("⚠️ [MAPPING] Skipping pairing map - CPU too high")
+                }
+                await Task.yield()
+                
                 self.buildProgressionMap(from: limitedExercises)
                 
                 self.isInitialized = true
@@ -190,6 +231,12 @@ final class ExerciseMappingService {
     
     // MARK: - Map Building
     
+    /// ⚡️ PERFORMANCE: Build substitution map in chunks to prevent blocking
+    private func buildSubstitutionMapChunk(from exercises: [ExerciseDTO]) {
+        // Same logic as full build but for a chunk
+        buildSubstitutionMap(from: exercises)
+    }
+    
     private func buildSubstitutionMap(from exercises: [ExerciseDTO]) {
         // Group exercises by primary muscle + movement pattern
         var musclePatternGroups: [String: [ExerciseDTO]] = [:]
@@ -240,45 +287,71 @@ final class ExerciseMappingService {
         }
     }
     
-    private func buildPairingMap(from exercises: [ExerciseDTO]) {
+    /// ⚡️ OPTIMIZED: O(N) version using pre-computed muscle groups instead of O(N²)
+    private func buildPairingMapOptimized(from exercises: [ExerciseDTO]) {
+        // Pre-group exercises by muscle for O(1) lookup
+        var exercisesByMuscle: [String: [ExerciseDTO]] = [:]
+        var compoundExercises: Set<String> = []
+        var isolationExercises: Set<String> = []
+        
+        for exercise in exercises {
+            for muscle in exercise.primaryMusclesArray {
+                let muscleKey = muscle.lowercased()
+                exercisesByMuscle[muscleKey, default: []].append(exercise)
+            }
+            if isCompound(exercise.name) {
+                compoundExercises.insert(exercise.name.lowercased())
+            } else {
+                isolationExercises.insert(exercise.name.lowercased())
+            }
+        }
+        
+        // Now build pairings using the pre-computed groups - O(N * M) where M is small
         for exercise in exercises {
             let normalizedName = exercise.name.lowercased()
             var pairings: [PairingEntry] = []
             
-            // Find antagonist pairings (push/pull, etc.)
+            let exerciseMuscles = Set(exercise.primaryMusclesArray.map { $0.lowercased() })
             let antagonistMuscles = getAntagonistMuscles(for: exercise.primaryMusclesArray)
+            let isExerciseCompound = compoundExercises.contains(normalizedName)
             
-            for candidate in exercises {
-                guard candidate.name.lowercased() != normalizedName else { continue }
-                
-                let candidateMuscles = Set(candidate.primaryMusclesArray.map { $0.lowercased() })
-                
-                // Check for antagonist pairing (superset potential)
-                if !antagonistMuscles.isDisjoint(with: candidateMuscles) {
-                    let entry = PairingEntry(
+            // Get candidates from antagonist muscle groups only (not all exercises)
+            var seenCandidates: Set<String> = [normalizedName]
+            
+            // Antagonist pairings
+            for muscle in antagonistMuscles {
+                for candidate in (exercisesByMuscle[muscle] ?? []).prefix(5) { // Limit per muscle
+                    let candidateName = candidate.name.lowercased()
+                    guard !seenCandidates.contains(candidateName) else { continue }
+                    seenCandidates.insert(candidateName)
+                    
+                    pairings.append(PairingEntry(
                         exerciseName: candidate.name,
                         pairingType: .superset,
                         synergyScore: 0.9,
                         reason: "Antagonist muscles - great for supersets"
-                    )
-                    pairings.append(entry)
+                    ))
                 }
-                
-                // Check for same muscle group (compound set)
-                let exerciseMuscles = Set(exercise.primaryMusclesArray.map { $0.lowercased() })
-                if !exerciseMuscles.isDisjoint(with: candidateMuscles) {
-                    let isPostExhaust = isCompound(exercise.name) && !isCompound(candidate.name)
-                    let isPreExhaust = !isCompound(exercise.name) && isCompound(candidate.name)
+            }
+            
+            // Same muscle group pairings (post-exhaust/pre-exhaust)
+            for muscle in exerciseMuscles {
+                for candidate in (exercisesByMuscle[muscle] ?? []).prefix(5) { // Limit per muscle
+                    let candidateName = candidate.name.lowercased()
+                    guard !seenCandidates.contains(candidateName) else { continue }
+                    seenCandidates.insert(candidateName)
+                    
+                    let isCandidateCompound = compoundExercises.contains(candidateName)
                     
                     let type: PairingEntry.PairingType
                     let score: Double
                     let reason: String
                     
-                    if isPostExhaust {
+                    if isExerciseCompound && !isCandidateCompound {
                         type = .postExhaust
                         score = 0.85
                         reason = "Compound → Isolation for muscle fatigue"
-                    } else if isPreExhaust {
+                    } else if !isExerciseCompound && isCandidateCompound {
                         type = .preExhaust
                         score = 0.8
                         reason = "Isolation → Compound pre-exhaust"
@@ -288,13 +361,12 @@ final class ExerciseMappingService {
                         reason = "Same muscle group compound set"
                     }
                     
-                    let entry = PairingEntry(
+                    pairings.append(PairingEntry(
                         exerciseName: candidate.name,
                         pairingType: type,
                         synergyScore: score,
                         reason: reason
-                    )
-                    pairings.append(entry)
+                    ))
                 }
             }
             
@@ -303,6 +375,11 @@ final class ExerciseMappingService {
                 .sorted { $0.synergyScore > $1.synergyScore }
                 .prefix(15))
         }
+    }
+    
+    private func buildPairingMap(from exercises: [ExerciseDTO]) {
+        // Use optimized version
+        buildPairingMapOptimized(from: exercises)
     }
     
     private func buildProgressionMap(from exercises: [ExerciseDTO]) {

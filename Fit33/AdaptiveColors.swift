@@ -124,7 +124,7 @@ struct AdaptiveGradient {
             return universalDark
         } else {
             return LinearGradient(
-                gradient: Gradient(colors: [Color.orange.opacity(0.3), Color.yellow.opacity(0.2), Color.white]),
+                gradient: Gradient(colors: [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.white]),
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -216,3 +216,122 @@ extension View {
     }
 }
 
+// MARK: - Animated Orb Background
+/// Reusable animated background with floating gradient orbs
+/// Used across all main tabs for visual consistency
+struct AnimatedOrbBackground: View {
+    let baseGradient: LinearGradient
+    let primaryOrbColor: Color
+    let secondaryOrbColor: Color
+    
+    @State private var animatePulse = false
+    @Environment(\.colorScheme) private var colorScheme
+    
+    // Convenience initializers for each tab
+    static func home(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.home(for: colorScheme),
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
+        )
+    }
+    
+    static func exercises(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.exercises(for: colorScheme),
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
+        )
+    }
+    
+    static func workout(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.workout(for: colorScheme),
+            primaryOrbColor: .green,
+            secondaryOrbColor: .blue
+        )
+    }
+    
+    static func meals(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.meals(for: colorScheme),
+            primaryOrbColor: .mint,
+            secondaryOrbColor: .green
+        )
+    }
+    
+    static func stats(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.stats(for: colorScheme),
+            primaryOrbColor: .purple,
+            secondaryOrbColor: .blue
+        )
+    }
+    
+    var body: some View {
+        ZStack {
+            // Base gradient
+            baseGradient
+            
+            // Animated gradient orbs
+            GeometryReader { geometry in
+                ZStack {
+                    // Top primary orb
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    primaryOrbColor.opacity(colorScheme == .dark ? 0.25 : 0.3),
+                                    primaryOrbColor.opacity(0)
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 200
+                            )
+                        )
+                        .frame(width: 400, height: 400)
+                        .offset(x: animatePulse ? -50 : -100, y: animatePulse ? -150 : -180)
+                        .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: animatePulse)
+                    
+                    // Bottom secondary orb
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    secondaryOrbColor.opacity(colorScheme == .dark ? 0.2 : 0.25),
+                                    secondaryOrbColor.opacity(0)
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 250
+                            )
+                        )
+                        .frame(width: 500, height: 500)
+                        .offset(x: animatePulse ? 150 : 100, y: animatePulse ? geometry.size.height * 0.4 : geometry.size.height * 0.5)
+                        .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: animatePulse)
+                    
+                    // Accent orb (smaller, faster)
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    primaryOrbColor.opacity(colorScheme == .dark ? 0.15 : 0.2),
+                                    primaryOrbColor.opacity(0)
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 120
+                            )
+                        )
+                        .frame(width: 240, height: 240)
+                        .offset(x: animatePulse ? geometry.size.width * 0.6 : geometry.size.width * 0.7, y: animatePulse ? geometry.size.height * 0.2 : geometry.size.height * 0.15)
+                        .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: animatePulse)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            animatePulse = true
+        }
+    }
+}

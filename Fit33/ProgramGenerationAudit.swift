@@ -6,6 +6,10 @@
 //  Creates 100 diverse test users and simulates full program completion
 //  Grades exercise selection quality based on user inputs and best practices
 //
+//  ⚠️ DEBUG ONLY - This entire file is excluded from production builds
+//
+
+#if DEBUG
 
 import Foundation
 import CoreData
@@ -1173,3 +1177,4 @@ extension ProgramGenerationAuditor {
     }
 }
 
+#endif

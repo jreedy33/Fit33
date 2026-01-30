@@ -28,10 +28,14 @@ struct AutoWorkoutPreviewView: View {
     @State private var showingExerciseDetail = false
     @State private var showingFallbackDetail = false  // 🆕 For fallback detail view
     @State private var isSyncingExercises = false  // 🆕 For sync loading state
+    @State private var isPreparingWorkout = false  // ⚡️ For warmup-pending state
     
     // Haptic feedback generators (UX Audit)
     private let selectionFeedback = UISelectionFeedbackGenerator()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+    
+    // ⚡️ Warmup service for instant "Go!" transitions
+    @StateObject private var warmupService = PreviewWarmupService.shared
     
     private let themeColor: Color = .purple
     
@@ -79,6 +83,26 @@ struct AutoWorkoutPreviewView: View {
                     RoundedRectangle(cornerRadius: 20)
                         .fill(Color.black.opacity(0.7))
                 )
+            }
+            
+            // ⚡️ Loading overlay when waiting for warmup to complete
+            if isPreparingWorkout {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                    Text("Preparing workout...")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .padding(30)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color.black.opacity(0.7))
+                )
+                .transition(.opacity)
             }
         }
         .navigationTitle("Your Workout")
@@ -298,6 +322,19 @@ struct AutoWorkoutPreviewView: View {
             // VideoStreamingService skips already-prefetching videos, so this is safe to call
             let exerciseNames = exercises.map { $0.name }
             VideoStreamingService.shared.prefetchVideos(for: exerciseNames)
+            
+            // ⚡️ WARMUP: Pre-load all data for ActiveWorkoutView while user browses preview
+            // This ensures instant "Go!" transitions with no lag
+            warmupService.warmUp(
+                exercises: exercises,
+                context: PersistenceController.shared.container.viewContext
+            )
+        }
+        .onDisappear {
+            // Reset warmup if user backs out (they might change exercises)
+            if !workoutManager.isWorkoutActive {
+                warmupService.reset()
+            }
         }
     }
     
@@ -417,6 +454,7 @@ struct AutoWorkoutPreviewView: View {
         let totalStartTime = CFAbsoluteTimeGetCurrent()
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("🎯 [AUTO-WORKOUT] startWorkout() BEGIN")
+        print("   └─ Warmup ready: \(warmupService.isWarmedUp)")
         #endif
         
         // Early validation
@@ -433,6 +471,34 @@ struct AutoWorkoutPreviewView: View {
             return
         }
         
+        // ⚡️ If warmup hasn't completed, show brief loading and wait
+        if !warmupService.isWarmedUp && warmupService.warmupProgress < 1.0 {
+            #if DEBUG
+            print("⏳ [AUTO-WORKOUT] Waiting for warmup to complete (progress: \(warmupService.warmupProgress * 100)%)")
+            #endif
+            isPreparingWorkout = true
+            
+            // Wait for warmup with timeout
+            Task {
+                let maxWait: TimeInterval = 2.0  // Max 2 seconds
+                let startWait = Date()
+                
+                while !warmupService.isWarmedUp && Date().timeIntervalSince(startWait) < maxWait {
+                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                }
+                
+                await MainActor.run {
+                    isPreparingWorkout = false
+                    proceedWithStartWorkout()
+                }
+            }
+            return
+        }
+        
+        proceedWithStartWorkout()
+    }
+    
+    private func proceedWithStartWorkout() {
         #if DEBUG
         var checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
@@ -448,7 +514,7 @@ struct AutoWorkoutPreviewView: View {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // Lookup Core Data exercises
+        // Lookup Core Data exercises by name first
         let exerciseNames = exercises.map { $0.name }
         var coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
         
@@ -460,45 +526,93 @@ struct AutoWorkoutPreviewView: View {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // 🆕 If Core Data exercises not found, try syncing from cloud first
-        if coreDataExercises.isEmpty {
+        // 🆕 If name lookup failed, try to find by ID or create exercises in Core Data
+        if coreDataExercises.count < exercises.count {
             #if DEBUG
-            print("⚠️ [AUTO-WORKOUT] No Core Data exercises found - attempting sync...")
+            print("⚠️ [AUTO-WORKOUT] Only found \(coreDataExercises.count)/\(exercises.count) exercises by name")
+            print("   🔧 Attempting to create missing exercises in Core Data...")
             #endif
             
-            // Show syncing state and trigger async sync
-            isSyncingExercises = true
-            Task {
-                // Sync exercises from cloud
-                await ExerciseLibraryService.shared.syncExercisesFromCloud()
+            let context = PersistenceController.shared.container.viewContext
+            var createdExercises: [Exercise] = []
+            
+            for generatedExercise in exercises {
+                // First check if we already found this one
+                if let existing = coreDataExercises.first(where: { $0.name?.lowercased() == generatedExercise.name.lowercased() }) {
+                    continue // Already have it
+                }
                 
-                // Retry lookup after sync
-                await MainActor.run {
-                    isSyncingExercises = false
-                    
-                    // Retry the lookup
-                    let retryExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
-                    
-                    #if DEBUG
-                    print("   After sync - found \(retryExercises.count) exercises")
-                    #endif
-                    
-                    if retryExercises.isEmpty {
-                        // Still empty - show error to user
-                        errorMessage = "Unable to load exercise data. Please check your internet connection and try again."
-                        showingError = true
+                // Try to find by ID if it looks like a UUID
+                if let uuid = UUID(uuidString: generatedExercise.id) {
+                    if let foundById = ExerciseLibraryService.shared.getAllExercises().first(where: { $0.id == uuid }) {
+                        createdExercises.append(foundById)
                         #if DEBUG
-                        print("❌ [AUTO-WORKOUT] Still no exercises after sync!")
+                        print("   ✅ Found '\(generatedExercise.name)' by ID")
                         #endif
-                    } else {
-                        // Got exercises - proceed with workout
-                        proceedWithWorkout(
-                            title: workoutTitle,
-                            coreDataExercises: retryExercises
-                        )
+                        continue
                     }
                 }
+                
+                // Create the exercise in Core Data from GeneratedExercise data
+                let newExercise = Exercise(context: context)
+                newExercise.id = UUID()
+                newExercise.name = generatedExercise.name
+                newExercise.category = generatedExercise.category
+                newExercise.equipment = generatedExercise.equipment
+                newExercise.instructions = generatedExercise.instructions ?? ""
+                
+                // Set muscle groups
+                var muscleGroups = [generatedExercise.primaryMuscle]
+                muscleGroups.append(contentsOf: generatedExercise.secondaryMuscles)
+                newExercise.muscleGroups = muscleGroups as NSArray
+                
+                createdExercises.append(newExercise)
+                #if DEBUG
+                print("   ✨ Created '\(generatedExercise.name)' in Core Data")
+                #endif
             }
+            
+            // Save the new exercises to Core Data
+            if !createdExercises.isEmpty {
+                do {
+                    try context.save()
+                    // Invalidate the cache so the new exercises are available
+                    ExerciseLibraryService.shared.invalidateCache()
+                    #if DEBUG
+                    print("   💾 Saved \(createdExercises.count) new exercises to Core Data")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("   ❌ Failed to save exercises: \(error)")
+                    #endif
+                }
+            }
+            
+            // Combine found and created exercises in the correct order
+            coreDataExercises = exercises.compactMap { generated -> Exercise? in
+                // Try name match first
+                if let found = coreDataExercises.first(where: { $0.name?.lowercased() == generated.name.lowercased() }) {
+                    return found
+                }
+                // Try created exercises
+                if let created = createdExercises.first(where: { $0.name?.lowercased() == generated.name.lowercased() }) {
+                    return created
+                }
+                return nil
+            }
+            
+            #if DEBUG
+            print("   📊 Final exercise count: \(coreDataExercises.count)/\(exercises.count)")
+            #endif
+        }
+        
+        // Still couldn't resolve exercises - show error
+        if coreDataExercises.isEmpty {
+            #if DEBUG
+            print("❌ [AUTO-WORKOUT] Failed to resolve any exercises!")
+            #endif
+            errorMessage = "Unable to load exercise data. Please try regenerating the workout."
+            showingError = true
             return
         }
         
@@ -506,8 +620,7 @@ struct AutoWorkoutPreviewView: View {
         proceedWithWorkout(title: workoutTitle, coreDataExercises: coreDataExercises)
         
         #if DEBUG
-        let totalTime = (CFAbsoluteTimeGetCurrent() - totalStartTime) * 1000
-        print("🎯 [AUTO-WORKOUT] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms")
+        print("🎯 [AUTO-WORKOUT] proceedWithStartWorkout() COMPLETE")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         #endif
     }

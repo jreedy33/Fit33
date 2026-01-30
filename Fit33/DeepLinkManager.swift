@@ -7,13 +7,29 @@ class DeepLinkManager: ObservableObject {
     static let shared = DeepLinkManager()
     
     enum Destination: Equatable {
+        // Tab Navigation
         case running
         case workout
         case dashboard
+        case mealsTab           // Navigate to Meals tab (tab 3)
+        case statsTab           // Navigate to Stats tab (tab 4)
+        
+        // Social / Friends
+        case friends
+        case friendRequests     // Direct to friend requests tab
         case sharedWorkout(workoutId: String)
         case receivedWorkout(workoutId: String)
-        case friends
         case receivedWorkouts
+        
+        // Dashboard Widgets (navigate to Home + scroll to widget)
+        case hydration          // Home tab > Hydration widget
+        case stepTracker        // Home tab > Step tracker widget
+        case weightTracker      // Home tab > Weight tracker widget
+        case workoutHistory     // Home tab > Recent workouts section
+        
+        // Achievements/Progress
+        case personalRecord     // Stats tab > achievements
+        case streakInfo         // Home tab > streak popup
     }
     
     @Published var pendingDestination: Destination?
@@ -89,6 +105,75 @@ class DeepLinkManager: ObservableObject {
                 return true
             }
             return false
+            
+        case "strava":
+            // Handle Strava OAuth callback
+            // Format: fit33://strava?code=xxx&scope=xxx
+            print("🏃 [DEEPLINK] Strava OAuth callback received - forwarding to StravaService")
+            // The callback is handled via .onOpenURL in StravaAuthSheet
+            // Post notification for any listening views
+            NotificationCenter.default.post(name: Notification.Name("StravaCallback"), object: url)
+            return true
+            
+        case "friendrequests", "friend-requests":
+            // Format: fit33://friendrequests
+            pendingDestination = .friendRequests
+            print("👥 [DEEPLINK] Navigating to friend requests")
+            return true
+            
+        case "friends":
+            // Format: fit33://friends
+            pendingDestination = .friends
+            print("👥 [DEEPLINK] Navigating to friends list")
+            return true
+            
+        case "meals", "nutrition", "food":
+            // Format: fit33://meals
+            pendingDestination = .mealsTab
+            print("🍎 [DEEPLINK] Navigating to meals tab")
+            return true
+            
+        case "stats", "progress", "achievements":
+            // Format: fit33://stats
+            pendingDestination = .statsTab
+            print("📊 [DEEPLINK] Navigating to stats tab")
+            return true
+            
+        case "water", "hydration":
+            // Format: fit33://hydration
+            pendingDestination = .hydration
+            print("💧 [DEEPLINK] Navigating to hydration widget")
+            return true
+            
+        case "steps", "steptracker":
+            // Format: fit33://steps
+            pendingDestination = .stepTracker
+            print("👟 [DEEPLINK] Navigating to step tracker")
+            return true
+            
+        case "weight", "weighttracker":
+            // Format: fit33://weight
+            pendingDestination = .weightTracker
+            print("⚖️ [DEEPLINK] Navigating to weight tracker")
+            return true
+            
+        case "history", "workouthistory":
+            // Format: fit33://history
+            pendingDestination = .workoutHistory
+            print("📜 [DEEPLINK] Navigating to workout history")
+            return true
+            
+        case "streak":
+            // Format: fit33://streak
+            pendingDestination = .streakInfo
+            print("🔥 [DEEPLINK] Navigating to streak info")
+            return true
+            
+        case "personalrecord", "pr":
+            // Format: fit33://personalrecord
+            pendingDestination = .personalRecord
+            print("🏆 [DEEPLINK] Navigating to personal records")
+            return true
             
         default:
             return false

@@ -179,7 +179,11 @@ struct PreviousSetInfo: Codable {
     
     var displayString: String {
         if weight > 0 && reps > 0 {
-            return "\(Int(weight))×\(reps)"
+            // Preserve decimals when needed (e.g., 180.5 → "180.5", 180.0 → "180")
+            let weightStr = weight.truncatingRemainder(dividingBy: 1) == 0 
+                ? "\(Int(weight))" 
+                : String(format: "%.1f", weight)
+            return "\(weightStr)×\(reps)"
         }
         return "-"
     }

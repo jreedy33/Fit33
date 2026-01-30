@@ -18,55 +18,7 @@ struct WorkoutTabView: View {
                     .toolbarBackground(.hidden, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
                     .navigationDestination(for: String.self) { destination in
-                        if destination == "WorkoutGenerator" {
-                            WorkoutGeneratorSelectionView()
-                        } else if destination == "GeneratedPrograms" {
-                            GeneratedProgramsListView()
-                        } else if destination == "ProgramLibrary" {
-                            CloudProgramLibraryView()
-                        } else if destination == "ProgramExplorer" {
-                            ProgramExplorerView()
-                        } else if destination == "PersonalizedPrograms" {
-                            PersonalizedProgramsView()
-                        } else if destination == "CloudProgramSchedule" {
-                            CloudProgramScheduleView()
-                        } else if destination == "CustomWorkout" {
-                            CustomWorkoutBuilderView()
-                        } else if destination == "FavoriteRoutines" {
-                            FavoriteRoutinesView()
-                        } else if destination == "OutdoorRun" {
-                            RunningWorkoutView()
-                        } else if destination.hasPrefix("ProgramDetail:") {
-                            let programId = String(destination.dropFirst("ProgramDetail:".count))
-                            CloudProgramDetailView(programId: programId)
-                        } else if destination == "SmartProgramOverview" {
-                            // Navigate to Program Overview from Dashboard
-                            if let program = workoutManager.navigateProgramData {
-                                SmartProgramOverviewView(
-                                    program: program,
-                                    template: workoutManager.navigateProgramTemplate
-                                )
-                                .environmentObject(workoutManager)
-                                .environmentObject(userManager)
-                            }
-                        } else if destination == "SmartProgramDay" {
-                            // Navigate to Program Day from Dashboard
-                            if let program = workoutManager.navigateProgramData,
-                               let day = workoutManager.navigateProgramDay {
-                                SmartProgramDayPreviewView(
-                                    program: program,
-                                    day: day,
-                                    programName: program.personalizedName,
-                                    totalDays: program.generatedDays.count
-                                )
-                                .environmentObject(workoutManager)
-                                .environmentObject(userManager)
-                            }
-                        } else if destination == "ReceivedWorkouts" {
-                            ReceivedWorkoutsView()
-                        } else if destination == "FriendsList" {
-                            FriendsListView()
-                        }
+                        navigationDestinationView(for: destination)
                     }
             }
             
@@ -85,12 +37,45 @@ struct WorkoutTabView: View {
             
             // Layer 3: Active Workout (on top when active)
             if workoutManager.isWorkoutActive,
-               let workout = workoutManager.currentWorkout {
+               let workout = workoutManager.currentWorkout,
+               !workoutManager.currentExercises.isEmpty {
                 ActiveWorkoutView(
                     isPresented: .constant(true),
                     workout: workout,
                     exercises: workoutManager.currentExercises
                 )
+                .zIndex(10)
+            } else if workoutManager.isWorkoutActive && workoutManager.currentExercises.isEmpty {
+                // Safety: If workout is active but exercises are empty, auto-clear the stuck state
+                VStack(spacing: 20) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.orange)
+                    
+                    Text("Workout Data Error")
+                        .font(.title2.bold())
+                    
+                    Text("Your workout data is corrupted. Tap below to clear it and start fresh.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    Button {
+                        workoutManager.forceResetWorkoutState()
+                    } label: {
+                        Text("Clear Stuck Workout")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground))
                 .zIndex(10)
             }
         }
@@ -138,6 +123,16 @@ struct WorkoutTabView: View {
                 navigationPath.append("FriendsList")
                 deepLinkManager.pendingDestination = nil
                 print("👥 Deep link: Navigating to friends list")
+            case .friendRequests:
+                // Navigate directly to friend requests tab
+                navigationPath.append("FriendRequests")
+                deepLinkManager.pendingDestination = nil
+                print("👥 Deep link: Navigating to friend requests tab")
+                
+            // These destinations are handled by MainTabView (tab switching)
+            case .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker, .workoutHistory, .personalRecord, .streakInfo:
+                // Already handled by MainTabView, just clear the destination
+                deepLinkManager.pendingDestination = nil
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in
@@ -182,6 +177,66 @@ struct WorkoutTabView: View {
                     navigationPath.append("SmartProgramDay")
                     workoutManager.shouldNavigateToProgramDay = false
                 }
+            }
+        }
+    }
+    
+    // MARK: - Navigation Destination Helper
+    // Extracted to reduce body complexity for compiler
+    @ViewBuilder
+    private func navigationDestinationView(for destination: String) -> some View {
+        switch destination {
+        case "WorkoutGenerator":
+            WorkoutGeneratorSelectionView()
+        case "GeneratedPrograms":
+            GeneratedProgramsListView()
+        case "ProgramLibrary":
+            CloudProgramLibraryView()
+        case "ProgramExplorer":
+            ProgramExplorerView()
+        case "PersonalizedPrograms":
+            PersonalizedProgramsView()
+        case "CloudProgramSchedule":
+            CloudProgramScheduleView()
+        case "CustomWorkout":
+            CustomWorkoutBuilderView()
+        case "FavoriteRoutines":
+            FavoriteRoutinesView()
+        case "OutdoorRun":
+            RunningWorkoutView()
+        case "SmartProgramOverview":
+            if let program = workoutManager.navigateProgramData {
+                SmartProgramOverviewView(
+                    program: program,
+                    template: workoutManager.navigateProgramTemplate
+                )
+                .environmentObject(workoutManager)
+                .environmentObject(userManager)
+            }
+        case "SmartProgramDay":
+            if let program = workoutManager.navigateProgramData,
+               let day = workoutManager.navigateProgramDay {
+                SmartProgramDayPreviewView(
+                    program: program,
+                    day: day,
+                    programName: program.personalizedName,
+                    totalDays: program.generatedDays.count
+                )
+                .environmentObject(workoutManager)
+                .environmentObject(userManager)
+            }
+        case "ReceivedWorkouts":
+            ReceivedWorkoutsView()
+        case "FriendsList":
+            FriendsListView()
+        case "FriendRequests":
+            FriendsListView(initialTab: 1)  // Navigate directly to Requests tab
+        default:
+            if destination.hasPrefix("ProgramDetail:") {
+                let programId = String(destination.dropFirst("ProgramDetail:".count))
+                CloudProgramDetailView(programId: programId)
+            } else {
+                EmptyView()
             }
         }
     }
@@ -253,8 +308,7 @@ struct WorkoutHomeView: View {
                 forceRenderID = UUID()
             }
             .background(
-                AdaptiveGradient.workout(for: colorScheme)
-                .ignoresSafeArea(.all, edges: .all)
+                AnimatedOrbBackground.workout(colorScheme: colorScheme)
             )
             .onChange(of: scrollToTopTrigger) { _, _ in
                 scrollProxy.scrollTo("top", anchor: .top)

@@ -18,7 +18,9 @@ struct ActiveWorkoutView: View {
     // exerciseSets is now stored in workoutManager.exerciseSetsData to survive view rebuilds during ads
     @State private var elapsedTime: TimeInterval = 0
     @State private var timer: Timer?
-    @State private var workoutStartTime = Date()
+    // ⚡️ PERFORMANCE: Use workoutManager.workoutStartTime instead of local state
+    // This ensures accurate timing even if the view takes time to render
+    // The timer calculation uses the ACTUAL start time (when GO was tapped)
     @State private var showingCompletionView = false
     @State private var isFinishingWorkout = false // Prevents duplicate workout saves
     @State private var exerciseRestTimers: [String: TimeInterval] = [:]
@@ -47,22 +49,13 @@ struct ActiveWorkoutView: View {
     // Shuffle ad tracking - show ad every 2nd shuffle
     @State private var shuffleCount: Int = 0
     
+    // ⚡️ PERFORMANCE: Two-phase rendering for instant load
     // MARK: - Ad Logic
     
     /// Determine if inline ads should show based on workout source
     private var shouldShowInlineAds: Bool {
-        guard AdManager.shared.adsEnabled else { return false }
-        
-        // Check workout name to determine source
-        let workoutName = workout.name?.lowercased() ?? ""
-        
-        // Don't show ads for custom workouts (user built their own)
-        if workoutName.contains("custom workout") {
-            return false
-        }
-        
-        // Show ads for auto-generated, received, and program workouts
-        return true
+        // Show ads only for free users with ads enabled
+        return !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled
     }
     
     init(isPresented: Binding<Bool>, workout: Workout, exercises: [Exercise]) {
@@ -98,14 +91,18 @@ struct ActiveWorkoutView: View {
                 }
                 
                 // Exercise list - transparent container
+                // ⚡️ PERFORMANCE: Using LazyVStack to defer card rendering
+                // Only visible cards are rendered, reducing initial load time
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
+                        LazyVStack(spacing: 16) {
                             // Top spacing for glow effect visibility
-                            Spacer().frame(height: 12)
+                            Spacer().frame(height: 0)
                             
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
                                 let exerciseId = exercise.id?.uuidString ?? ""
+                                
+                                // ⚡️ PERFORMANCE: LazyVStack + minimal card construction = instant render
                                 ExerciseCard(
                                     exercise: exercise,
                                     sets: Binding(
@@ -200,12 +197,6 @@ struct ActiveWorkoutView: View {
                                     isActiveCard: activeExerciseId == exerciseId
                                 )
                                 .id(exerciseId) // For ScrollViewReader
-                                
-                                // Show inline ad after every 2nd exercise
-                                if shouldShowInlineAds && (index + 1) % 2 == 0 && index < exercises.count - 1 {
-                                    NativeAdCardView()
-                                        .id("inline_ad_\(index)")
-                                }
                             }
                         }
                         
@@ -292,108 +283,142 @@ struct ActiveWorkoutView: View {
         }
         // Header overlay - same style as home tab
         .safeAreaInset(edge: .top) {
-            // Header content
-            ZStack {
-                // Centered timer
-                Text(workoutDuration)
-                    .foregroundColor(colorScheme == .dark ? .white : .primary)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                // Left/Right buttons
-                HStack {
-                    Button(action: {
-                        workoutManager.navigateToHomeTab()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(colorScheme == .dark ? .white : .primary)
-                    }
+            VStack(spacing: 0) {
+                // Header content
+                ZStack {
+                    // Centered timer
+                    Text(workoutDuration)
+                        .foregroundColor(colorScheme == .dark ? .white : .primary)
+                        .font(.title)
+                        .fontWeight(.bold)
                     
-                    Spacer()
-                    
-                    HStack(spacing: 12) {
-                        if workoutManager.workoutInsights != nil {
-                            Button(action: {
-                                showingWorkoutInsights = true
-                            }) {
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(.blue)
-                            }
+                    // Left/Right buttons
+                    HStack {
+                        Button(action: {
+                            workoutManager.navigateToHomeTab()
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundColor(colorScheme == .dark ? .white : .primary)
                         }
                         
-                        // Favorite button
-                        Button(action: {
-                            HapticManager.selectionChanged() // ⚡️ Pre-warmed haptics
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                isWorkoutFavorite.toggle()
-                                workout.isFavorite = isWorkoutFavorite
-                                
-                                // Save immediately to Core Data
-                                do {
-                                    try viewContext.save()
-                                    print("⭐ Workout favorite status: \(isWorkoutFavorite)")
-                                    
-                                    // Sync to cloud if authenticated
-                                    if SupabaseManager.shared.isAuthenticated, let workoutId = workout.id?.uuidString {
-                                        Task {
-                                            do {
-                                                if isWorkoutFavorite {
-                                                    // Save favorite to cloud with exercise list
-                                                    let exerciseNames = exercises.compactMap { $0.name }
-                                                    try await SupabaseManager.shared.saveFavoriteWorkout(
-                                                        workoutName: workout.name ?? "Workout",
-                                                        exerciseNames: exerciseNames,
-                                                        originalWorkoutId: workoutId
-                                                    )
-                                                } else {
-                                                    // Remove favorite from cloud
-                                                    try await SupabaseManager.shared.removeFavoriteWorkout(
-                                                        originalWorkoutId: workoutId
-                                                    )
-                                                }
-                                                print("☁️ Workout favorite synced to cloud!")
-                                            } catch {
-                                                print("⚠️ Failed to sync workout favorite to cloud: \(error)")
-                                            }
-                                        }
-                                    }
-                                } catch {
-                                    print("❌ Error saving workout favorite status: \(error)")
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            if workoutManager.workoutInsights != nil {
+                                Button(action: {
+                                    showingWorkoutInsights = true
+                                }) {
+                                    Image(systemName: "info.circle")
+                                        .font(.system(size: 22))
+                                        .foregroundColor(.blue)
                                 }
                             }
-                        }) {
-                            Image(systemName: isWorkoutFavorite ? "star.fill" : "star")
-                                .font(.system(size: 18))
-                                .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
-                                .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
+                            
+                            // Favorite button
+                            Button(action: {
+                                HapticManager.selectionChanged() // ⚡️ Pre-warmed haptics
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                    isWorkoutFavorite.toggle()
+                                    workout.isFavorite = isWorkoutFavorite
+                                    
+                                    // Save immediately to Core Data
+                                    do {
+                                        try viewContext.save()
+                                        print("⭐ Workout favorite status: \(isWorkoutFavorite)")
+                                        
+                                        // Sync to cloud if authenticated
+                                        if SupabaseManager.shared.isAuthenticated, let workoutId = workout.id?.uuidString {
+                                            Task {
+                                                do {
+                                                    if isWorkoutFavorite {
+                                                        // Save favorite to cloud with exercise list
+                                                        let exerciseNames = exercises.compactMap { $0.name }
+                                                        try await SupabaseManager.shared.saveFavoriteWorkout(
+                                                            workoutName: workout.name ?? "Workout",
+                                                            exerciseNames: exerciseNames,
+                                                            originalWorkoutId: workoutId
+                                                        )
+                                                    } else {
+                                                        // Remove favorite from cloud
+                                                        try await SupabaseManager.shared.removeFavoriteWorkout(
+                                                            originalWorkoutId: workoutId
+                                                        )
+                                                    }
+                                                    print("☁️ Workout favorite synced to cloud!")
+                                                } catch {
+                                                    print("⚠️ Failed to sync workout favorite to cloud: \(error)")
+                                                }
+                                            }
+                                        }
+                                    } catch {
+                                        print("❌ Error saving workout favorite status: \(error)")
+                                    }
+                                }
+                            }) {
+                                Image(systemName: isWorkoutFavorite ? "star.fill" : "star")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
+                                    .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
+                            }
+                            
+                            Button("FINISH") {
+                                // Haptic feedback on finish (UX Audit)
+                                let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
+                                heavyImpact.impactOccurred()
+                                finishWorkout()
+                            }
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.blue)
                         }
-                        
-                        Button("FINISH") {
-                            // Haptic feedback on finish (UX Audit)
-                            let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
-                            heavyImpact.impactOccurred()
-                            finishWorkout()
-                        }
-                        .foregroundColor(.blue)
-                        .fontWeight(.bold)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
             .background(Color.clear)
         }
+        // Banner ad overlay - floats on top, doesn't affect scroll content size
+        .overlay(alignment: .top) {
+            if shouldShowInlineAds {
+                VStack {
+                    Spacer().frame(height: 60) // Position below header
+                    BannerAdView()
+                        .padding(.horizontal, 16)
+                }
+            }
+        }
+        // ✅ SwiftUI handles orientation changes naturally - no forced rebuild needed
+        // ⚠️ DO NOT add .id() here - it causes timer restart on rotation!
         .onAppear {
-            initializeWorkout()
+            // ⚡️ PERFORMANCE: Start timer FIRST (instant feedback to user)
             startTimer()
+            
+            // ⚡️ INSTANT: Apply warmup data SYNCHRONOUSLY for first render
+            // This ensures exercise cards show previous data immediately
+            applyWarmupDataInstantly()
+            
             // Initialize favorite status from workout
             isWorkoutFavorite = workout.isFavorite
             // Set first exercise as active for glow effect
             if activeExerciseId == nil {
                 activeExerciseId = exercises.first?.id?.uuidString
+            }
+            
+            // ⚠️ CRITICAL FIX: Reset finishing state for restored/reverted workouts
+            isFinishingWorkout = false
+            
+            // Also reset isCompleted if workout was previously marked complete but is being continued
+            if workout.isCompleted {
+                print("⚠️ [WORKOUT] Workout was marked completed but is active - resetting isCompleted")
+                workout.isCompleted = false
+                try? viewContext.save()
+            }
+            
+            // ⚡️ PERFORMANCE: Defer SLOW operations (network, smart recs) to next frame
+            DispatchQueue.main.async {
+                initializeWorkout()
             }
         }
         // ⚡️ SYNC: Update local exercises when WorkoutManager exercises change (e.g., after replace)
@@ -423,7 +448,19 @@ struct ActiveWorkoutView: View {
         .navigationBarHidden(true)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(isPresented: $showingCompletionView) {
+        .fullScreenCover(isPresented: $showingCompletionView, onDismiss: {
+            // Reset the finishing flag when user goes back to continue workout
+            // This allows them to tap finish again later
+            isFinishingWorkout = false
+            
+            // ⚠️ CRITICAL FIX: Also reset isCompleted since saveWorkoutData() sets it to true
+            // This allows the user to finish the workout again if they go back and continue
+            if workout.isCompleted {
+                print("⚠️ [WORKOUT] User went back from completion - resetting isCompleted")
+                workout.isCompleted = false
+                try? viewContext.save()
+            }
+        }) {
             WorkoutCompletionView(
                 workout: workout,
                 exercises: exercises,
@@ -437,6 +474,40 @@ struct ActiveWorkoutView: View {
         }
     }
     
+    /// ⚡️ INSTANT: Apply warmup data SYNCHRONOUSLY before first render
+    /// This is FAST (< 1ms) - just dictionary lookups and assignments
+    private func applyWarmupDataInstantly() {
+        let warmupService = PreviewWarmupService.shared
+        
+        // Only proceed if warmup completed on the preview screen
+        guard warmupService.isWarmedUp else {
+            #if DEBUG
+            print("⚡️ [INSTANT] Warmup not ready - will apply in deferred init")
+            #endif
+            return
+        }
+        
+        #if DEBUG
+        let startTime = CFAbsoluteTimeGetCurrent()
+        #endif
+        
+        // Apply all pre-warmed data SYNCHRONOUSLY
+        var appliedCount = 0
+        for exercise in exercises {
+            guard let exerciseId = exercise.id?.uuidString,
+                  let exerciseName = exercise.name else { continue }
+            
+            if let preWarmedSets = warmupService.getPreviousSets(forExerciseId: exerciseId, exerciseName: exerciseName) {
+                previousExerciseSets[exerciseId] = preWarmedSets
+                appliedCount += 1
+            }
+        }
+        
+        #if DEBUG
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        print("⚡️ [INSTANT] Applied \(appliedCount)/\(exercises.count) exercises in \(String(format: "%.2f", elapsed))ms")
+        #endif
+    }
 
     private func initializeWorkout() {
         // GUARD: Prevent duplicate initialization (SwiftUI may call onAppear multiple times)
@@ -449,19 +520,10 @@ struct ActiveWorkoutView: View {
         initializationComplete = true
         
         #if DEBUG
-        let startTime = CFAbsoluteTimeGetCurrent()
-        print("🚀 [PERF] initializeWorkout() - Starting for \(exercises.count) exercises")
+        print("🚀 [PERF] initializeWorkout() - Scheduling deferred work")
         #endif
         
-        // ⚡️ INSTANT: Defer ALL heavy work to next run loop cycle
-        // This ensures the view renders IMMEDIATELY with exercise names visible
-        // Analytics, cache lookups, and smart recommendations happen AFTER first frame
-        
-        #if DEBUG
-        print("🚀 [PERF] initializeWorkout() - INSTANT RETURN (deferring work)")
-        #endif
-        
-        // Defer all initialization work to allow first frame to render
+        // Defer SLOW operations (analytics, network, smart recs) to next frame
         DispatchQueue.main.async { [self] in
             performDeferredInitialization()
         }
@@ -489,38 +551,39 @@ struct ActiveWorkoutView: View {
         )
         
         // NOTE: Sets are already initialized in WorkoutManager.startWorkout()
-        // Do NOT re-initialize here as it can cause race conditions with SwiftUI rendering
+        // Warmup data was already applied SYNCHRONOUSLY in applyWarmupDataInstantly()
         
-        // ⚡ FAST PATH: Check cache synchronously - ONLY apply cached data
+        // ⚡️ DEFERRED: Only process exercises that STILL don't have previous data
         let exerciseNames = exercises.compactMap { $0.name }
-        let cache = ExerciseHistoryService.shared.previousSetsCache
         var exercisesNeedingSmartRecs: [(exercise: Exercise, name: String)] = []
         
-        for exerciseName in exerciseNames {
-            if let cachedSets = cache[exerciseName], !cachedSets.isEmpty {
-                // Data is cached - apply it synchronously (historical data)
-                if let exercise = exercises.first(where: { $0.name == exerciseName }),
-                   let exerciseId = exercise.id?.uuidString {
-                    let previousData = cachedSets.map { cloudSet in
-                        PreviousSetData(
-                            setNumber: cloudSet.setNumber,
-                            weight: cloudSet.weight,
-                            reps: cloudSet.reps
-                        )
-                    }
-                    previousExerciseSets[exerciseId] = previousData
+        // Check which exercises still need data (weren't covered by instant warmup)
+        for exercise in exercises {
+            guard let exerciseId = exercise.id?.uuidString,
+                  let exerciseName = exercise.name else { continue }
+            
+            // Skip if data was already applied
+            if previousExerciseSets[exerciseId] != nil { continue }
+            
+            // Try ExerciseHistoryService cache as fallback
+            if let cachedSets = ExerciseHistoryService.shared.previousSetsCache[exerciseName], !cachedSets.isEmpty {
+                let previousData = cachedSets.map { cloudSet in
+                    PreviousSetData(
+                        setNumber: cloudSet.setNumber,
+                        weight: cloudSet.weight,
+                        reps: cloudSet.reps
+                    )
                 }
+                previousExerciseSets[exerciseId] = previousData
             } else {
-                // No cached history - queue for async smart recommendation
-                if let exercise = exercises.first(where: { $0.name == exerciseName }) {
-                    exercisesNeedingSmartRecs.append((exercise: exercise, name: exerciseName))
-                }
+                // No cached data - queue for async smart recommendation
+                exercisesNeedingSmartRecs.append((exercise: exercise, name: exerciseName))
             }
         }
         
         #if DEBUG
         let syncTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("🚀 [PERF] Cache applied: \(String(format: "%.1f", syncTime))ms")
+        print("🚀 [PERF] Deferred cache check: \(String(format: "%.1f", syncTime))ms")
         print("🚀 [PERF] Exercises needing smart recs: \(exercisesNeedingSmartRecs.count)")
         #endif
         
@@ -756,8 +819,21 @@ struct ActiveWorkoutView: View {
     }
     
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            elapsedTime = Date().timeIntervalSince(workoutStartTime)
+        // ⚡️ PERFORMANCE: Use workoutManager's start time (set when GO was tapped)
+        // This ensures accurate timing even if view render was delayed
+        guard let startTime = workoutManager.workoutStartTime else {
+            print("⚠️ [TIMER] No workout start time available, using current time")
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+                elapsedTime += 1
+            }
+            return
+        }
+        
+        // ⚡️ INSTANT: Set initial elapsed time immediately (no waiting for first tick)
+        elapsedTime = Date().timeIntervalSince(startTime)
+        
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+            elapsedTime = Date().timeIntervalSince(startTime)
         }
     }
     
@@ -792,30 +868,33 @@ struct ActiveWorkoutView: View {
         print("🧹 Last interacted exercise: \(lastInteractedExerciseId ?? "none")")
         print("🧹 All exercise sets before cleanup: \(workoutManager.exerciseSetsData.mapValues { $0.count })")
         
-        // Remove unfinished AND blank sets from all other exercises
+        // FIXED: Less aggressive cleanup - preserve sets with data entered
         for (exerciseId, sets) in workoutManager.exerciseSetsData {
             if exerciseId != currentExerciseId {
-                // Keep only completed sets that have actual data (not blank)
-                let validSets = sets.filter { set in
-                    // A set is valid if it's completed AND has weight or reps entered
-                    set.isCompleted && (set.weight > 0 || set.reps > 0)
-                }
+                // Keep sets that are EITHER:
+                // 1. Completed (user finished them)
+                // 2. Have data entered (weight > 0 OR reps > 0) - user is working on them
+                // 3. Are in the first 3 positions (standard workout structure)
+                let validSets = sets.enumerated().filter { (index, set) in
+                    // Keep if completed
+                    if set.isCompleted { return true }
+                    
+                    // Keep if has data entered (user entered weight/reps but didn't complete yet)
+                    if set.weight > 0 || set.reps > 0 { return true }
+                    
+                    // Keep first 3 sets for standard workout structure
+                    if index < 3 { return true }
+                    
+                    // Remove extra blank sets beyond the first 3
+                    return false
+                }.map { $0.element }
                 
-                // Also remove blank uncompleted sets (weight = 0 AND reps = 0)
-                let nonBlankSets = sets.filter { set in
-                    set.isCompleted || set.weight > 0 || set.reps > 0
-                }
-                
-                // Use the more restrictive filter - keep only truly valid sets
-                let cleanedSets = validSets
-                
-                if cleanedSets.count != sets.count {
-                    print("🧹 Exercise \(exerciseId): Had \(sets.count) sets, keeping \(cleanedSets.count) valid sets")
-                    print("🧹 Removing \(sets.count - cleanedSets.count) blank/unfinished sets from exercise \(exerciseId)")
-                    // If no valid sets remain, keep one empty set for the UI
-                    workoutManager.exerciseSetsData[exerciseId] = cleanedSets.isEmpty ? [WorkoutSetData()] : cleanedSets
+                if validSets.count != sets.count {
+                    print("🧹 Exercise \(exerciseId): Had \(sets.count) sets, keeping \(validSets.count) sets")
+                    print("🧹 Removed \(sets.count - validSets.count) extra blank sets")
+                    workoutManager.exerciseSetsData[exerciseId] = validSets.isEmpty ? [WorkoutSetData()] : validSets
                 } else {
-                    print("🧹 Exercise \(exerciseId): All sets valid, no cleanup needed")
+                    print("🧹 Exercise \(exerciseId): All \(sets.count) sets preserved")
                 }
             }
         }
@@ -1226,12 +1305,16 @@ struct ActiveWorkoutView: View {
                 let workoutSet = WorkoutSet(context: viewContext)
                 workoutSet.id = UUID()
                 workoutSet.setNumber = Int16(setIndex + 1)
-                workoutSet.weight = setData.weight
+                workoutSet.weight = setData.weight  // Double - preserves decimals like 187.5
                 workoutSet.reps = Int16(setData.reps)
                 workoutSet.isCompleted = setData.isCompleted
                 workoutSet.restTime = Int32(setData.restTime)
                 workoutSet.setType = setData.setType.rawValue  // Save set type (Warmup, Dropset, Failure, etc.)
                 workoutSet.workoutExercise = workoutExercise
+                
+                #if DEBUG
+                print("💾 Saving set \(setIndex + 1): weight=\(setData.weight) (Double), reps=\(setData.reps)")
+                #endif
             }
         }
         
@@ -2000,12 +2083,8 @@ struct ExerciseCard: View {
             RenameExerciseView(exercise: exercise)
         }
         .onAppear {
-            // ⚡ PERF: Access cached property directly (no Core Data fetch)
-            // The exercise object already has this loaded from the fetch
-            guard !exercise.isFault else {
-                print("⚠️ Exercise is a fault in onAppear, skipping favorite init")
-                return
-            }
+            // ⚡ PERF: Minimal work in onAppear for instant rendering
+            guard !exercise.isFault else { return }
             isFavorite = exercise.isFavorite
             
             // Enable animations after first render (glow appears instantly)
@@ -2013,19 +2092,13 @@ struct ExerciseCard: View {
                 hasAppeared = true
             }
             
-            // Prefetch similar exercises AFTER a delay to not block initial interaction
-            // Stagger based on exercise index to spread out the work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + Double(currentIndex) * 0.1) {
-                prefetchSimilarExercises()
-            }
+            // ⚡️ PERF: Do NOT prefetch alternatives here - it's lazy now
+            // Alternatives are only fetched when user actually taps shuffle
         }
         .onChange(of: exercise.id) { _, newId in
-            // Refetch when exercise changes (after a shuffle)
-            guard newId != nil else {
-                print("⚠️ Exercise ID became nil, skipping prefetch")
-                return
-            }
-            prefetchSimilarExercises()
+            // Clear prefetch cache when exercise changes (after shuffle)
+            // Next shuffle tap will re-fetch fresh alternatives
+            prefetchedExercises = []
         }
         .onChange(of: exerciseWithActiveTimer) { _, newActiveExercise in
             // If another exercise became active with timer, stop this exercise's timer
@@ -2041,14 +2114,67 @@ struct ExerciseCard: View {
         exercise.name ?? "Exercise"
     }
     
-    // MARK: - Prefetch Similar Exercises (Using Smart Alternative Engine)
-    private func prefetchSimilarExercises() {
+    // MARK: - Shuffle to Similar Exercise (Smart Alternative Matching)
+    private func shuffleToSimilarExercise() {
+        // ⚡️ PERF: Lazy fetch - only get alternatives when user actually shuffles
+        if prefetchedExercises.isEmpty {
+            // First shuffle tap - fetch alternatives now
+            let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
+            var excludeIds = shuffledExerciseIds
+            if let currentId = exercise.id {
+                excludeIds.insert(currentId)
+            }
+            
+            // Use the smart alternative engine synchronously for immediate response
+            if let newExercise = AlternativeExerciseEngine.shared.getBestAlternative(
+                for: exercise,
+                userEquipment: userEquipment,
+                excludeIds: excludeIds
+            ) {
+                HapticManager.impact(.medium)
+                
+                if let newId = newExercise.id {
+                    shuffledExerciseIds.insert(newId)
+                }
+                
+                print("🔄 Shuffled to smart alternative: \(newExercise.name ?? "")")
+                onShuffleExercise(newExercise)
+                
+                // Pre-fetch more alternatives in background for next shuffle
+                prefetchMoreAlternatives()
+            } else {
+                HapticManager.notification(.warning)
+                print("⚠️ No alternatives found for: \(exercise.name ?? "")")
+            }
+            return
+        }
+        
+        // Use prefetched exercises
+        if let newExercise = prefetchedExercises.first {
+            HapticManager.impact(.medium)
+            
+            if let newId = newExercise.id {
+                shuffledExerciseIds.insert(newId)
+            }
+            
+            prefetchedExercises.removeFirst()
+            print("🔄 Shuffled to prefetched alternative: \(newExercise.name ?? "")")
+            onShuffleExercise(newExercise)
+            
+            // Pre-fetch more if running low
+            if prefetchedExercises.count < 2 {
+                prefetchMoreAlternatives()
+            }
+        }
+    }
+    
+    // Fetch more alternatives in background
+    private func prefetchMoreAlternatives() {
         Task.detached(priority: .background) {
             let userEquipment = await MainActor.run { UserManager.shared.currentUser?.getEquipment() ?? [] }
             let currentExercise = exercise
             let alreadyShuffled = shuffledExerciseIds
             
-            // Use the smart alternative engine for intelligent matching
             let alternatives = await AlternativeExerciseEngine.shared.getAlternatives(
                 for: currentExercise,
                 userEquipment: userEquipment,
@@ -2056,74 +2182,9 @@ struct ExerciseCard: View {
                 maxResults: 5
             )
             
-            let exercises = alternatives.map { $0.exercise }
-            
             await MainActor.run {
-                prefetchedExercises = exercises
-                if !alternatives.isEmpty {
-                    print("📦 Prefetched \(exercises.count) smart alternatives for '\(exercise.name ?? "")'")
-                    print("   Top match: \(alternatives.first?.exercise.name ?? "none") (score: \(alternatives.first?.score ?? 0))")
-                }
+                prefetchedExercises = alternatives.map { $0.exercise }
             }
-        }
-    }
-    
-    // MARK: - Shuffle to Similar Exercise (Smart Alternative Matching)
-    private func shuffleToSimilarExercise() {
-        // Use prefetched exercises if available
-        if let newExercise = prefetchedExercises.first {
-            // Haptic feedback
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
-            
-            // Track this exercise as shuffled
-            if let newId = newExercise.id {
-                shuffledExerciseIds.insert(newId)
-            }
-            
-            // Remove from prefetched list
-            prefetchedExercises.removeFirst()
-            
-            print("🔄 Shuffled to prefetched alternative: \(newExercise.name ?? "")")
-            
-            // Call the parent to replace
-            onShuffleExercise(newExercise)
-            return
-        }
-        
-        // Fallback: Use smart alternative engine on-demand if prefetch is empty
-        let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
-        
-        // Build set of IDs to exclude (current exercise + already shuffled)
-        var excludeIds = shuffledExerciseIds
-        if let currentId = exercise.id {
-            excludeIds.insert(currentId)
-        }
-        
-        // Use the smart alternative engine
-        if let newExercise = AlternativeExerciseEngine.shared.getBestAlternative(
-            for: exercise,
-            userEquipment: userEquipment,
-            excludeIds: excludeIds
-        ) {
-            // Haptic feedback
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
-            
-            // Track this exercise as shuffled
-            if let newId = newExercise.id {
-                shuffledExerciseIds.insert(newId)
-            }
-            
-            print("🔄 Shuffled to smart alternative: \(newExercise.name ?? "")")
-            
-            // Call the parent to replace
-            onShuffleExercise(newExercise)
-        } else {
-            // No similar exercises found - subtle haptic to indicate nothing happened
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.warning)
-            print("⚠️ No alternatives found for: \(exercise.name ?? "")")
         }
     }
     
@@ -2590,7 +2651,7 @@ struct SetRowView: View {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 12))
                                 .foregroundColor(.orange)
-                            Text("\(Int(prev.weight))×\(prev.reps)")
+                            Text("\(formatWeightPlaceholder(prev.weight))×\(prev.reps)")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.orange)
                         } else {
@@ -2610,9 +2671,9 @@ struct SetRowView: View {
             // Weight input - use previous workout's weight as placeholder
             // Uses SelectAllTextField for better editing UX (selects all on focus)
             SelectAllTextField(
-                placeholder: previousSet != nil ? "\(Int(previousSet!.weight))" : "45",
+                placeholder: previousSet != nil ? formatWeightPlaceholder(previousSet!.weight) : "45",
                 text: $weightText,
-                keyboardType: .numberPad,
+                keyboardType: .decimalPad,
                 font: .systemFont(ofSize: 17, weight: .semibold),
                 textAlignment: .center,
                 textColor: setData.isCompleted ? .white : .label, // White when completed
@@ -2624,7 +2685,7 @@ struct SetRowView: View {
                         onFocusChanged?(true)
                     } else {
                         // Update setData when focus is lost
-                        if let weight = Double(weightText) {
+                        if let weight = parseWeight(weightText) {
                             setData.weight = weight
                         }
                     }
@@ -2647,7 +2708,7 @@ struct SetRowView: View {
                 weightDebounceTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
                     guard !Task.isCancelled else { return }
-                    if let weight = Double(newValue) {
+                    if let weight = parseWeight(newValue) {
                         setData.weight = weight
                     }
                 }
@@ -2708,7 +2769,7 @@ struct SetRowView: View {
                     
                     // Determine final weight: user input > pre-filled data > placeholder > default
                     let finalWeight: Double
-                    if let weight = Double(weightText), weight > 0 {
+                    if let weight = parseWeight(weightText), weight > 0 {
                         finalWeight = weight
                     } else if setData.weight > 0 {
                         // Use pre-filled value from previous set
@@ -2738,8 +2799,8 @@ struct SetRowView: View {
                     setData.weight = finalWeight
                     setData.reps = finalReps
                     
-                    // Update text fields to show the confirmed values (turns them white)
-                    weightText = "\(Int(finalWeight))"
+                    // Update text fields to show the confirmed values (preserve decimals like 187.5)
+                    weightText = formatWeightPlaceholder(finalWeight)
                     repsText = "\(finalReps)"
                     
                     // If already completed, allow unchecking
@@ -2760,6 +2821,16 @@ struct SetRowView: View {
                     print("🔥 Set \(setNumber): Initiating completion...")
                     #endif
                     
+                    // Cancel any pending debounce and sync weight/reps immediately
+                    weightDebounceTask?.cancel()
+                    repsDebounceTask?.cancel()
+                    if let weight = parseWeight(weightText) {
+                        setData.weight = weight
+                    }
+                    if let reps = Int(repsText) {
+                        setData.reps = reps
+                    }
+                    
                     // IMMEDIATELY stop ALL other timers by setting this as the active timer
                     activeTimerSetNumber = setNumber
                     // Also mark THIS exercise as having the active timer (stops other exercises' timers)
@@ -2775,7 +2846,8 @@ struct SetRowView: View {
                     let theOnSetCompleted: () -> Void = onSetCompleted
                     
                     #if DEBUG
-                    print("✅ Set \(setNumber) completed - \(Int(setData.weight))lbs × \(setData.reps) reps")
+                    print("✅ Set \(setNumber) completed - Weight: \(setData.weight) (\(formatWeightPlaceholder(setData.weight))lbs) × \(setData.reps) reps")
+                    print("   Raw weightText: '\(weightText)' | Parsed: \(parseWeight(weightText) ?? -1)")
                     #endif
                     
                     // IMMEDIATELY mark set complete and start timer BEFORE ad shows
@@ -2800,7 +2872,7 @@ struct SetRowView: View {
                 }) {
                     Image(systemName: setData.isCompleted ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
-                        .foregroundColor(setData.isCompleted ? .green : .gray)
+                        .foregroundColor(setData.isCompleted ? .blue : .gray)
                 }
                 .frame(width: 40)
             }
@@ -2825,24 +2897,26 @@ struct SetRowView: View {
                     }
                     .padding(.vertical, 8)
                     .background(
-                        // Background container
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.gray.opacity(0.15))
-                            .overlay(
-                                // Animated progress bar
-                                HStack {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(
-                                            LinearGradient(
-                                                gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.8)]),
-                                                startPoint: .leading,
-                                                endPoint: .trailing
+                        // Background container with GeometryReader for responsive width
+                        GeometryReader { geometry in
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.15))
+                                .overlay(
+                                    // Animated progress bar - uses actual container width
+                                    HStack {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(
+                                                LinearGradient(
+                                                    gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.8)]),
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
                                             )
-                                        )
-                                        .frame(width: max(0, (restTimer.timeRemaining / restTimer.originalTotalTime) * UIScreen.main.bounds.width * 0.85))
-                                    Spacer(minLength: 0)
-                                }
-                            )
+                                            .frame(width: max(0, (restTimer.timeRemaining / restTimer.originalTotalTime) * geometry.size.width))
+                                        Spacer(minLength: 0)
+                                    }
+                                )
+                        }
                     )
                     // Only animate when shouldAnimate is true (after ad ends)
                     .animation(restTimer.shouldAnimate ? .linear(duration: 1.0) : nil, value: restTimer.timeRemaining)
@@ -2865,38 +2939,33 @@ struct SetRowView: View {
             }
         }
         .onAppear {
-            // Initialize text fields from setData (for pre-filled sets)
-            if !hasInitialized {
-                hasInitialized = true
-                
-                // Pre-fill weight if setData has a value > 0
-                if setData.weight > 0 {
-                    weightText = "\(Int(setData.weight))"
-                }
-                
-                // Pre-fill reps if setData has a value > 0
-                if setData.reps > 0 {
-                    repsText = "\(setData.reps)"
+            // ⚡️ PERF: Single onAppear combining all initialization
+            guard !hasInitialized else { return }
+            hasInitialized = true
+            
+            // Pre-fill weight if setData has a value > 0 (preserve decimals like 27.5)
+            if setData.weight > 0 && weightText.isEmpty {
+                weightText = formatWeightPlaceholder(setData.weight)
+            }
+            
+            // Pre-fill reps if setData has a value > 0
+            if setData.reps > 0 && repsText.isEmpty {
+                repsText = "\(setData.reps)"
+            }
+            
+            // Auto-focus the weight field for the first set of first exercise
+            // Delay slightly to allow layout to complete
+            if shouldAutoFocus {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isWeightFocused = true
                 }
             }
         }
         .onChange(of: isWeightFocused) { _, isFocused in
-            if isFocused {
-                onFocusChanged?(true)
-            }
+            if isFocused { onFocusChanged?(true) }
         }
         .onChange(of: isRepsFocused) { _, isFocused in
-            if isFocused {
-                onFocusChanged?(true)
-            }
-        }
-        .onAppear {
-            // Auto-focus the weight field for the first set of first exercise
-            if shouldAutoFocus && !hasInitialized {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    isWeightFocused = true
-                }
-            }
+            if isFocused { onFocusChanged?(true) }
         }
     }
     
@@ -2904,6 +2973,21 @@ struct SetRowView: View {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    /// Format weight for placeholder - shows decimal only if needed (e.g., 27.5 but not 45.0)
+    private func formatWeightPlaceholder(_ weight: Double) -> String {
+        if weight.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(weight))"
+        } else {
+            return String(format: "%.1f", weight)
+        }
+    }
+    
+    /// Parse weight text handling both period and comma as decimal separator
+    private func parseWeight(_ text: String) -> Double? {
+        let normalized = text.replacingOccurrences(of: ",", with: ".")
+        return Double(normalized)
     }
 }
 
@@ -2981,10 +3065,14 @@ struct PreviousSetData {
     
     var displayString: String {
         if weight > 0 && reps > 0 {
+            // Format weight to preserve decimals (e.g., 187.5)
+            let weightStr = weight.truncatingRemainder(dividingBy: 1) == 0 
+                ? "\(Int(weight))" 
+                : String(format: "%.1f", weight)
             if isSmartRecommendation {
-                return "💡 \(Int(weight))×\(reps)"  // Smart recommendation indicator
+                return "💡 \(weightStr)×\(reps)"  // Smart recommendation indicator
             }
-            return "\(Int(weight))×\(reps)"
+            return "\(weightStr)×\(reps)"
         }
         return "-"
     }
@@ -4214,8 +4302,10 @@ struct SelectAllTextField: UIViewRepresentable {
         }
         
         func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            // Allow only numbers
-            let allowedCharacters = CharacterSet.decimalDigits
+            // Allow numbers and decimal separators (both . and , for international support)
+            var allowedCharacters = CharacterSet.decimalDigits
+            allowedCharacters.insert(charactersIn: ".,")  // Allow period and comma for decimals
+            
             let characterSet = CharacterSet(charactersIn: string)
             
             if allowedCharacters.isSuperset(of: characterSet) {
@@ -4223,6 +4313,13 @@ struct SelectAllTextField: UIViewRepresentable {
                 if let currentText = textField.text,
                    let textRange = Range(range, in: currentText) {
                     let newText = currentText.replacingCharacters(in: textRange, with: string)
+                    
+                    // Prevent multiple decimal points
+                    let decimalCount = newText.filter { $0 == "." || $0 == "," }.count
+                    if decimalCount > 1 {
+                        return false
+                    }
+                    
                     parent.text = newText
                 }
                 return true

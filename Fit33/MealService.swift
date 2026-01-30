@@ -77,6 +77,16 @@ class MealService: ObservableObject {
             } else {
                 print("⚠️ [MEAL SERVICE] No FDC ID - skipping cloud logging")
             }
+            
+            // Track food addition for recipe recommendations
+            // This helps personalize recipe suggestions based on what users eat
+            Task { @MainActor in
+                RecipePreferenceService.shared.trackFoodAdded(
+                    foodName: foodEntry.name,
+                    calories: foodEntry.calories,
+                    protein: foodEntry.protein
+                )
+            }
         } catch {
             print("Error saving meal entry: \(error)")
         }

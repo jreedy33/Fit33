@@ -349,16 +349,9 @@ struct StepTrackerDetailView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // Background gradient
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.9, green: 0.98, blue: 0.95),
-                        Color.white
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                // Dark background
+                Color(red: 0.06, green: 0.07, blue: 0.09)
+                    .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -410,7 +403,7 @@ struct StepTrackerDetailView: View {
             ZStack {
                 // Background circle
                 Circle()
-                    .stroke(Color.gray.opacity(0.15), lineWidth: 20)
+                    .stroke(Color.gray.opacity(0.25), lineWidth: 20)
                     .frame(width: 220, height: 220)
                 
                 // Progress circle
@@ -432,12 +425,12 @@ struct StepTrackerDetailView: View {
                 VStack(spacing: 8) {
                     Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
                         .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                         .contentTransition(.numericText())
                     
                     Text("steps today")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                     
                     if healthKitManager.isGoalAchieved() {
                         HStack(spacing: 4) {
@@ -459,17 +452,16 @@ struct StepTrackerDetailView: View {
                     .foregroundColor(.blue)
                 Text("Goal: \(healthKitManager.formattedSteps(healthKitManager.stepGoal)) steps")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color.blue.opacity(0.08))
+            .background(Color.blue.opacity(0.15))
             .cornerRadius(10)
         }
         .padding(24)
-        .background(Color.white)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
-        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
     }
     
     // MARK: - Weekly Chart Card
@@ -478,16 +470,17 @@ struct StepTrackerDetailView: View {
             Text("This Week")
                 .font(.headline)
                 .fontWeight(.bold)
-                .foregroundColor(.primary)
+                .foregroundColor(.white)
             
             if healthKitManager.weeklySteps.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
                         ProgressView()
+                            .tint(.white)
                         Text("Loading step data...")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                     }
                     .padding(.vertical, 40)
                     Spacer()
@@ -497,9 +490,8 @@ struct StepTrackerDetailView: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
-        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
     }
     
     // MARK: - Statistics Card
@@ -508,7 +500,7 @@ struct StepTrackerDetailView: View {
             Text("Statistics")
                 .font(.headline)
                 .fontWeight(.bold)
-                .foregroundColor(.primary)
+                .foregroundColor(.white)
             
             VStack(spacing: 12) {
                 StatRow(
@@ -519,6 +511,7 @@ struct StepTrackerDetailView: View {
                 )
                 
                 Divider()
+                    .background(Color.gray.opacity(0.3))
                 
                 StatRow(
                     icon: "flame.fill",
@@ -528,6 +521,7 @@ struct StepTrackerDetailView: View {
                 )
                 
                 Divider()
+                    .background(Color.gray.opacity(0.3))
                 
                 StatRow(
                     icon: "arrow.up.circle.fill",
@@ -538,9 +532,8 @@ struct StepTrackerDetailView: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
-        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
     }
 }
 
@@ -565,7 +558,7 @@ struct WeeklyStepChart: View {
                             .fill(
                                 LinearGradient(
                                     colors: day.steps >= goal ? 
-                                        [.green, .cyan] : [.blue.opacity(0.6), .blue.opacity(0.4)],
+                                        [.green, .cyan] : [.blue.opacity(0.8), .blue.opacity(0.5)],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
@@ -586,12 +579,12 @@ struct WeeklyStepChart: View {
                     Text(dayLabel(for: day.date))
                         .font(.caption2)
                         .fontWeight(day.isToday ? .bold : .regular)
-                        .foregroundColor(day.isToday ? .blue : .secondary)
+                        .foregroundColor(day.isToday ? .blue : .gray)
                     
                     // Step count
                     Text(shortStepLabel(day.steps))
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -630,12 +623,12 @@ struct StatRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                 
                 Text(value)
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
             }
             
             Spacer()

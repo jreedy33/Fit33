@@ -26,7 +26,10 @@ struct ExerciseDetailView: View {
     
     private var secondaryMuscles: [String] {
         if let muscleGroups = exercise.muscleGroups as? [String], muscleGroups.count > 1 {
-            return Array(muscleGroups.dropFirst())
+            // Remove duplicates by converting to Set and back
+            // This fixes ForEach "duplicate ID" warnings
+            let uniqueMuscles = Array(Set(muscleGroups.dropFirst()))
+            return uniqueMuscles.sorted() // Sort for consistent display order
         }
         return []
     }
@@ -153,7 +156,7 @@ struct ExerciseDetailView: View {
                 DarkStatusBarArea()
                     .frame(height: 80)
                 
-                // Video Section
+                // Video Section (with stable ID to prevent recreation)
                 videoSection
                 
                 // Content Section with dark background
@@ -186,7 +189,7 @@ struct ExerciseDetailView: View {
                     Spacer(minLength: 100)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.top, 12)
                 .background(Color(UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))) // Dark background
                 .background(
                     GeometryReader { geo in
@@ -258,6 +261,7 @@ struct ExerciseDetailView: View {
             categoryColor: categoryColor,
             videoFilename: exercise.videoFilename
         )
+        .id(exercise.id) // Stable ID prevents video from being recreated
     }
     
     // MARK: - Header Section
@@ -414,9 +418,9 @@ struct ExerciseDetailView: View {
                     .fill(Color.orange.opacity(0.15))
             )
             
-            // Weight & Reps
+            // Weight & Reps (preserve decimals like 180.5)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(Int(weight))")
+                Text(formatWeight(weight))
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 Text("lbs")
@@ -469,9 +473,9 @@ struct ExerciseDetailView: View {
                     .fill(categoryColor.opacity(0.15))
             )
             
-            // Weight & Reps
+            // Weight & Reps (preserve decimals like 180.5)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(Int(weight))")
+                Text(formatWeight(weight))
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 Text("lbs")
@@ -865,6 +869,15 @@ struct ExerciseDetailView: View {
         }
     }
     
+    /// Format weight preserving decimals when needed (e.g., 180.5 → "180.5", 180.0 → "180")
+    private func formatWeight(_ weight: Double) -> String {
+        if weight.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(weight))"
+        } else {
+            return String(format: "%.1f", weight)
+        }
+    }
+    
     private func formatRelativeDate(_ date: Date) -> String {
         let calendar = Calendar.current
         let now = Date()
@@ -894,27 +907,39 @@ struct ExerciseDetailView: View {
 class VideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer?
     
+    private var queuePlayer: AVQueuePlayer?
+    private var playerLooper: AVPlayerLooper?  // ⚡️ CRITICAL: Must store looper reference or it gets deallocated
+    
     func setupPlayer(with url: URL) {
-        player = AVPlayer(url: url)
-        player?.play()
+        let asset = AVURLAsset(url: url, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: false
+        ])
         
-        // Loop video
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: player?.currentItem,
-            queue: .main
-        ) { [weak self] _ in
-            self?.player?.seek(to: .zero)
-            self?.player?.play()
-        }
+        let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
+        playerItem.preferredForwardBufferDuration = 3
+        
+        // Use AVQueuePlayer + AVPlayerLooper for seamless looping
+        let qp = AVQueuePlayer(playerItem: playerItem)
+        self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
+        
+        qp.automaticallyWaitsToMinimizeStalling = false
+        qp.play()
+        
+        self.queuePlayer = qp
+        self.player = qp
     }
     
     func pause() {
         player?.pause()
     }
     
+    func play() {
+        player?.play()
+    }
+    
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        playerLooper?.disableLooping()
+        queuePlayer?.pause()
     }
 }
 

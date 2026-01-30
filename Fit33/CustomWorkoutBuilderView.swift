@@ -83,332 +83,218 @@ struct CustomWorkoutBuilderView: View {
         ExerciseFilterService.muscleGroupsForCategory(selectedCategory)
     }
     
-    // Exercise filtering logic - comprehensive muscle group matching
-    // IMPROVED: Now properly handles fly exercises, equipment-specific variations, and focus areas
+    // Comprehensive muscle group matching with ALL nicknames/shortnames/aliases
+    // Handles official names, anatomical terms, slang, and common abbreviations
     private func isExerciseForMuscleGroup(_ exercise: Exercise, muscleGroup: String) -> Bool {
         let exerciseName = exercise.name?.lowercased() ?? ""
         let exerciseMuscleGroups = (exercise.muscleGroups as? [String])?.map { $0.lowercased() } ?? []
-        let exerciseCategory = exercise.category?.lowercased() ?? ""
+        let category = exercise.category?.lowercased() ?? ""
+        
+        // Helper: Check if any string contains any of the aliases
+        func matchesAny(_ text: String, aliases: [String]) -> Bool {
+            aliases.contains { text.contains($0) }
+        }
+        
+        func muscleGroupsContainAny(_ aliases: [String]) -> Bool {
+            exerciseMuscleGroups.contains { group in
+                aliases.contains { alias in group.contains(alias) }
+            }
+        }
         
         // Helper to check if exercise is a fly/flye movement
         let isFlyMovement = exerciseName.contains("fly") || exerciseName.contains("flye") || 
                            exerciseName.contains("pec deck") || exerciseName.contains("crossover")
         
         switch muscleGroup {
+        // ═══════════════════════════════════════════════════════════════════════
+        // CHEST
+        // ═══════════════════════════════════════════════════════════════════════
         case "Upper Chest":
-            // Upper chest: incline movements, low-to-high movements
-            // If it's an incline fly, it targets upper chest
             let isIncline = exerciseName.contains("incline") && !exerciseName.contains("decline")
             let isLowToHigh = exerciseName.contains("low to high") || exerciseName.contains("low-to-high")
-            let isReverseGripBench = exerciseName.contains("reverse grip") && exerciseName.contains("bench")
-            let isLandminePress = exerciseName.contains("landmine press")
-            
-            // Incline flies target upper chest
-            if isFlyMovement && isIncline {
-                return true
-            }
-            
-            return isIncline ||
-                   isLowToHigh ||
-                   isReverseGripBench ||
-                   isLandminePress ||
-                   exerciseMuscleGroups.contains("upper pectoralis major") ||
-                   exerciseMuscleGroups.contains("clavicular pectoralis") ||
-                   exerciseMuscleGroups.contains("clavicular") ||
-                   exerciseMuscleGroups.contains("upper chest") ||
-                   exerciseMuscleGroups.contains { $0.contains("upper") && $0.contains("chest") } ||
-                   exerciseMuscleGroups.contains { $0.contains("upper") && $0.contains("pec") }
+            if isFlyMovement && isIncline { return true }
+            return isIncline || isLowToHigh ||
+                   matchesAny(exerciseName, aliases: ["landmine press", "reverse grip bench"]) ||
+                   muscleGroupsContainAny(["upper pec", "upper chest", "clavicular"])
                    
         case "Lower Chest":
-            // Lower chest: decline movements, high-to-low movements, dips
             let isDecline = exerciseName.contains("decline") && !exerciseName.contains("incline")
             let isHighToLow = exerciseName.contains("high to low") || exerciseName.contains("high-to-low")
             let isDip = exerciseName.contains("dip") && !exerciseName.contains("hip")
-            
-            // Decline flies target lower chest
-            if isFlyMovement && isDecline {
-                return true
-            }
-            
-            return isDecline ||
-                   isHighToLow ||
-                   isDip ||
-                   exerciseMuscleGroups.contains("lower pectoralis major") ||
-                   exerciseMuscleGroups.contains("sternal pectoralis") ||
-                   exerciseMuscleGroups.contains("sternal") ||
-                   exerciseMuscleGroups.contains("lower chest") ||
-                   exerciseMuscleGroups.contains { $0.contains("lower") && $0.contains("chest") } ||
-                   exerciseMuscleGroups.contains { $0.contains("lower") && $0.contains("pec") }
+            if isFlyMovement && isDecline { return true }
+            return isDecline || isHighToLow || isDip ||
+                   muscleGroupsContainAny(["lower pec", "lower chest", "sternal"])
                    
         case "Inner Chest":
-            // Inner chest: close grip, squeeze at top movements, crossovers
-            let isCloseGrip = exerciseName.contains("close grip") || exerciseName.contains("close-grip")
-            let isSqueeze = exerciseName.contains("squeeze")
-            let isDiamond = exerciseName.contains("diamond")
-            let isCrossover = exerciseName.contains("crossover") || exerciseName.contains("cross over")
-            
-            return isCloseGrip ||
-                   isSqueeze ||
-                   isDiamond ||
-                   isCrossover ||
-                   exerciseMuscleGroups.contains("inner pectoralis major") ||
-                   exerciseMuscleGroups.contains("medial pectoralis") ||
-                   exerciseMuscleGroups.contains("inner chest") ||
-                   exerciseMuscleGroups.contains { $0.contains("inner") && $0.contains("chest") }
+            return matchesAny(exerciseName, aliases: ["close grip", "close-grip", "squeeze", "diamond", "crossover", "cross over", "svend"]) ||
+                   muscleGroupsContainAny(["inner pec", "inner chest", "medial pec"])
                    
         case "Outer Chest":
-            // Outer chest: wide grip, fly movements
-            let isWideGrip = exerciseName.contains("wide grip") || exerciseName.contains("wide-grip")
-            let isPecDeck = exerciseName.contains("pec deck") || exerciseName.contains("pecdeck")
-            
-            // Standard flies target outer chest
-            return isWideGrip ||
-                   isFlyMovement ||
-                   isPecDeck ||
-                   exerciseMuscleGroups.contains("outer pectoralis major") ||
-                   exerciseMuscleGroups.contains("lateral pectoralis") ||
-                   exerciseMuscleGroups.contains("outer chest") ||
-                   exerciseMuscleGroups.contains { $0.contains("outer") && $0.contains("chest") }
+            return isFlyMovement ||
+                   matchesAny(exerciseName, aliases: ["wide grip", "wide-grip"]) ||
+                   muscleGroupsContainAny(["outer pec", "outer chest", "lateral pec"])
                    
-        case "Chest":
-            // Any chest exercise
-            return exerciseCategory == "chest" ||
-                   exerciseMuscleGroups.contains { $0.contains("pectoral") } ||
-                   exerciseMuscleGroups.contains { $0.contains("chest") } ||
-                   exerciseMuscleGroups.contains { $0.contains("pec ") || $0.hasSuffix("pec") }
+        case "Chest", "Pecs", "Pectorals":
+            let chestAliases = ["pec", "chest", "bench press", "push up", "pushup"]
+            return category == "chest" ||
+                   matchesAny(exerciseName, aliases: chestAliases) ||
+                   muscleGroupsContainAny(chestAliases)
                    
-        case "Lats":
-            return exerciseName.contains("pulldown") ||
-                   exerciseName.contains("pull down") ||
-                   exerciseName.contains("pull-down") ||
-                   exerciseName.contains("lat ") ||
-                   exerciseName.hasPrefix("lat") ||
-                   exerciseName.contains("chin up") ||
-                   exerciseName.contains("chin-up") ||
-                   exerciseName.contains("pull up") ||
-                   exerciseName.contains("pull-up") ||
-                   exerciseName.contains("pullup") ||
-                   exerciseName.contains("pullover") ||
-                   exerciseMuscleGroups.contains("latissimus dorsi") ||
-                   exerciseMuscleGroups.contains("lats") ||
-                   exerciseMuscleGroups.contains { $0.contains("lat") }
+        // ═══════════════════════════════════════════════════════════════════════
+        // BACK
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Lats", "Latissimus", "Wings":
+            let latAliases = ["lat", "latissimus", "wing", "pulldown", "pull down", "pull-down", "chin up", "chinup", "chin-up", "pull up", "pullup", "pull-up"]
+            return matchesAny(exerciseName, aliases: latAliases) ||
+                   muscleGroupsContainAny(["lat", "latissimus"])
                    
-        case "Traps":
-            return exerciseName.contains("shrug") ||
-                   exerciseName.contains("upright row") ||
-                   exerciseName.contains("face pull") ||
-                   exerciseName.contains("trap") ||
-                   exerciseMuscleGroups.contains("trapezius") ||
-                   exerciseMuscleGroups.contains("traps") ||
-                   exerciseMuscleGroups.contains { $0.contains("trap") }
+        case "Traps", "Trapezius":
+            let trapAliases = ["trap", "trapezius", "shrug", "upright row"]
+            return matchesAny(exerciseName, aliases: trapAliases) ||
+                   muscleGroupsContainAny(["trap"])
                    
-        case "Rhomboids", "Upper Back":
-            return exerciseName.contains("row") ||
-                   exerciseName.contains("reverse fly") ||
-                   exerciseName.contains("reverse flye") ||
-                   exerciseName.contains("rear delt") ||
-                   exerciseName.contains("face pull") ||
-                   exerciseMuscleGroups.contains("rhomboids") ||
-                   exerciseMuscleGroups.contains("rhomboid") ||
-                   exerciseMuscleGroups.contains("upper back") ||
-                   exerciseMuscleGroups.contains { $0.contains("rhomboid") }
+        case "Rhomboids", "Upper Back", "Mid Back":
+            let rhomboidAliases = ["rhomboid", "upper back", "mid back", "middle back", "row", "face pull", "rear delt"]
+            return matchesAny(exerciseName, aliases: rhomboidAliases) ||
+                   muscleGroupsContainAny(["rhomboid", "upper back", "mid back"])
                    
-        case "Lower Back":
-            return exerciseName.contains("deadlift") ||
-                   exerciseName.contains("hyperextension") ||
-                   exerciseName.contains("hyper extension") ||
-                   exerciseName.contains("good morning") ||
-                   exerciseName.contains("back extension") ||
-                   exerciseName.contains("superman") ||
-                   exerciseMuscleGroups.contains("erector spinae") ||
-                   exerciseMuscleGroups.contains("lower back") ||
-                   exerciseMuscleGroups.contains("lumbar") ||
-                   exerciseMuscleGroups.contains { $0.contains("erector") }
+        case "Lower Back", "Erectors", "Lumbar":
+            let lowerBackAliases = ["lower back", "erector", "lumbar", "deadlift", "hyperextension", "back extension", "good morning", "superman"]
+            return matchesAny(exerciseName, aliases: lowerBackAliases) ||
+                   muscleGroupsContainAny(["lower back", "erector", "lumbar", "spinae"])
                    
         case "Back":
-            return exerciseCategory == "back" ||
-                   exerciseMuscleGroups.contains { $0.contains("latissimus") } ||
-                   exerciseMuscleGroups.contains { $0.contains("trapezius") } ||
-                   exerciseMuscleGroups.contains { $0.contains("rhomboid") } ||
-                   exerciseMuscleGroups.contains { $0.contains("erector") } ||
-                   exerciseMuscleGroups.contains { $0.contains("back") }
+            let backAliases = ["lat", "trap", "rhomboid", "erector", "back", "row", "pull"]
+            return category == "back" ||
+                   muscleGroupsContainAny(backAliases)
                    
-        case "Front Delts":
-            // Front delts: front raises, pressing movements
-            let isFrontRaise = exerciseName.contains("front raise") || exerciseName.contains("front-raise")
-            let isPressMovement = (exerciseName.contains("press") || exerciseName.contains("push press")) &&
-                                  !exerciseName.contains("bench") && !exerciseName.contains("leg") && !exerciseName.contains("chest")
-            let isMilitaryPress = exerciseName.contains("military") || exerciseName.contains("overhead press")
-            let isArnoldPress = exerciseName.contains("arnold")
-            
-            // Only match if it's specifically front delts or a pressing movement
-            // Avoid false positives from lateral/rear movements
-            if exerciseName.contains("lateral") || exerciseName.contains("side") || 
-               exerciseName.contains("rear") || exerciseName.contains("reverse") {
-                return false
-            }
-            
-            return isFrontRaise ||
-                   isPressMovement ||
-                   isMilitaryPress ||
-                   isArnoldPress ||
-                   exerciseMuscleGroups.contains("anterior deltoids") ||
-                   exerciseMuscleGroups.contains("anterior deltoid") ||
-                   exerciseMuscleGroups.contains("front deltoids") ||
-                   exerciseMuscleGroups.contains("front deltoid") ||
-                   exerciseMuscleGroups.contains { $0.contains("anterior") && $0.contains("delt") }
+        // ═══════════════════════════════════════════════════════════════════════
+        // SHOULDERS / DELTS
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Front Delts", "Anterior Delts", "Front Shoulders":
+            let frontDeltAliases = ["front raise", "military press", "overhead press", "shoulder press", "arnold press", "push press", "front delt", "anterior delt"]
+            let isPress = exerciseName.contains("press") && !exerciseName.contains("bench") && !exerciseName.contains("leg") && !exerciseName.contains("chest")
+            return matchesAny(exerciseName, aliases: frontDeltAliases) || isPress ||
+                   muscleGroupsContainAny(["front delt", "anterior delt"])
                    
-        case "Side Delts", "Lateral Delts":
-            // Side delts: lateral raises, upright rows
-            let isLateralRaise = exerciseName.contains("lateral raise") || exerciseName.contains("lateral-raise") ||
-                                 exerciseName.contains("side raise") || exerciseName.contains("side-raise")
-            let isUprightRow = exerciseName.contains("upright row")
-            let isYRaise = exerciseName.contains("y raise") || exerciseName.contains("y-raise")
-            
-            // Must contain lateral/side keywords OR be in muscle groups
-            return isLateralRaise ||
-                   isUprightRow ||
-                   isYRaise ||
-                   (exerciseName.contains("lateral") && exerciseCategory == "shoulders") ||
-                   exerciseMuscleGroups.contains("lateral deltoids") ||
-                   exerciseMuscleGroups.contains("lateral deltoid") ||
-                   exerciseMuscleGroups.contains("side deltoids") ||
-                   exerciseMuscleGroups.contains("medial deltoids") ||
-                   exerciseMuscleGroups.contains("middle deltoids") ||
-                   exerciseMuscleGroups.contains { $0.contains("lateral") && $0.contains("delt") } ||
-                   exerciseMuscleGroups.contains { $0.contains("medial") && $0.contains("delt") }
+        case "Side Delts", "Lateral Delts", "Middle Delts", "Medial Delts":
+            let sideDeltAliases = ["lateral raise", "side raise", "side delt", "lateral delt", "upright row", "lu raise", "y raise"]
+            return matchesAny(exerciseName, aliases: sideDeltAliases) ||
+                   muscleGroupsContainAny(["lateral delt", "side delt", "medial delt", "middle delt"])
                    
-        case "Rear Delts":
-            // Rear delts: reverse flys, face pulls, bent-over raises
-            let isReverseFly = exerciseName.contains("reverse fly") || exerciseName.contains("reverse flye") ||
-                               exerciseName.contains("rear fly") || exerciseName.contains("rear flye")
-            let isFacePull = exerciseName.contains("face pull") || exerciseName.contains("face-pull")
-            let isBentOverRaise = (exerciseName.contains("bent over") || exerciseName.contains("bent-over")) &&
-                                  (exerciseName.contains("fly") || exerciseName.contains("raise"))
-            let isRearDelt = exerciseName.contains("rear delt")
-            
-            return isReverseFly ||
-                   isFacePull ||
-                   isBentOverRaise ||
-                   isRearDelt ||
-                   exerciseMuscleGroups.contains("posterior deltoids") ||
-                   exerciseMuscleGroups.contains("posterior deltoid") ||
-                   exerciseMuscleGroups.contains("rear deltoids") ||
-                   exerciseMuscleGroups.contains("rear deltoid") ||
-                   exerciseMuscleGroups.contains { $0.contains("posterior") && $0.contains("delt") } ||
-                   exerciseMuscleGroups.contains { $0.contains("rear") && $0.contains("delt") }
+        case "Rear Delts", "Posterior Delts", "Back Delts":
+            let rearDeltAliases = ["rear delt", "posterior delt", "reverse fly", "reverse flye", "face pull", "bent over fly", "bent over raise", "rear lateral"]
+            return matchesAny(exerciseName, aliases: rearDeltAliases) ||
+                   muscleGroupsContainAny(["rear delt", "posterior delt"])
                    
-        case "Shoulders":
-            return exerciseCategory == "shoulders" ||
-                   exerciseMuscleGroups.contains { $0.contains("deltoid") } ||
-                   exerciseMuscleGroups.contains { $0.contains("delt") } ||
-                   exerciseMuscleGroups.contains { $0.contains("shoulder") }
+        case "Shoulders", "Delts", "Deltoids":
+            let shoulderAliases = ["delt", "shoulder", "raise", "press"]
+            return category == "shoulders" ||
+                   muscleGroupsContainAny(shoulderAliases)
                    
-        case "Biceps":
-            return exerciseName.contains("curl") ||
-                   exerciseName.contains("chin up") ||
-                   exerciseName.contains("pull up") ||
-                   exerciseMuscleGroups.contains("biceps") ||
-                   exerciseMuscleGroups.contains("brachialis")
+        // ═══════════════════════════════════════════════════════════════════════
+        // ARMS
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Biceps", "Bicep", "Bis":
+            let bicepAliases = ["bicep", "curl", "chin up", "chinup", "chin-up", "preacher", "hammer", "concentration"]
+            return matchesAny(exerciseName, aliases: bicepAliases) ||
+                   muscleGroupsContainAny(["bicep", "brachialis"])
                    
-        case "Triceps":
-            return exerciseName.contains("extension") ||
-                   exerciseName.contains("pushdown") ||
-                   exerciseName.contains("push down") ||
-                   exerciseName.contains("close grip") ||
-                   exerciseName.contains("diamond") ||
-                   exerciseName.contains("dip") ||
-                   exerciseMuscleGroups.contains("triceps") ||
-                   exerciseMuscleGroups.contains("anconeus")
+        case "Triceps", "Tricep", "Tris":
+            let tricepAliases = ["tricep", "extension", "pushdown", "push down", "push-down", "skull crusher", "skullcrusher", "close grip", "diamond push", "kickback", "dip"]
+            return matchesAny(exerciseName, aliases: tricepAliases) ||
+                   muscleGroupsContainAny(["tricep", "anconeus"])
                    
-        case "Forearms":
-            return exerciseName.contains("wrist") ||
-                   exerciseName.contains("forearm") ||
-                   exerciseName.contains("hammer") ||
-                   exerciseName.contains("reverse curl") ||
-                   exerciseMuscleGroups.contains("forearms") ||
-                   exerciseMuscleGroups.contains("brachioradialis")
+        case "Forearms", "Forearm", "Wrists":
+            let forearmAliases = ["forearm", "wrist", "grip", "farmer", "reverse curl", "hammer curl", "brachioradialis"]
+            return matchesAny(exerciseName, aliases: forearmAliases) ||
+                   muscleGroupsContainAny(["forearm", "brachioradialis", "wrist"])
                    
         case "Arms":
-            return exercise.category?.lowercased() == "arms" ||
-                   exerciseMuscleGroups.contains { $0.contains("biceps") } ||
-                   exerciseMuscleGroups.contains { $0.contains("triceps") } ||
-                   exerciseMuscleGroups.contains { $0.contains("forearm") }
+            let armAliases = ["bicep", "tricep", "forearm", "curl", "extension", "pushdown"]
+            return category == "arms" ||
+                   muscleGroupsContainAny(armAliases)
                    
-        case "Quadriceps":
-            return exerciseName.contains("squat") ||
-                   exerciseName.contains("lunge") ||
-                   exerciseName.contains("leg press") ||
-                   exerciseName.contains("leg extension") ||
-                   exerciseName.contains("front squat") ||
-                   exerciseMuscleGroups.contains("quadriceps") ||
-                   exerciseMuscleGroups.contains("quads")
+        // ═══════════════════════════════════════════════════════════════════════
+        // LEGS
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Quads", "Quadriceps", "Thighs", "Front Thighs":
+            let quadAliases = ["quad", "squat", "lunge", "leg press", "leg extension", "step up", "step-up", "front squat", "goblet", "sissy", "split squat", "hack squat", "bulgarian", "vastus", "rectus femoris"]
+            return matchesAny(exerciseName, aliases: quadAliases) ||
+                   muscleGroupsContainAny(["quad", "vastus", "rectus femoris"])
                    
-        case "Hamstrings":
-            return exerciseName.contains("deadlift") ||
-                   exerciseName.contains("leg curl") ||
-                   exerciseName.contains("romanian") ||
-                   exerciseName.contains("stiff leg") ||
-                   exerciseName.contains("good morning") ||
-                   exerciseMuscleGroups.contains("hamstrings") ||
-                   exerciseMuscleGroups.contains("biceps femoris")
+        case "Hamstrings", "Hams", "Hammies", "Back Thighs":
+            let hamstringAliases = ["hamstring", "ham", "leg curl", "romanian", "rdl", "stiff leg", "stiff-leg", "good morning", "nordic", "glute ham", "biceps femoris", "semitendinosus"]
+            return matchesAny(exerciseName, aliases: hamstringAliases) ||
+                   muscleGroupsContainAny(["hamstring", "biceps femoris", "semitendinosus", "semimembranosus"])
                    
-        case "Glutes":
-            return exerciseName.contains("hip thrust") ||
-                   exerciseName.contains("glute bridge") ||
-                   exerciseName.contains("bulgarian") ||
-                   exerciseName.contains("sumo") ||
-                   exerciseName.contains("deadlift") ||
-                   exerciseMuscleGroups.contains("glutes") ||
-                   exerciseMuscleGroups.contains("gluteus")
+        case "Glutes", "Glute", "Gluteus", "Butt", "Booty":
+            let gluteAliases = ["glute", "gluteus", "hip thrust", "hip-thrust", "glute bridge", "kickback", "donkey kick", "fire hydrant", "sumo", "frog pump", "clamshell", "maximus", "medius", "minimus"]
+            return matchesAny(exerciseName, aliases: gluteAliases) ||
+                   muscleGroupsContainAny(["glute", "gluteus"])
                    
-        case "Calves":
-            return exerciseName.contains("calf") ||
-                   exerciseName.contains("raise") && (exerciseName.contains("heel") || exerciseName.contains("toe")) ||
-                   exerciseMuscleGroups.contains("calves") ||
-                   exerciseMuscleGroups.contains("gastrocnemius") ||
-                   exerciseMuscleGroups.contains("soleus")
+        case "Calves", "Calf":
+            let calfAliases = ["calf", "calve", "gastrocnemius", "soleus", "heel raise", "toe raise", "calf raise", "tibialis"]
+            return matchesAny(exerciseName, aliases: calfAliases) ||
+                   muscleGroupsContainAny(["calf", "calve", "gastrocnemius", "soleus"])
+                   
+        case "Adductors", "Inner Thighs":
+            let adductorAliases = ["adduct", "inner thigh", "copenhagen", "sumo", "groin"]
+            return matchesAny(exerciseName, aliases: adductorAliases) ||
+                   muscleGroupsContainAny(["adduct", "inner thigh", "groin"])
+                   
+        case "Hip Flexors", "Iliopsoas", "Psoas":
+            let hipFlexorAliases = ["hip flexor", "psoas", "iliopsoas", "leg raise", "knee raise", "hanging raise", "flutter kick", "bicycle"]
+            return matchesAny(exerciseName, aliases: hipFlexorAliases) ||
+                   muscleGroupsContainAny(["hip flexor", "psoas", "iliopsoas"])
                    
         case "Legs":
-            return exercise.category?.lowercased() == "legs" ||
-                   exerciseMuscleGroups.contains { $0.contains("quadriceps") } ||
-                   exerciseMuscleGroups.contains { $0.contains("hamstring") } ||
-                   exerciseMuscleGroups.contains { $0.contains("glute") } ||
-                   exerciseMuscleGroups.contains { $0.contains("calf") }
+            let legAliases = ["quad", "hamstring", "glute", "calf", "leg", "squat", "lunge"]
+            return category == "legs" ||
+                   muscleGroupsContainAny(legAliases)
+                   
+        // ═══════════════════════════════════════════════════════════════════════
+        // CORE / ABS
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Abs", "Abdominals", "Six Pack", "Rectus Abdominis":
+            let absAliases = ["ab", "crunch", "sit up", "situp", "sit-up", "leg raise", "plank", "v-up", "vup", "hollow", "dead bug", "rectus abdominis", "six pack"]
+            return matchesAny(exerciseName, aliases: absAliases) ||
+                   muscleGroupsContainAny(["ab", "rectus abdominis"]) ||
+                   category == "core"
                    
         case "Upper Abs":
-            return exerciseName.contains("crunch") ||
-                   exerciseName.contains("sit up") ||
-                   exerciseName.contains("situp") ||
-                   exerciseMuscleGroups.contains("upper abs") ||
-                   exerciseMuscleGroups.contains("upper abdominals")
+            let upperAbsAliases = ["crunch", "sit up", "situp", "sit-up", "upper ab"]
+            return matchesAny(exerciseName, aliases: upperAbsAliases) ||
+                   muscleGroupsContainAny(["upper ab"])
                    
         case "Lower Abs":
-            return exerciseName.contains("leg raise") ||
-                   exerciseName.contains("knee raise") ||
-                   exerciseName.contains("reverse crunch") ||
-                   exerciseName.contains("mountain climber") ||
-                   exerciseMuscleGroups.contains("lower abs") ||
-                   exerciseMuscleGroups.contains("lower abdominals")
+            let lowerAbsAliases = ["leg raise", "knee raise", "reverse crunch", "hanging raise", "flutter", "scissor", "lower ab"]
+            return matchesAny(exerciseName, aliases: lowerAbsAliases) ||
+                   muscleGroupsContainAny(["lower ab"])
                    
-        case "Obliques":
-            return exerciseName.contains("oblique") ||
-                   exerciseName.contains("side bend") ||
-                   exerciseName.contains("russian twist") ||
-                   exerciseName.contains("wood chop") ||
-                   exerciseName.contains("bicycle") ||
-                   exerciseMuscleGroups.contains("obliques")
+        case "Obliques", "Oblique", "Love Handles", "Side Abs":
+            let obliqueAliases = ["oblique", "side bend", "russian twist", "woodchop", "wood chop", "bicycle", "windshield wiper", "side plank", "pallof"]
+            return matchesAny(exerciseName, aliases: obliqueAliases) ||
+                   muscleGroupsContainAny(["oblique"])
                    
         case "Core":
-            return exercise.category?.lowercased() == "core" ||
-                   exerciseName.contains("plank") ||
-                   exerciseName.contains("ab") ||
-                   exerciseMuscleGroups.contains { $0.contains("abs") } ||
-                   exerciseMuscleGroups.contains { $0.contains("abdominal") } ||
-                   exerciseMuscleGroups.contains { $0.contains("oblique") }
+            let coreAliases = ["ab", "oblique", "plank", "crunch", "core", "hollow", "dead bug"]
+            return category == "core" ||
+                   muscleGroupsContainAny(coreAliases)
+                   
+        // ═══════════════════════════════════════════════════════════════════════
+        // SPECIAL
+        // ═══════════════════════════════════════════════════════════════════════
+        case "Rotator Cuff", "Rotators":
+            let rotatorAliases = ["rotator", "external rotation", "internal rotation", "cuban", "face pull", "infraspinatus", "supraspinatus", "subscapularis", "teres minor"]
+            return matchesAny(exerciseName, aliases: rotatorAliases) ||
+                   muscleGroupsContainAny(["rotator", "infraspinatus", "supraspinatus"])
                    
         default:
-            return false
+            // Generic fallback: try direct match on muscle group name
+            let target = muscleGroup.lowercased()
+            return exerciseMuscleGroups.contains { $0.contains(target) } ||
+                   exerciseName.contains(target)
         }
     }
     
@@ -815,11 +701,6 @@ struct CustomWorkoutBuilderView: View {
                     // Fixed search and filters (stays in place)
                     compactFiltersView
                     
-                    // Banner ad at top of exercise list
-                    BannerAdView()
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    
                     // Scrollable exercise list
                     ScrollView {
                         GeometryReader { geometry in
@@ -944,6 +825,16 @@ struct CustomWorkoutBuilderView: View {
             
             // Custom animated header
             customNavigationHeader
+            
+            // Banner ad overlay - floats on top, scroll content has space reserved
+            if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
+                VStack {
+                    Spacer().frame(height: 160) // Position below filters
+                    BannerAdView()
+                        .padding(.horizontal, 16)
+                    Spacer()
+                }
+            }
         }
         .navigationBarHidden(true)
         .toolbarBackground(.hidden, for: .navigationBar)

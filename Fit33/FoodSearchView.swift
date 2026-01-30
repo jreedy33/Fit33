@@ -177,6 +177,11 @@ struct FoodSearchView: View {
                             searchDebouncer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
                                 isWaitingForSearch = false  // Search is starting now
                                 foodService.searchFoods(query: newValue)
+                                
+                                // Track food search for recipe recommendations
+                                Task { @MainActor in
+                                    RecipePreferenceService.shared.trackFoodSearch(query: newValue)
+                                }
                             }
                         }
                     }

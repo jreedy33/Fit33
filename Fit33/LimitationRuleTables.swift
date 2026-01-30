@@ -173,6 +173,35 @@ enum LimitationRuleTables {
                 )
             ]
             
+        case .pregnancy:
+            return [
+                LimitationRule(
+                    id: "preg_high_impact",
+                    reason: "High impact exercise",
+                    matches: { $0.impactLevel >= .moderate }
+                ),
+                LimitationRule(
+                    id: "preg_prone",
+                    reason: "Prone/unsupported position",
+                    matches: { $0.unsupportedTorso }
+                ),
+                LimitationRule(
+                    id: "preg_high_axial",
+                    reason: "High axial loading",
+                    matches: { $0.axialLoading == .high }
+                ),
+                LimitationRule(
+                    id: "preg_overhead",
+                    reason: "Full overhead work",
+                    matches: { $0.overheadWork == .full }
+                ),
+                LimitationRule(
+                    id: "preg_balance",
+                    reason: "High balance demand",
+                    matches: { $0.balanceDemand == .high }
+                )
+            ]
+            
         case .upperBack, .other:
             return []
         }
@@ -271,6 +300,25 @@ enum LimitationRuleTables {
                     id: "an_light_exclude_impact",
                     reason: "Impact too high",
                     matches: { $0.impactLevel >= .moderate }
+                )
+            ]
+            
+        case .pregnancy:
+            return [
+                LimitationRule(
+                    id: "preg_light_high_impact",
+                    reason: "Impact too high",
+                    matches: { $0.impactLevel >= .moderate }
+                ),
+                LimitationRule(
+                    id: "preg_light_prone",
+                    reason: "Prone/unsupported position",
+                    matches: { $0.unsupportedTorso }
+                ),
+                LimitationRule(
+                    id: "preg_light_axial",
+                    reason: "Axial loading",
+                    matches: { $0.axialLoading == .high }
                 )
             ]
             
@@ -496,6 +544,38 @@ enum LimitationRuleTables {
                     penalty: 80,
                     isNegative: true,
                     matches: { $0.balanceDemand == .high }
+                )
+            ]
+            
+        case .pregnancy:
+            return [
+                LimitationRule(
+                    id: "preg_prefer_seated",
+                    reason: "Seated position (safer)",
+                    penalty: 50,
+                    isNegative: false,
+                    matches: { $0.isSeated }
+                ),
+                LimitationRule(
+                    id: "preg_prefer_machine",
+                    reason: "Machine-supported",
+                    penalty: 40,
+                    isNegative: false,
+                    matches: { $0.isMachineSupported }
+                ),
+                LimitationRule(
+                    id: "preg_penalize_impact",
+                    reason: "Moderate impact",
+                    penalty: 100,
+                    isNegative: true,
+                    matches: { $0.impactLevel == .moderate }
+                ),
+                LimitationRule(
+                    id: "preg_penalize_spinal",
+                    reason: "Moderate spinal load",
+                    penalty: 80,
+                    isNegative: true,
+                    matches: { $0.spinalLoad >= .moderate }
                 )
             ]
             
@@ -738,6 +818,45 @@ enum LimitationRuleTables {
                 ),
                 LimitationRule(
                     id: "an_careful_penalize_balance",
+                    reason: "High balance demand",
+                    penalty: 50,
+                    isNegative: true,
+                    matches: { $0.balanceDemand == .high }
+                )
+            ]
+            
+        case .pregnancy:
+            return [
+                LimitationRule(
+                    id: "preg_careful_boost_seated",
+                    reason: "Seated position",
+                    penalty: 40,
+                    isNegative: false,
+                    matches: { $0.isSeated }
+                ),
+                LimitationRule(
+                    id: "preg_careful_boost_machine",
+                    reason: "Machine-supported",
+                    penalty: 30,
+                    isNegative: false,
+                    matches: { $0.isMachineSupported }
+                ),
+                LimitationRule(
+                    id: "preg_careful_penalize_impact",
+                    reason: "Moderate impact",
+                    penalty: 70,
+                    isNegative: true,
+                    matches: { $0.impactLevel == .moderate }
+                ),
+                LimitationRule(
+                    id: "preg_careful_penalize_spinal",
+                    reason: "Spinal load",
+                    penalty: 60,
+                    isNegative: true,
+                    matches: { $0.spinalLoad >= .moderate }
+                ),
+                LimitationRule(
+                    id: "preg_careful_penalize_balance",
                     reason: "High balance demand",
                     penalty: 50,
                     isNegative: true,

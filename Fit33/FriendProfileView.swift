@@ -78,34 +78,14 @@ struct FriendProfileView: View {
     
     private var profileHeader: some View {
         VStack(spacing: 16) {
-            // Large Avatar
-            ZStack {
-                // Outer glow
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.blue.opacity(0.3), .purple.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 110, height: 110)
-                    .blur(radius: 20)
-                
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.blue, .purple.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 100, height: 100)
-                
-                Text(friend.initials)
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
+            // Large Avatar with cached photo
+            LargeCachedFriendPhoto(
+                friendId: friend.friendId.uuidString,
+                photoUrl: friend.profilePhotoUrl,
+                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                size: 100,
+                gradientColors: [.blue, .purple.opacity(0.8)]
+            )
             
             // Name
             Text(friend.displayName)
@@ -514,21 +494,14 @@ struct CreateWorkoutForFriendView: View {
     
     private var recipientHeader: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.blue.opacity(0.3), .purple.opacity(0.3)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                
-                Text(friend.initials)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.blue)
-            }
+            CachedFriendPhoto(
+                friendId: friend.friendId.uuidString,
+                photoUrl: friend.profilePhotoUrl,
+                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                size: 50,
+                showGradientRing: false,
+                gradientColors: [.blue.opacity(0.6), .purple.opacity(0.6)]
+            )
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Creating for")

@@ -858,7 +858,8 @@ class RemoteVideoPlayerManager: ObservableObject {
     @Published var isLoading = false
     @Published var error: Error?
     
-    private var queuePlayer: AVQueuePlayer?
+    var queuePlayer: AVQueuePlayer?
+    var playerLooper: AVPlayerLooper?  // ⚡️ CRITICAL: Must store looper reference or it gets deallocated
     
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
@@ -922,7 +923,8 @@ class RemoteVideoPlayerManager: ObservableObject {
         playerItem.preferredForwardBufferDuration = 2
         
         let qp = AVQueuePlayer(playerItem: playerItem)
-        let _ = AVPlayerLooper(player: qp, templateItem: playerItem)
+        // ⚡️ CRITICAL: Store looper reference - without this, looper is deallocated and video won't loop!
+        self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
         
         qp.automaticallyWaitsToMinimizeStalling = false
         qp.play()
@@ -940,7 +942,8 @@ class RemoteVideoPlayerManager: ObservableObject {
         loopItem.preferredForwardBufferDuration = 3
         
         let qp = AVQueuePlayer(playerItem: loopItem)
-        let _ = AVPlayerLooper(player: qp, templateItem: loopItem)
+        // ⚡️ CRITICAL: Store looper reference - without this, looper is deallocated and video won't loop!
+        self.playerLooper = AVPlayerLooper(player: qp, templateItem: loopItem)
         
         self.queuePlayer = qp
         self.player = qp

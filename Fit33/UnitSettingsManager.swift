@@ -114,6 +114,25 @@ class UnitSettingsManager: ObservableObject {
         return imperialCountries.contains(countryCode)
     }
     
+    /// Countries that use MM/DD/YYYY date format (most use DD/MM/YYYY)
+    private static let monthFirstDateCountries = ["US", "FM", "MH", "PW"]
+    
+    /// Returns true if the user's locale uses MM/DD/YYYY format, false for DD/MM/YYYY
+    static var localeUsesMonthFirstDate: Bool {
+        let countryCode = Locale.current.region?.identifier ?? "US"
+        return monthFirstDateCountries.contains(countryCode)
+    }
+    
+    /// Returns the appropriate date format string based on locale
+    static var localeDateFormat: String {
+        return localeUsesMonthFirstDate ? "MM/DD/YYYY" : "DD/MM/YYYY"
+    }
+    
+    /// Returns the placeholder example based on locale
+    static var localeDatePlaceholder: String {
+        return localeUsesMonthFirstDate ? "MM/DD/YYYY" : "DD/MM/YYYY"
+    }
+    
     static var localeWeekStart: WeekStart {
         let countryCode = Locale.current.region?.identifier ?? "US"
         if saturdayStartCountries.contains(countryCode) {

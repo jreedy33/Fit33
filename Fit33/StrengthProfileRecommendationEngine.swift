@@ -13,16 +13,16 @@ class StrengthProfileRecommendationEngine {
     // MARK: - Strength Levels (from household item assessment)
     
     enum StrengthLevel: String, CaseIterable, Codable {
-        case veryLight = "Very Light"      // Phone/book (~1-2 lbs)
-        case light = "Light"               // Gallon of milk (~8 lbs)
-        case moderate = "Moderate"         // Bowling ball (~14 lbs)
-        case strong = "Strong"             // Large suitcase (~40 lbs)
-        case veryStrong = "Very Strong"    // Heavy barbell (~60+ lbs)
+        case veryLight = "Very Light"      // Phone/book (~1-2 lbs / ~1 kg)
+        case light = "Light"               // Gallon of milk (~8 lbs / ~4 kg)
+        case moderate = "Moderate"         // Bowling ball (~14 lbs / ~6 kg)
+        case strong = "Strong"             // Large suitcase (~40 lbs / ~18 kg)
+        case veryStrong = "Very Strong"    // Heavy barbell (~60+ lbs / ~27+ kg)
         
         var displayName: String {
             switch self {
             case .veryLight: return "Light Items"
-            case .light: return "Gallon of Milk"
+            case .light: return "Milk Jug"
             case .moderate: return "Bowling Ball"
             case .strong: return "Heavy Suitcase"
             case .veryStrong: return "Heavy Weights"
@@ -30,12 +30,15 @@ class StrengthProfileRecommendationEngine {
         }
         
         var description: String {
+            // Use locale-appropriate units
+            let useMetric = !UnitSettingsManager.localeUsesImperial
+            
             switch self {
-            case .veryLight: return "Books, phones (~2 lbs)"
-            case .light: return "Gallon of milk (~8 lbs)"
-            case .moderate: return "Bowling ball (~14 lbs)"
-            case .strong: return "Heavy suitcase (~40 lbs)"
-            case .veryStrong: return "Heavy barbell (~60+ lbs)"
+            case .veryLight: return useMetric ? "Books, phones (~1 kg)" : "Books, phones (~2 lbs)"
+            case .light: return useMetric ? "Milk jug (~4 kg)" : "Milk jug (~8 lbs)"
+            case .moderate: return useMetric ? "Bowling ball (~6 kg)" : "Bowling ball (~14 lbs)"
+            case .strong: return useMetric ? "Heavy suitcase (~18 kg)" : "Heavy suitcase (~40 lbs)"
+            case .veryStrong: return useMetric ? "Heavy barbell (~27+ kg)" : "Heavy barbell (~60+ lbs)"
             }
         }
         

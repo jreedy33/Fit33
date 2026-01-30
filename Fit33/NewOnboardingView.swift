@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import PhotosUI
 
 // MARK: - Keyboard Height Observer
 class KeyboardObserver: ObservableObject {
@@ -71,7 +72,7 @@ struct NewOnboardingView: View {
     // Profile fields
     @State private var birthday = ""  // Formatted with slashes: MM/DD/YYYY
     
-    // Format birthday string with auto-inserted slashes
+    // Format birthday string with auto-inserted slashes (locale-aware: MM/DD/YYYY or DD/MM/YYYY)
     private func formatBirthday(_ input: String) -> String {
         let digits = input.filter { $0.isNumber }
         let limited = String(digits.prefix(8))
@@ -84,6 +85,16 @@ struct NewOnboardingView: View {
             result += String(char)
         }
         return result
+    }
+    
+    // Returns true if locale uses MM/DD/YYYY, false for DD/MM/YYYY
+    private var usesMonthFirstDate: Bool {
+        UnitSettingsManager.localeUsesMonthFirstDate
+    }
+    
+    // Placeholder text based on locale
+    private var birthdayPlaceholder: String {
+        usesMonthFirstDate ? "MM/DD/YYYY" : "DD/MM/YYYY"
     }
     @State private var selectedGender: String? = nil
     @State private var heightFeetInchesDigits = ""  // Just digits: e.g., "510" for 5'10"
@@ -104,6 +115,15 @@ struct NewOnboardingView: View {
     @State private var selectedDays = 4
     @State private var selectedLimitations: Set<AffectedArea> = []  // Injury/limitation tracking
     @State private var limitationAccommodations: [AffectedArea: AccommodationLevel] = [:]  // Accommodation level per area
+    @State private var confirmedAccommodations: Set<AffectedArea> = []  // Track which have been explicitly confirmed
+    
+    // Profile photo (optional onboarding step)
+    @State private var profilePhotoImage: UIImage? = nil
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var showingPhotoOptions = false
+    @State private var showingPhotoPicker = false
+    @State private var showingCamera = false
+    @State private var isUploadingPhoto = false
     
     // Unit preferences - default based on user's locale
     @State private var heightUnit: HeightUnit = UnitSettingsManager.localeUsesImperial ? .ftIn : .cm
@@ -178,6 +198,7 @@ struct NewOnboardingView: View {
         case .equipment: return "Equipment"
         case .limitations: return "Health"
         case .schedule: return "Schedule"
+        case .profilePhoto: return "Photo"
         case .confirmation: return "Review"
         case .complete: return "Done!"
         }
@@ -205,8 +226,9 @@ struct NewOnboardingView: View {
         case equipment = 8
         case limitations = 9  // Injuries/limitations
         case schedule = 10
-        case confirmation = 11  // Review all selections before creating account
-        case complete = 12
+        case profilePhoto = 11  // Optional profile photo upload
+        case confirmation = 12  // Review all selections before creating account
+        case complete = 13
     }
     
     // Validation for auth step
@@ -332,6 +354,7 @@ struct NewOnboardingView: View {
                             if currentStep == .workoutLocation { locationStepContent.transition(slideTransition) }
                             if currentStep == .equipment { equipmentStepContent.transition(slideTransition) }
                             if currentStep == .schedule { scheduleStepContent.transition(slideTransition) }
+                            if currentStep == .profilePhoto { profilePhotoStepContent.transition(slideTransition) }
                         }
                         .animation(.easeInOut(duration: 0.3), value: currentStep)
                         
@@ -355,19 +378,44 @@ struct NewOnboardingView: View {
                     // Scrollable list container - fills remaining space above buttons
                     ScrollView(showsIndicators: true) {
                         VStack(spacing: 16) {
-                            ForEach(AffectedArea.commonAreas, id: \.self) { area in
-                                limitationRowWithDropdown(for: area)
-                            }
-                            
-                            // None option
+                            // "No limitations" option at top for easy access
                             Button(action: { 
-                                selectedLimitations.removeAll()
-                                limitationAccommodations.removeAll()
+                                selectionFeedback.selectionChanged()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    selectedLimitations.removeAll()
+                                    limitationAccommodations.removeAll()
+                                }
                             }) {
-                                Text("No limitations")
-                                    .font(.subheadline)
-                                    .foregroundColor(selectedLimitations.isEmpty ? .blue : .secondary)
-                                    .padding(.top, 8)
+                                HStack(spacing: 10) {
+                                    Image(systemName: selectedLimitations.isEmpty ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 20))
+                                    Text("No injuries or limitations")
+                                        .font(.subheadline.weight(.semibold))
+                                    Spacer()
+                                }
+                                .foregroundStyle(
+                                    selectedLimitations.isEmpty
+                                        ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                        : AnyShapeStyle(Color.secondary)
+                                )
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(selectedLimitations.isEmpty ? Color.green.opacity(0.1) : Color(.systemGray6))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(selectedLimitations.isEmpty ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1.5)
+                                )
+                            }
+                            .padding(.bottom, 12)
+                            
+                            // Limitation options
+                            VStack(spacing: 10) {
+                                ForEach(AffectedArea.commonAreas, id: \.self) { area in
+                                    limitationRowWithDropdown(for: area)
+                                }
                             }
                         }
                         .padding(.horizontal, 24)
@@ -437,16 +485,18 @@ struct NewOnboardingView: View {
                                 .padding(.bottom, 8)
                             }
                             
-                            confirmationRowSimple(title: "Name", value: name.isEmpty ? "-" : name, editStep: .auth)
-                            confirmationRowSimple(title: "Email", value: email.isEmpty ? "-" : email, editStep: .auth)
-                            confirmationRowSimple(title: "Username", value: username.isEmpty ? "-" : "@\(username)", editStep: .username)
-                            confirmationRowSimple(title: "Birthday", value: birthday, editStep: .basics)
+                            confirmationRowSimple(title: "Name", value: name.isEmpty ? "-" : name, editStep: .auth, focusField: .name)
+                            confirmationRowSimple(title: "Email", value: email.isEmpty ? "-" : email, editStep: .auth, focusField: .email)
+                            confirmationRowSimple(title: "Username", value: username.isEmpty ? "-" : "@\(username)", editStep: .username, focusField: .username)
+                            confirmationRowSimple(title: "Birthday", value: birthday, editStep: .basics, focusField: .birthday)
                             confirmationRowSimple(title: "Gender", value: selectedGender ?? "Not specified", editStep: .basics)
-                            confirmationRowSimple(title: "Height", value: formatHeightDisplay(), editStep: .body)
-                            confirmationRowSimple(title: "Weight", value: "\(weight) \(weightUnit == .lbs ? "lbs" : "kg")", editStep: .body)
+                            confirmationRowSimple(title: "Height", value: formatHeightDisplay(), editStep: .body, focusField: .height)
+                            confirmationRowSimple(title: "Weight", value: "\(weight) \(weightUnit == .lbs ? "lbs" : "kg")", editStep: .body, focusField: .weight)
                             confirmationRowSimple(title: "Goals", value: selectedGoals.joined(separator: ", "), editStep: .goal)
                             confirmationRowSimple(title: "Experience", value: selectedExperience, editStep: .experience)
                             confirmationRowSimple(title: "Location", value: selectedWorkoutLocation.rawValue.capitalized, editStep: .workoutLocation)
+                            confirmationRowSimple(title: "Equipment", value: selectedEquipment.isEmpty ? "None" : Array(selectedEquipment).sorted().joined(separator: ", "), editStep: .equipment)
+                            confirmationRowSimple(title: "Limitations", value: selectedLimitations.isEmpty ? "None" : "\(selectedLimitations.count) selected", editStep: .limitations)
                             confirmationRowSimple(title: "Days/Week", value: "\(selectedDays)", editStep: .schedule)
                         }
                         .padding(.horizontal, 24)
@@ -473,6 +523,12 @@ struct NewOnboardingView: View {
             case .auth:
                 break
             case .username:
+                // Check if there's a pending social username to pre-fill (from Facebook/Instagram)
+                if let socialUsername = UserDefaults.standard.string(forKey: "pending_social_username"), username.isEmpty {
+                    username = socialUsername
+                    UserDefaults.standard.removeObject(forKey: "pending_social_username")
+                    print("📘 Pre-filled username from social login: @\(socialUsername)")
+                }
                 focusedField = .username
             case .basics:
                 focusedField = .birthday
@@ -510,14 +566,19 @@ struct NewOnboardingView: View {
             progressIndicator
             
             // Title + subtitle (always show)
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Text(onboardingStepTitle)
                     .font(.title3.weight(.bold))
                     .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
                 
                 Text(onboardingStepSubtitle)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
             }
         }
         .padding(.top, 70) // Safe area clearance
@@ -534,10 +595,11 @@ struct NewOnboardingView: View {
         case .goal: return "Your Goals"
         case .experience: return "Experience Level"
         case .strengthAssessment: return "Strength Level"
-        case .workoutLocation: return "Where You Train"
-        case .equipment: return "Your Equipment"
+        case .workoutLocation: return "Where do you typically workout?"
+        case .equipment: return "What equipment do you have?"
         case .limitations: return "Any Limitations?"
         case .schedule: return "Your Schedule"
+        case .profilePhoto: return "Add a Photo"
         case .confirmation: return "Review & Confirm"
         case .complete: return "You're All Set!"
         }
@@ -551,11 +613,12 @@ struct NewOnboardingView: View {
         case .body: return "For accurate recommendations"
         case .goal: return "What do you want to achieve?"
         case .experience: return "How long have you been training?"
-        case .strengthAssessment: return "Helps us pick the right weights"
-        case .workoutLocation: return "Where will you workout?"
-        case .equipment: return "What do you have access to?"
+        case .strengthAssessment: return "Helps us suggest the right starting weights"
+        case .workoutLocation: return "This can be updated at any time"
+        case .equipment: return "What equipment do you have access to and prefer to use. This can be updated anytime"
         case .limitations: return "Anything we should know about?"
         case .schedule: return "How often do you want to train?"
+        case .profilePhoto: return "Help friends recognize you"
         case .confirmation: return "Make sure everything looks right"
         case .complete: return "Let's start your first workout"
         }
@@ -570,10 +633,11 @@ struct NewOnboardingView: View {
         case .goal: return "Your goals shape the type of workouts we'll recommend"
         case .experience: return "This helps us match exercises to your skill level"
         case .strengthAssessment: return "We'll suggest starting weights that match your current strength"
-        case .workoutLocation: return "Different locations have different equipment available"
-        case .equipment: return "We'll only recommend exercises you can actually do"
+        case .workoutLocation: return "You can change this anytime in settings"
+        case .equipment: return "Select what you typically use - you can change this anytime"
         case .limitations: return "We'll avoid exercises that could aggravate injuries or issues"
         case .schedule: return "We'll build a program that fits your weekly availability"
+        case .profilePhoto: return "Your photo appears on shared workouts and friend lists"
         case .confirmation: return ""
         case .complete: return ""
         }
@@ -600,7 +664,7 @@ struct NewOnboardingView: View {
                 isNavigatingForward = true
                 withAnimation { goToNextStep() }
             }) {
-                Text(currentStep == .confirmation ? "Create Account" : "Continue")
+                Text(currentStep == .confirmation ? "Create Account" : (currentStep == .profilePhoto ? (profilePhotoImage != nil ? "Continue" : "Skip") : "Continue"))
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundStyle(
@@ -639,6 +703,7 @@ struct NewOnboardingView: View {
         case .equipment: return !selectedEquipment.isEmpty
         case .limitations: return true
         case .schedule: return selectedDays > 0
+        case .profilePhoto: return true  // Optional step, always valid
         case .confirmation: return true
         case .complete: return true
         }
@@ -728,8 +793,8 @@ struct NewOnboardingView: View {
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .username)
                         .onChange(of: username) { _, newValue in
-                            // Clean the username - remove spaces and special chars
-                            let cleaned = newValue.lowercased()
+                            // Clean the username - remove spaces and special chars (allow uppercase and lowercase)
+                            let cleaned = newValue
                                 .filter { $0.isLetter || $0.isNumber || $0 == "_" }
                             if cleaned != newValue {
                                 username = cleaned
@@ -745,10 +810,10 @@ struct NewOnboardingView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                         
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                             .shadow(
                                 color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
                                 radius: focusedField == .username ? 12 : 8,
@@ -835,7 +900,7 @@ struct NewOnboardingView: View {
                 
                 OnboardingTextField(
                     icon: "calendar",
-                    placeholder: "MM/DD/YYYY",
+                    placeholder: birthdayPlaceholder,
                     text: $birthday,
                     keyboardType: .numberPad,
                     focusedField: $focusedField,
@@ -884,7 +949,7 @@ struct NewOnboardingView: View {
                     text: heightUnit == .ftIn ? $heightFeetInchesDigits : $heightCm,
                     keyboardType: .numberPad,
                     field: .height,
-                    isValid: heightUnit == .ftIn ? !heightFeetInchesDigits.isEmpty : !heightCm.isEmpty,
+                    isValid: isHeightValid,
                     unitOptions: ["ft", "cm"],
                     selectedUnit: heightUnit.rawValue,
                     onUnitChange: { newUnit in
@@ -986,7 +1051,7 @@ struct NewOnboardingView: View {
                     text: $weight,
                     keyboardType: .numberPad,
                     field: .weight,
-                    isValid: !weight.isEmpty,
+                    isValid: isWeightValid,
                     unitOptions: ["lbs", "kg"],
                     selectedUnit: weightUnit.rawValue,
                     onUnitChange: { newUnit in
@@ -1111,10 +1176,11 @@ struct NewOnboardingView: View {
             let totalInches = Int((Double(cm) / 2.54).rounded())
             let feet = totalInches / 12
             let inches = totalInches % 12
-            if inches == 0 {
-                heightFeetInchesDigits = "\(feet)'"
+            // Store as digits only (e.g., "510" for 5'10") - parsedHeightFeetInches expects this format
+            if inches < 10 {
+                heightFeetInchesDigits = "\(feet)0\(inches)"
             } else {
-                heightFeetInchesDigits = "\(feet)'\(inches)\""
+                heightFeetInchesDigits = "\(feet)\(inches)"
             }
         }
         heightUnit = newUnit
@@ -1326,16 +1392,18 @@ struct NewOnboardingView: View {
     @ViewBuilder
     private func limitationRowWithDropdown(for area: AffectedArea) -> some View {
         let isSelected = selectedLimitations.contains(area)
+        let needsSelection = isSelected && !confirmedAccommodations.contains(area)
         
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             // Main selection button
             Button(action: {
                 if isSelected {
                     selectedLimitations.remove(area)
                     limitationAccommodations.removeValue(forKey: area)
+                    confirmedAccommodations.remove(area)
                 } else {
                     selectedLimitations.insert(area)
-                    // Default to "Be Careful"
+                    // Default to "Be Careful" but mark as needing explicit selection
                     limitationAccommodations[area] = .beCareful
                 }
             }) {
@@ -1348,55 +1416,93 @@ struct NewOnboardingView: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                     Spacer()
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .blue : .gray.opacity(0.3))
+                    
+                    // Show status indicator
+                    if needsSelection {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundColor(.orange)
+                    } else {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(isSelected ? .blue : .gray.opacity(0.3))
+                    }
                 }
-                .padding()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                        .fill(isSelected ? (needsSelection ? Color.orange.opacity(0.08) : Color.blue.opacity(0.1)) : Color(.systemGray6))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1.5)
+                        .stroke(isSelected ? (needsSelection ? Color.orange : Color.blue) : Color.clear, lineWidth: 1.5)
                 )
             }
             .foregroundColor(.primary)
             
-            // Dropdown menu when selected
+            // Auto-expanded options when selected
             if isSelected {
-                Menu {
+                VStack(spacing: 6) {
+                    // Helper text
+                    if needsSelection {
+                        HStack(spacing: 6) {
+                            Image(systemName: "hand.point.down.fill")
+                                .font(.system(size: 12))
+                            Text("Select an accommodation level")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                        .padding(.leading, 12)
+                    }
+                    
+                    // Options as buttons (not dropdown)
                     ForEach(AccommodationLevel.allCases, id: \.self) { level in
                         Button(action: {
                             limitationAccommodations[area] = level
+                            confirmedAccommodations.insert(area)
                         }) {
-                            Label(level.displayName, systemImage: level.icon)
+                            HStack(spacing: 10) {
+                                Image(systemName: level.icon)
+                                    .font(.system(size: 15))
+                                    .foregroundColor(level.color)
+                                    .frame(width: 22)
+                                
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(level.displayName)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text(level.description)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                                
+                                if limitationAccommodations[area] == level {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(level.color)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(limitationAccommodations[area] == level ? level.color.opacity(0.12) : Color(.systemGray6))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(limitationAccommodations[area] == level ? level.color.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: limitationAccommodations[area]?.icon ?? AccommodationLevel.beCareful.icon)
-                            .font(.system(size: 16))
-                            .foregroundColor(limitationAccommodations[area]?.color ?? AccommodationLevel.beCareful.color)
-                            .frame(width: 24)
-                        Text(limitationAccommodations[area]?.displayName ?? AccommodationLevel.beCareful.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.black)
-                    )
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
-                .animation(.easeInOut(duration: 0.2), value: isSelected)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
         }
     }
@@ -1430,11 +1536,178 @@ struct NewOnboardingView: View {
         }
     }
     
-    private func confirmationRowSimple(title: String, value: String, editStep: OnboardingStep? = nil) -> some View {
+    // MARK: - Profile Photo Step (Optional)
+    private var profilePhotoStepContent: some View {
+        VStack(spacing: 32) {
+            // Large avatar circle with add button
+            Button(action: {
+                HapticManager.impact(.light)
+                showingPhotoOptions = true
+            }) {
+                ZStack {
+                    // Outer ring
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: profilePhotoImage != nil 
+                                    ? [Color.green.opacity(0.6), Color.green.opacity(0.3)]
+                                    : [Color.blue.opacity(0.4), Color.purple.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 4
+                        )
+                        .frame(width: 180, height: 180)
+                    
+                    // Avatar circle
+                    if let image = profilePhotoImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 160, height: 160)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.15)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 160, height: 160)
+                            .overlay(
+                                VStack(spacing: 8) {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                    Text("Add Photo")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue.opacity(0.8))
+                                }
+                            )
+                    }
+                    
+                    // Edit badge when photo exists
+                    if profilePhotoImage != nil {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 44, height: 44)
+                            .overlay(
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                            )
+                            .offset(x: 60, y: 60)
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Instructions
+            VStack(spacing: 8) {
+                Text(profilePhotoImage != nil ? "Looking great! 👍" : "Tap to add a profile photo")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Your photo helps friends recognize you when sharing workouts")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            
+            // Skip button (only show if no photo)
+            if profilePhotoImage == nil {
+                Button(action: {
+                    navigateTo(.confirmation)
+                }) {
+                    Text("Skip for now")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .underline()
+                }
+                .padding(.top, 8)
+            }
+            
+            // Loading indicator
+            if isUploadingPhoto {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Processing...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 32)
+        .confirmationDialog("Profile Photo", isPresented: $showingPhotoOptions) {
+            Button("Take Photo") {
+                showingCamera = true
+            }
+            Button("Choose from Library") {
+                showingPhotoPicker = true
+            }
+            if profilePhotoImage != nil {
+                Button("Remove Photo", role: .destructive) {
+                    profilePhotoImage = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showingPhotoPicker) {
+            OnboardingPhotoPicker(image: $profilePhotoImage)
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            OnboardingCameraPicker { image in
+                processOnboardingPhoto(image)
+            }
+        }
+    }
+    
+    /// Process and resize the photo for onboarding
+    private func processOnboardingPhoto(_ image: UIImage) {
+        // Resize to reasonable dimensions (300x300 max) for profile photos
+        let maxDimension: CGFloat = 300
+        let scaledImage = resizeImageForOnboarding(image, maxDimension: maxDimension)
+        profilePhotoImage = scaledImage
+    }
+    
+    /// Resize image maintaining aspect ratio
+    private func resizeImageForOnboarding(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        let aspectRatio = size.width / size.height
+        
+        var newSize: CGSize
+        if size.width > size.height {
+            newSize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
+        } else {
+            newSize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
+        }
+        
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return newImage ?? image
+    }
+    
+    private func confirmationRowSimple(title: String, value: String, editStep: OnboardingStep? = nil, focusField: FocusedField? = nil) -> some View {
         Button(action: {
             if let step = editStep {
                 isEditingFromConfirmation = true
                 navigateTo(step)
+                
+                // Auto-focus the field after a short delay
+                if let field = focusField {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        focusedField = field
+                    }
+                }
             }
         }) {
             HStack {
@@ -1987,6 +2260,28 @@ struct NewOnboardingView: View {
                             SignInWithAppleButton {
                                 handleAppleSignIn()
                             }
+                            
+                            // Facebook Sign-In Button (hidden for now - needs Facebook App setup)
+                            // Uncomment when Facebook OAuth is configured in Supabase
+                            /*
+                            Button(action: {
+                                handleFacebookSignIn()
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "f.circle.fill")
+                                        .font(.system(size: 20))
+                                    Text("Continue with Facebook")
+                                        .font(.system(size: 17, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(
+                                    Color(red: 0.23, green: 0.35, blue: 0.60)
+                                )
+                                .cornerRadius(12)
+                            }
+                            */
                         }
                         .padding(.top, 20)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -2008,14 +2303,30 @@ struct NewOnboardingView: View {
     }
     
     // MARK: - Basics Step (Birthday + Gender)
-    // Parse birthday from MM/DD/YYYY format
+    // Parse birthday from MM/DD/YYYY or DD/MM/YYYY format based on locale
     private var birthdayDate: Date? {
         let parts = birthday.split(separator: "/")
-        guard parts.count == 3,
-              let month = Int(parts[0]),
-              let day = Int(parts[1]),
-              let year = Int(parts[2]),
-              month >= 1 && month <= 12,
+        guard parts.count == 3 else { return nil }
+        
+        let month: Int
+        let day: Int
+        let year: Int
+        
+        if usesMonthFirstDate {
+            // MM/DD/YYYY format (US)
+            guard let m = Int(parts[0]), let d = Int(parts[1]), let y = Int(parts[2]) else { return nil }
+            month = m
+            day = d
+            year = y
+        } else {
+            // DD/MM/YYYY format (UK, most of world)
+            guard let d = Int(parts[0]), let m = Int(parts[1]), let y = Int(parts[2]) else { return nil }
+            day = d
+            month = m
+            year = y
+        }
+        
+        guard month >= 1 && month <= 12,
               day >= 1 && day <= 31,
               year >= 1900 && year <= Calendar.current.component(.year, from: Date())
         else { return nil }
@@ -2074,7 +2385,7 @@ struct NewOnboardingView: View {
                     
                     OnboardingTextField(
                         icon: "calendar",
-                        placeholder: "11/16/1994",
+                        placeholder: usesMonthFirstDate ? "11/16/1994" : "16/11/1994",
                         text: $birthday,
                         keyboardType: .numberPad,
                         focusedField: $focusedField,
@@ -2166,20 +2477,50 @@ struct NewOnboardingView: View {
     
     private var isHeightValid: Bool {
         if heightUnit == .cm {
-            return !heightCm.isEmpty && Int(heightCm) != nil
+            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return false }
+            // Try parsing as Int (handles "175") or Double then Int (handles "175.0")
+            let cm: Int?
+            if let intValue = Int(trimmed) {
+                cm = intValue
+            } else if let doubleValue = Double(trimmed) {
+                cm = Int(doubleValue)
+            } else {
+                cm = nil
+            }
+            guard let validCm = cm else { return false }
+            return validCm >= 90 && validCm <= 270  // Valid height range in cm
         } else {
             return parsedHeightFeetInches != nil
         }
     }
     
     private var isWeightValid: Bool {
-        return !weight.isEmpty && Double(weight) != nil
+        let trimmed = weight.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        
+        // Handle both "." and "," as decimal separators for international support
+        let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+        guard let w = Double(normalized), w > 0 else { return false }
+        
+        // Valid range: 50-700 lbs or 23-320 kg (covers reasonable human weights)
+        if weightUnit == .lbs {
+            return w >= 50 && w <= 700
+        } else {
+            return w >= 23 && w <= 320
+        }
     }
     
     // Convert height to cm for storage
     private var heightInCm: Int {
         if heightUnit == .cm {
-            return Int(heightCm) ?? 0
+            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
+            if let intValue = Int(trimmed) {
+                return intValue
+            } else if let doubleValue = Double(trimmed) {
+                return Int(doubleValue)
+            }
+            return 0
         } else if let parsed = parsedHeightFeetInches {
             let totalInches = (parsed.feet * 12) + parsed.inches
             return Int(Double(totalInches) * 2.54)
@@ -2525,12 +2866,13 @@ struct NewOnboardingView: View {
     
     // MARK: - Strength Assessment Step
     private var strengthAssessmentStep: some View {
+        // Locale-aware weight descriptions
         let strengthLevels: [(StrengthProfileRecommendationEngine.StrengthLevel, String, String, String, Color)] = [
-            (.veryLight, "📱", "Light Items", "Books, phones (~2 lbs)", .gray),
-            (.light, "🥛", "Gallon of Milk", "Lift easily (~8 lbs)", .green),
-            (.moderate, "🎳", "Bowling Ball", "Comfortable (~14 lbs)", .blue),
-            (.strong, "🧳", "Heavy Suitcase", "Handle heavy (~40 lbs)", .orange),
-            (.veryStrong, "🏋️", "Heavy Weights", "Gym weights (~60+ lbs)", .red)
+            (.veryLight, "📱", "Light Items", weightUnit == .lbs ? "Books, phones (~2 lbs)" : "Books, phones (~1 kg)", .gray),
+            (.light, "🥛", "Milk Jug", weightUnit == .lbs ? "Lift easily (~8 lbs)" : "Lift easily (~4 kg)", .green),
+            (.moderate, "🎳", "Bowling Ball", weightUnit == .lbs ? "Comfortable (~14 lbs)" : "Comfortable (~6 kg)", .blue),
+            (.strong, "🧳", "Heavy Suitcase", weightUnit == .lbs ? "Handle heavy (~40 lbs)" : "Handle heavy (~18 kg)", .orange),
+            (.veryStrong, "🏋️", "Heavy Weights", weightUnit == .lbs ? "Gym weights (~60+ lbs)" : "Gym weights (~27+ kg)", .red)
         ]
         
         return OnboardingStepContainer(
@@ -2598,8 +2940,8 @@ struct NewOnboardingView: View {
             continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
             currentStep: 6,
             totalSteps: 9,
-            question: "Where do you workout?",
-            subtitle: "We'll recommend the right exercises"
+            question: "Where do you typically workout?",
+            subtitle: "You can change this anytime"
         ) {
             VStack(spacing: 12) {
                 // Location grid - 2x2
@@ -2842,8 +3184,8 @@ struct NewOnboardingView: View {
             continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
             currentStep: 7,
             totalSteps: 9,
-            question: equipmentQuestionText,
-            subtitle: "Tap all that you have access to"
+            question: "What equipment do you have access to?",
+            subtitle: "Select what you typically use (you can change this anytime)"
         ) {
             ScrollView {
                 VStack(spacing: 16) {
@@ -2960,14 +3302,6 @@ struct NewOnboardingView: View {
         }
     }
     
-    private var equipmentQuestionText: String {
-        switch selectedWorkoutLocation {
-        case .gym: return "Gym equipment?"
-        case .home: return "Home equipment?"
-        case .outdoor: return "Outdoor equipment?"
-        case .hybrid: return "Available equipment?"
-        }
-    }
     
     private var locationIcon: String {
         switch selectedWorkoutLocation {
@@ -3045,21 +3379,25 @@ struct NewOnboardingView: View {
                             area: area,
                             isSelected: selectedLimitations.contains(area),
                             accommodation: limitationAccommodations[area] ?? .beCareful,
+                            needsSelection: selectedLimitations.contains(area) && !confirmedAccommodations.contains(area),
                             action: {
                                 selectionFeedback.selectionChanged()
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     if selectedLimitations.contains(area) {
                                         selectedLimitations.remove(area)
                                         limitationAccommodations.removeValue(forKey: area)
+                                        confirmedAccommodations.remove(area)
                                     } else {
                                         selectedLimitations.insert(area)
                                         limitationAccommodations[area] = .beCareful
+                                        // Don't add to confirmed yet - they need to explicitly choose
                                     }
                                 }
                             },
                             onAccommodationChange: { newLevel in
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     limitationAccommodations[area] = newLevel
+                                    confirmedAccommodations.insert(area)
                                 }
                             }
                         )
@@ -3077,11 +3415,11 @@ struct NewOnboardingView: View {
         OnboardingStepContainer(
             canGoBack: !isEditingFromConfirmation,
             onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.limitations) },
-            onContinue: { returnToConfirmation() },
+            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.profilePhoto) },
             continueEnabled: true,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Review & Finish",
+            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
             currentStep: 9,
-            totalSteps: 9,
+            totalSteps: 10,
             question: "Weekly workouts?",
             subtitle: "Pick what's realistic for you"
         ) {
@@ -3176,14 +3514,23 @@ struct NewOnboardingView: View {
                             ConfirmationListRow(icon: "person.fill", label: "Name", value: name) {
                                 isEditingFromConfirmation = true
                                 navigateTo(.auth)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .name
+                                }
                             }
                             ConfirmationListRow(icon: "envelope.fill", label: "Email", value: email) {
                                 isEditingFromConfirmation = true
                                 navigateTo(.auth)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .email
+                                }
                             }
                             ConfirmationListRow(icon: "at", label: "Username", value: username.isEmpty ? "Not set" : "@\(username)") {
                                 isEditingFromConfirmation = true
                                 navigateTo(.username)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .username
+                                }
                             }
                         }
                         
@@ -3192,6 +3539,9 @@ struct NewOnboardingView: View {
                             ConfirmationListRow(icon: "calendar", label: "Birthday", value: birthday) {
                                 isEditingFromConfirmation = true
                                 navigateTo(.basics)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .birthday
+                                }
                             }
                             ConfirmationListRow(icon: "person.2.fill", label: "Gender", value: selectedGender ?? "Not set") {
                                 isEditingFromConfirmation = true
@@ -3200,10 +3550,16 @@ struct NewOnboardingView: View {
                             ConfirmationListRow(icon: "ruler", label: "Height", value: formattedHeight) {
                                 isEditingFromConfirmation = true
                                 navigateTo(.body)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .height
+                                }
                             }
                             ConfirmationListRow(icon: "scalemass", label: "Weight", value: formattedWeight) {
                                 isEditingFromConfirmation = true
                                 navigateTo(.body)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    focusedField = .weight
+                                }
                             }
                         }
                         
@@ -3221,9 +3577,24 @@ struct NewOnboardingView: View {
                                 isEditingFromConfirmation = true
                                 navigateTo(.equipment)
                             }
-                            ConfirmationListRow(icon: "bandage.fill", label: "Limitations", value: selectedLimitations.isEmpty ? "None" : selectedLimitations.map { $0.rawValue }.sorted().joined(separator: ", ")) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.limitations)
+                            // Show limitations with their accommodation levels
+                            if !selectedLimitations.isEmpty {
+                                ForEach(Array(selectedLimitations).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { limitation in
+                                    let accommodationLevel = limitationAccommodations[limitation] ?? .beCareful
+                                    ConfirmationListRow(
+                                        icon: "bandage.fill", 
+                                        label: limitation.rawValue, 
+                                        value: accommodationLevel.displayName
+                                    ) {
+                                        isEditingFromConfirmation = true
+                                        navigateTo(.limitations)
+                                    }
+                                }
+                            } else {
+                                ConfirmationListRow(icon: "checkmark.circle.fill", label: "Limitations", value: "None") {
+                                    isEditingFromConfirmation = true
+                                    navigateTo(.limitations)
+                                }
                             }
                             ConfirmationListRow(icon: "calendar.badge.clock", label: "Schedule", value: "\(selectedDays) days/week") {
                                 isEditingFromConfirmation = true
@@ -3249,7 +3620,7 @@ struct NewOnboardingView: View {
             
             // Navigation buttons - fixed at bottom
             HStack(spacing: 16) {
-                Button(action: { navigateTo(.schedule) }) {
+                Button(action: { navigateTo(.profilePhoto) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -3545,6 +3916,33 @@ struct NewOnboardingView: View {
         }
     }
     
+    /// Upload the profile photo selected during onboarding to Supabase
+    private func uploadOnboardingProfilePhoto(_ image: UIImage) async {
+        guard SupabaseManager.shared.currentUser?.id != nil else {
+            print("⚠️ [ONBOARDING] No user ID available for profile photo")
+            return
+        }
+        
+        // Compress to JPEG with good quality but small file size
+        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
+            print("❌ [ONBOARDING] Failed to convert image to JPEG")
+            return
+        }
+        
+        do {
+            let photoUrl = try await SupabaseManager.shared.uploadProfilePhoto(imageData: imageData)
+            print("✅ [ONBOARDING] Profile photo uploaded: \(photoUrl)")
+            
+            // Cache the image locally for immediate display
+            await MainActor.run {
+                ProfilePhotoCache.shared.cacheImage(image)
+            }
+        } catch {
+            print("❌ [ONBOARDING] Failed to upload profile photo: \(error)")
+            // Don't block onboarding completion - photo upload is optional
+        }
+    }
+    
     private func saveLimitationsToCloud() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
             print("⚠️ [ONBOARDING] No user ID available for limitations")
@@ -3694,6 +4092,13 @@ struct NewOnboardingView: View {
             }
         }
         
+        // Upload profile photo if provided
+        if let photo = profilePhotoImage {
+            Task {
+                await uploadOnboardingProfilePhoto(photo)
+            }
+        }
+        
         // Sync video gender preference based on user's gender selection
         VideoStreamingService.shared.syncGenderFromUserProfile()
         
@@ -3749,24 +4154,41 @@ struct NewOnboardingView: View {
             switch result {
             case .success(let credentials):
                 print("🍎 [APPLE AUTH] Got Apple credentials, starting Supabase auth...")
+                
+                // Extract name from Apple credentials (only available on FIRST sign-in)
+                // Apple only provides the name once, so we need to capture and persist it
+                var appleProvidedName: String? = nil
+                if let fullName = credentials.fullName {
+                    let firstName = fullName.givenName ?? ""
+                    let lastName = fullName.familyName ?? ""
+                    let fullNameStr = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
+                    if !fullNameStr.isEmpty {
+                        appleProvidedName = fullNameStr
+                        print("🍎 [APPLE AUTH] Got name from Apple: \(fullNameStr)")
+                    }
+                }
+                
                 // Use the credentials to sign in with Supabase
                 Task {
                     do {
                         // Returns true if this is a NEW user who needs onboarding
+                        // Pass the Apple-provided name so it can be persisted
                         let isNewUser = try await supabaseManager.signInWithApple(
                             idToken: credentials.identityToken,
-                            nonce: credentials.nonce
+                            nonce: credentials.nonce,
+                            appleProvidedName: appleProvidedName
                         )
                         print("🍎 [APPLE AUTH] Supabase signInWithApple returned. isNewUser: \(isNewUser)")
                         
-                        // Set name from Apple credentials if available
-                        if let fullName = credentials.fullName {
-                            let firstName = fullName.givenName ?? ""
-                            let lastName = fullName.familyName ?? ""
-                            let fullNameStr = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
-                            await MainActor.run {
-                                if !fullNameStr.isEmpty {
-                                    name = fullNameStr
+                        // Set the name in onboarding state
+                        await MainActor.run {
+                            if let providedName = appleProvidedName, !providedName.isEmpty {
+                                name = providedName
+                            } else if let userId = supabaseManager.currentUser?.id {
+                                // Try to get persisted name from previous Apple sign-in
+                                if let persistedName = UserDefaults.standard.string(forKey: "apple_user_name_\(userId.uuidString)"), !persistedName.isEmpty {
+                                    name = persistedName
+                                    print("🍎 [APPLE AUTH] Using persisted name: \(persistedName)")
                                 }
                             }
                         }
@@ -3780,17 +4202,17 @@ struct NewOnboardingView: View {
                             // Apple didn't send email, but Supabase has it from the auth
                             await MainActor.run {
                                 email = sessionEmail
-                                // If name is still empty, try to derive from email
+                                // If name is still empty, try to derive from email (but not if private relay)
                                 if name.isEmpty || name == "Apple User" {
                                     if !sessionEmail.contains("privaterelay") {
-                                        name = sessionEmail.components(separatedBy: "@").first ?? ""
+                                        name = sessionEmail.components(separatedBy: "@").first?.capitalized ?? ""
                                     }
                                 }
                             }
                         }
                         
                         await MainActor.run {
-                            print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
+                            print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
                             
                             if isNewUser {
                                 // New user - go to username selection first
@@ -3840,6 +4262,19 @@ struct NewOnboardingView: View {
         } else {
             errorMessage = "Could not create Google Sign-In URL"
             showError = true
+        }
+    }
+    
+    private func handleFacebookSignIn() {
+        print("📘 [FACEBOOK AUTH] handleFacebookSignIn called")
+        // Open Facebook OAuth in Safari
+        if let url = supabaseManager.getFacebookOAuthURL() {
+            UIApplication.shared.open(url)
+            print("📘 [FACEBOOK AUTH] Opening Facebook OAuth URL")
+        } else {
+            errorMessage = "Could not create Facebook Sign-In URL"
+            showError = true
+            print("❌ [FACEBOOK AUTH] Failed to create OAuth URL")
         }
     }
     
@@ -4029,9 +4464,9 @@ struct PasswordTextField<F: Hashable>: View {
         .contentShape(RoundedRectangle(cornerRadius: 16)) // Match OnboardingTextField shape
         .background(
             // Modern floating card effect - matching OnboardingTextField
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
-                .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                    .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -4293,7 +4728,7 @@ struct GenderButton: View {
                                 )
                                 : LinearGradient(
                                     colors: colorScheme == .dark 
-                                        ? [Color(white: 0.12), Color(white: 0.12)]
+                                        ? [Color(white: 0.18), Color(white: 0.18)]
                                         : [Color.white, Color.white],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -4802,7 +5237,7 @@ struct DaySelectorButtonLarge: View {
                             .fill(
                                 isSelected
                                     ? LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    : LinearGradient(colors: [colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white, colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.18) : Color.white, colorScheme == .dark ? Color(white: 0.18) : Color.white], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                     )
                     .overlay(
@@ -5289,10 +5724,10 @@ struct HeightInputField: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                 
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                     .shadow(
                         color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
                         radius: isFocused ? 12 : 8,
@@ -5412,6 +5847,7 @@ struct LimitationCardOnboardingWide: View {
     let area: AffectedArea
     let isSelected: Bool
     let accommodation: AccommodationLevel
+    let needsSelection: Bool  // True if selected but user hasn't explicitly chosen a level
     let action: () -> Void
     let onAccommodationChange: (AccommodationLevel) -> Void
     
@@ -5455,14 +5891,25 @@ struct LimitationCardOnboardingWide: View {
                             .foregroundColor(isSelected ? area.color : .primary)
                         
                         if isSelected {
-                            HStack(spacing: 4) {
-                                Image(systemName: accommodation.icon)
-                                    .font(.system(size: 11))
-                                Text(accommodation.displayName)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
+                            if needsSelection {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle")
+                                        .font(.system(size: 11))
+                                    Text("Choose accommodation level")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.orange)
+                            } else {
+                                HStack(spacing: 4) {
+                                    Image(systemName: accommodation.icon)
+                                        .font(.system(size: 11))
+                                    Text(accommodation.displayName)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(accommodation.color)
                             }
-                            .foregroundColor(accommodation.color)
                         } else {
                             Text("Tap to select")
                                 .font(.caption)
@@ -5475,13 +5922,19 @@ struct LimitationCardOnboardingWide: View {
                     // Selection indicator
                     ZStack {
                         Circle()
-                            .stroke(isSelected ? area.color : Color.gray.opacity(0.3), lineWidth: 2)
+                            .stroke(isSelected ? (needsSelection ? Color.orange : area.color) : Color.gray.opacity(0.3), lineWidth: 2)
                             .frame(width: 24, height: 24)
                         
                         if isSelected {
-                            Circle()
-                                .fill(area.color)
-                                .frame(width: 16, height: 16)
+                            if needsSelection {
+                                Image(systemName: "exclamationmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.orange)
+                            } else {
+                                Circle()
+                                    .fill(area.color)
+                                    .frame(width: 16, height: 16)
+                            }
                         }
                     }
                 }
@@ -5489,7 +5942,7 @@ struct LimitationCardOnboardingWide: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white)
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                         
                         RoundedRectangle(cornerRadius: 16)
                             .stroke(
@@ -5514,26 +5967,40 @@ struct LimitationCardOnboardingWide: View {
             
             // Expanded accommodation options
             if isSelected {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
+                    // Helper text when no explicit selection made
+                    if needsSelection {
+                        HStack(spacing: 6) {
+                            Image(systemName: "hand.point.down.fill")
+                                .font(.system(size: 12))
+                            Text("Choose how you want us to handle this")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                    }
+                    
                     ForEach(AccommodationLevel.allCases) { level in
                         Button(action: {
                             selectionFeedback.selectionChanged()
                             onAccommodationChange(level)
                         }) {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 Image(systemName: level.icon)
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 15))
                                     .foregroundColor(level.color)
-                                    .frame(width: 24)
+                                    .frame(width: 22)
                                 
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 1) {
                                     Text(level.displayName)
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
                                         .foregroundColor(accommodation == level ? level.color : .primary)
                                     
                                     Text(level.description)
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
                                 }
@@ -5542,30 +6009,28 @@ struct LimitationCardOnboardingWide: View {
                                 
                                 if accommodation == level {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 20))
+                                        .font(.system(size: 18))
                                         .foregroundColor(level.color)
                                 }
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(accommodation == level ? level.color.opacity(0.15) : Color.clear)
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(accommodation == level ? level.color.opacity(0.12) : Color(.systemGray6))
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(accommodation == level ? level.color.opacity(0.4) : Color.gray.opacity(0.2), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(accommodation == level ? level.color.opacity(0.5) : Color.clear, lineWidth: 1.5)
                             )
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 12)
-                .padding(.horizontal, 4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 
@@ -5650,7 +6115,7 @@ struct LimitationCardOnboarding: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white)
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                         
                         // Inner highlight for depth
                         RoundedRectangle(cornerRadius: 16)
@@ -5706,7 +6171,6 @@ struct LimitationCardOnboarding: View {
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 4)
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
     }
@@ -5764,6 +6228,90 @@ struct AccommodationOptionRow: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Onboarding Photo Picker
+struct OnboardingPhotoPicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
+        picker.allowsEditing = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: OnboardingPhotoPicker
+        
+        init(_ parent: OnboardingPhotoPicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            // Prefer edited image (cropped circle), fallback to original
+            if let editedImage = info[.editedImage] as? UIImage {
+                parent.image = editedImage
+            } else if let originalImage = info[.originalImage] as? UIImage {
+                parent.image = originalImage
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+// MARK: - Onboarding Camera Picker
+struct OnboardingCameraPicker: UIViewControllerRepresentable {
+    let onImagePicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .camera
+        picker.cameraDevice = .front
+        picker.allowsEditing = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: OnboardingCameraPicker
+        
+        init(_ parent: OnboardingCameraPicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let editedImage = info[.editedImage] as? UIImage {
+                parent.onImagePicked(editedImage)
+            } else if let originalImage = info[.originalImage] as? UIImage {
+                parent.onImagePicked(originalImage)
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
     }
 }
 

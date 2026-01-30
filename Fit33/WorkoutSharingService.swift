@@ -9,10 +9,9 @@ import UniformTypeIdentifiers
 class WorkoutSharingService: ObservableObject {
     static let shared = WorkoutSharingService()
     
-    // MARK: - App Store Constants
-    // TODO: Replace with your actual App Store URL once published
-    private let appStoreURL = "https://apps.apple.com/app/fit33/id123456789" // Placeholder
-    private let appWebsiteURL = "https://fit33.app" // Your website
+    // MARK: - App Store Constants (Using centralized AppConfig)
+    private let appStoreURL = AppConfig.AppStore.appStoreURL
+    private let appWebsiteURL = AppConfig.AppStore.appWebsiteURL
     private let deepLinkScheme = "fit33"
     
     // MARK: - Shared Workout State

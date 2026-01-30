@@ -636,15 +636,15 @@ class UserManager: ObservableObject {
 class PremiumManager: ObservableObject {
     static let shared = PremiumManager()
     
-    @Published var isPremiumUser: Bool = false {
+    @Published var isPremiumUser: Bool = true {
         didSet {
             UserDefaults.standard.set(isPremiumUser, forKey: "isPremiumUser")
         }
     }
     
     private init() {
-        // Load saved premium status
-        self.isPremiumUser = UserDefaults.standard.bool(forKey: "isPremiumUser")
+        // Load saved premium status (default to true/premium if not set)
+        self.isPremiumUser = UserDefaults.standard.object(forKey: "isPremiumUser") as? Bool ?? true
     }
     
     // MARK: - Premium Feature Checks

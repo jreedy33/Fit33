@@ -148,13 +148,25 @@ class SupabaseManager: ObservableObject {
     func signUp(email: String, password: String, name: String) async throws {
         await MainActor.run { isLoading = true }
         SessionLogManager.shared.logAuthAttempt(method: "email_signup")
+        
+        let startTime = Date()
+        print("🔐 [SUPABASE] Starting signup request for: \(email)")
+        print("🔐 [SUPABASE] Timestamp: \(startTime)")
 
         do {
+            print("🔐 [SUPABASE] Calling client.auth.signUp...")
             let response = try await client.auth.signUp(email: email, password: password)
             
+            let duration = Date().timeIntervalSince(startTime)
+            print("🔐 [SUPABASE] signUp response received in \(String(format: "%.2f", duration))s")
+            
             let user = response.user
+            print("🔐 [SUPABASE] User ID: \(user.id)")
+            
             // Create user profile
+            print("🔐 [SUPABASE] Creating user profile...")
             try await createUserProfile(userId: user.id, name: name, email: email)
+            print("🔐 [SUPABASE] Profile created successfully")
             
             await MainActor.run {
                 currentUser = user
@@ -164,10 +176,16 @@ class SupabaseManager: ObservableObject {
                 // Clear the manual sign-out flag since user is signing up
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
-            print("✅ Sign up successful: \(email)")
+            
+            let totalDuration = Date().timeIntervalSince(startTime)
+            print("✅ Sign up successful: \(email) (total: \(String(format: "%.2f", totalDuration))s)")
+            SessionLogManager.shared.logAuthSuccess(method: "email_signup", userId: user.id.uuidString)
         } catch {
+            let duration = Date().timeIntervalSince(startTime)
             await MainActor.run { isLoading = false }
-            print("❌ Sign up error: \(error.localizedDescription)")
+            print("❌ Sign up error after \(String(format: "%.2f", duration))s: \(error.localizedDescription)")
+            print("❌ Sign up error details: \(error)")
+            SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "\(error.localizedDescription) | Duration: \(String(format: "%.2f", duration))s")
             throw error
         }
     }
@@ -291,7 +309,16 @@ class SupabaseManager: ObservableObject {
                 
                 print("📧 Apple Sign-In - Email: \(appleEmail), Name: \(appleName)")
                 
-                try await createUserProfile(userId: session.user.id, name: appleName, email: appleEmail, hasCompletedOnboarding: false)
+                // ⚠️ IMPORTANT: Do NOT create profile here!
+                // The profile should only be created when user taps "Create Account" at end of onboarding.
+                // This prevents "zombie" accounts with null data if user abandons onboarding.
+                // Store the Apple data temporarily - profile will be created in completeOnboarding()
+                UserDefaults.standard.set(appleName, forKey: "pending_oauth_name")
+                UserDefaults.standard.set(appleEmail, forKey: "pending_oauth_email")
+                UserDefaults.standard.synchronize()
+                print("🔐 [APPLE] Stored pending profile data (will create on onboarding completion)")
+                print("🔐 [APPLE] Pending name: \(appleName), email: \(appleEmail)")
+                
                 isNewUser = true
                 print("👤 New Apple user - needs onboarding")
             }
@@ -318,11 +345,54 @@ class SupabaseManager: ObservableObject {
     }
     
     /// Handle OAuth callback URL (for Google/Facebook Sign-In)
+    /// This handles the implicit flow response where tokens are in the URL fragment
     func handleOAuthCallback(url: URL) async throws -> (isNewUser: Bool, socialUsername: String?) {
         await MainActor.run { isLoading = true }
         
         do {
-            let session = try await client.auth.session(from: url)
+            // First, try the standard PKCE session flow
+            // If that fails (implicit flow), parse tokens from URL fragment manually
+            let session: Session
+            var jwtUserMetadata: [String: Any]? = nil  // Store metadata from JWT for implicit flow
+            
+            do {
+                session = try await client.auth.session(from: url)
+            } catch {
+                // PKCE failed - try parsing implicit flow tokens from URL fragment
+                print("🔐 [OAUTH] PKCE failed, trying implicit flow token parsing...")
+                
+                guard let fragment = url.fragment else {
+                    throw error
+                }
+                
+                // Parse the fragment as query parameters
+                var params: [String: String] = [:]
+                for pair in fragment.components(separatedBy: "&") {
+                    let parts = pair.components(separatedBy: "=")
+                    if parts.count == 2 {
+                        params[parts[0]] = parts[1].removingPercentEncoding ?? parts[1]
+                    }
+                }
+                
+                guard let accessToken = params["access_token"],
+                      let refreshToken = params["refresh_token"] else {
+                    print("❌ [OAUTH] Missing tokens in URL fragment")
+                    throw error
+                }
+                
+                // Decode the JWT to extract user metadata (it's in the payload)
+                jwtUserMetadata = decodeJWTPayload(accessToken)
+                if let metadata = jwtUserMetadata?["user_metadata"] as? [String: Any] {
+                    print("🔐 [OAUTH] Decoded user metadata from JWT: \(metadata)")
+                    jwtUserMetadata = metadata
+                }
+                
+                print("🔐 [OAUTH] Found tokens in URL fragment, setting session...")
+                
+                // Set the session using the tokens
+                session = try await client.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
+                print("✅ [OAUTH] Session set from implicit flow tokens")
+            }
             
             // Check if this is a new user (no profile exists yet)
             let profileExists = await verifyUserExists(userId: session.user.id)
@@ -330,20 +400,30 @@ class SupabaseManager: ObservableObject {
             var socialUsername: String? = nil
             
             if !profileExists {
-                // Determine provider from metadata
-                let provider = session.user.appMetadata["provider"] as? String ?? "unknown"
+                // Determine provider from metadata - check both session and JWT-decoded metadata
+                let provider = session.user.appMetadata["provider"] as? String 
+                    ?? jwtUserMetadata?["iss"] as? String ?? "unknown"
                 
                 let userEmail: String
                 let userName: String
+                let avatarUrl: String?
                 
-                if provider == "facebook" {
+                // Try to get name from session first, then from JWT-decoded metadata
+                let sessionFullName = session.user.userMetadata["full_name"] as? String
+                let sessionName = session.user.userMetadata["name"] as? String
+                let jwtFullName = jwtUserMetadata?["full_name"] as? String
+                let jwtName = jwtUserMetadata?["name"] as? String
+                avatarUrl = session.user.userMetadata["avatar_url"] as? String 
+                    ?? session.user.userMetadata["picture"] as? String
+                    ?? jwtUserMetadata?["avatar_url"] as? String
+                    ?? jwtUserMetadata?["picture"] as? String
+                
+                if provider == "facebook" || provider.contains("facebook") {
                     // Facebook-specific data extraction
                     userEmail = session.user.email ?? "facebook_user_\(session.user.id.uuidString.prefix(8))@facebook.com"
-                    userName = session.user.userMetadata["full_name"] as? String 
-                        ?? session.user.userMetadata["name"] as? String 
-                        ?? "Facebook User"
+                    userName = sessionFullName ?? sessionName ?? jwtFullName ?? jwtName ?? "Facebook User"
                     
-                    // Extract username if available (could be Facebook or connected Instagram username)
+                    // Extract username if available
                     socialUsername = session.user.userMetadata["user_name"] as? String 
                         ?? session.user.userMetadata["username"] as? String
                     
@@ -351,13 +431,27 @@ class SupabaseManager: ObservableObject {
                 } else {
                     // Google or other OAuth provider
                     userEmail = session.user.email ?? "oauth_user_\(session.user.id.uuidString.prefix(8))@email.com"
-                    userName = session.user.userMetadata["full_name"] as? String 
-                        ?? session.user.userMetadata["name"] as? String 
-                        ?? "User"
+                    userName = sessionFullName ?? sessionName ?? jwtFullName ?? jwtName ?? "User"
                     print("🔐 OAuth Sign-In - Provider: \(provider), Name: \(userName)")
+                    print("🔐 OAuth Sign-In - Session metadata: \(session.user.userMetadata)")
+                    print("🔐 OAuth Sign-In - JWT metadata: \(jwtUserMetadata ?? [:])")
                 }
                 
-                try await createUserProfile(userId: session.user.id, name: userName, email: userEmail, hasCompletedOnboarding: false)
+                // ⚠️ IMPORTANT: Do NOT create profile here!
+                // The profile should only be created when user taps "Create Account" at end of onboarding.
+                // This prevents "zombie" accounts with null data if user abandons onboarding.
+                // Store the OAuth data temporarily - profile will be created in completeOnboarding()
+                await MainActor.run {
+                    UserDefaults.standard.set(userName, forKey: "pending_oauth_name")
+                    UserDefaults.standard.set(userEmail, forKey: "pending_oauth_email")
+                    if let avatar = avatarUrl {
+                        UserDefaults.standard.set(avatar, forKey: "pending_oauth_avatar")
+                    }
+                    UserDefaults.standard.synchronize()
+                    print("🔐 [OAUTH] Stored pending profile data (will create on onboarding completion)")
+                    print("🔐 [OAUTH] Pending name: \(userName), email: \(userEmail)")
+                }
+                
                 isNewUser = true
             }
             
@@ -378,8 +472,34 @@ class SupabaseManager: ObservableObject {
         } catch {
             await MainActor.run { isLoading = false }
             print("❌ OAuth callback error: \(error.localizedDescription)")
+            print("❌ OAuth callback error: \(error)")
             throw error
         }
+    }
+    
+    /// Decode a JWT payload to extract user metadata
+    private func decodeJWTPayload(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.components(separatedBy: ".")
+        guard parts.count == 3 else { return nil }
+        
+        var payload = parts[1]
+        // Add padding if needed for base64 decoding
+        let remainder = payload.count % 4
+        if remainder > 0 {
+            payload = payload.padding(toLength: payload.count + 4 - remainder, withPad: "=", startingAt: 0)
+        }
+        
+        // Convert base64url to base64
+        payload = payload
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        
+        guard let data = Data(base64Encoded: payload),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        
+        return json
     }
     
     /// Get the OAuth URL for Google Sign-In
@@ -596,30 +716,160 @@ class SupabaseManager: ObservableObject {
     // MARK: - User Profile
     
     private func createUserProfile(userId: UUID, name: String, email: String, hasCompletedOnboarding: Bool = false) async throws {
-        struct ProfileInsert: Encodable {
-            let id: String
-            let name: String
-            let email: String
-            let has_completed_onboarding: Bool
+        // Use SECURITY DEFINER function to bypass RLS during signup
+        // This fixes the "database error saving new user" issue
+        struct CreateProfileParams: Encodable {
+            let user_id: String
+            let user_name: String
+            let user_email: String
         }
         
-        let profile = ProfileInsert(
-            id: userId.uuidString,
-            name: name,
-            email: email,
-            has_completed_onboarding: hasCompletedOnboarding
+        let params = CreateProfileParams(
+            user_id: userId.uuidString,
+            user_name: name,
+            user_email: email
         )
         
-        // Use upsert to handle edge cases where profile might partially exist
-        try await client
-            .from("user_profiles")
-            .upsert(profile, onConflict: "id")
-            .execute()
+        do {
+            // Try using the secure RPC function first
+            try await client.rpc("create_user_profile", params: params).execute()
+            print("✅ User profile created via RPC function")
+        } catch {
+            // Fallback to direct insert if RPC function doesn't exist
+            print("⚠️ RPC function not available, trying direct insert: \(error.localizedDescription)")
+            
+            struct ProfileInsert: Encodable {
+                let id: String
+                let name: String
+                let email: String
+                let has_completed_onboarding: Bool
+            }
+            
+            let profile = ProfileInsert(
+                id: userId.uuidString,
+                name: name,
+                email: email,
+                has_completed_onboarding: hasCompletedOnboarding
+            )
+            
+            // Use upsert to handle edge cases where profile might partially exist
+            try await client
+                .from("user_profiles")
+                .upsert(profile, onConflict: "id")
+                .execute()
+        }
         
         // Create initial progress record (also uses upsert)
         try await createUserProgress(userId: userId)
         
         print("✅ User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))")
+    }
+    
+    /// Public function to create user profile for OAuth users when they complete onboarding
+    /// This should be called when the user taps "Create Account" at the end of onboarding
+    /// Only creates the profile if the user is authenticated via OAuth but doesn't have a profile yet
+    func createProfileForOAuthUser(
+        name: String,
+        email: String,
+        username: String?,
+        age: Int?,
+        gender: String?,
+        heightCm: Double?,
+        weightKg: Double?,
+        fitnessGoal: String?,
+        experienceLevel: String?,
+        equipment: [String]?,
+        availableDays: Int?,
+        workoutEnvironment: String?
+    ) async throws {
+        guard let userId = currentUser?.id else {
+            print("❌ [PROFILE] Cannot create profile - no authenticated user")
+            throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        // Check if profile already exists (safety check)
+        let profileExists = await verifyUserExists(userId: userId)
+        if profileExists {
+            print("⚠️ [PROFILE] Profile already exists for user \(userId), updating instead")
+            try await updateUserProfile(
+                name: name,
+                heightCm: heightCm,
+                weightKg: weightKg,
+                fitnessGoal: fitnessGoal,
+                experienceLevel: experienceLevel,
+                equipment: equipment,
+                availableDays: availableDays,
+                workoutEnvironment: workoutEnvironment,
+                age: age,
+                gender: gender
+            )
+            // Also set username if provided
+            if let username = username {
+                try await setUsername(username)
+            }
+            // Mark onboarding as complete
+            try await client
+                .from("user_profiles")
+                .update(["has_completed_onboarding": true])
+                .eq("id", value: userId.uuidString)
+                .execute()
+            return
+        }
+        
+        print("🔐 [PROFILE] Creating profile for OAuth user at end of onboarding...")
+        print("🔐 [PROFILE] User ID: \(userId), Name: \(name), Email: \(email)")
+        
+        // Create the full profile with all onboarding data
+        struct OAuthProfileInsert: Encodable {
+            let id: String
+            let name: String
+            let email: String
+            let username: String?
+            let age: Int?
+            let gender: String?
+            let height_cm: Double?
+            let weight_kg: Double?
+            let fitness_goal: String?
+            let experience_level: String?
+            let equipment: [String]?
+            let available_days: Int?
+            let workout_environment: String?
+            let has_completed_onboarding: Bool
+        }
+        
+        let profile = OAuthProfileInsert(
+            id: userId.uuidString,
+            name: name,
+            email: email,
+            username: username,
+            age: age,
+            gender: gender,
+            height_cm: heightCm,
+            weight_kg: weightKg,
+            fitness_goal: fitnessGoal,
+            experience_level: experienceLevel,
+            equipment: equipment,
+            available_days: availableDays,
+            workout_environment: workoutEnvironment,
+            has_completed_onboarding: true  // Profile created at end of onboarding = complete
+        )
+        
+        try await client
+            .from("user_profiles")
+            .upsert(profile, onConflict: "id")
+            .execute()
+        
+        // Create initial progress record
+        try await createUserProgress(userId: userId)
+        
+        // Clear the pending OAuth data from UserDefaults
+        await MainActor.run {
+            UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
+            UserDefaults.standard.removeObject(forKey: "pending_oauth_email")
+            UserDefaults.standard.removeObject(forKey: "pending_oauth_avatar")
+        }
+        
+        print("✅ [PROFILE] OAuth user profile created successfully with all onboarding data!")
     }
     
     func updateUserProfile(
@@ -702,24 +952,43 @@ class SupabaseManager: ObservableObject {
             .from(bucket)
             .getPublicURL(path: fileName)
         
-        // Update the user profile with the photo URL
-        struct PhotoUpdate: Encodable {
-            let profile_photo_url: String
-            let updated_at: String
+        // Update the user profile with the photo URL using RPC (handles UUID casting)
+        do {
+            let success: Bool = try await client
+                .rpc("set_profile_photo_for_user", params: [
+                    "p_user_id": userId.uuidString,
+                    "p_photo_url": publicUrl.absoluteString
+                ])
+                .execute()
+                .value
+            
+            if success {
+                print("✅ Profile photo uploaded via RPC: \(publicUrl.absoluteString)")
+            } else {
+                print("⚠️ RPC returned false, trying direct update...")
+                throw NSError(domain: "SupabaseManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "RPC returned false"])
+            }
+        } catch {
+            // Fallback to direct update
+            print("⚠️ Profile photo RPC failed: \(error.localizedDescription), trying direct update...")
+            struct PhotoUpdate: Encodable {
+                let profile_photo_url: String
+                let updated_at: String
+            }
+            
+            let update = PhotoUpdate(
+                profile_photo_url: publicUrl.absoluteString,
+                updated_at: dateToISO(Date())
+            )
+            
+            try await client
+                .from("user_profiles")
+                .update(update)
+                .eq("id", value: userId.uuidString)
+                .execute()
+            
+            print("✅ Profile photo uploaded via direct update: \(publicUrl.absoluteString)")
         }
-        
-        let update = PhotoUpdate(
-            profile_photo_url: publicUrl.absoluteString,
-            updated_at: dateToISO(Date())
-        )
-        
-        try await client
-            .from("user_profiles")
-            .update(update)
-            .eq("id", value: userId.uuidString)
-            .execute()
-        
-        print("✅ Profile photo uploaded: \(publicUrl.absoluteString)")
         return publicUrl.absoluteString
     }
     
@@ -830,11 +1099,14 @@ class SupabaseManager: ObservableObject {
         
         var rpcSucceeded = false
         
-        // Try RPC first
+        // Try RPC with user_id parameter (handles UUID casting internally)
         do {
-            print("📡 [USERNAME] Trying Method 1: RPC set_username with: '\(cleanUsername)'")
+            print("📡 [USERNAME] Trying Method 1: RPC set_username_for_user with user_id: '\(user.id.uuidString)', username: '\(cleanUsername)'")
             let success: Bool = try await client
-                .rpc("set_username", params: ["new_username": cleanUsername])
+                .rpc("set_username_for_user", params: [
+                    "p_user_id": user.id.uuidString,
+                    "p_username": cleanUsername
+                ])
                 .execute()
                 .value
             
@@ -844,18 +1116,33 @@ class SupabaseManager: ObservableObject {
                 rpcSucceeded = true
                 print("✅ [USERNAME] RPC success!")
             } else {
-                print("⚠️ [USERNAME] RPC returned false, will try direct update")
+                print("⚠️ [USERNAME] RPC returned false, will try fallback...")
             }
             
         } catch {
-            print("⚠️ [USERNAME] RPC failed: \(error.localizedDescription)")
-            print("⚠️ [USERNAME] Will try direct table update as fallback...")
+            print("⚠️ [USERNAME] RPC set_username_for_user failed: \(error.localizedDescription)")
+            
+            // Try the original set_username as fallback
+            do {
+                print("📡 [USERNAME] Trying Method 2: RPC set_username (auth.uid based)")
+                let success: Bool = try await client
+                    .rpc("set_username", params: ["new_username": cleanUsername])
+                    .execute()
+                    .value
+                
+                if success {
+                    rpcSucceeded = true
+                    print("✅ [USERNAME] Fallback RPC success!")
+                }
+            } catch {
+                print("⚠️ [USERNAME] Fallback RPC also failed: \(error.localizedDescription)")
+            }
         }
         
         // Fallback: Direct table update if RPC failed
         if !rpcSucceeded {
             do {
-                print("📡 [USERNAME] Trying Method 2: Direct table update")
+                print("📡 [USERNAME] Trying Method 3: Direct table update")
                 
                 try await client
                     .from("user_profiles")
@@ -1108,12 +1395,19 @@ class SupabaseManager: ObservableObject {
             has_completed_onboarding: true
         )
         
-        try await client
-            .from("user_profiles")
-            .upsert(upsertProfile, onConflict: "id")
-            .execute()
-        
-        print("✅ [SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)")
+        do {
+            try await client
+                .from("user_profiles")
+                .upsert(upsertProfile, onConflict: "id")
+                .execute()
+            
+            print("✅ [SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)")
+        } catch {
+            print("❌ [SYNC] UPSERT FAILED: \(error)")
+            print("❌ [SYNC] Error details: \(error.localizedDescription)")
+            print("❌ [SYNC] User can try Settings > Sync Profile to force retry")
+            throw error  // Propagate error so caller knows sync failed
+        }
         let ft = user.heightInches / 12
         let inches = user.heightInches % 12
         print("✅ Full profile synced to cloud:")
@@ -1125,6 +1419,77 @@ class SupabaseManager: ObservableObject {
         print("   Strength: \(user.strengthLevel ?? "nil"), Environment: \(user.workoutEnvironment ?? "nil")")
         print("   Equipment: \(equipmentArray), Days: \(user.availableDays)")
         print("   XP: \(user.xp), Streak: \(user.currentStreak), Workouts: \(user.totalWorkouts)")
+    }
+    
+    /// Force sync profile from Core Data to cloud - call this if sync seems broken
+    /// This is a public method that can be called from Settings to manually trigger a sync
+    func forceSyncProfileToCloud() async throws {
+        guard let user = await MainActor.run(body: { UserManager.shared.currentUser }) else {
+            print("❌ [FORCE SYNC] No local user to sync")
+            throw NSError(domain: "SupabaseManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "No local user found"])
+        }
+        
+        guard let userId = currentUser?.id else {
+            print("❌ [FORCE SYNC] Not authenticated")
+            throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        print("🔄 [FORCE SYNC] Starting forced profile sync...")
+        print("🔄 [FORCE SYNC] User: \(user.name ?? "unknown"), Age: \(user.age), Gender: \(user.gender ?? "nil")")
+        
+        // Build complete profile update with ALL fields
+        struct FullProfileUpdate: Encodable {
+            let name: String?
+            let birthday: String?
+            let age: Int?
+            let gender: String?
+            let height_cm: Double?
+            let height_inches: Int?
+            let weight_kg: Double?
+            let weight_lbs: Double?
+            let fitness_goal: String?
+            let experience_level: String?
+            let strength_level: String?
+            let workout_environment: String?
+            let equipment: [String]?
+            let available_days: Int?
+            let has_completed_onboarding: Bool
+            let updated_at: String
+        }
+        
+        let equipmentArray = user.getEquipment() ?? []
+        
+        let fullUpdate = FullProfileUpdate(
+            name: user.name,
+            birthday: user.birthday,
+            age: user.age > 0 ? Int(user.age) : nil,
+            gender: user.gender,
+            height_cm: user.height > 0 ? Double(user.height) : nil,
+            height_inches: user.heightInches > 0 ? Int(user.heightInches) : nil,
+            weight_kg: user.weight > 0 ? Double(user.weight) : nil,
+            weight_lbs: user.weightLbs > 0 ? user.weightLbs : nil,
+            fitness_goal: user.fitnessGoal,
+            experience_level: user.experienceLevel,
+            strength_level: user.strengthLevel,
+            workout_environment: user.workoutEnvironment,
+            equipment: equipmentArray.isEmpty ? nil : equipmentArray,
+            available_days: user.availableDays > 0 ? Int(user.availableDays) : nil,
+            has_completed_onboarding: true,
+            updated_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("user_profiles")
+            .update(fullUpdate)
+            .eq("id", value: userId.uuidString)
+            .execute()
+        
+        print("✅ [FORCE SYNC] Profile force synced successfully!")
+        print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil")")
+        print("   Age: \(user.age), Gender: \(user.gender ?? "nil")")
+        print("   Height: \(user.height)cm / \(user.heightInches)in")
+        print("   Weight: \(user.weight)kg / \(user.weightLbs)lbs")
+        print("   Goal: \(user.fitnessGoal ?? "nil"), Level: \(user.experienceLevel ?? "nil")")
     }
     
     // MARK: - Custom Exercises
@@ -1682,33 +2047,46 @@ class SupabaseManager: ObservableObject {
     // MARK: - User Progress
     
     private func createUserProgress(userId: UUID) async throws {
-        struct ProgressInsert: Encodable {
+        // Try using the secure RPC function first (bypasses RLS during signup)
+        struct CreateProgressParams: Encodable {
             let user_id: String
-            let date: String
-            let xp: Int
-            let current_level: Int
-            let current_streak: Int
-            let longest_streak: Int
-            let total_workouts: Int
-            let last_workout_date: String?
         }
         
-        let progress = ProgressInsert(
-            user_id: userId.uuidString,
-            date: dateToISO(Date()),
-            xp: 0,
-            current_level: 1,
-            current_streak: 0,
-            longest_streak: 0,
-            total_workouts: 0,
-            last_workout_date: nil
-        )
-        
-        // Use upsert to handle existing records (e.g., when user profile was deleted but progress remained)
-        try await client
-            .from("user_progress")
-            .upsert(progress, onConflict: "user_id,date")
-            .execute()
+        do {
+            try await client.rpc("create_user_progress", params: CreateProgressParams(user_id: userId.uuidString)).execute()
+            print("✅ User progress created via RPC function")
+        } catch {
+            // Fallback to direct insert if RPC function doesn't exist
+            print("⚠️ RPC function not available for progress, trying direct insert: \(error.localizedDescription)")
+            
+            struct ProgressInsert: Encodable {
+                let user_id: String
+                let date: String
+                let xp: Int
+                let current_level: Int
+                let current_streak: Int
+                let longest_streak: Int
+                let total_workouts: Int
+                let last_workout_date: String?
+            }
+            
+            let progress = ProgressInsert(
+                user_id: userId.uuidString,
+                date: dateToISO(Date()),
+                xp: 0,
+                current_level: 1,
+                current_streak: 0,
+                longest_streak: 0,
+                total_workouts: 0,
+                last_workout_date: nil
+            )
+            
+            // Use upsert to handle existing records (e.g., when user profile was deleted but progress remained)
+            try await client
+                .from("user_progress")
+                .upsert(progress, onConflict: "user_id,date")
+                .execute()
+        }
     }
     
     private func updateUserProgress(xpEarned: Int) async throws {

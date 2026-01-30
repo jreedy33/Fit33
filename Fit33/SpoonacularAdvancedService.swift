@@ -7,7 +7,7 @@ import Combine
 class SpoonacularAdvancedService: ObservableObject {
     static let shared = SpoonacularAdvancedService()
     
-    private let apiKey = "69f4b06727ac448d88841e2ce717a228"
+    private let apiKey = AppConfig.spoonacularApiKey
     private let baseURL = "https://api.spoonacular.com"
     
     // MARK: - Published Properties

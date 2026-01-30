@@ -405,19 +405,87 @@ struct Fit33App: App {
                     // Re-apply appearance when mode changes
                     appearanceManager.applyAppearance()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OAuthCallback"))) { notification in
+                    // Handle OAuth callback (Google, Facebook Sign-In)
+                    print("🔐🔐🔐 [AUTH] OAuthCallback notification received!")
+                    if let url = notification.object as? URL {
+                        print("🔐 [AUTH] Processing OAuth callback from notification")
+                        print("🔐 [AUTH] Callback URL: \(url.absoluteString)")
+                        print("🔐 [AUTH] Fragment: \(url.fragment ?? "none")")
+                        Task {
+                            do {
+                                let (isNewUser, socialUsername) = try await supabaseManager.handleOAuthCallback(url: url)
+                                print("✅ OAuth callback handled successfully (new user: \(isNewUser))")
+                                print("✅ Current user email: \(supabaseManager.currentUser?.email ?? "nil")")
+                                print("✅ User metadata: \(supabaseManager.currentUser?.userMetadata ?? [:])")
+                                
+                                // Force UI update and store data on main thread
+                                await MainActor.run {
+                                    // Store social username for onboarding pre-fill (Facebook/Instagram)
+                                    if let username = socialUsername, isNewUser {
+                                        UserDefaults.standard.set(username, forKey: "pending_social_username")
+                                        print("📘 Stored social username for onboarding: @\(username)")
+                                    }
+                                    
+                                    // Store OAuth-provided name for onboarding BEFORE posting notification
+                                    if isNewUser {
+                                        if let fullName = supabaseManager.currentUser?.userMetadata["full_name"] as? String, !fullName.isEmpty {
+                                            UserDefaults.standard.set(fullName, forKey: "pending_oauth_name")
+                                            UserDefaults.standard.synchronize() // Force immediate write
+                                            print("🔐 Stored OAuth name (full_name) for onboarding: \(fullName)")
+                                        } else if let name = supabaseManager.currentUser?.userMetadata["name"] as? String, !name.isEmpty {
+                                            UserDefaults.standard.set(name, forKey: "pending_oauth_name")
+                                            UserDefaults.standard.synchronize() // Force immediate write
+                                            print("🔐 Stored OAuth name (name) for onboarding: \(name)")
+                                        }
+                                        
+                                        // Also store email for pre-fill
+                                        if let email = supabaseManager.currentUser?.email, !email.isEmpty {
+                                            UserDefaults.standard.set(email, forKey: "pending_oauth_email")
+                                            print("🔐 Stored OAuth email for onboarding: \(email)")
+                                        }
+                                    }
+                                    
+                                    UserManager.shared.reloadCurrentUser()
+                                    
+                                    // Post notification to trigger onboarding navigation for new users
+                                    // AFTER storing the name data
+                                    if isNewUser {
+                                        print("👤 [OAUTH] New user - posting notification to start onboarding")
+                                        print("👤 [OAUTH] Verifying stored name: \(UserDefaults.standard.string(forKey: "pending_oauth_name") ?? "nil")")
+                                        NotificationCenter.default.post(
+                                            name: Notification.Name("OAuthNewUserNeedsOnboarding"),
+                                            object: nil
+                                        )
+                                    }
+                                }
+                            } catch {
+                                print("❌ OAuth callback error: \(error)")
+                            }
+                        }
+                    }
+                }
                 .onOpenURL { url in
                     // Handle deep link URLs
-                    print("🔗 App opened with URL: \(url.absoluteString)")
-                    print("🔗 URL scheme: \(url.scheme ?? "none")")
-                    print("🔗 URL host: \(url.host ?? "none")")
+                    print("🔗🔗🔗 [ONOPENURL] App opened with URL: \(url.absoluteString)")
+                    print("🔗 [ONOPENURL] URL scheme: \(url.scheme ?? "none")")
+                    print("🔗 [ONOPENURL] URL host: \(url.host ?? "none")")
+                    print("🔗 [ONOPENURL] URL fragment: \(url.fragment ?? "none")")
                     
                     let scheme = url.scheme?.lowercased() ?? ""
                     
                     // Handle our custom scheme (fit33://)
                     if scheme == "fit33" {
+                        // Direct OAuth callback handling (highest priority)
+                        if url.host?.lowercased() == "login-callback" {
+                            print("🔐 [ONOPENURL] OAuth callback detected - posting notification directly")
+                            NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: url)
+                            return
+                        }
+                        
                         // Use the DeepLinkManager to route
                         if DeepLinkManager.shared.handleURL(url) {
-                            print("✅ Deep link handled by DeepLinkManager")
+                            print("✅ [ONOPENURL] Deep link handled by DeepLinkManager")
                             return
                         }
                     }

@@ -12,6 +12,7 @@ struct RecipeImportSheet: View {
     @State private var extractedRecipe: ExtractedRecipe?
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showingRecipeDetail = false
     
     var body: some View {
         NavigationView {
@@ -49,6 +50,11 @@ struct RecipeImportSheet: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(errorMessage)
+            }
+            .fullScreenCover(isPresented: $showingRecipeDetail) {
+                if let recipe = extractedRecipe {
+                    ImportedRecipeDetailView(recipe: recipe, sourceURL: urlText)
+                }
             }
         }
     }
@@ -170,72 +176,91 @@ struct RecipeImportSheet: View {
                 Spacer()
             }
             
-            // Recipe info
-            VStack(alignment: .leading, spacing: 12) {
-                Text(recipe.title)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                if let sourceName = recipe.sourceName {
-                    Text("From: \(sourceName)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                // Nutrition
-                HStack(spacing: 16) {
-                    NutritionPill(label: "Cal", value: "\(recipe.calories)", color: .orange)
-                    NutritionPill(label: "Protein", value: "\(recipe.protein)g", color: .blue)
-                    NutritionPill(label: "Carbs", value: "\(recipe.carbs)g", color: .green)
-                    NutritionPill(label: "Fat", value: "\(recipe.fat)g", color: .purple)
-                }
-                
-                // Meta info
-                if let time = recipe.readyInMinutes, let servings = recipe.servings {
+            // Recipe info - Tappable to view details
+            Button {
+                HapticManager.tap()
+                showingRecipeDetail = true
+            } label: {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Recipe image if available
+                    if let imageURL = recipe.image, let url = URL(string: imageURL) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(height: 150)
+                                    .clipped()
+                                    .cornerRadius(10)
+                            case .failure, .empty:
+                                EmptyView()
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                    }
+                    
+                    Text(recipe.title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.leading)
+                    
+                    if let sourceName = recipe.sourceName {
+                        Text("From: \(sourceName)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Nutrition
                     HStack(spacing: 16) {
-                        Label("\(time) min", systemImage: "clock")
-                        Label("\(servings) servings", systemImage: "person.2")
+                        NutritionPill(label: "Cal", value: "\(recipe.calories)", color: .orange)
+                        NutritionPill(label: "Protein", value: "\(recipe.protein)g", color: .blue)
+                        NutritionPill(label: "Carbs", value: "\(recipe.carbs)g", color: .green)
+                        NutritionPill(label: "Fat", value: "\(recipe.fat)g", color: .purple)
+                    }
+                    
+                    // Meta info
+                    HStack(spacing: 16) {
+                        if let time = recipe.readyInMinutes {
+                            Label("\(time) min", systemImage: "clock")
+                        }
+                        if let servings = recipe.servings {
+                            Label("\(servings) servings", systemImage: "person.2")
+                        }
                     }
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                }
-                
-                // Ingredients count
-                if let ingredients = recipe.extendedIngredients {
-                    Text("\(ingredients.count) ingredients")
+                    
+                    // Ingredients count
+                    if let ingredients = recipe.extendedIngredients {
+                        HStack {
+                            Image(systemName: "leaf.fill")
+                                .foregroundColor(.green)
+                            Text("\(ingredients.count) ingredients")
+                            Spacer()
+                            Text("Tap to view all →")
+                                .foregroundColor(.blue)
+                        }
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                    }
                 }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                )
             }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
-            )
+            .buttonStyle(PlainButtonStyle())
             
             // Action buttons
             HStack(spacing: 12) {
-                Button(action: { /* Save to favorites */ }) {
+                Button(action: { showingRecipeDetail = true }) {
                     HStack {
-                        Image(systemName: "star")
-                        Text("Save")
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.95))
-                    )
-                }
-                
-                Button(action: { dismiss() }) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add to Meal")
+                        Image(systemName: "eye")
+                        Text("View Details")
                     }
                     .font(.subheadline)
                     .fontWeight(.semibold)

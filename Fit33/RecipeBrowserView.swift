@@ -386,7 +386,7 @@ class RecipeBrowserViewModel: ObservableObject {
     
     private var currentOffset = 0
     private let pageSize = 20
-    private let apiKey = "69f4b06727ac448d88841e2ce717a228"
+    private let apiKey = AppConfig.spoonacularApiKey
     private let baseURL = "https://api.spoonacular.com"
     
     enum SortOption: String {

@@ -18,92 +18,95 @@ struct WelcomeTutorialView: View {
     private let selectionFeedback = UISelectionFeedbackGenerator()
     
     // Tutorial pages - each represents a key feature
+    // Designed with Nike-level polish: concise, impactful copy
     private let tutorialPages: [TutorialPage] = [
         TutorialPage(
             title: "Welcome to",
             subtitle: "Your intelligent fitness companion",
-            description: "Build the perfect workout every time. Let's take a quick tour of what you can do.",
+            description: "Build the perfect workout every time.\nLet's see what you can do.",
             icon: "figure.strengthtraining.traditional",
             iconColor: .blue,
             gradient: [Color.blue, Color.cyan.opacity(0.8)],
             animationType: .pulse,
-            useLogoImage: true  // Show Fit33 logo instead of icon
+            useLogoImage: true
         ),
         TutorialPage(
-            title: "Auto-Generate Workouts",
+            title: "Auto-Generate",
             subtitle: "Smart workouts in seconds",
-            description: "Tell us how long you have, what muscles to target, and what equipment you have. Our recommendation system creates a personalized workout instantly.",
-            icon: "dumbbell.fill",
+            description: "Set your time, target muscles, and equipment.\nWe'll create your personalized workout.",
+            icon: "sparkles",
             iconColor: .purple,
             gradient: [Color.purple, Color.pink],
             animationType: .sparkle,
-            useAppButton: true  // Show actual app button
+            useAppButton: true,
+            buttonTitle: "Auto Workout",
+            buttonSubtitle: "AI-powered routine"
         ),
         TutorialPage(
-            title: "Build Custom Workouts",
+            title: "Build Custom",
             subtitle: "Complete creative control",
-            description: "Browse our library of 5,000+ exercises with video demos. Build your perfect routine from scratch.",
+            description: "5,000+ exercises with video demos.\nCreate your perfect routine from scratch.",
             icon: "plus.circle.fill",
             iconColor: .blue,
             gradient: [Color.blue, Color.cyan],
             animationType: .bounce,
-            useAppButton: true,  // Show actual app button
+            useAppButton: true,
             buttonTitle: "Custom Workout",
             buttonSubtitle: "Build your own"
         ),
         TutorialPage(
-            title: "Personalized Programs",
+            title: "Programs",
             subtitle: "Your 30-day transformation",
-            description: "Get a complete training program tailored to your goals, experience, and schedule. Progressive workouts that evolve with you.",
+            description: "Complete training programs tailored to your goals.\nProgressive workouts that evolve with you.",
             icon: "calendar.badge.clock",
             iconColor: .green,
             gradient: [Color.green, Color.mint],
             animationType: .wave,
-            useProgramWidget: true  // Show actual program widget
+            useProgramWidget: true
         ),
         TutorialPage(
-            title: "Build Your Streak",
-            subtitle: "Stay consistent, see results",
-            description: "Complete a workout each day to build your streak. The longer your streak, the stronger your habit. Miss a day? No worries—your progress stays, and you can start fresh tomorrow.",
+            title: "Streaks",
+            subtitle: "Consistency builds champions",
+            description: "Work out daily to build your streak.\nThe longer your streak, the stronger your habit.",
             icon: "flame.fill",
             iconColor: .orange,
             gradient: [Color.orange, Color.red],
             animationType: .pulse,
-            useStreakFlame: true  // Show actual streak flame
+            useStreakFlame: true
         ),
         TutorialPage(
-            title: "Track Your Meals",
-            subtitle: "Monitor your nutrition",
-            description: "Log your meals throughout the day and track calories, protein, carbs, and fats. Stay on top of your nutrition goals.",
+            title: "Nutrition",
+            subtitle: "Fuel your progress",
+            description: "Track meals, calories, and macros.\nStay on top of your nutrition goals.",
             icon: "fork.knife",
             iconColor: .pink,
             gradient: [Color.pink, Color.purple],
             animationType: .float,
-            useMealTracking: true  // Show actual meal widget
+            useMealTracking: true
         ),
         TutorialPage(
-            title: "Stay Hydrated",
-            subtitle: "Track your water intake",
-            description: "Log your daily water consumption and reach your hydration goals. Get reminders and track your progress with an intuitive interface.",
+            title: "Hydration",
+            subtitle: "Stay optimally hydrated",
+            description: "Track daily water intake with one tap.\nReach your hydration goals effortlessly.",
             icon: "drop.fill",
             iconColor: .cyan,
             gradient: [Color.cyan, Color.blue],
             animationType: .wave,
-            useWaterWidget: true  // Show water tracking widget
+            useWaterWidget: true
         ),
         TutorialPage(
-            title: "Train With Friends",
-            subtitle: "Share your best workouts",
-            description: "Send workouts directly to friends, see what they're doing, and stay motivated together. Fitness is better with community.",
+            title: "Community",
+            subtitle: "Better together",
+            description: "Share workouts with friends.\nStay motivated and accountable.",
             icon: "person.2.fill",
-            iconColor: .cyan,
-            gradient: [Color.cyan, Color.blue],
+            iconColor: .indigo,
+            gradient: [Color.indigo, Color.purple],
             animationType: .float
         ),
         TutorialPage(
-            title: "Ready to Go!",
-            subtitle: "Let's build something amazing",
-            description: "You're all set! Start with an auto-generated workout, or explore on your own. We're here to help you reach your goals.",
+            title: "Let's Go",
+            subtitle: "Your journey starts now",
+            description: "You're ready.\nStart your first workout today.",
             icon: "checkmark.seal.fill",
             iconColor: .green,
             gradient: [Color.green, Color.mint],
@@ -113,26 +116,31 @@ struct WelcomeTutorialView: View {
     
     var body: some View {
         ZStack {
-            // Animated background
+            // Animated background - fills entire screen
             animatedBackground
+                .ignoresSafeArea(.all)
             
             VStack(spacing: 0) {
-                // Skip button (top right)
+                // Skip button (top right) - refined styling
                 HStack {
                     Spacer()
                     
                     if currentPage < tutorialPages.count - 1 {
                         Button(action: skipTutorial) {
                             Text("Skip")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.secondary.opacity(0.8))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    Capsule()
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+                                )
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
                 
                 // Main content
                 TabView(selection: $currentPage) {
@@ -146,74 +154,62 @@ struct WelcomeTutorialView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .background(.clear)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8), value: currentPage)
                 
-                // Page indicator + Navigation
-                VStack(spacing: 24) {
-                    // Custom page indicator
-                    HStack(spacing: 8) {
+                // Page indicator + Navigation - transparent background
+                VStack(spacing: 28) {
+                    // Custom page indicator - refined dots
+                    HStack(spacing: 10) {
                         ForEach(0..<tutorialPages.count, id: \.self) { index in
                             Capsule()
                                 .fill(
                                     index == currentPage
                                         ? LinearGradient(colors: tutorialPages[currentPage].gradient, startPoint: .leading, endPoint: .trailing)
-                                        : LinearGradient(colors: [Color.gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
+                                        : LinearGradient(colors: [Color.gray.opacity(0.25)], startPoint: .leading, endPoint: .trailing)
                                 )
-                                .frame(width: index == currentPage ? 24 : 8, height: 8)
-                                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: currentPage)
+                                .frame(width: index == currentPage ? 28 : 8, height: 8)
+                                .animation(.spring(response: 0.35, dampingFraction: 0.75), value: currentPage)
                         }
                     }
-                    .padding(.bottom, 8)
                     
-                    // Navigation button
+                    // Navigation button - premium styling
                     if currentPage == tutorialPages.count - 1 {
-                        // Get Started button (final page) - hollow style matching page color
+                        // Get Started button (final page) - FILLED gradient style
                         Button(action: completeTutorial) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 10) {
                                 Text("Get Started")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 17, weight: .bold))
                                 
                                 Image(systemName: "arrow.right")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 15, weight: .bold))
                             }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: tutorialPages[currentPage].gradient,
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 56)
+                            .frame(height: 58)
                             .background(
                                 Capsule()
-                                    .fill(Color(.systemGray6))
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(
+                                    .fill(
                                         LinearGradient(
                                             colors: tutorialPages[currentPage].gradient,
                                             startPoint: .leading,
                                             endPoint: .trailing
-                                        ),
-                                        lineWidth: 2
+                                        )
                                     )
+                                    .shadow(color: tutorialPages[currentPage].gradient[0].opacity(0.5), radius: 16, x: 0, y: 8)
                             )
                         }
                         .buttonStyle(TutorialScaleButtonStyle())
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, 36)
                     } else {
-                        // Continue button - hollow style matching page color
+                        // Continue button - hollow style with gradient border
                         Button(action: nextPage) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 10) {
                                 Text("Continue")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 17, weight: .bold))
                                 
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 14, weight: .bold))
                             }
                             .foregroundStyle(
                                 LinearGradient(
@@ -223,10 +219,10 @@ struct WelcomeTutorialView: View {
                                 )
                             )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 56)
+                            .frame(height: 58)
                             .background(
                                 Capsule()
-                                    .fill(Color(.systemGray6))
+                                    .fill(colorScheme == .dark ? Color(white: 0.08).opacity(0.8) : Color(white: 0.96).opacity(0.9))
                             )
                             .overlay(
                                 Capsule()
@@ -236,15 +232,16 @@ struct WelcomeTutorialView: View {
                                             startPoint: .leading,
                                             endPoint: .trailing
                                         ),
-                                        lineWidth: 2
+                                        lineWidth: 2.5
                                     )
                             )
                         }
                         .buttonStyle(TutorialScaleButtonStyle())
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, 36)
                     }
                 }
-                .padding(.bottom, 50)
+                .background(.clear)
+                .padding(.bottom, 56)
             }
         }
         .onAppear {
@@ -266,7 +263,7 @@ struct WelcomeTutorialView: View {
     
     private var animatedBackground: some View {
         ZStack {
-            // Base gradient
+            // Base gradient - fills entire screen
             LinearGradient(
                 gradient: Gradient(colors: colorScheme == .dark
                     ? [
@@ -282,17 +279,36 @@ struct WelcomeTutorialView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .ignoresSafeArea()
+            .ignoresSafeArea(.all)
             
-            // Animated gradient orbs
+            // Animated gradient orbs - must also ignore safe area
             GeometryReader { geometry in
                 ZStack {
-                    // Top orb
+                    // Center orb (main glow)
                     Circle()
                         .fill(
                             RadialGradient(
                                 colors: [
-                                    tutorialPages[currentPage].gradient[0].opacity(0.3),
+                                    tutorialPages[currentPage].gradient[0].opacity(0.35),
+                                    tutorialPages[currentPage].gradient[0].opacity(0.15),
+                                    tutorialPages[currentPage].gradient[0].opacity(0)
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 350
+                            )
+                        )
+                        .frame(width: 700, height: 700)
+                        .position(x: geometry.size.width * 0.5, y: geometry.size.height * 0.35)
+                        .scaleEffect(backgroundPulse ? 1.1 : 0.95)
+                        .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: backgroundPulse)
+                    
+                    // Top-left orb
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    tutorialPages[currentPage].gradient[0].opacity(0.25),
                                     tutorialPages[currentPage].gradient[0].opacity(0)
                                 ],
                                 center: .center,
@@ -301,10 +317,10 @@ struct WelcomeTutorialView: View {
                             )
                         )
                         .frame(width: 400, height: 400)
-                        .offset(x: backgroundPulse ? -50 : -100, y: backgroundPulse ? -150 : -180)
-                        .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: backgroundPulse)
+                        .position(x: backgroundPulse ? 50 : 0, y: backgroundPulse ? 100 : 50)
+                        .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: backgroundPulse)
                     
-                    // Bottom orb
+                    // Bottom-right orb
                     Circle()
                         .fill(
                             RadialGradient(
@@ -314,14 +330,18 @@ struct WelcomeTutorialView: View {
                                 ],
                                 center: .center,
                                 startRadius: 0,
-                                endRadius: 250
+                                endRadius: 280
                             )
                         )
-                        .frame(width: 500, height: 500)
-                        .offset(x: backgroundPulse ? 150 : 100, y: backgroundPulse ? geometry.size.height * 0.4 : geometry.size.height * 0.5)
-                        .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: backgroundPulse)
+                        .frame(width: 560, height: 560)
+                        .position(
+                            x: backgroundPulse ? geometry.size.width * 0.85 : geometry.size.width * 0.9,
+                            y: backgroundPulse ? geometry.size.height * 0.75 : geometry.size.height * 0.8
+                        )
+                        .animation(.easeInOut(duration: 6).repeatForever(autoreverses: true), value: backgroundPulse)
                 }
             }
+            .ignoresSafeArea(.all)
             .animation(.easeInOut(duration: 0.8), value: currentPage)
         }
     }
@@ -386,249 +406,146 @@ struct TutorialPageView: View {
     @State private var sparkleOffset: CGFloat = 0
     @State private var particles: [ParticleData] = []
     
+    // Screen height for adaptive spacing
+    private var screenHeight: CGFloat {
+        UIScreen.main.bounds.height
+    }
+    
+    // Adaptive spacing based on screen size and content type
+    private var topPadding: CGFloat {
+        if page.useLogoImage {
+            return screenHeight * 0.08
+        } else if page.useMealTracking || page.useWaterWidget {
+            // Meal and water widgets need more top space to not crowd the top
+            return screenHeight * 0.08
+        } else if page.useProgramWidget || page.useStreakFlame {
+            return screenHeight * 0.06
+        } else {
+            return screenHeight * 0.06
+        }
+    }
+    
+    private var contentSpacing: CGFloat {
+        if page.useLogoImage {
+            return 0
+        } else if page.useMealTracking || page.useWaterWidget || page.useProgramWidget {
+            return 20
+        } else {
+            return 28
+        }
+    }
+    
+    private var bottomTextSpacing: CGFloat {
+        page.useLogoImage ? 24 : 36
+    }
+    
+    // Max height for the visual element based on content type
+    private var visualMaxHeight: CGFloat {
+        if page.useLogoImage {
+            return 0.42  // Logo page
+        } else if page.useMealTracking {
+            return 0.38  // Meal tracking needs less vertical space
+        } else if page.useWaterWidget || page.useProgramWidget {
+            return 0.36
+        } else if page.useStreakFlame {
+            return 0.32
+        } else if page.useAppButton {
+            return 0.30  // Buttons are compact
+        } else {
+            return 0.28  // Default icons
+        }
+    }
+    
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-                .frame(maxHeight: 60)
-            
-            // Title with gradient (moved above icon/widget)
-            Text(page.title)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: page.gradient,
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .multilineTextAlignment(.center)
-                .opacity(animateContent ? 1 : 0)
-                .offset(y: animateContent ? 0 : 20)
-                .padding(.bottom, 24)
-            
-            // Animated icon/logo container
-            ZStack {
-                if page.useLogoImage {
-                    // Fit33 Logo for welcome page - Grand and prominent
-                    VStack(spacing: 0) {
-                        ZStack {
-                            // Outer glow
-                            Circle()
-                                .fill(
-                                    RadialGradient(
-                                        colors: [
-                                            page.gradient[0].opacity(0.3),
-                                            page.gradient[1].opacity(0.2),
-                                            Color.clear
-                                        ],
-                                        center: .center,
-                                        startRadius: 60,
-                                        endRadius: 200
-                                    )
-                                )
-                                .frame(width: 400, height: 400)
-                                .blur(radius: 25)
-                                .scaleEffect(iconAnimation ? 1.1 : 1.0)
-                            
-                            // Logo with enhanced styling
-                            Image("fit33-logo")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 380, height: 160)
-                                .shadow(color: page.gradient[0].opacity(0.6), radius: 40, x: 0, y: 15)
-                                .shadow(color: page.gradient[1].opacity(0.4), radius: 25, x: 0, y: 10)
-                                .shadow(color: .black.opacity(0.3), radius: 15, x: 0, y: 5)
-                                .offset(y: iconAnimation ? -4 : 4)
-                        }
-                    }
-                } else if page.useAppButton {
-                    // Show actual app button (Auto Workout style)
-                    VStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: page.gradient),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 50, height: 50)
-                                .shadow(color: page.gradient.first?.opacity(0.4) ?? .clear, radius: 8, x: 0, y: 4)
-                            
-                            Image(systemName: page.icon)
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(spacing: 4) {
-                            Text(page.buttonTitle)
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.8)
-                            
-                            Text(page.buttonSubtitle)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .frame(width: 160, height: 140)
-                    .background(
-                        ZStack {
-                            // Bottom shadow layer (deepest) - colored based on gradient
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .fill((page.gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.15 : 0.08))
-                                .offset(y: 8)
-                                .blur(radius: 4)
-                            
-                            // Middle shadow layer
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                                .offset(y: 4)
-                            
-                            // Main card background
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(red: 0.15, green: 0.15, blue: 0.2), Color(red: 0.12, green: 0.12, blue: 0.17)]
-                                            : [Color.white, Color.white.opacity(0.95)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                            
-                            // Inner highlight (top edge glow)
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                            : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                            
-                            // Colored accent border
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            (page.gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                            (page.gradient.last ?? .gray).opacity(colorScheme == .dark ? 0.3 : 0.2)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        }
-                    )
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-                    .shadow(color: (page.gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-                    .scaleEffect(iconAnimation ? 1.05 : 1.0)
-                    .offset(y: iconAnimation ? -3 : 3)
-                } else if page.useProgramWidget {
-                    // Show actual program widget (Foundation Builder sample)
-                    TutorialProgramWidget(gradient: page.gradient, isAnimating: iconAnimation)
-                        .offset(y: iconAnimation ? -3 : 3)
-                } else if page.useStreakFlame {
-                    // Show actual streak flame from home tab
-                    TutorialStreakFlame(gradient: page.gradient, isAnimating: iconAnimation)
-                } else if page.useMealTracking {
-                    // Show actual meal tracking UI
-                    TutorialMealTracking(gradient: page.gradient, isAnimating: iconAnimation)
-                } else if page.useWaterWidget {
-                    // Show water tracking widget
-                    TutorialWaterTracking(gradient: page.gradient, isAnimating: iconAnimation)
-                } else {
-                    // Glow effect
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    page.iconColor.opacity(iconAnimation ? 0.4 : 0.2),
-                                    page.iconColor.opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: iconAnimation ? 100 : 80
-                            )
-                        )
-                        .frame(width: 200, height: 200)
-                    
-                    // Background circle
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: page.gradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 130, height: 130)
-                        .shadow(color: page.gradient[0].opacity(0.5), radius: 20, x: 0, y: 10)
-                    
-                    // Icon
-                    Image(systemName: page.icon)
-                        .font(.system(size: 54, weight: .semibold))
-                        .foregroundColor(.white)
-                        .offset(y: iconAnimation ? -3 : 3)
-                    
-                    // Sparkle particles (for certain animations)
-                    if page.animationType == .sparkle || page.animationType == .celebrate {
-                        ForEach(particles) { particle in
-                            Image(systemName: "sparkle")
-                                .font(.system(size: particle.size))
-                                .foregroundColor(page.iconColor.opacity(particle.opacity))
-                                .offset(x: particle.x, y: particle.y)
-                        }
+        GeometryReader { geometry in
+            // UNIFIED LAYOUT for all pages (including welcome)
+            VStack(spacing: 0) {
+                // Top spacer - slightly more for welcome page
+                Spacer()
+                    .frame(height: page.useLogoImage ? 30 : topPadding)
+                
+                // Flexible space before visual element
+                Spacer()
+                    .frame(minHeight: 10, maxHeight: page.useLogoImage ? 60 : 40)
+                
+                // === CENTER SECTION: Visual Element ===
+                ZStack {
+                    if page.useLogoImage {
+                        // Welcome page: Logo as the visual element
+                        welcomeLogoView
+                    } else if page.useAppButton {
+                        featureButtonView
+                    } else if page.useProgramWidget {
+                        TutorialProgramWidget(gradient: page.gradient, isAnimating: iconAnimation)
+                            .scaleEffect(0.9)
+                            .offset(y: iconAnimation ? -3 : 3)
+                    } else if page.useStreakFlame {
+                        TutorialStreakFlame(gradient: page.gradient, isAnimating: iconAnimation)
+                    } else if page.useMealTracking {
+                        TutorialMealTracking(gradient: page.gradient, isAnimating: iconAnimation)
+                            .scaleEffect(0.85)
+                    } else if page.useWaterWidget {
+                        TutorialWaterTracking(gradient: page.gradient, isAnimating: iconAnimation)
+                            .scaleEffect(0.88)
+                    } else {
+                        defaultIconView
                     }
                 }
-            }
-            .scaleEffect(animateContent ? 1 : 0.5)
-            .opacity(animateContent ? 1 : 0)
-            
-            Spacer()
-                .frame(height: 24)
-            
-            // Text content (subtitle and description below icon/widget)
-            VStack(spacing: 14) {
-                // Subtitle
-                Text(page.subtitle)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .opacity(animateContent ? 1 : 0)
-                    .offset(y: animateContent ? 0 : 15)
+                .scaleEffect(animateContent ? 1 : 0.8)
+                .opacity(animateContent ? 1 : 0)
+                .frame(maxHeight: geometry.size.height * (page.useLogoImage ? 0.35 : visualMaxHeight))
                 
-                // Description
-                Text(page.description)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.7) : Color.black.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(5)
-                    .padding(.horizontal, 36)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .opacity(animateContent ? 1 : 0)
-                    .offset(y: animateContent ? 0 : 10)
+                // Flexible space after visual element
+                Spacer()
+                    .frame(minHeight: page.useLogoImage ? 30 : contentSpacing, maxHeight: page.useLogoImage ? 50 : contentSpacing + 20)
+                
+                // === BOTTOM SECTION: Text Content ===
+                VStack(spacing: 0) {
+                    // Title - welcome page shows "Welcome to" above logo, so skip it here
+                    if !page.useLogoImage {
+                        Text(page.title)
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: page.gradient,
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .tracking(-0.5)
+                            .multilineTextAlignment(.center)
+                            .opacity(animateContent ? 1 : 0)
+                            .offset(y: animateContent ? 0 : 20)
+                            .padding(.bottom, 10)
+                    }
+                    
+                    Text(page.subtitle)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .opacity(animateContent ? 1 : 0)
+                        .offset(y: animateContent ? 0 : 15)
+                        .padding(.bottom, 14)
+                    
+                    Text(page.description)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color.black.opacity(0.55))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(5)
+                        .padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .opacity(animateContent ? 1 : 0)
+                        .offset(y: animateContent ? 0 : 10)
+                }
+                .animation(.easeOut(duration: 0.5).delay(0.15), value: animateContent)
+                .padding(.horizontal, 16)
+                
+                // Bottom spacer
+                Spacer(minLength: 30)
             }
-            .animation(.easeOut(duration: 0.5).delay(0.2), value: animateContent)
-            
-            Spacer()
-                .frame(maxHeight: .infinity)
         }
-        .padding(.horizontal, 24)
         .onAppear {
             startIconAnimation()
             if page.animationType == .sparkle || page.animationType == .celebrate {
@@ -642,8 +559,213 @@ struct TutorialPageView: View {
         }
     }
     
+    // MARK: - Welcome Logo View (Grand & Dominant)
+    private var welcomeLogoView: some View {
+        VStack(spacing: 20) {
+            // "Welcome to" title - part of the centered unit
+            Text(page.title)
+                .font(.system(size: 32, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: page.gradient,
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .tracking(-0.5)
+                .multilineTextAlignment(.center)
+            
+            // Logo with glow effects
+            ZStack {
+                // Massive outer glow - creates depth and grandeur
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                page.gradient[0].opacity(0.35),
+                                page.gradient[1].opacity(0.2),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 280
+                        )
+                    )
+                    .frame(width: 500, height: 500)
+                    .blur(radius: 40)
+                    .scaleEffect(iconAnimation ? 1.08 : 1.0)
+                
+                // Secondary glow ring
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                page.gradient[0].opacity(0.25),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 100,
+                            endRadius: 180
+                        )
+                    )
+                    .frame(width: 360, height: 360)
+                    .scaleEffect(iconAnimation ? 1.05 : 0.98)
+                
+                // The grand logo
+                Image("fit33-logo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: min(UIScreen.main.bounds.width * 0.85, 380), height: 180)
+                    .shadow(color: page.gradient[0].opacity(0.7), radius: 50, x: 0, y: 20)
+                    .shadow(color: page.gradient[1].opacity(0.5), radius: 35, x: 0, y: 12)
+                    .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 8)
+                    .scaleEffect(iconAnimation ? 1.02 : 0.98)
+                    .offset(y: iconAnimation ? -6 : 6)
+            }
+        }
+    }
+    
+    // MARK: - Feature Button View
+    private var featureButtonView: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                // Glow behind icon
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                page.gradient[0].opacity(0.4),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 50
+                        )
+                    )
+                    .frame(width: 100, height: 100)
+                    .scaleEffect(iconAnimation ? 1.1 : 0.95)
+                
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: page.gradient),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 56, height: 56)
+                    .shadow(color: page.gradient.first?.opacity(0.5) ?? .clear, radius: 12, x: 0, y: 6)
+                
+                Image(systemName: page.icon)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            
+            VStack(spacing: 6) {
+                Text(page.buttonTitle)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                
+                Text(page.buttonSubtitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(width: 180, height: 160)
+        .background(
+            ZStack {
+                // Deep shadow for depth
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill((page.gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.1))
+                    .offset(y: 10)
+                    .blur(radius: 6)
+                
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.05))
+                    .offset(y: 5)
+                
+                // Main card
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        colorScheme == .dark
+                            ? Color(red: 0.13, green: 0.13, blue: 0.16)
+                            : Color.white
+                    )
+                
+                // Subtle gradient overlay
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                page.gradient[0].opacity(colorScheme == .dark ? 0.5 : 0.35),
+                                page.gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
+        .shadow(color: (page.gradient.first ?? .gray).opacity(0.2), radius: 24, x: 0, y: 12)
+        .scaleEffect(iconAnimation ? 1.03 : 0.98)
+        .offset(y: iconAnimation ? -4 : 4)
+    }
+    
+    // MARK: - Default Icon View
+    private var defaultIconView: some View {
+        ZStack {
+            // Glow effect
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            page.iconColor.opacity(iconAnimation ? 0.45 : 0.2),
+                            page.iconColor.opacity(0)
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: iconAnimation ? 110 : 85
+                    )
+                )
+                .frame(width: 220, height: 220)
+            
+            // Background circle
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: page.gradient,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 140, height: 140)
+                .shadow(color: page.gradient[0].opacity(0.6), radius: 25, x: 0, y: 12)
+            
+            // Icon
+            Image(systemName: page.icon)
+                .font(.system(size: 58, weight: .semibold))
+                .foregroundColor(.white)
+                .offset(y: iconAnimation ? -4 : 4)
+            
+            // Sparkle particles
+            if page.animationType == .sparkle || page.animationType == .celebrate {
+                ForEach(particles) { particle in
+                    Image(systemName: "sparkle")
+                        .font(.system(size: particle.size))
+                        .foregroundColor(page.iconColor.opacity(particle.opacity))
+                        .offset(x: particle.x, y: particle.y)
+                }
+            }
+        }
+    }
+    
     private func startIconAnimation() {
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             iconAnimation = true
         }
     }
@@ -651,21 +773,20 @@ struct TutorialPageView: View {
     private func generateParticles() {
         particles = (0..<8).map { _ in
             ParticleData(
-                x: CGFloat.random(in: -80...80),
-                y: CGFloat.random(in: -80...80),
-                size: CGFloat.random(in: 8...16),
-                opacity: Double.random(in: 0.3...0.8)
+                x: CGFloat.random(in: -90...90),
+                y: CGFloat.random(in: -90...90),
+                size: CGFloat.random(in: 10...18),
+                opacity: Double.random(in: 0.4...0.9)
             )
         }
         
-        // Animate particles
-        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
             particles = particles.map { particle in
                 ParticleData(
-                    x: particle.x + CGFloat.random(in: -20...20),
-                    y: particle.y + CGFloat.random(in: -20...20),
+                    x: particle.x + CGFloat.random(in: -25...25),
+                    y: particle.y + CGFloat.random(in: -25...25),
                     size: particle.size,
-                    opacity: Double.random(in: 0.3...0.8)
+                    opacity: Double.random(in: 0.4...0.9)
                 )
             }
         }
@@ -687,9 +808,9 @@ struct ParticleData: Identifiable {
 struct TutorialScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 

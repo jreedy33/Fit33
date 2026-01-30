@@ -9,8 +9,12 @@ struct AdminPasswordView: View {
     @State private var showError = false
     @State private var attempts = 0
     
-    // Change this to your desired admin password
-    private let adminPassword = "WhatsApp26!"
+    // Admin password from centralized config (only available in DEBUG builds)
+    #if DEBUG
+    private let adminPassword = AppConfig.devMenuPassword
+    #else
+    private let adminPassword = "" // Never accessible in production
+    #endif
     
     var body: some View {
         ZStack {

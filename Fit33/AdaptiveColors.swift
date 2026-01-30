@@ -268,6 +268,15 @@ struct AnimatedOrbBackground: View {
         )
     }
     
+    /// Onboarding flow - clean, professional with subtle blue/cyan orbs
+    static func onboarding(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.universal(for: colorScheme),
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
+        )
+    }
+    
     var body: some View {
         ZStack {
             // Base gradient

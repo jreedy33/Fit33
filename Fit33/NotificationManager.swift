@@ -195,6 +195,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     // MARK: - Published Properties
     @Published var isAuthorized = false
+    @Published var hasCheckedAuthStatus = false  // Track when we've actually checked
     @Published var masterNotificationsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(masterNotificationsEnabled, forKey: "master_notifications_enabled")
@@ -304,6 +305,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             Task { @MainActor in
                 self.isAuthorized = settings.authorizationStatus == .authorized
+                self.hasCheckedAuthStatus = true
             }
         }
     }

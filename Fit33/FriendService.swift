@@ -10,7 +10,8 @@ class FriendService: ObservableObject {
     // MARK: - Published Properties
     @Published var friends: [Friend] = []
     @Published var friendDTOs: [FriendDTO] = [] // For compatibility with existing views
-    @Published var pendingRequests: [FriendRequest] = []
+    @Published var pendingRequests: [FriendRequest] = []  // Incoming requests (others → me)
+    @Published var sentRequests: [SentFriendRequest] = [] // Outgoing requests (me → others)
     @Published var pendingRequestDTOs: [FriendRequestDTO] = [] // For compatibility
     @Published var receivedWorkouts: [ReceivedWorkoutDTO] = [] // Changed to DTO for compatibility
     @Published var sentWorkouts: [SentWorkout] = []
@@ -162,12 +163,13 @@ class FriendService: ObservableObject {
         
         async let friendsTask: () = fetchFriends()
         async let requestsTask: () = fetchPendingRequests()
+        async let sentRequestsTask: () = fetchSentRequests()
         async let receivedTask: () = fetchReceivedWorkouts()
         async let sentTask: () = fetchSentWorkouts()
         async let notificationsTask: () = fetchNotifications()
         async let countTask: () = fetchUnreadCount()
         
-        _ = await (friendsTask, requestsTask, receivedTask, sentTask, notificationsTask, countTask)
+        _ = await (friendsTask, requestsTask, sentRequestsTask, receivedTask, sentTask, notificationsTask, countTask)
     }
     
     // MARK: - Friends
@@ -276,6 +278,41 @@ class FriendService: ObservableObject {
             return success
         } catch {
             print("❌ Error declining friend request: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Sent Friend Requests (Outgoing)
+    
+    func fetchSentRequests() async {
+        do {
+            let result: [SentFriendRequest] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_sent_friend_requests")
+                .execute()
+                .value
+            
+            self.sentRequests = result
+            print("✅ Fetched \(result.count) sent friend requests")
+        } catch {
+            print("❌ Error fetching sent friend requests: \(error)")
+        }
+    }
+    
+    func cancelSentRequest(requestId: UUID) async -> Bool {
+        do {
+            let success: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("cancel_friend_request", params: ["request_id": requestId.uuidString])
+                .execute()
+                .value
+            
+            if success {
+                // Update local state
+                sentRequests.removeAll { $0.requestId == requestId }
+                print("✅ Friend request cancelled")
+            }
+            return success
+        } catch {
+            print("❌ Error cancelling friend request: \(error)")
             return false
         }
     }
@@ -777,6 +814,55 @@ struct FriendRequest: Codable, Identifiable {
         case fromUserName = "from_user_name"
         case fromUserEmail = "from_user_email"
         case fromUserUsername = "from_user_username"
+        case profilePhotoUrl = "profile_photo_url"
+        case message
+        case createdAt = "created_at"
+    }
+}
+
+/// Represents a friend request sent BY the current user (outgoing)
+struct SentFriendRequest: Codable, Identifiable {
+    let requestId: UUID
+    let toUserId: UUID
+    let toUserName: String?
+    let toUserEmail: String?
+    let toUserUsername: String?
+    let profilePhotoUrl: String?
+    let message: String?
+    let createdAt: Date
+    
+    var id: UUID { requestId }
+    
+    var displayName: String {
+        // Show username first if available
+        if let username = toUserUsername, !username.isEmpty {
+            return "@\(username)"
+        }
+        return toUserName ?? "Unknown"
+    }
+    
+    var initials: String {
+        // Use name for initials
+        if let name = toUserName, !name.isEmpty {
+            let components = name.split(separator: " ")
+            if components.count >= 2 {
+                return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
+            }
+            return String(name.prefix(2)).uppercased()
+        }
+        // Fall back to username
+        if let username = toUserUsername, !username.isEmpty {
+            return String(username.prefix(2)).uppercased()
+        }
+        return "?"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case requestId = "request_id"
+        case toUserId = "to_user_id"
+        case toUserName = "to_user_name"
+        case toUserEmail = "to_user_email"
+        case toUserUsername = "to_user_username"
         case profilePhotoUrl = "profile_photo_url"
         case message
         case createdAt = "created_at"

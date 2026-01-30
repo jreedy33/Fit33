@@ -491,6 +491,7 @@ struct ProfileView: View {
                             iconColor: .orange
                         ) {
                             VStack(spacing: 0) {
+                                // Strava
                                 NavigationLink(destination: StravaSettingsView()) {
                                     HStack(spacing: 12) {
                                         // Strava orange icon
@@ -511,6 +512,43 @@ struct ProfileView: View {
                                         Spacer()
                                         
                                         if StravaService.shared.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider()
+                                    .padding(.leading, 56)
+                                
+                                // InBody
+                                NavigationLink(destination: InBodySettingsView()) {
+                                    HStack(spacing: 12) {
+                                        // InBody teal/cyan icon
+                                        Image(systemName: "figure.stand")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(Color(red: 0/255, green: 150/255, blue: 167/255))
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("InBody")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text(InBodyService.shared.isConnected ? "Connected" : "Body composition tracking")
+                                                .font(.caption)
+                                                .foregroundColor(InBodyService.shared.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if InBodyService.shared.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
                                         }

@@ -10,6 +10,8 @@ struct WorkoutHistoryDetailView: View {
     @State private var showingRepeatPreview = false
     @State private var showingShareSheet = false
     @State private var refreshTrigger = UUID()
+    @State private var isFavorite: Bool = false
+    @State private var isFavoriteProcessing: Bool = false
     
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -294,22 +296,22 @@ struct WorkoutHistoryDetailView: View {
         .id(refreshTrigger)
         .navigationTitle(smartTitle)
         .navigationBarTitleDisplayMode(.large)
-        .background(
-            NavigationLink(
-                destination: RepeatWorkoutPreviewView(
+        .fullScreenCover(isPresented: $showingRepeatPreview) {
+            NavigationStack {
+                RepeatWorkoutPreviewView(
                     workout: workout,
-                    exercises: workoutExercises.compactMap { $0.exercise },
+                    exercises: resolveExercisesForRepeat(),
                     accentColor: accentColor
                 )
-                .environmentObject(WorkoutManager.shared),
-                isActive: $showingRepeatPreview
-            ) {
-                EmptyView()
+                .environmentObject(WorkoutManager.shared)
             }
-            .hidden()
-        )
+        }
         .sheet(isPresented: $showingShareSheet) {
             ShareWorkoutSheet(workout: workout, accentColor: accentColor)
+        }
+        .onAppear {
+            // Initialize local favorite state from Core Data
+            isFavorite = workout.isFavorite
         }
     }
     
@@ -612,54 +614,50 @@ struct WorkoutHistoryDetailView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
-            // Favorite button
+            // Favorite button - uses local state for instant feedback
             Button(action: {
-                // Haptic feedback
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                
-                // Toggle favorite
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    workout.isFavorite.toggle()
-                }
-                
-                // Save to Core Data
-                do {
-                    try workout.managedObjectContext?.save()
-                    print("✅ Workout favorite status saved: \(workout.isFavorite)")
-                } catch {
-                    print("❌ Error saving favorite: \(error)")
-                }
+                toggleFavoriteStatus()
             }) {
                 HStack(spacing: 10) {
-                    Image(systemName: workout.isFavorite ? "star.fill" : "star")
+                    Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 15, weight: .bold))
-                    Text(workout.isFavorite ? "Saved to Favorites" : "Save to Favorites")
+                    Text(isFavorite ? "Saved to Favorites" : "Save to Favorites")
                         .font(.headline)
                         .fontWeight(.bold)
                 }
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(colors: workout.isFavorite ? [Color.orange, Color.orange.opacity(0.8)] : [Color.primary, Color.primary.opacity(0.8)]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .foregroundColor(isFavorite ? .white : .primary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
-                    Capsule()
-                        .stroke(
-                            LinearGradient(
-                                gradient: Gradient(colors: workout.isFavorite ? [Color.orange, Color.orange.opacity(0.8)] : [Color.primary, Color.primary.opacity(0.8)]),
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 2
-                        )
+                    Group {
+                        if isFavorite {
+                            // Solid gold/yellow gradient when favorited
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.yellow, Color.orange]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        } else {
+                            // Outline when not favorited
+                            Capsule()
+                                .stroke(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.primary, Color.primary.opacity(0.8)]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        }
+                    }
                 )
+                .animation(.easeInOut(duration: 0.2), value: isFavorite)
             }
             .buttonStyle(PlainButtonStyle())
+            .disabled(isFavoriteProcessing)
         }
     }
     
@@ -753,8 +751,68 @@ struct WorkoutHistoryDetailView: View {
     }
     
     private func repeatWorkout() {
+        print("🔄 [REPEAT] repeatWorkout() called - navigating to preview")
+        HapticManager.impact(.medium)
         // Show preview screen instead of starting directly
         showingRepeatPreview = true
+    }
+    
+    // Toggle favorite with debounce protection
+    private func toggleFavoriteStatus() {
+        // Prevent rapid double-taps
+        guard !isFavoriteProcessing else { return }
+        isFavoriteProcessing = true
+        
+        // Immediate UI feedback
+        isFavorite.toggle()
+        
+        // Haptic feedback immediately
+        HapticManager.impact(.medium)
+        
+        // Update Core Data
+        workout.isFavorite = isFavorite
+        
+        do {
+            try workout.managedObjectContext?.save()
+            print("✅ Workout favorite status saved: \(isFavorite)")
+        } catch {
+            print("❌ Error saving favorite: \(error)")
+            // Revert on error
+            isFavorite.toggle()
+        }
+        
+        // Allow next tap after short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isFavoriteProcessing = false
+        }
+    }
+    
+    /// Resolves exercises for repeat workout - handles cases where exercise relationship might be nil
+    /// Falls back to looking up exercises by name from the library
+    private func resolveExercisesForRepeat() -> [Exercise] {
+        var resolvedExercises: [Exercise] = []
+        
+        for workoutExercise in workoutExercises {
+            // First try to get the exercise from the relationship
+            if let exercise = workoutExercise.exercise {
+                resolvedExercises.append(exercise)
+                continue
+            }
+            
+            // If relationship is nil, try to find by name in the library
+            let exerciseName = workoutExercise.safeDisplayName
+            if exerciseName != "Loading..." && exerciseName != "Unknown Exercise" {
+                if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName) {
+                    print("🔄 [REPEAT] Resolved exercise by name: \(exerciseName)")
+                    resolvedExercises.append(exercise)
+                } else {
+                    print("⚠️ [REPEAT] Could not resolve exercise: \(exerciseName)")
+                }
+            }
+        }
+        
+        print("🔄 [REPEAT] Resolved \(resolvedExercises.count) of \(workoutExercises.count) exercises")
+        return resolvedExercises
     }
 }
 
@@ -1305,13 +1363,13 @@ struct RepeatWorkoutPreviewView: View {
         }
         .navigationTitle("Your Workout")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.secondary)
+                        .symbolRenderingMode(.hierarchical)
                 }
             }
         }

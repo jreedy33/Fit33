@@ -115,6 +115,23 @@ class DeepLinkManager: ObservableObject {
             NotificationCenter.default.post(name: Notification.Name("StravaCallback"), object: url)
             return true
             
+        case "inbody":
+            // Handle InBody OAuth callback
+            // Format: fit33://inbody/callback?code=xxx
+            print("📊 [DEEPLINK] InBody OAuth callback received - forwarding to InBodyService")
+            // The callback is handled via .onOpenURL in InBodyAuthSheet
+            // Post notification for any listening views
+            NotificationCenter.default.post(name: Notification.Name("InBodyCallback"), object: url)
+            return true
+            
+        case "login-callback":
+            // Handle OAuth callback (Google, Facebook, etc.)
+            // Format: fit33://login-callback#access_token=xxx&...
+            print("🔐 [DEEPLINK] OAuth login callback received")
+            // Post notification for authentication handling
+            NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: url)
+            return true
+            
         case "friendrequests", "friend-requests":
             // Format: fit33://friendrequests
             pendingDestination = .friendRequests

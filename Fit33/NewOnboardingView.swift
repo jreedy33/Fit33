@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import PhotosUI
+import AuthenticationServices
 
 // MARK: - Keyboard Height Observer
 class KeyboardObserver: ObservableObject {
@@ -258,6 +259,45 @@ struct NewOnboardingView: View {
         guard cleanUsername.count >= 3 && cleanUsername.count <= 30 else { return false }
         let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
         return cleanUsername.unicodeScalars.allSatisfy { allowedCharacters.contains($0) }
+    }
+    
+    // Check if user needs to manually enter their name (social auth didn't provide it)
+    private var needsNameInput: Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Need input if name is empty
+        if trimmedName.isEmpty { return true }
+        // Need input if name is a generic fallback (Apple, Google, or other OAuth)
+        if trimmedName == "Apple User" { return true }
+        if trimmedName == "User" { return true }
+        if trimmedName == "Google User" { return true }
+        if trimmedName == "Facebook User" { return true }
+        
+        // If name contains a space, it's likely a full name from OAuth (e.g., "Joseph Reed") - accept it
+        if trimmedName.contains(" ") {
+            return false
+        }
+        
+        // Check if name looks like an email prefix (e.g., "joe123" or "joereed")
+        // But NOT if it starts with a capital letter (like a proper first name "Joseph")
+        let firstChar = trimmedName.first
+        let startsWithCapital = firstChar?.isUppercase == true
+        
+        // If name starts with capital letter, it's likely a proper name from OAuth - accept it
+        if startsWithCapital {
+            return false
+        }
+        
+        // If all lowercase and contains numbers, likely an email prefix
+        if trimmedName == trimmedName.lowercased() && trimmedName.rangeOfCharacter(from: .decimalDigits) != nil {
+            return true
+        }
+        
+        // If all lowercase and more than 8 chars without spaces, might be email prefix
+        if trimmedName.count > 8 && trimmedName == trimmedName.lowercased() {
+            return true
+        }
+        
+        return false
     }
         
     // Navigate to step and set appropriate focus
@@ -529,7 +569,8 @@ struct NewOnboardingView: View {
                     UserDefaults.standard.removeObject(forKey: "pending_social_username")
                     print("📘 Pre-filled username from social login: @\(socialUsername)")
                 }
-                focusedField = .username
+                // Focus name field first if user needs to enter their name (Apple didn't provide it)
+                focusedField = needsNameInput ? .name : .username
             case .basics:
                 focusedField = .birthday
             case .body:
@@ -549,6 +590,80 @@ struct NewOnboardingView: View {
             // When workout location changes, update equipment location
             selectedEquipmentLocation = mapWorkoutLocationToEquipmentLocation(newLocation)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OAuthNewUserNeedsOnboarding"))) { _ in
+            // Handle new Google/OAuth user - navigate to username selection
+            // This notification is ONLY posted from a fresh OAuth callback, not session restore
+            print("👤 [OAUTH] Received new user notification - navigating to username step")
+            handleOAuthUserOnboarding()
+        }
+        // NOTE: Removed the onChange(of: supabaseManager.isAuthenticated) handler
+        // because it was incorrectly triggering on session restore at app launch.
+        // The OAuthNewUserNeedsOnboarding notification is the correct and only trigger.
+    }
+    
+    /// Handle OAuth user onboarding - pre-fill data and navigate to username step
+    private func handleOAuthUserOnboarding() {
+        print("🔐 [OAUTH] handleOAuthUserOnboarding called - currentStep: \(currentStep)")
+        
+        let metadata = supabaseManager.currentUser?.userMetadata ?? [:]
+        print("🔐 [OAUTH] Current user metadata: \(metadata)")
+        
+        // Pre-fill FULL name from OAuth provider (first + last)
+        // Try ALL sources to find the name - be flexible with type casting
+        var foundName: String? = nil
+        
+        // 1. Try UserDefaults first (stored by Fit33App.swift during callback)
+        if let oauthName = UserDefaults.standard.string(forKey: "pending_oauth_name"), !oauthName.isEmpty {
+            foundName = oauthName
+            UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
+            print("🔐 [OAUTH] Got full name from UserDefaults: \(oauthName)")
+        }
+        
+        // 2. Try user metadata - handle various types (String, AnyJSON, etc.)
+        if foundName == nil {
+            // Try full_name first
+            if let fullNameValue = metadata["full_name"] {
+                let fullNameString = String(describing: fullNameValue)
+                if !fullNameString.isEmpty && fullNameString != "nil" && fullNameString != "<null>" {
+                    foundName = fullNameString
+                    print("🔐 [OAUTH] Got full name from metadata (full_name): \(fullNameString)")
+                }
+            }
+            
+            // Try name as fallback
+            if foundName == nil, let nameValue = metadata["name"] {
+                let nameString = String(describing: nameValue)
+                if !nameString.isEmpty && nameString != "nil" && nameString != "<null>" {
+                    foundName = nameString
+                    print("🔐 [OAUTH] Got full name from metadata (name): \(nameString)")
+                }
+            }
+        }
+        
+        // Set the name if we found one
+        if let foundName = foundName, !foundName.isEmpty {
+            name = foundName
+            print("🔐 [OAUTH] ✅ Set name to: '\(foundName)'")
+        } else {
+            print("🔐 [OAUTH] ⚠️ Could not find name in any source")
+        }
+        
+        // Pre-fill email - try current user first (most reliable), then UserDefaults
+        if let userEmail = supabaseManager.currentUser?.email, !userEmail.isEmpty {
+            email = userEmail
+            print("🔐 [OAUTH] Pre-filled email from current user: \(userEmail)")
+        } else if let oauthEmail = UserDefaults.standard.string(forKey: "pending_oauth_email"), !oauthEmail.isEmpty {
+            email = oauthEmail
+            UserDefaults.standard.removeObject(forKey: "pending_oauth_email")
+            print("🔐 [OAUTH] Pre-filled email from UserDefaults: \(oauthEmail)")
+        }
+        
+        print("🔐 [OAUTH] Final values - name: '\(name)', email: '\(email)'")
+        print("🔐 [OAUTH] needsNameInput will be: \(needsNameInput)")
+        
+        // Navigate to username selection (same flow as Apple Sign-In)
+        print("🔐 [OAUTH] Navigating to username step...")
+        navigateTo(.username)
     }
     
     // MARK: - Shared Header (Simple, fixed layout)
@@ -589,7 +704,7 @@ struct NewOnboardingView: View {
     private var onboardingStepTitle: String {
         switch currentStep {
         case .auth: return "Create Account"
-        case .username: return "Choose Username"
+        case .username: return needsNameInput ? "Your Profile" : "Choose Username"
         case .basics: return "About You"
         case .body: return "Your Measurements"
         case .goal: return "Your Goals"
@@ -608,7 +723,7 @@ struct NewOnboardingView: View {
     private var onboardingStepSubtitle: String {
         switch currentStep {
         case .auth: return "Start your fitness journey"
-        case .username: return "How friends will find you"
+        case .username: return needsNameInput ? "Tell us a bit about yourself" : "How friends will find you"
         case .basics: return "Help us personalize your experience"
         case .body: return "For accurate recommendations"
         case .goal: return "What do you want to achieve?"
@@ -693,7 +808,10 @@ struct NewOnboardingView: View {
     private var isCurrentStepValid: Bool {
         switch currentStep {
         case .auth: return isAuthFormValid
-        case .username: return isUsernameValid && isUsernameAvailable
+        case .username: 
+            // If name needs input, require it to be filled
+            let nameValid = !needsNameInput || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return isUsernameValid && isUsernameAvailable && nameValid
         case .basics: return selectedGender != nil && !birthday.isEmpty
         case .body: return !heightFeetInchesDigits.isEmpty && !weight.isEmpty
         case .goal: return !selectedGoals.isEmpty
@@ -747,6 +865,59 @@ struct NewOnboardingView: View {
     // MARK: - Username Step Content
     private var usernameStepContent: some View {
         VStack(spacing: 28) {
+            // Name field (for social auth users when Apple didn't provide name)
+            // Show if name is empty, looks like email prefix, or is a generic fallback
+            if needsNameInput {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Your Name")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 16) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: !name.isEmpty ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 26)
+                        
+                        TextField("What should we call you?", text: $name)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .name)
+                    }
+                    .font(.system(size: 16, weight: .medium))
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 18)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                            
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                                .shadow(
+                                    color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
+                                    radius: focusedField == .name ? 12 : 8,
+                                    x: 0,
+                                    y: focusedField == .name ? 6 : 3
+                                )
+                        }
+                    )
+                    
+                    if needsNameInput && name.isEmpty {
+                        Text("Please enter your name to personalize your experience.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                    }
+                }
+            }
+            
             // Username - matching Birthday field style exactly
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -1757,10 +1928,9 @@ struct NewOnboardingView: View {
         }
     }
     
-    // MARK: - Background
+    // MARK: - Background with Animated Orbs
     private var backgroundGradient: some View {
-        AdaptiveGradient.universal(for: colorScheme)
-        .ignoresSafeArea()
+        AnimatedOrbBackground.onboarding(colorScheme: colorScheme)
     }
     
     // MARK: - Progress Indicator (UX Audit Fix #2)
@@ -2261,27 +2431,10 @@ struct NewOnboardingView: View {
                                 handleAppleSignIn()
                             }
                             
-                            // Facebook Sign-In Button (hidden for now - needs Facebook App setup)
-                            // Uncomment when Facebook OAuth is configured in Supabase
-                            /*
-                            Button(action: {
-                                handleFacebookSignIn()
-                            }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "f.circle.fill")
-                                        .font(.system(size: 20))
-                                    Text("Continue with Facebook")
-                                        .font(.system(size: 17, weight: .semibold))
-                                }
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(
-                                    Color(red: 0.23, green: 0.35, blue: 0.60)
-                                )
-                                .cornerRadius(12)
+                            // Google Sign-In Button
+                            SignInWithGoogleButton {
+                                handleGoogleSignIn()
                             }
-                            */
                         }
                         .padding(.top, 20)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -3679,10 +3832,35 @@ struct NewOnboardingView: View {
         errorMessage = ""
         emailAlreadyExists = false
         
+        // Log validation state for debugging
+        print("📝 [ONBOARDING] createAccountAndComplete called")
+        print("📝 [ONBOARDING] isSignUp: \(isSignUp)")
+        print("📝 [ONBOARDING] Email: \(email)")
+        print("📝 [ONBOARDING] Password length: \(password.count)")
+        print("📝 [ONBOARDING] isAuthenticated: \(supabaseManager.isAuthenticated)")
+        
         // If user is already authenticated (e.g., via Apple/Google Sign-In), skip account creation
         if supabaseManager.isAuthenticated {
             print("✅ User already authenticated (social sign-in) - completing onboarding")
             completeOnboarding()
+            return
+        }
+        
+        // Validate email format
+        guard email.contains("@") && email.contains(".") else {
+            print("❌ [ONBOARDING] Invalid email format: \(email)")
+            SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "Invalid email format")
+            errorMessage = "Please enter a valid email address"
+            showError = true
+            return
+        }
+        
+        // Validate password length
+        guard password.count >= 6 else {
+            print("❌ [ONBOARDING] Password too short: \(password.count) chars")
+            SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "Password too short (\(password.count) chars)")
+            errorMessage = "Password must be at least 6 characters"
+            showError = true
             return
         }
         
@@ -3719,6 +3897,11 @@ struct NewOnboardingView: View {
                         completeOnboarding()
                     }
                 } catch {
+                    // Log the auth failure for debugging
+                    print("❌ [ONBOARDING] Signup failed: \(error)")
+                    print("❌ [ONBOARDING] Error details: \(error.localizedDescription)")
+                    SessionLogManager.shared.logAuthFailure(method: "email_signup", error: error.localizedDescription)
+                    
                     await MainActor.run {
                         let errorString = error.localizedDescription.lowercased()
                         // Check if error indicates email already exists
@@ -3984,14 +4167,38 @@ struct NewOnboardingView: View {
             duration: 0 // We don't track duration yet
         )
         
-        // Set username for social sign-in users (regular signup sets it during account creation)
-        if !username.isEmpty && supabaseManager.isAuthenticated {
+        // For OAuth users (Apple/Google/Facebook), create the profile NOW at the end of onboarding
+        // This ensures we don't create "zombie" accounts if user abandons onboarding
+        if supabaseManager.isAuthenticated {
             Task {
                 do {
-                    try await supabaseManager.setUsername(username)
-                    print("✅ Username set for social auth user: @\(username)")
+                    // Calculate values needed for profile
+                    let heightCm = Double(heightInCm)
+                    var weightKg: Double = 0
+                    if let w = Double(weight) {
+                        weightKg = weightUnit == .lbs ? w / 2.20462 : w
+                    }
+                    let ageValue = calculatedAge > 0 ? calculatedAge : nil
+                    
+                    print("🔐 [ONBOARDING] Creating profile for OAuth user...")
+                    try await supabaseManager.createProfileForOAuthUser(
+                        name: name,
+                        email: email.isEmpty ? (supabaseManager.currentUser?.email ?? "") : email,
+                        username: username.isEmpty ? nil : username,
+                        age: ageValue,
+                        gender: selectedGender,
+                        heightCm: heightCm > 0 ? heightCm : nil,
+                        weightKg: weightKg > 0 ? weightKg : nil,
+                        fitnessGoal: selectedGoals.isEmpty ? nil : selectedGoals.sorted().joined(separator: ", "),
+                        experienceLevel: selectedExperience.isEmpty ? nil : selectedExperience,
+                        equipment: selectedEquipment.isEmpty ? nil : Array(selectedEquipment),
+                        availableDays: selectedDays > 0 ? selectedDays : nil,
+                        workoutEnvironment: selectedWorkoutLocation.rawValue
+                    )
+                    print("✅ [ONBOARDING] OAuth user profile created successfully!")
                 } catch {
-                    print("⚠️ Failed to set username: \(error.localizedDescription)")
+                    print("❌ [ONBOARDING] Failed to create OAuth profile: \(error.localizedDescription)")
+                    // Continue with local setup even if cloud fails
                 }
             }
         }
@@ -4161,12 +4368,18 @@ struct NewOnboardingView: View {
                 if let fullName = credentials.fullName {
                     let firstName = fullName.givenName ?? ""
                     let lastName = fullName.familyName ?? ""
+                    print("🍎 [APPLE AUTH] Raw name components - givenName: '\(fullName.givenName ?? "nil")', familyName: '\(fullName.familyName ?? "nil")'")
                     let fullNameStr = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
                     if !fullNameStr.isEmpty {
                         appleProvidedName = fullNameStr
                         print("🍎 [APPLE AUTH] Got name from Apple: \(fullNameStr)")
+                    } else {
+                        print("🍎 [APPLE AUTH] ⚠️ Apple returned empty name components (this happens after first sign-in)")
                     }
+                } else {
+                    print("🍎 [APPLE AUTH] ⚠️ Apple did NOT provide fullName (nil)")
                 }
+                print("🍎 [APPLE AUTH] Email from credentials: \(credentials.email ?? "nil")")
                 
                 // Use the credentials to sign in with Supabase
                 Task {
@@ -4180,15 +4393,16 @@ struct NewOnboardingView: View {
                         )
                         print("🍎 [APPLE AUTH] Supabase signInWithApple returned. isNewUser: \(isNewUser)")
                         
-                        // Set the name in onboarding state
+                        // Set the FULL name in onboarding state (first + last)
                         await MainActor.run {
                             if let providedName = appleProvidedName, !providedName.isEmpty {
                                 name = providedName
+                                print("🍎 [APPLE AUTH] Using full name: '\(providedName)'")
                             } else if let userId = supabaseManager.currentUser?.id {
                                 // Try to get persisted name from previous Apple sign-in
                                 if let persistedName = UserDefaults.standard.string(forKey: "apple_user_name_\(userId.uuidString)"), !persistedName.isEmpty {
                                     name = persistedName
-                                    print("🍎 [APPLE AUTH] Using persisted name: \(persistedName)")
+                                    print("🍎 [APPLE AUTH] Using persisted full name: '\(persistedName)'")
                                 }
                             }
                         }
@@ -4256,25 +4470,105 @@ struct NewOnboardingView: View {
     }
     
     private func handleGoogleSignIn() {
-        // Open Google OAuth in Safari
-        if let url = supabaseManager.getGoogleOAuthURL() {
-            UIApplication.shared.open(url)
-        } else {
+        print("🔐 [GOOGLE AUTH] Starting Google Sign-In with ASWebAuthenticationSession")
+        
+        guard let authURL = supabaseManager.getGoogleOAuthURL() else {
             errorMessage = "Could not create Google Sign-In URL"
+            showError = true
+            return
+        }
+        
+        print("🔐 [GOOGLE AUTH] Auth URL: \(authURL.absoluteString)")
+        
+        // Use ASWebAuthenticationSession for OAuth - this handles callbacks properly
+        let session = ASWebAuthenticationSession(
+            url: authURL,
+            callbackURLScheme: "fit33"
+        ) { callbackURL, error in
+            if let error = error {
+                // Check if user cancelled
+                if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                    print("🔐 [GOOGLE AUTH] User cancelled login")
+                    return
+                }
+                print("❌ [GOOGLE AUTH] Error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                    self.showError = true
+                }
+                return
+            }
+            
+            guard let callbackURL = callbackURL else {
+                print("❌ [GOOGLE AUTH] No callback URL received")
+                return
+            }
+            
+            print("✅ [GOOGLE AUTH] Callback URL received: \(callbackURL.absoluteString)")
+            
+            // Post notification to handle the OAuth callback
+            NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: callbackURL)
+        }
+        
+        // Set presentation context and start
+        session.presentationContextProvider = WebAuthContextProvider.shared
+        session.prefersEphemeralWebBrowserSession = true // Skip the "wants to use X to sign in" dialog
+        
+        if !session.start() {
+            print("❌ [GOOGLE AUTH] Failed to start ASWebAuthenticationSession")
+            errorMessage = "Could not start Google Sign-In"
             showError = true
         }
     }
     
     private func handleFacebookSignIn() {
-        print("📘 [FACEBOOK AUTH] handleFacebookSignIn called")
-        // Open Facebook OAuth in Safari
-        if let url = supabaseManager.getFacebookOAuthURL() {
-            UIApplication.shared.open(url)
-            print("📘 [FACEBOOK AUTH] Opening Facebook OAuth URL")
-        } else {
+        print("📘 [FACEBOOK AUTH] Starting Facebook Sign-In with ASWebAuthenticationSession")
+        
+        guard let authURL = supabaseManager.getFacebookOAuthURL() else {
             errorMessage = "Could not create Facebook Sign-In URL"
             showError = true
             print("❌ [FACEBOOK AUTH] Failed to create OAuth URL")
+            return
+        }
+        
+        print("📘 [FACEBOOK AUTH] Auth URL: \(authURL.absoluteString)")
+        
+        // Use ASWebAuthenticationSession for OAuth
+        let session = ASWebAuthenticationSession(
+            url: authURL,
+            callbackURLScheme: "fit33"
+        ) { callbackURL, error in
+            if let error = error {
+                if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                    print("📘 [FACEBOOK AUTH] User cancelled login")
+                    return
+                }
+                print("❌ [FACEBOOK AUTH] Error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.errorMessage = "Facebook Sign-In failed: \(error.localizedDescription)"
+                    self.showError = true
+                }
+                return
+            }
+            
+            guard let callbackURL = callbackURL else {
+                print("❌ [FACEBOOK AUTH] No callback URL received")
+                return
+            }
+            
+            print("✅ [FACEBOOK AUTH] Callback URL received: \(callbackURL.absoluteString)")
+            
+            // Post notification to handle the OAuth callback
+            NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: callbackURL)
+        }
+        
+        session.presentationContextProvider = WebAuthContextProvider.shared
+        session.prefersEphemeralWebBrowserSession = true // Skip the "wants to use X to sign in" dialog
+        
+        if !session.start() {
+            print("❌ [FACEBOOK AUTH] Failed to start ASWebAuthenticationSession")
+            errorMessage = "Could not start Facebook Sign-In"
+            showError = true
         }
     }
     

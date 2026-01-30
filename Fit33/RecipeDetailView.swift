@@ -11,14 +11,17 @@ struct RecipeDetailView: View {
     @EnvironmentObject var userManager: UserManager
     @StateObject private var spoonacularService = SpoonacularService.shared
     @StateObject private var preferenceService = RecipePreferenceService.shared
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
     @State private var recipeDetail: RecipeDetail?
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedTab: RecipeTab = .overview
     @State private var servings: Int = 1
     @State private var isFavorite = false
+    @State private var isSaved = false
     @State private var showingMealPicker = false
     @State private var showingAddedConfirmation = false
+    @State private var showingAddedToList = false
     @State private var addedMealType: MealType?
     @State private var portionServings: Int = 1 // How many servings user actually consumed
     
@@ -64,6 +67,17 @@ struct RecipeDetailView: View {
                             .foregroundColor(isFavorite ? .yellow : .primary)
                     }
                     
+                    // Save/Bookmark button
+                    Button {
+                        withAnimation(.spring(response: 0.3)) {
+                            toggleSaveMeal()
+                        }
+                    } label: {
+                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                            .font(.body)
+                            .foregroundColor(isSaved ? .orange : .primary)
+                    }
+                    
                     // Share button
                     if let detail = recipeDetail,
                        let url = URL(string: detail.sourceUrl ?? detail.spoonacularSourceUrl ?? "") {
@@ -78,6 +92,7 @@ struct RecipeDetailView: View {
         .task {
             await loadRecipeDetail()
             loadFavoriteState()
+            loadSavedState()
         }
         .sheet(isPresented: $showingMealPicker) {
             if let detail = recipeDetail {
@@ -638,44 +653,87 @@ struct RecipeDetailView: View {
     
     // MARK: - Add to Meal Button
     private func addToMealButton(_ detail: RecipeDetail) -> some View {
-        Button {
-            portionServings = 1 // Reset to 1 serving when opening
-            showingMealPicker = true
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title3)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Add to Meal")
-                        .font(.headline)
-                        .fontWeight(.semibold)
+        VStack(spacing: 12) {
+            Button {
+                portionServings = 1 // Reset to 1 serving when opening
+                showingMealPicker = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
                     
-                    Text("Track this recipe in your daily meals")
-                        .font(.caption)
-                        .opacity(0.8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Add to Meal")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text("Track this recipe in your daily meals")
+                            .font(.caption)
+                            .opacity(0.8)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline)
+                        .opacity(0.7)
                 }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.subheadline)
-                    .opacity(0.7)
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(
-                LinearGradient(
-                    colors: [Color.orange, Color.red.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-            )
-            .cornerRadius(16)
-            .shadow(color: .orange.opacity(0.4), radius: 8, x: 0, y: 4)
+                .cornerRadius(16)
+                .shadow(color: .orange.opacity(0.4), radius: 8, x: 0, y: 4)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Add to Shopping List Button
+            if let ingredients = detail.extendedIngredients, !ingredients.isEmpty {
+                Button {
+                    addIngredientsToShoppingList()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "cart.fill.badge.plus")
+                            .font(.title3)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add to Shopping List")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Text("\(ingredients.count) ingredients")
+                                .font(.caption)
+                                .opacity(0.8)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline)
+                            .opacity(0.7)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.purple, Color.pink],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(16)
+                    .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
         }
-        .buttonStyle(PlainButtonStyle())
     }
     
     // MARK: - Added Confirmation Toast
@@ -799,6 +857,53 @@ struct RecipeDetailView: View {
     private func loadFavoriteState() {
         let favorites = UserDefaults.standard.array(forKey: "favoriteRecipeIds") as? [Int] ?? []
         isFavorite = favorites.contains(recipeId)
+    }
+    
+    private func loadSavedState() {
+        isSaved = savedMealsService.isMealSaved(id: "recipe_\(recipeId)")
+    }
+    
+    private func toggleSaveMeal() {
+        guard let detail = recipeDetail else { return }
+        
+        let savedMeal = SavedMeal.fromRecipeDetail(detail)
+        
+        if isSaved {
+            savedMealsService.removeSavedMeal(id: savedMeal.id)
+        } else {
+            savedMealsService.saveMeal(savedMeal)
+        }
+        
+        isSaved.toggle()
+        HapticManager.tap()
+    }
+    
+    private func addIngredientsToShoppingList() {
+        guard let detail = recipeDetail,
+              let ingredients = detail.extendedIngredients else { return }
+        
+        let shoppingItems = ingredients.map { ingredient in
+            ShoppingListItem(
+                name: ingredient.name,
+                amount: ingredient.amount,
+                unit: ingredient.unit ?? "",
+                aisle: ingredient.aisle,
+                fromRecipe: detail.title
+            )
+        }
+        
+        savedMealsService.addToShoppingList(ingredients: shoppingItems)
+        HapticManager.success()
+        
+        withAnimation(.spring(response: 0.4)) {
+            showingAddedToList = true
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showingAddedToList = false
+            }
+        }
     }
 }
 

@@ -166,8 +166,11 @@ struct DashboardView: View {
                         .padding(.top, 0)
                         .padding(.bottom, 16)
                     
-                    // Notification permission banner - show if not authorized
-                    if !notificationManager.isAuthorized {
+                    // Notification permission banner - only show after checking status
+                    // and only if not authorized and not previously dismissed
+                    if notificationManager.hasCheckedAuthStatus && 
+                       !notificationManager.isAuthorized && 
+                       !dismissedNotificationBanner {
                         notificationPermissionBanner
                             .padding(.bottom, 16)
                     }
@@ -348,6 +351,18 @@ struct DashboardView: View {
                 "workouts_count": recentWorkouts.count,
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
+            
+            // Mark user as welcomed after first visit (delayed slightly to show "Welcome to Fit33" first)
+            if let userId = userManager.currentUser?.id {
+                let welcomeKey = "has_been_welcomed_\(userId.uuidString)"
+                if !UserDefaults.standard.bool(forKey: welcomeKey) {
+                    // Delay marking as welcomed so they see "Welcome to Fit33" on first load
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        UserDefaults.standard.set(true, forKey: welcomeKey)
+                        print("👋 [WELCOME] User marked as welcomed - will show 'Welcome back' next time")
+                    }
+                }
+            }
             
             // Refresh friend data when returning to home tab
             // Red dot reads directly from FriendService so no need to cache counts
@@ -844,119 +859,135 @@ struct DashboardView: View {
     }
     
     // MARK: - Notification Permission Banner
-    @State private var dismissedNotificationBanner = false
+    // Persist dismissed state so it doesn't flicker on view recreation
+    @AppStorage("notification_banner_dismissed") private var dismissedNotificationBanner = false
     
     private var notificationPermissionBanner: some View {
-        Group {
-            if !dismissedNotificationBanner {
-                VStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        // Bell icon with animation
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.orange, Color.red.opacity(0.8)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 44, height: 44)
-                            
-                            Image(systemName: "bell.badge.fill")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Stay on Track!")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                            
-                            Text("Enable notifications to get workout reminders & celebrate your wins")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
-                        }
-                        
-                        Spacer()
-                        
-                        // Dismiss button
-                        Button(action: {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                dismissedNotificationBanner = true
-                            }
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.caption.weight(.semibold))
-                                .foregroundColor(.secondary)
-                                .padding(8)
-                        }
-                    }
-                    
-                    // Enable button
-                    Button(action: {
-                        HapticManager.impact(.medium)
-                        // Check if we need to request permission or open settings
-                        Task {
-                            let settings = await UNUserNotificationCenter.current().notificationSettings()
-                            if settings.authorizationStatus == .notDetermined {
-                                // First time - request permission
-                                let granted = await NotificationManager.shared.requestAuthorization()
-                                if granted {
-                                    await MainActor.run {
-                                        withAnimation {
-                                            dismissedNotificationBanner = true
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Already denied - open settings
-                                await MainActor.run {
-                                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                                        UIApplication.shared.open(url)
-                                    }
-                                }
-                            }
-                        }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "bell.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Enable Notifications")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
+        // All conditions are checked in the parent - this just renders the content
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                // Bell icon with animation
+                ZStack {
+                    Circle()
+                        .fill(
                             LinearGradient(
-                                colors: [Color.orange, Color.red],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                                colors: [Color.orange, Color.red.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
                         )
-                        .cornerRadius(12)
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Stay on Track!")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    Text("Enable notifications to get workout reminders & celebrate your wins")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                
+                Spacer()
+                
+                // Dismiss button
+                Button(action: {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        dismissedNotificationBanner = true
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .padding(8)
+                }
+            }
+            
+            // Enable button
+            Button(action: {
+                HapticManager.impact(.medium)
+                // Check if we need to request permission or open settings
+                Task {
+                    let settings = await UNUserNotificationCenter.current().notificationSettings()
+                    if settings.authorizationStatus == .notDetermined {
+                        // First time - request permission
+                        let granted = await NotificationManager.shared.requestAuthorization()
+                        if granted {
+                            await MainActor.run {
+                                withAnimation {
+                                    dismissedNotificationBanner = true
+                                }
+                            }
+                        }
+                    } else {
+                        // Already denied - open settings
+                        await MainActor.run {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
                     }
                 }
-                .padding(16)
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Enable Notifications")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.cardBackground)
-                        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+                    LinearGradient(
+                        colors: [Color.orange, Color.red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .cornerRadius(12)
             }
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.cardBackground)
+                .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+    }
+    
+    // Get the user's first name only (remove last name)
+    private func getFirstName() -> String {
+        let fullName = userManager.currentUser?.name ?? "there"
+        let firstName = fullName.components(separatedBy: " ").first ?? fullName
+        return firstName.isEmpty ? "there" : firstName
+    }
+    
+    // Check if this is the user's first time seeing the dashboard after account creation
+    private func checkIsFirstVisit() -> Bool {
+        guard let userId = userManager.currentUser?.id else { return true }
+        return !UserDefaults.standard.bool(forKey: "has_been_welcomed_\(userId.uuidString)")
+    }
+    
+    // Welcome message based on first visit
+    private func getWelcomeMessage() -> String {
+        checkIsFirstVisit() ? "Welcome to Fit33," : "Welcome back,"
     }
     
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Top section with Welcome back and Level
             HStack {
-                Text("Welcome back,")
+                Text(getWelcomeMessage())
                     .font(.subheadline)
                     .foregroundColor(.primary)
                 
@@ -1020,8 +1051,8 @@ struct DashboardView: View {
                 
                 // User info section - moved to the right
                 VStack(alignment: .leading, spacing: 6) {
-                    // Name only (streak is now in the flame icon)
-                    Text(userManager.currentUser?.name ?? "Joe")
+                    // First name only (streak is now in the flame icon)
+                    Text(getFirstName())
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
@@ -3369,6 +3400,10 @@ struct RecentWorkoutCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     
+    // Local state for immediate UI feedback (prevents lag)
+    @State private var isFavorite: Bool = false
+    @State private var isProcessing: Bool = false
+    
     // Get exercises from workout
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -3491,24 +3526,38 @@ struct RecentWorkoutCard: View {
         return muscleCount.sorted { $0.value > $1.value }.prefix(2).map { $0.key }
     }
     
-    // Toggle favorite status
+    // Toggle favorite status with debounce protection
     private func toggleFavorite() {
-        workout.isFavorite.toggle()
+        // Prevent rapid double-taps
+        guard !isProcessing else { return }
+        isProcessing = true
+        
+        // Immediate UI feedback
+        isFavorite.toggle()
+        
+        // Haptic feedback immediately
+        HapticManager.impact(.light)
+        
+        // Update Core Data
+        workout.isFavorite = isFavorite
         
         do {
             try viewContext.save()
             
-            // Haptic feedback
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
-            
             // Log the action
-            SessionLogManager.shared.log(.info, category: .userAction, message: workout.isFavorite ? "⭐ Workout favorited" : "☆ Workout unfavorited", metadata: [
+            SessionLogManager.shared.log(.info, category: .userAction, message: isFavorite ? "⭐ Workout favorited" : "☆ Workout unfavorited", metadata: [
                 "workout_id": workout.objectID.uriRepresentation().absoluteString,
                 "workout_name": smartWorkoutName
             ])
         } catch {
             print("❌ Error saving favorite status: \(error)")
+            // Revert on error
+            isFavorite.toggle()
+        }
+        
+        // Allow next tap after short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isProcessing = false
         }
     }
     
@@ -3559,15 +3608,17 @@ struct RecentWorkoutCard: View {
                     
                     Spacer()
                     
-                    // Favorite star button
+                    // Favorite star button - uses local state for instant feedback
                     Button(action: {
                         toggleFavorite()
                     }) {
-                        Image(systemName: workout.isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(workout.isFavorite ? .yellow : .gray.opacity(0.5))
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(isFavorite ? .yellow : .gray.opacity(0.4))
+                            .animation(.easeInOut(duration: 0.15), value: isFavorite)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .disabled(isProcessing)
                     .padding(.trailing, 8)
                     
                     Image(systemName: "chevron.right")
@@ -3734,6 +3785,16 @@ struct RecentWorkoutCard: View {
             .shadow(color: workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
         .buttonStyle(PlainButtonStyle())
+        .onAppear {
+            // Initialize local state from Core Data
+            isFavorite = workout.isFavorite
+        }
+        .onChange(of: workout.isFavorite) { _, newValue in
+            // Sync if changed externally (e.g., from detail view)
+            if isFavorite != newValue {
+                isFavorite = newValue
+            }
+        }
     }
     
     private func formatSmartDate(_ date: Date) -> String {
@@ -4613,9 +4674,6 @@ struct StreakInfoSheet: View {
                     // Big flame with current streak
                     streakHeroSection
                     
-                    // Status message
-                    statusSection
-                    
                     // How it works
                     howItWorksSection
                     
@@ -4819,6 +4877,7 @@ struct StreakInfoSheet: View {
                 )
             }
             .padding()
+            .frame(minHeight: 240)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color(.systemGray6))
@@ -4872,6 +4931,7 @@ struct StreakInfoSheet: View {
                 tipRow("🔔", "Enable notifications to never miss a workout")
             }
             .padding()
+            .frame(minHeight: 240)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color(.systemGray6))

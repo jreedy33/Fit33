@@ -8,8 +8,8 @@ class SpoonacularService: ObservableObject {
     static let shared = SpoonacularService()
     
     // MARK: - API Configuration
-    // TODO: Move API key to secure storage (Keychain) for production
-    private let apiKey = "69f4b06727ac448d88841e2ce717a228"
+    // API key centralized in AppConfig
+    private let apiKey = AppConfig.spoonacularApiKey
     private let baseURL = "https://api.spoonacular.com"
     
     // MARK: - Published Properties

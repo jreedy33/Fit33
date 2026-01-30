@@ -10,6 +10,8 @@ import AuthenticationServices
 import SwiftUI
 import CryptoKit
 
+// Note: ASWebAuthenticationSession types require AuthenticationServices (already imported)
+
 // MARK: - Social Auth Service
 class SocialAuthService: NSObject, ObservableObject {
     static let shared = SocialAuthService()
@@ -206,7 +208,7 @@ struct SignInWithAppleButton: View {
     }
 }
 
-// MARK: - Sign In With Google Button (SwiftUI)
+// MARK: - Sign In With Google Button (SwiftUI) - Pill Shaped (matches Apple button)
 struct SignInWithGoogleButton: View {
     @Environment(\.colorScheme) var colorScheme
     let action: () -> Void
@@ -214,27 +216,24 @@ struct SignInWithGoogleButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                // Google "G" logo colors
-                Image(systemName: "g.circle.fill")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.red, .yellow, .green, .blue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                // Google "G" logo - transparent background
+                Image("GoogleLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
                 
                 Text("Continue with Google")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
             }
+            .foregroundColor(.black)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.cardBackground)
-            .cornerRadius(12)
+            .padding(.vertical, 16)
+            .background(
+                Capsule()
+                    .fill(Color.white)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                Capsule()
                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
         }
@@ -265,6 +264,24 @@ struct SocialLoginDivider: View {
             )
             .frame(height: 1)
         }
+    }
+}
+
+// MARK: - Web Auth Context Provider
+/// Provides presentation context for ASWebAuthenticationSession
+class WebAuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = WebAuthContextProvider()
+    
+    private override init() {
+        super.init()
+    }
+    
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first else {
+            return UIWindow()
+        }
+        return window
     }
 }
 

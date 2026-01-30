@@ -6,6 +6,7 @@ import Combine
 struct BugReport: Codable, Identifiable {
     let id: UUID
     let userId: UUID?
+    let userName: String?
     let description: String
     let expectedBehavior: String?
     let reproducesEveryTime: Bool
@@ -22,6 +23,7 @@ struct BugReport: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
+        case userName = "user_name"
         case description
         case expectedBehavior = "expected_behavior"
         case reproducesEveryTime = "reproduces_every_time"
@@ -46,6 +48,7 @@ struct BugReport: Codable, Identifiable {
 struct BugReportInsert: Codable {
     let id: UUID
     let userId: UUID?
+    let userName: String?
     let description: String
     let expectedBehavior: String
     let reproducesEveryTime: Bool
@@ -61,6 +64,7 @@ struct BugReportInsert: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
+        case userName = "user_name"
         case description
         case expectedBehavior = "expected_behavior"
         case reproducesEveryTime = "reproduces_every_time"
@@ -265,18 +269,23 @@ class BugReportService: ObservableObject {
             let osVersion = "\(device.systemName) \(device.systemVersion)"
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
             
-            // Get user ID string for logging
+            // Get user ID and name
             let userIdString: String
+            let userName: String?
             if let userId = SupabaseManager.shared.currentUser?.id {
                 userIdString = userId.uuidString
+                // Get user name from UserManager
+                userName = UserManager.shared.currentUser?.name
             } else {
                 userIdString = "anonymous"
+                userName = nil
             }
             
             // Create the report using the Codable struct
             let report = BugReportInsert(
                 id: UUID(),
                 userId: SupabaseManager.shared.currentUser?.id,
+                userName: userName,
                 description: description,
                 expectedBehavior: expectedBehavior,
                 reproducesEveryTime: reproducesEveryTime,
@@ -294,6 +303,7 @@ class BugReportService: ObservableObject {
             print("  - Description: \(description.prefix(50))...")
             print("  - Has screenshot: \(screenshotBase64 != nil)")
             print("  - User ID: \(userIdString)")
+            print("  - User Name: \(userName ?? "anonymous")")
             
             // Insert using Codable struct
             let response = try await SupabaseManager.shared.supabaseClient

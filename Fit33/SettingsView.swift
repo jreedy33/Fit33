@@ -10,6 +10,9 @@ struct SettingsView: View {
     @State private var isAdminAuthenticated = false
     
     @State private var showBugReportSheet = false
+    @State private var isSyncingProfile = false
+    @State private var syncProfileStatus = ""
+    @State private var showTutorialTest = false
     @StateObject private var appearanceManager = AppearanceManager.shared
     @StateObject private var adManager = AdManager.shared
     @StateObject private var premiumManager = PremiumManager.shared
@@ -83,6 +86,52 @@ struct SettingsView: View {
                                                 .font(.body)
                                                 .foregroundColor(.primary)
                                             Text("iOS home screen widget")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Test Tutorial Flow
+                                Button(action: { showTutorialTest = true }) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color.purple.opacity(0.15), Color.pink.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "play.rectangle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color.purple, Color.pink],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Test Tutorial")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text("Preview the welcome tutorial flow")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
@@ -239,6 +288,54 @@ struct SettingsView: View {
                                 
                                 Divider().padding(.leading, 68)
                                 
+                                // Sync Profile Button - for users experiencing sync issues
+                                Button(action: { syncProfileToCloud() }) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color.orange.opacity(0.15), Color.yellow.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            if isSyncingProfile {
+                                                ProgressView()
+                                                    .scaleEffect(0.8)
+                                            } else {
+                                                Image(systemName: "arrow.triangle.2.circlepath")
+                                                    .font(.system(size: 16))
+                                                    .foregroundStyle(
+                                                        LinearGradient(
+                                                            colors: [Color.orange, Color.yellow],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
+                                            }
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Sync Profile")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(syncProfileStatus.isEmpty ? "Push local data to cloud" : syncProfileStatus)
+                                                .font(.caption)
+                                                .foregroundColor(syncProfileStatus.contains("✓") ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                    }
+                                    .padding(16)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isSyncingProfile)
+                                
+                                Divider().padding(.leading, 68)
+                                
                                 NavigationLink(destination: DataDownloadView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
@@ -280,6 +377,113 @@ struct SettingsView: View {
                                     }
                                     .padding(16)
                                     .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        
+                        // Integrations Section
+                        settingsSection(title: "Integrations") {
+                            VStack(spacing: 0) {
+                                // InBody Integration
+                                NavigationLink(destination: InBodySettingsView()) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 0, green: 0.48, blue: 0.8).opacity(0.15), Color.cyan.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "figure.stand")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 0, green: 0.48, blue: 0.8), Color.cyan],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("InBody")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(InBodyService.shared.isConnected ? "Connected • Body composition synced" : "Sync body composition data")
+                                                .font(.caption)
+                                                .foregroundColor(InBodyService.shared.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if InBodyService.shared.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 14))
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Strava Integration
+                                NavigationLink(destination: StravaSettingsView()) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 252/255, green: 76/255, blue: 2/255).opacity(0.15), Color.orange.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "figure.run")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color.orange],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Strava")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(StravaService.shared.isConnected ? "Connected • Cardio synced" : "Sync cardio activities")
+                                                .font(.caption)
+                                                .foregroundColor(StravaService.shared.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if StravaService.shared.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 14))
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -366,8 +570,9 @@ struct SettingsView: View {
                         // About Section
                         settingsSection(title: "About") {
                             VStack(spacing: 0) {
-                                // Tappable version row (5 taps for dev menu)
+                                // Tappable version row (5 taps for dev menu - only in debug/testflight)
                                 Button(action: {
+                                    #if DEBUG
                                     versionTapCount += 1
                                     
                                     // Haptic feedback
@@ -383,6 +588,7 @@ struct SettingsView: View {
                                         showAdminPassword = true
                                         versionTapCount = 0
                                     }
+                                    #endif
                                 }) {
                                     infoRow(
                                         icon: "info.circle.fill",
@@ -490,6 +696,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showBugReportSheet) {
             ManualBugReportView()
+        }
+        .fullScreenCover(isPresented: $showTutorialTest) {
+            WelcomeTutorialView(isPresented: $showTutorialTest)
         }
     }
     
@@ -1018,6 +1227,44 @@ struct SettingsView: View {
         
         if let url = URL(string: "mailto:\(email)?subject=\(encodedSubject)&body=\(encodedBody)") {
             UIApplication.shared.open(url)
+        }
+    }
+    
+    // MARK: - Profile Sync
+    private func syncProfileToCloud() {
+        guard !isSyncingProfile else { return }
+        
+        isSyncingProfile = true
+        syncProfileStatus = "Syncing..."
+        HapticManager.impact(.light)
+        
+        Task {
+            do {
+                try await SupabaseManager.shared.forceSyncProfileToCloud()
+                await MainActor.run {
+                    syncProfileStatus = "✓ Synced successfully"
+                    HapticManager.notification(.success)
+                    isSyncingProfile = false
+                }
+                
+                // Clear status after delay
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await MainActor.run {
+                    syncProfileStatus = ""
+                }
+            } catch {
+                await MainActor.run {
+                    syncProfileStatus = "Failed: \(error.localizedDescription)"
+                    HapticManager.notification(.error)
+                    isSyncingProfile = false
+                }
+                
+                // Clear error after delay
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                await MainActor.run {
+                    syncProfileStatus = ""
+                }
+            }
         }
     }
 }

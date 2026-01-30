@@ -15,16 +15,16 @@ import SwiftUI
 final class StravaService: ObservableObject {
     static let shared = StravaService()
     
-    // MARK: - Configuration
+    // MARK: - Configuration (Using centralized AppConfig)
     
     private struct Config {
-        static let clientId = "198007"
-        static let clientSecret = "fa5151258db944c5878d653c3166e7f08e2b92f3"
-        static let redirectUri = "fit33://strava"
-        static let authorizationUrl = "https://www.strava.com/oauth/authorize"  // Using web endpoint
-        static let tokenUrl = "https://www.strava.com/oauth/token"
-        static let apiBaseUrl = "https://www.strava.com/api/v3"
-        static let scopes = "read,activity:read_all"
+        static let clientId = AppConfig.Strava.clientId
+        static let clientSecret = AppConfig.Strava.clientSecret
+        static let redirectUri = AppConfig.Strava.redirectUri
+        static let authorizationUrl = AppConfig.Strava.authorizationUrl
+        static let tokenUrl = AppConfig.Strava.tokenUrl
+        static let apiBaseUrl = AppConfig.Strava.apiBaseUrl
+        static let scopes = AppConfig.Strava.scopes
     }
     
     // MARK: - Published Properties

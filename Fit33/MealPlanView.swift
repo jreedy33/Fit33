@@ -9,7 +9,10 @@ struct MealPlanView: View {
     @State private var showingAddFood = false
     @State private var selectedMeal: MealType = .breakfast
     @StateObject private var mealService = MealService.shared
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
     @State private var nutritionGoals: NutritionGoals?
+    @State private var showingSavedMealDetail: SavedMeal?
+    @State private var showingShoppingList = false
     
     var body: some View {
         NavigationView {
@@ -72,6 +75,14 @@ struct MealPlanView: View {
                 // Nutrition Goals Overview
                 nutritionOverviewCard
                 
+                // Saved Meals Section (if any)
+                if !savedMealsService.savedMeals.isEmpty {
+                    savedMealsSection
+                }
+                
+                // Quick Actions (Shopping List)
+                quickActionsSection
+                
                 // Meal Sections
                 ForEach(MealType.allCases, id: \.self) { mealType in
                     mealSection(for: mealType)
@@ -89,6 +100,12 @@ struct MealPlanView: View {
             )
             .ignoresSafeArea(.all)
         )
+        .sheet(item: $showingSavedMealDetail) { meal in
+            SavedMealDetailView(meal: meal)
+        }
+        .sheet(isPresented: $showingShoppingList) {
+            MyShoppingListView()
+        }
     }
     
     private var nutritionOverviewCard: some View {
@@ -262,6 +279,131 @@ struct MealPlanView: View {
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
         )
+    }
+    
+    // MARK: - Saved Meals Section
+    
+    private var savedMealsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "bookmark.fill")
+                    .foregroundColor(.orange)
+                
+                Text("Saved Meals")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("\(savedMealsService.savedMeals.count)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.orange)
+                    )
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(savedMealsService.savedMeals) { meal in
+                        SavedMealCard(meal: meal) {
+                            showingSavedMealDetail = meal
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(16)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.13), Color(white: 0.10)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.08), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                
+                // Orange accent
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
+        )
+    }
+    
+    // MARK: - Quick Actions Section
+    
+    private var quickActionsSection: some View {
+        HStack(spacing: 12) {
+            // Shopping List Button
+            Button {
+                showingShoppingList = true
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.purple, .pink],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 36, height: 36)
+                        
+                        Image(systemName: "cart.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Shopping List")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        Text("\(savedMealsService.shoppingListItems.count) items")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
     }
     
     // MARK: - Computed Properties
@@ -644,6 +786,1115 @@ struct FoodItem {
     let carbsPerUnit: Int
     let fatPerUnit: Int
     let unit: String
+}
+
+// MARK: - Saved Meal Card
+struct SavedMealCard: View {
+    let meal: SavedMeal
+    let onTap: () -> Void
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Image
+                if let imageURL = meal.imageURL, let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        case .failure, .empty:
+                            mealPlaceholder
+                        @unknown default:
+                            mealPlaceholder
+                        }
+                    }
+                    .frame(width: 140, height: 100)
+                    .clipped()
+                    .cornerRadius(10)
+                } else {
+                    mealPlaceholder
+                        .frame(width: 140, height: 100)
+                        .cornerRadius(10)
+                }
+                
+                // Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meal.name)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: 4) {
+                        Text("\(meal.calories) cal")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(meal.protein)g protein")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    // Source badge
+                    HStack(spacing: 4) {
+                        Image(systemName: meal.source == .urlImport ? "link" : "book")
+                            .font(.system(size: 8))
+                        Text(meal.source == .urlImport ? "Imported" : "Recipe")
+                            .font(.system(size: 9))
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(colorScheme == .dark ? Color(white: 0.2) : Color(white: 0.92))
+                    )
+                }
+                .frame(width: 140, alignment: .leading)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.98))
+                    .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var mealPlaceholder: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [.orange.opacity(0.2), .red.opacity(0.1)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                Image(systemName: "fork.knife")
+                    .font(.title2)
+                    .foregroundColor(.orange.opacity(0.5))
+            )
+    }
+}
+
+// MARK: - Saved Meal Detail View
+struct SavedMealDetailView: View {
+    let meal: SavedMeal
+    
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    
+    @State private var showingMealPicker = false
+    @State private var portionServings: Int = 1
+    @State private var showingAddedToList = false
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Background
+                (colorScheme == .dark ? Color.black : Color(white: 0.95))
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Hero Image
+                        if let imageURL = meal.imageURL, let url = URL(string: imageURL) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(height: 220)
+                                        .clipped()
+                                case .failure, .empty:
+                                    mealPlaceholder
+                                @unknown default:
+                                    mealPlaceholder
+                                }
+                            }
+                        } else {
+                            mealPlaceholder
+                        }
+                        
+                        // Content
+                        VStack(spacing: 20) {
+                            // Title & Source
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(meal.name)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                
+                                HStack(spacing: 16) {
+                                    if let source = meal.sourceName {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "link")
+                                                .font(.caption)
+                                            Text("from \(source)")
+                                                .font(.caption)
+                                        }
+                                        .foregroundColor(.secondary)
+                                    }
+                                    
+                                    if let time = meal.readyInMinutes {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "clock")
+                                                .font(.caption)
+                                            Text("\(time) min")
+                                                .font(.caption)
+                                        }
+                                        .foregroundColor(.secondary)
+                                    }
+                                    
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "person.2")
+                                            .font(.caption)
+                                        Text("\(meal.servings) servings")
+                                            .font(.caption)
+                                    }
+                                    .foregroundColor(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 16)
+                            
+                            // Health Score (if available)
+                            if let healthScore = meal.healthScore {
+                                healthScoreCard(score: healthScore)
+                            }
+                            
+                            // Diet Tags
+                            dietTagsSection
+                            
+                            // Nutrition
+                            nutritionCard
+                            
+                            // Action Buttons
+                            actionButtons
+                            
+                            // Ingredients
+                            ingredientsSection
+                            
+                            // Instructions
+                            if let instructions = meal.instructions, !instructions.isEmpty {
+                                instructionsSection(instructions)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 40)
+                    }
+                }
+                
+                // Toast
+                if showingAddedToList {
+                    addedToListToast
+                }
+            }
+            .navigationTitle("Saved Meal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        savedMealsService.removeSavedMeal(id: meal.id)
+                        dismiss()
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingMealPicker) {
+                SavedMealPickerSheet(
+                    meal: meal,
+                    portionServings: $portionServings,
+                    onAddToMeal: { mealType in
+                        addToMeal(mealType)
+                        showingMealPicker = false
+                    }
+                )
+            }
+        }
+    }
+    
+    private var mealPlaceholder: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [.orange.opacity(0.3), .red.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(height: 220)
+            .overlay(
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 50))
+                    .foregroundColor(.white.opacity(0.5))
+            )
+    }
+    
+    private func healthScoreCard(score: Double) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "heart.fill")
+                    .foregroundColor(.pink)
+                
+                Text("Health Score")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Text("\(Int(score))/100")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(score >= 70 ? .green : (score >= 40 ? .orange : .red))
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(height: 8)
+                    
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(score >= 70 ? Color.green : (score >= 40 ? Color.orange : Color.red))
+                        .frame(width: geo.size.width * CGFloat(score / 100), height: 8)
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+        )
+    }
+    
+    @ViewBuilder
+    private var dietTagsSection: some View {
+        let tags = getDietTags()
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(Color.green.opacity(0.15))
+                            )
+                    }
+                }
+            }
+        }
+    }
+    
+    private func getDietTags() -> [String] {
+        var tags: [String] = []
+        if meal.isVeryHealthy == true { tags.append("Healthy") }
+        if meal.isVegetarian == true { tags.append("Vegetarian") }
+        if meal.isVegan == true { tags.append("Vegan") }
+        if meal.isGlutenFree == true { tags.append("Gluten-Free") }
+        if meal.isDairyFree == true { tags.append("Dairy-Free") }
+        return tags
+    }
+    
+    private var nutritionCard: some View {
+        VStack(spacing: 16) {
+            Text("Nutrition per Serving")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            HStack(spacing: 12) {
+                NutritionCircleSmall(
+                    value: meal.calories / max(meal.servings, 1),
+                    unit: "",
+                    label: "Calories",
+                    color: .orange,
+                    icon: "flame.fill"
+                )
+                
+                NutritionCircleSmall(
+                    value: meal.protein / max(meal.servings, 1),
+                    unit: "g",
+                    label: "Protein",
+                    color: .blue,
+                    icon: "p.circle.fill"
+                )
+                
+                NutritionCircleSmall(
+                    value: meal.carbs / max(meal.servings, 1),
+                    unit: "g",
+                    label: "Carbs",
+                    color: .green,
+                    icon: "c.circle.fill"
+                )
+                
+                NutritionCircleSmall(
+                    value: meal.fat / max(meal.servings, 1),
+                    unit: "g",
+                    label: "Fat",
+                    color: .purple,
+                    icon: "f.circle.fill"
+                )
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+        )
+    }
+    
+    private var actionButtons: some View {
+        VStack(spacing: 12) {
+            // Add to Meal Button
+            Button {
+                portionServings = 1
+                showingMealPicker = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                    
+                    Text("Add to Meal")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline)
+                        .opacity(0.7)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [Color.green, Color.mint],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(16)
+                .shadow(color: .green.opacity(0.4), radius: 8, x: 0, y: 4)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Add to Shopping List Button
+            if !meal.ingredients.isEmpty {
+                Button {
+                    addIngredientsToShoppingList()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "cart.fill.badge.plus")
+                            .font(.title3)
+                        
+                        Text("Add to Shopping List")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Spacer()
+                        
+                        Text("\(meal.ingredients.count)")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(8)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.purple, Color.pink],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(16)
+                    .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+    
+    private var ingredientsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Ingredients")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Text("\(meal.ingredients.count) items")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.purple.opacity(0.1))
+                    )
+            }
+            
+            if !meal.ingredients.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(meal.ingredients.enumerated()), id: \.element.id) { index, ingredient in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color.purple.opacity(0.1))
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Image(systemName: "leaf.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.purple)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(ingredient.name.capitalized)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Text(ingredient.original)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            
+                            Spacer()
+                            
+                            if ingredient.amount > 0 {
+                                Text("\(formatAmount(ingredient.amount)) \(ingredient.unit ?? "")")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        
+                        if index < meal.ingredients.count - 1 {
+                            Divider()
+                                .padding(.leading, 64)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
+            } else {
+                Text("No ingredients available")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 20)
+            }
+        }
+    }
+    
+    private func formatAmount(_ amount: Double) -> String {
+        if amount == amount.rounded() {
+            return "\(Int(amount))"
+        }
+        return String(format: "%.1f", amount)
+    }
+    
+    private func instructionsSection(_ instructions: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Instructions")
+                .font(.title3)
+                .fontWeight(.bold)
+            
+            let cleanedInstructions = instructions
+                .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "&nbsp;", with: " ")
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            Text(cleanedInstructions)
+                .font(.body)
+                .foregroundColor(.secondary)
+                .lineSpacing(6)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.98))
+                )
+        }
+    }
+    
+    private var addedToListToast: some View {
+        VStack {
+            Spacer()
+            
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.green)
+                
+                Text("Added to Shopping List")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
+                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(100)
+    }
+    
+    private func addIngredientsToShoppingList() {
+        let shoppingItems = meal.ingredients.map { ingredient in
+            ShoppingListItem(
+                name: ingredient.name,
+                amount: ingredient.amount,
+                unit: ingredient.unit ?? "",
+                aisle: ingredient.aisle,
+                fromRecipe: meal.name
+            )
+        }
+        
+        savedMealsService.addToShoppingList(ingredients: shoppingItems)
+        HapticManager.success()
+        
+        withAnimation(.spring(response: 0.4)) {
+            showingAddedToList = true
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showingAddedToList = false
+            }
+        }
+    }
+    
+    private func addToMeal(_ mealType: MealType) {
+        guard let user = userManager.currentUser else {
+            print("❌ [SAVED MEAL] Cannot add to meal - no user")
+            return
+        }
+        
+        let caloriesPerServing = meal.calories / max(meal.servings, 1)
+        let proteinPerServing = meal.protein / max(meal.servings, 1)
+        let carbsPerServing = meal.carbs / max(meal.servings, 1)
+        let fatPerServing = meal.fat / max(meal.servings, 1)
+        
+        let foodEntry = FoodEntry(
+            name: meal.name,
+            quantity: portionServings,
+            unit: portionServings == 1 ? "serving" : "servings",
+            calories: caloriesPerServing * portionServings,
+            protein: proteinPerServing * portionServings,
+            carbs: carbsPerServing * portionServings,
+            fat: fatPerServing * portionServings,
+            fdcId: nil,
+            foodItemId: nil
+        )
+        
+        MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
+        HapticManager.success()
+        
+        print("✅ [SAVED MEAL] Added '\(meal.name)' to \(mealType.displayName)")
+    }
+}
+
+// MARK: - Saved Meal Picker Sheet
+struct SavedMealPickerSheet: View {
+    let meal: SavedMeal
+    @Binding var portionServings: Int
+    let onAddToMeal: (MealType) -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var selectedMealType: MealType = .lunch
+    
+    private var caloriesPerServing: Int {
+        meal.calories / max(meal.servings, 1)
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                (colorScheme == .dark ? Color.black : Color(white: 0.95))
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Recipe info
+                        VStack(spacing: 12) {
+                            Text(meal.name)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                                .multilineTextAlignment(.center)
+                            
+                            Text("Recipe makes \(meal.servings) servings")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 8)
+                        
+                        Divider()
+                        
+                        // Portion selector
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("How many servings?")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            HStack {
+                                Spacer()
+                                
+                                HStack(spacing: 20) {
+                                    Button {
+                                        if portionServings > 1 {
+                                            HapticManager.selectionChanged()
+                                            portionServings -= 1
+                                        }
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.system(size: 36))
+                                            .foregroundColor(portionServings > 1 ? .green : .gray)
+                                    }
+                                    .disabled(portionServings <= 1)
+                                    
+                                    VStack(spacing: 4) {
+                                        Text("\(portionServings)")
+                                            .font(.system(size: 44, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Text(portionServings == 1 ? "serving" : "servings")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .frame(minWidth: 100)
+                                    
+                                    Button {
+                                        if portionServings < meal.servings {
+                                            HapticManager.selectionChanged()
+                                            portionServings += 1
+                                        }
+                                    } label: {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.system(size: 36))
+                                            .foregroundColor(portionServings < meal.servings ? .green : .gray)
+                                    }
+                                    .disabled(portionServings >= meal.servings)
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.vertical, 12)
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                        )
+                        
+                        // Meal type selector
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Which meal?")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            LazyVGrid(columns: [
+                                GridItem(.flexible(), spacing: 10),
+                                GridItem(.flexible(), spacing: 10)
+                            ], spacing: 10) {
+                                ForEach(MealType.allCases, id: \.self) { mealItem in
+                                    MealTypeButton(
+                                        mealType: mealItem,
+                                        isSelected: selectedMealType == mealItem,
+                                        action: { selectedMealType = mealItem }
+                                    )
+                                }
+                            }
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                        )
+                        
+                        // Add button
+                        Button {
+                            HapticManager.tap()
+                            onAddToMeal(selectedMealType)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.title3)
+                                Text("Add to \(selectedMealType.displayName)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [.green, .mint],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(14)
+                            .shadow(color: .green.opacity(0.4), radius: 8, x: 0, y: 4)
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("Add to Meal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - My Shopping List View
+struct MyShoppingListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                (colorScheme == .dark ? Color.black : Color(white: 0.95))
+                    .ignoresSafeArea()
+                
+                if savedMealsService.shoppingListItems.isEmpty {
+                    emptyState
+                } else {
+                    shoppingListContent
+                }
+            }
+            .navigationTitle("Shopping List")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") { dismiss() }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !savedMealsService.shoppingListItems.isEmpty {
+                        Menu {
+                            Button(role: .destructive, action: {
+                                savedMealsService.clearCheckedItems()
+                            }) {
+                                Label("Clear Checked", systemImage: "checkmark.circle")
+                            }
+                            
+                            Button(role: .destructive, action: {
+                                savedMealsService.clearAllShoppingList()
+                            }) {
+                                Label("Clear All", systemImage: "trash")
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: shareList) {
+                                Label("Share List", systemImage: "square.and.arrow.up")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.purple, .pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 80, height: 80)
+                    .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
+                
+                Image(systemName: "cart.fill")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            
+            Text("Shopping List Empty")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Add ingredients from your saved\nmeals to build your shopping list")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+    
+    private var shoppingListContent: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Summary
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(savedMealsService.shoppingListItems.count) items")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        
+                        Text("\(checkedCount) checked off")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal)
+                
+                // Items grouped by aisle
+                let grouped = Dictionary(grouping: savedMealsService.shoppingListItems) { $0.aisle ?? "Other" }
+                let sortedAisles = grouped.keys.sorted()
+                
+                ForEach(sortedAisles, id: \.self) { aisle in
+                    ShoppingAisleSection(
+                        aisle: aisle,
+                        items: grouped[aisle] ?? []
+                    )
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+    
+    private var checkedCount: Int {
+        savedMealsService.shoppingListItems.filter { $0.isChecked }.count
+    }
+    
+    private func shareList() {
+        var listText = "🛒 My Shopping List\n\n"
+        
+        let grouped = Dictionary(grouping: savedMealsService.shoppingListItems) { $0.aisle ?? "Other" }
+        
+        for (aisle, items) in grouped.sorted(by: { $0.key < $1.key }) {
+            listText += "📍 \(aisle)\n"
+            for item in items {
+                let checkbox = item.isChecked ? "✅" : "⬜️"
+                listText += "\(checkbox) \(item.name.capitalized) - \(item.formattedAmount)\n"
+            }
+            listText += "\n"
+        }
+        
+        let activityVC = UIActivityViewController(
+            activityItems: [listText],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+}
+
+// MARK: - Shopping Aisle Section
+struct ShoppingAisleSection: View {
+    let aisle: String
+    let items: [ShoppingListItem]
+    
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    @State private var isExpanded = true
+    
+    private var aisleIcon: String {
+        switch aisle.lowercased() {
+        case let name where name.contains("produce"): return "leaf.fill"
+        case let name where name.contains("meat"): return "fork.knife"
+        case let name where name.contains("dairy"): return "cup.and.saucer.fill"
+        case let name where name.contains("bakery"): return "birthday.cake.fill"
+        case let name where name.contains("frozen"): return "snowflake"
+        case let name where name.contains("spice"): return "flame.fill"
+        case let name where name.contains("baking"): return "takeoutbag.and.cup.and.straw.fill"
+        case let name where name.contains("canned"): return "shippingbox.fill"
+        case let name where name.contains("pasta"): return "fork.knife.circle.fill"
+        default: return "cart.fill"
+        }
+    }
+    
+    private var aisleColor: Color {
+        switch aisle.lowercased() {
+        case let name where name.contains("produce"): return .green
+        case let name where name.contains("meat"): return .red
+        case let name where name.contains("dairy"): return .blue
+        case let name where name.contains("bakery"): return .orange
+        case let name where name.contains("frozen"): return .cyan
+        case let name where name.contains("spice"): return .yellow
+        default: return .purple
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            Button(action: { withAnimation { isExpanded.toggle() } }) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(aisleColor.opacity(0.2))
+                            .frame(width: 36, height: 36)
+                        
+                        Image(systemName: aisleIcon)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(aisleColor)
+                    }
+                    
+                    Text(aisle)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Text("\(items.count)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(14)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Items
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal)
+                
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        MyShoppingItemRow(item: item)
+                        
+                        if item.id != items.last?.id {
+                            Divider()
+                                .padding(.leading, 50)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+        )
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - My Shopping Item Row
+struct MyShoppingItemRow: View {
+    let item: ShoppingListItem
+    
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: {
+                savedMealsService.toggleShoppingItemChecked(id: item.id)
+            }) {
+                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(item.isChecked ? .green : .secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name.capitalized)
+                    .font(.subheadline)
+                    .foregroundColor(item.isChecked ? .secondary : .primary)
+                    .strikethrough(item.isChecked)
+                
+                if let recipe = item.fromRecipe {
+                    Text("from \(recipe)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            Text(item.formattedAmount)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Button(action: {
+                savedMealsService.removeFromShoppingList(id: item.id)
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
 }
 
 #Preview {

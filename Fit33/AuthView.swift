@@ -189,17 +189,45 @@ struct AuthView: View {
                         .opacity((supabaseManager.isLoading || !isValid) ? 0.5 : 1.0)
                         .animation(.easeInOut(duration: 0.2), value: isValid)
                         
-                        // Skip for Now (temporary - for testing)
-                        Button(action: {
-                            // Temporary skip for testing - we'll remove this later
-                            supabaseManager.isAuthenticated = true
-                        }) {
-                            Text("Continue without account (temporary)")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.black.opacity(0.4))
-                                .underline()
+                        // Social Login Divider
+                        SocialLoginDivider()
+                            .padding(.vertical, 8)
+                        
+                        // Google Sign-In Button
+                        Button(action: handleGoogleSignIn) {
+                            HStack(spacing: 12) {
+                                // Google "G" logo
+                                Image(systemName: "g.circle.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.red, .yellow, .green, .blue],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                
+                                Text("Continue with Google")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(.ultraThinMaterial)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
                         }
-                        .padding(.top, 12)
+                        
+                        // Apple Sign-In Button
+                        SignInWithAppleButton {
+                            handleAppleSignIn()
+                        }
+                        .padding(.top, 4)
                     }
                     .padding(28)
                     .background(
@@ -272,6 +300,50 @@ struct AuthView: View {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     showError = true
+                }
+            }
+        }
+    }
+    
+    private func handleGoogleSignIn() {
+        showError = false
+        errorMessage = ""
+        
+        // Open Google OAuth in Safari
+        if let url = supabaseManager.getGoogleOAuthURL() {
+            UIApplication.shared.open(url)
+        } else {
+            errorMessage = "Could not create Google Sign-In URL"
+            showError = true
+        }
+    }
+    
+    private func handleAppleSignIn() {
+        showError = false
+        errorMessage = ""
+        
+        SocialAuthService.shared.signInWithApple { result in
+            switch result {
+            case .success(let credentials):
+                Task {
+                    do {
+                        try await supabaseManager.signInWithApple(
+                            idToken: credentials.identityToken,
+                            nonce: credentials.nonce
+                        )
+                    } catch {
+                        await MainActor.run {
+                            errorMessage = error.localizedDescription
+                            showError = true
+                        }
+                    }
+                }
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    if (error as NSError).code != 1001 { // User cancelled
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
                 }
             }
         }

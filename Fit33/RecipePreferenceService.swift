@@ -14,7 +14,7 @@ class RecipePreferenceService: ObservableObject {
     @Published var userTasteProfile: UserTasteProfile?
     
     // MARK: - Private Properties
-    private let apiKey = "69f4b06727ac448d88841e2ce717a228"
+    private let apiKey = AppConfig.spoonacularApiKey
     private let baseURL = "https://api.spoonacular.com"
     
     // Carousel rotation timing

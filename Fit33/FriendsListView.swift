@@ -237,15 +237,19 @@ struct FriendsListView: View {
     
     private var requestsContent: some View {
         ScrollView {
-            LazyVStack(spacing: 16) {
-                // Incoming Requests
+            LazyVStack(spacing: 20) {
+                // Incoming Requests Section
                 if !friendService.pendingRequests.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("INCOMING REQUESTS")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .padding(.leading, 4)
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.green)
+                            Text("INCOMING REQUESTS")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.leading, 4)
                         
                         ForEach(friendService.pendingRequests) { request in
                             FriendRequestCard(request: request)
@@ -253,14 +257,37 @@ struct FriendsListView: View {
                     }
                 }
                 
-                // Empty state
-                if friendService.pendingRequests.isEmpty {
+                // Sent Requests Section (Outgoing)
+                if !friendService.sentRequests.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("SENT REQUESTS")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.leading, 4)
+                        
+                        ForEach(friendService.sentRequests) { request in
+                            SentFriendRequestCard(request: request)
+                        }
+                    }
+                }
+                
+                // Empty state - only show if both incoming and sent are empty
+                if friendService.pendingRequests.isEmpty && friendService.sentRequests.isEmpty {
                     emptyRequestsState
                         .padding(.top, 50)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 100)
+        }
+        .task {
+            // Fetch sent requests when tab is shown
+            await friendService.fetchSentRequests()
         }
     }
     
@@ -273,7 +300,7 @@ struct FriendsListView: View {
             Text("No Pending Requests")
                 .font(.headline)
             
-            Text("Friend requests you receive\nwill appear here")
+            Text("Friend requests you send or receive\nwill appear here")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -568,6 +595,122 @@ struct FriendRequestCard: View {
         HapticManager.impact(.light)
         Task {
             _ = await friendService.declineFriendRequest(requestId: request.requestId)
+            isProcessing = false
+        }
+    }
+    
+    private func timeAgoString(from date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - Sent Friend Request Card (Outgoing)
+
+struct SentFriendRequestCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var friendService = FriendService.shared
+    let request: SentFriendRequest
+    
+    @State private var isProcessing = false
+    @State private var showCancelConfirmation = false
+    
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color.white
+    }
+    
+    var body: some View {
+        HStack(spacing: 14) {
+            // Avatar with cached profile photo
+            CachedFriendPhoto(
+                friendId: request.toUserId.uuidString,
+                photoUrl: request.profilePhotoUrl,
+                name: request.toUserName ?? request.toUserUsername ?? "User",
+                size: 50,
+                showGradientRing: false,
+                gradientColors: [.blue, .cyan]
+            )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Username first (primary)
+                if let username = request.toUserUsername, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                }
+                
+                // Name (secondary)
+                if let name = request.toUserName, !name.isEmpty {
+                    Text(name)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                
+                // Time ago + pending status
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                    Text("Pending • \(timeAgoString(from: request.createdAt))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Cancel/Unsend button
+            Button(action: { showCancelConfirmation = true }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle")
+                        .font(.system(size: 14, weight: .medium))
+                    Text("Unsend")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.red.opacity(0.12))
+                )
+            }
+            .disabled(isProcessing)
+            .opacity(isProcessing ? 0.5 : 1)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(cardBackground)
+                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+        )
+        .confirmationDialog(
+            "Cancel Friend Request?",
+            isPresented: $showCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Request", role: .destructive) {
+                cancelRequest()
+            }
+            Button("Keep Request", role: .cancel) {}
+        } message: {
+            Text("This will unsend your friend request to \(request.displayName).")
+        }
+    }
+    
+    private func cancelRequest() {
+        isProcessing = true
+        HapticManager.impact(.medium)
+        Task {
+            let success = await friendService.cancelSentRequest(requestId: request.requestId)
+            if success {
+                HapticManager.notification(.success)
+            }
             isProcessing = false
         }
     }

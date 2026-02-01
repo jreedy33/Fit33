@@ -52,7 +52,7 @@ class SpoonacularService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Build query parameters for healthy, high-protein recipes
+        // Build query parameters for HEALTHY, high-protein MEALS (not desserts!)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "apiKey", value: apiKey),
             URLQueryItem(name: "number", value: String(number)),
@@ -61,8 +61,14 @@ class SpoonacularService: ObservableObject {
             URLQueryItem(name: "minProtein", value: String(minProtein)),
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
-            // Fitness-focused query
-            URLQueryItem(name: "query", value: "healthy protein")
+            // STRICT FILTERS - no junk food!
+            URLQueryItem(name: "minHealthScore", value: "50"),
+            URLQueryItem(name: "maxSugar", value: "15"),
+            // MAIN COURSES ONLY - no desserts, cakes, or snacks!
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast"),
+            URLQueryItem(name: "instructionsRequired", value: "true"),
+            // Fitness-focused query - REAL meals
+            URLQueryItem(name: "query", value: "healthy chicken salmon vegetable protein lean")
         ]
         
         if let diet = diet {
@@ -78,7 +84,7 @@ class SpoonacularService: ObservableObject {
             return
         }
         
-        print("🍽️ [SPOONACULAR] Fetching recipes from: \(url.absoluteString.replacingOccurrences(of: apiKey, with: "***"))")
+        print("🍽️ [SPOONACULAR] Fetching HEALTHY recipes (minHealth: 50, main courses only)")
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -111,7 +117,7 @@ class SpoonacularService: ObservableObject {
             // Cache the recipes
             cacheRecipes()
             
-            print("🍽️ [SPOONACULAR] Successfully fetched \(healthyRecipes.count) recipes")
+            print("🍽️ [SPOONACULAR] Successfully fetched \(healthyRecipes.count) HEALTHY recipes")
             
         } catch let error as SpoonacularError {
             errorMessage = error.localizedDescription

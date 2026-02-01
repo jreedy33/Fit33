@@ -129,6 +129,23 @@ struct WorkoutTabView: View {
                 deepLinkManager.pendingDestination = nil
                 print("👥 Deep link: Navigating to friend requests tab")
                 
+            // Challenge destinations
+            case .challenges:
+                // Navigate to challenges list
+                navigationPath.append("ChallengesList")
+                deepLinkManager.pendingDestination = nil
+                print("🏆 Deep link: Navigating to challenges list")
+            case .challengeInvite(let challengeId):
+                // Navigate to challenge invite
+                navigationPath.append("ChallengeInvite-\(challengeId)")
+                deepLinkManager.pendingDestination = nil
+                print("🏆 Deep link: Navigating to challenge invite \(challengeId)")
+            case .challengeDetail(let challengeId):
+                // Navigate to challenge detail
+                navigationPath.append("ChallengeDetail-\(challengeId)")
+                deepLinkManager.pendingDestination = nil
+                print("🏆 Deep link: Navigating to challenge detail \(challengeId)")
+                
             // These destinations are handled by MainTabView (tab switching)
             case .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker, .workoutHistory, .personalRecord, .streakInfo:
                 // Already handled by MainTabView, just clear the destination
@@ -258,6 +275,9 @@ struct WorkoutHomeView: View {
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @ObservedObject private var generatedProgramService = GeneratedProgramService.shared
     
+    // Cardio workouts for combined goal tracking (includes Strava activities)
+    @State private var cardioWorkoutsThisWeek: [CardioWorkoutDTO] = []
+    
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
@@ -306,6 +326,10 @@ struct WorkoutHomeView: View {
             .onAppear {
                 // Force immediate rendering
                 forceRenderID = UUID()
+            }
+            .task {
+                // Load cardio workouts (includes Strava activities) for goal tracking
+                await loadCardioWorkoutsThisWeek()
             }
             .background(
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
@@ -1057,16 +1081,48 @@ struct WorkoutHomeView: View {
     
     // MARK: - Goal Helper Functions
     
+    /// Load cardio workouts (including Strava activities) for this week
+    private func loadCardioWorkoutsThisWeek() async {
+        do {
+            let cardioWorkouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 50)
+            await MainActor.run {
+                self.cardioWorkoutsThisWeek = cardioWorkouts
+            }
+        } catch {
+            print("⚠️ [GOALS] Failed to load cardio workouts: \(error)")
+        }
+    }
+    
+    /// Calculate total workouts this week (strength + cardio/Strava)
     private func calculateWorkoutsThisWeek() -> Int {
         let calendar = Calendar.current
         let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-        return workouts.filter { ($0.date ?? Date.distantPast) >= startOfWeek }.count
+        
+        // Count strength workouts
+        let strengthCount = workouts.filter { ($0.date ?? Date.distantPast) >= startOfWeek }.count
+        
+        // Count cardio workouts (includes Strava activities)
+        let cardioCount = cardioWorkoutsThisWeek.filter {
+            ISO8601Parser.parse($0.completedAt, fallback: Date.distantPast) >= startOfWeek
+        }.count
+        
+        return strengthCount + cardioCount
     }
     
+    /// Calculate total workouts today (strength + cardio/Strava)
     private func calculateWorkoutsToday() -> Int {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
-        return workouts.filter { ($0.date ?? Date.distantPast) >= startOfDay }.count
+        
+        // Count strength workouts
+        let strengthCount = workouts.filter { ($0.date ?? Date.distantPast) >= startOfDay }.count
+        
+        // Count cardio workouts (includes Strava activities)
+        let cardioCount = cardioWorkoutsThisWeek.filter {
+            ISO8601Parser.parse($0.completedAt, fallback: Date.distantPast) >= startOfDay
+        }.count
+        
+        return strengthCount + cardioCount
     }
     
     private func getMilestoneTitle(_ count: Int) -> String {

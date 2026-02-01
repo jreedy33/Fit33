@@ -176,10 +176,11 @@ final class StartupCache: ObservableObject {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MARK: - 2. LAZY TAB MANAGER (Only load tabs when visited)
+// MARK: - 2. LAZY TAB MANAGER (Eager Mode for Instant Switching)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Manages lazy initialization of tab views to prevent all 5 tabs loading at startup
+/// Manages tab initialization - supports both lazy and eager (preloaded) modes
+/// When eager mode is enabled, all tabs are pre-initialized for instant switching
 @MainActor
 final class LazyTabManager: ObservableObject {
     static let shared = LazyTabManager()
@@ -196,8 +197,14 @@ final class LazyTabManager: ObservableObject {
     @Published private(set) var visitedTabs: Set<Tab> = [.dashboard] // Dashboard always loaded
     @Published var selectedTab: Tab = .dashboard
     
+    // ⚡️ EAGER MODE: When true, all tabs render immediately (no placeholders)
+    @Published private(set) var isEagerModeEnabled: Bool = false
+    
     // Pre-render hints (user is likely to visit these tabs soon)
     private var hintedTabs: Set<Tab> = []
+    
+    // Track when eager preloading started
+    private var eagerPreloadStartTime: CFTimeInterval = 0
     
     private init() {}
     
@@ -211,6 +218,10 @@ final class LazyTabManager: ObservableObject {
     
     /// Check if a tab should render its full content
     func shouldRenderContent(for tab: Tab) -> Bool {
+        // In eager mode, always render all tabs
+        if isEagerModeEnabled {
+            return true
+        }
         return visitedTabs.contains(tab) || hintedTabs.contains(tab)
     }
     
@@ -230,11 +241,43 @@ final class LazyTabManager: ObservableObject {
         }
     }
     
+    // MARK: - Eager Mode (Pre-initialize ALL tabs)
+    
+    /// Enable eager mode - pre-initializes all tabs for instant switching
+    /// Call this after startup cache is warmed
+    func enableEagerMode() {
+        guard !isEagerModeEnabled else { return }
+        
+        eagerPreloadStartTime = CACurrentMediaTime()
+        
+        // Mark all tabs as ready to render
+        isEagerModeEnabled = true
+        
+        // Pre-initialize all tabs in sequence with tiny delays
+        // This spreads the work across multiple frames
+        for (index, tab) in Tab.allCases.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.05) { [weak self] in
+                self?.visitedTabs.insert(tab)
+            }
+        }
+        
+        let elapsed = (CACurrentMediaTime() - eagerPreloadStartTime) * 1000
+        print("⚡️ [EAGER MODE] Enabled - all tabs will render immediately (\(String(format: "%.1f", elapsed))ms)")
+    }
+    
+    /// Pre-warm all tabs immediately (synchronous version for startup)
+    func preWarmAllTabs() {
+        isEagerModeEnabled = true
+        visitedTabs = Set(Tab.allCases)
+        print("⚡️ [EAGER MODE] All tabs pre-warmed synchronously")
+    }
+    
     /// Reset (for testing or sign out)
     func reset() {
         visitedTabs = [.dashboard]
         hintedTabs = []
         selectedTab = .dashboard
+        isEagerModeEnabled = false
     }
 }
 
@@ -552,8 +595,12 @@ final class TabSwitchOptimizer: ObservableObject {
         isTransitioning = false
         
         #if DEBUG
-        if elapsed > 16.67 { // More than 1 frame at 60fps
+        // Note: Humans perceive <200ms as "instant", <500ms as "fast"
+        // Only warn if transition takes longer than 300ms (noticeable delay)
+        if elapsed > 300 {
             print("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", elapsed))ms")
+        } else if elapsed > 150 {
+            print("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", elapsed))ms")
         } else {
             print("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", elapsed))ms")
         }
@@ -613,12 +660,15 @@ enum FetchOptimizer {
 // MARK: - 9. VIEW EXTENSIONS FOR PERFORMANCE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Lazy loading wrapper for tab content - only initializes view when tab is first visited
+/// Lazy loading wrapper for tab content - supports both lazy and eager modes
+/// In eager mode: Views are always rendered (no placeholder)
+/// In lazy mode: Views only render when first visited
 struct LazyTabContent<Content: View>: View {
     let tab: LazyTabManager.Tab
     let content: () -> Content
     
     @StateObject private var lazyTabManager = LazyTabManager.shared
+    @StateObject private var tabPreloader = TabPreloader.shared
     @State private var hasInitialized = false
     
     init(tab: LazyTabManager.Tab, @ViewBuilder content: @escaping () -> Content) {
@@ -628,20 +678,26 @@ struct LazyTabContent<Content: View>: View {
     
     var body: some View {
         Group {
-            if lazyTabManager.shouldRenderContent(for: tab) || hasInitialized {
+            // ⚡️ EAGER MODE: Always render content immediately when preloading is complete
+            if tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled || hasInitialized {
+                content()
+                    .onAppear {
+                        hasInitialized = true
+                        lazyTabManager.markVisited(tab)
+                    }
+            } else if lazyTabManager.shouldRenderContent(for: tab) {
+                // Tab was explicitly visited or hinted
                 content()
                     .onAppear {
                         hasInitialized = true
                     }
             } else {
-                // Lightweight placeholder - just the background gradient
+                // Lightweight placeholder - show VERY briefly while initializing
                 TabPlaceholderView(tab: tab)
                     .onAppear {
-                        // Mark as visited after tiny delay to allow transition
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            lazyTabManager.markVisited(tab)
-                            hasInitialized = true
-                        }
+                        // Initialize immediately - no delay
+                        hasInitialized = true
+                        lazyTabManager.markVisited(tab)
                     }
             }
         }
@@ -714,11 +770,12 @@ extension View {
     }
     
     /// Optimized for tab content - reduces unnecessary updates
+    /// ⚡️ Enhanced: Also disables animation when tabs are preloaded for instant switching
     func tabContentOptimized() -> some View {
         self
             .transaction { transaction in
-                // Disable animations during tab switch for instant feel
-                if TabSwitchOptimizer.shared.isTransitioning {
+                // Disable animations during tab switch OR when preloading is complete for instant feel
+                if TabSwitchOptimizer.shared.isTransitioning || TabPreloader.shared.isPreloadingComplete {
                     transaction.animation = nil
                 }
             }

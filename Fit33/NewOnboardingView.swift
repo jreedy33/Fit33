@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import PhotosUI
 import AuthenticationServices
+import Contacts
 
 // MARK: - Keyboard Height Observer
 class KeyboardObserver: ObservableObject {
@@ -126,6 +127,16 @@ struct NewOnboardingView: View {
     @State private var showingCamera = false
     @State private var isUploadingPhoto = false
     
+    // Contacts permission (optional onboarding step)
+    @State private var contactsPermissionGranted = false
+    @State private var contactsPermissionRequested = false
+    @StateObject private var contactsService = ContactsService.shared
+    
+    // Add friends from contacts (onboarding step)
+    @State private var friendSearchText = ""
+    @State private var sentFriendRequests: Set<UUID> = []  // Track requests sent during onboarding
+    @State private var isLoadingFriends = false
+    
     // Unit preferences - default based on user's locale
     @State private var heightUnit: HeightUnit = UnitSettingsManager.localeUsesImperial ? .ftIn : .cm
     @State private var weightUnit: WeightUnit = UnitSettingsManager.localeUsesImperial ? .lbs : .kg
@@ -200,6 +211,8 @@ struct NewOnboardingView: View {
         case .limitations: return "Health"
         case .schedule: return "Schedule"
         case .profilePhoto: return "Photo"
+        case .contacts: return "Contacts"
+        case .addFriends: return "Friends"
         case .confirmation: return "Review"
         case .complete: return "Done!"
         }
@@ -228,8 +241,10 @@ struct NewOnboardingView: View {
         case limitations = 9  // Injuries/limitations
         case schedule = 10
         case profilePhoto = 11  // Optional profile photo upload
-        case confirmation = 12  // Review all selections before creating account
-        case complete = 13
+        case contacts = 12   // Contacts permission for friend features
+        case addFriends = 13 // Add friends from contacts who have accounts
+        case confirmation = 14  // Review all selections before creating account
+        case complete = 15
     }
     
     // Validation for auth step
@@ -395,6 +410,8 @@ struct NewOnboardingView: View {
                             if currentStep == .equipment { equipmentStepContent.transition(slideTransition) }
                             if currentStep == .schedule { scheduleStepContent.transition(slideTransition) }
                             if currentStep == .profilePhoto { profilePhotoStepContent.transition(slideTransition) }
+                            if currentStep == .contacts { contactsStepContent.transition(slideTransition) }
+                            if currentStep == .addFriends { addFriendsStepContent.transition(slideTransition) }
                         }
                         .animation(.easeInOut(duration: 0.3), value: currentStep)
                         
@@ -715,6 +732,8 @@ struct NewOnboardingView: View {
         case .limitations: return "Any Limitations?"
         case .schedule: return "Your Schedule"
         case .profilePhoto: return "Add a Photo"
+        case .contacts: return "Connect Your Contacts"
+        case .addFriends: return "Add Your Friends"
         case .confirmation: return "Review & Confirm"
         case .complete: return "You're All Set!"
         }
@@ -734,6 +753,8 @@ struct NewOnboardingView: View {
         case .limitations: return "Anything we should know about?"
         case .schedule: return "How often do you want to train?"
         case .profilePhoto: return "Help friends recognize you"
+        case .contacts: return "Find friends who are already on Fit33"
+        case .addFriends: return "People from your contacts using Fit33"
         case .confirmation: return "Make sure everything looks right"
         case .complete: return "Let's start your first workout"
         }
@@ -753,6 +774,8 @@ struct NewOnboardingView: View {
         case .limitations: return "We'll avoid exercises that could aggravate injuries or issues"
         case .schedule: return "We'll build a program that fits your weekly availability"
         case .profilePhoto: return "Your photo appears on shared workouts and friend lists"
+        case .contacts: return "We'll never message your contacts without your permission"
+        case .addFriends: return "Send friend requests to start training together"
         case .confirmation: return ""
         case .complete: return ""
         }
@@ -779,7 +802,7 @@ struct NewOnboardingView: View {
                 isNavigatingForward = true
                 withAnimation { goToNextStep() }
             }) {
-                Text(currentStep == .confirmation ? "Create Account" : (currentStep == .profilePhoto ? (profilePhotoImage != nil ? "Continue" : "Skip") : "Continue"))
+                Text(currentStep == .confirmation ? "Create Account" : (currentStep == .profilePhoto ? (profilePhotoImage != nil ? "Continue" : "Skip") : (currentStep == .contacts ? (contactsPermissionGranted ? "Continue" : "Skip") : (currentStep == .addFriends ? (sentFriendRequests.isEmpty ? "Skip" : "Continue") : "Continue"))))
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundStyle(
@@ -822,6 +845,8 @@ struct NewOnboardingView: View {
         case .limitations: return true
         case .schedule: return selectedDays > 0
         case .profilePhoto: return true  // Optional step, always valid
+        case .contacts: return true  // Optional step, always valid
+        case .addFriends: return true  // Optional step, always valid
         case .confirmation: return true
         case .complete: return true
         }
@@ -842,6 +867,12 @@ struct NewOnboardingView: View {
             return
         }
         
+        // Special case: if contacts permission not granted, skip addFriends step
+        if currentStep == .contacts && !contactsPermissionGranted {
+            navigateTo(.confirmation)
+            return
+        }
+        
         guard let nextStep = OnboardingStep(rawValue: currentStep.rawValue + 1) else { return }
         navigateTo(nextStep)
     }
@@ -851,6 +882,12 @@ struct NewOnboardingView: View {
         if isEditingFromConfirmation {
             isEditingFromConfirmation = false
             navigateTo(.confirmation)
+            return
+        }
+        
+        // Special case: if on confirmation and contacts weren't granted, skip addFriends when going back
+        if currentStep == .confirmation && !contactsPermissionGranted {
+            navigateTo(.contacts)
             return
         }
         
@@ -1792,7 +1829,7 @@ struct NewOnboardingView: View {
             // Skip button (only show if no photo)
             if profilePhotoImage == nil {
                 Button(action: {
-                    navigateTo(.confirmation)
+                    navigateTo(.contacts)
                 }) {
                     Text("Skip for now")
                         .font(.subheadline)
@@ -1865,6 +1902,398 @@ struct NewOnboardingView: View {
         UIGraphicsEndImageContext()
         
         return newImage ?? image
+    }
+    
+    // MARK: - Contacts Permission Step (Optional)
+    private var contactsStepContent: some View {
+        VStack(spacing: 16) {
+            // Icon
+            if contactsPermissionGranted {
+                // Success state
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color.green.opacity(0.2), Color.green.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 70, height: 70)
+                    
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(.green)
+                }
+            } else {
+                // Contacts icon
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 70, height: 70)
+                    
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                }
+            }
+            
+            // Title and description
+            VStack(spacing: 6) {
+                Text(contactsPermissionGranted ? "You're Connected! 🎉" : "Train with Friends")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text(contactsPermissionGranted 
+                    ? "We'll notify you when your contacts join Fit33"
+                    : "Allow contacts access to find friends who are already on Fit33")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+            }
+            
+            // Benefits list - compact
+            if !contactsPermissionGranted {
+                VStack(alignment: .leading, spacing: 10) {
+                    compactBenefitRow(
+                        icon: "trophy.fill",
+                        color: .orange,
+                        title: "Challenge Friends",
+                        subtitle: "Compete with step challenges, workout streaks & more"
+                    )
+                    
+                    compactBenefitRow(
+                        icon: "paperplane.fill",
+                        color: .blue,
+                        title: "Share Workouts",
+                        subtitle: "Send workouts you create to friends who need motivation"
+                    )
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+            }
+            
+            // Permission button
+            if !contactsPermissionGranted {
+                VStack(spacing: 6) {
+                    Button(action: {
+                        HapticManager.impact(.medium)
+                        print("📇 [ONBOARDING] Allow Contacts button tapped")
+                        print("📇 [ONBOARDING] Current status: \(contactsService.authorizationStatus.rawValue)")
+                        
+                        // Check if already denied - need to go to settings
+                        if contactsService.permissionDenied {
+                            print("📇 [ONBOARDING] Permission previously denied, opening settings")
+                            if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(settingsUrl)
+                            }
+                            return
+                        }
+                        
+                        Task {
+                            contactsPermissionRequested = true
+                            print("📇 [ONBOARDING] Requesting access...")
+                            let granted = await contactsService.requestAccess()
+                            print("📇 [ONBOARDING] Access result: \(granted)")
+                            await MainActor.run {
+                                contactsPermissionGranted = granted
+                                if granted {
+                                    print("📇 [ONBOARDING] Permission granted, advancing to addFriends")
+                                }
+                            }
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: contactsService.permissionDenied ? "gear" : "person.crop.circle.badge.plus")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text(contactsService.permissionDenied ? "Open Settings" : "Allow Contacts Access")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .blue.opacity(0.8), .purple.opacity(0.7)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Privacy note
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.green.opacity(0.8))
+                        Text("Your contacts are never shared or stored on our servers")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .onAppear {
+            // Refresh and check current status on appear
+            contactsService.checkAuthorizationStatus()
+            contactsPermissionGranted = contactsService.canAccessContacts
+            print("📇 [ONBOARDING] Contacts step appeared - status: \(contactsService.authorizationStatus.rawValue), canAccess: \(contactsService.canAccessContacts)")
+        }
+    }
+    
+    private func compactBenefitRow(icon: String, color: Color, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    
+    
+    
+    // MARK: - Add Friends Step (after contacts permission)
+    private var addFriendsStepContent: some View {
+        VStack(spacing: 0) {
+            // Search bar
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 16))
+                
+                TextField("Search by name", text: $friendSearchText)
+                    .font(.body)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                
+                if !friendSearchText.isEmpty {
+                    Button(action: { friendSearchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 16)
+            
+            // Friends list
+            if contactsService.isLoading || isLoadingFriends {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Finding your friends...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 60)
+            } else if filteredSuggestedFriends.isEmpty {
+                // Empty state
+                VStack(spacing: 20) {
+                    Image(systemName: contactsPermissionGranted ? "person.2.slash" : "person.crop.circle.badge.questionmark")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    
+                    Text(contactsPermissionGranted 
+                        ? (friendSearchText.isEmpty ? "No contacts on Fit33 yet" : "No results for \"\(friendSearchText)\"")
+                        : "Enable contacts to find friends")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    
+                    Text(contactsPermissionGranted
+                        ? "When your contacts join, you'll be notified!"
+                        : "Go back and allow contacts access")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 60)
+                .padding(.horizontal, 32)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(filteredSuggestedFriends) { friend in
+                            onboardingFriendRow(friend: friend)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 100) // Space for continue button
+                }
+            }
+            
+            Spacer()
+            
+            // Summary of requests sent
+            if !sentFriendRequests.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("\(sentFriendRequests.count) friend request\(sentFriendRequests.count == 1 ? "" : "s") sent")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 20)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(10)
+                .padding(.bottom, 8)
+            }
+        }
+        .onAppear {
+            // Ensure we have the latest suggested friends
+            if contactsPermissionGranted && contactsService.suggestedFriends.isEmpty {
+                Task {
+                    isLoadingFriends = true
+                    await contactsService.fetchContactsAndFindFriends()
+                    isLoadingFriends = false
+                }
+            }
+        }
+    }
+    
+    // Filtered list based on search
+    private var filteredSuggestedFriends: [SuggestedFriend] {
+        let friends = contactsService.suggestedFriends.filter { !$0.isFriend }
+        
+        if friendSearchText.isEmpty {
+            return friends
+        }
+        
+        let searchLower = friendSearchText.lowercased()
+        return friends.filter { friend in
+            if let name = friend.name, name.lowercased().contains(searchLower) {
+                return true
+            }
+            if let username = friend.username, username.lowercased().contains(searchLower) {
+                return true
+            }
+            return false
+        }
+    }
+    
+    private func onboardingFriendRow(friend: SuggestedFriend) -> some View {
+        let isRequestSent = sentFriendRequests.contains(friend.userId) || friend.hasOutgoingRequest
+        
+        return HStack(spacing: 14) {
+            // Avatar
+            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 50, height: 50)
+                            .clipShape(Circle())
+                    default:
+                        friendInitialsCircle(friend: friend)
+                    }
+                }
+            } else {
+                friendInitialsCircle(friend: friend)
+            }
+            
+            // Name & username
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friend.name ?? "Unknown")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                if let username = friend.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Add button
+            Button(action: {
+                guard !isRequestSent else { return }
+                HapticManager.impact(.medium)
+                Task {
+                    let success = await FriendService.shared.sendFriendRequest(toUserId: friend.userId)
+                    if success {
+                        sentFriendRequests.insert(friend.userId)
+                    }
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: isRequestSent ? "checkmark" : "plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(isRequestSent ? "Sent" : "Add")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(isRequestSent ? .green : .white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Group {
+                        if isRequestSent {
+                            Color.green.opacity(0.15)
+                        } else {
+                            LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                        }
+                    }
+                )
+                .cornerRadius(20)
+            }
+            .disabled(isRequestSent)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(Color(.systemGray6).opacity(0.5))
+        .cornerRadius(14)
+    }
+    
+    private func friendInitialsCircle(friend: SuggestedFriend) -> some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [.blue.opacity(0.6), .purple.opacity(0.4)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 50, height: 50)
+            .overlay(
+                Text(friend.initials)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+            )
     }
     
     private func confirmationRowSimple(title: String, value: String, editStep: OnboardingStep? = nil, focusField: FocusedField? = nil) -> some View {
@@ -2418,6 +2847,55 @@ struct NewOnboardingView: View {
                         .disabled(email.isEmpty || !email.contains("@"))
                         .opacity(email.isEmpty || !email.contains("@") ? 0.5 : 1.0)
                         .padding(.top, 4)
+                    }
+                    
+                    // MARK: - Primary Sign In Button (when keyboard is down)
+                    if keyboardObserver.keyboardHeight == 0 {
+                        Button(action: {
+                            if isEditingFromConfirmation {
+                                returnToConfirmation()
+                            } else {
+                                handleAuth()
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                if supabaseManager.isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Create Account" : "Sign In"))
+                                        .font(.system(size: 16, weight: .bold))
+                                    Image(systemName: "arrow.right")
+                                        .font(.system(size: 14, weight: .bold))
+                                }
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                Group {
+                                    if isAuthFormValid && !supabaseManager.isLoading {
+                                        Capsule()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.blue, Color.blue.opacity(0.9), Color.cyan.opacity(0.8)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                            .shadow(color: Color.blue.opacity(0.4), radius: 8, x: 0, y: 4)
+                                    } else {
+                                        Capsule()
+                                            .fill(Color.gray.opacity(0.3))
+                                    }
+                                }
+                            )
+                        }
+                        .disabled(supabaseManager.isLoading || !isAuthFormValid)
+                        .opacity(supabaseManager.isLoading || !isAuthFormValid ? 0.6 : 1.0)
+                        .animation(.easeInOut(duration: 0.2), value: isAuthFormValid)
+                        .padding(.top, 16)
                     }
                     
                     // MARK: - Social Login Section (hidden when keyboard is up)

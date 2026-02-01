@@ -13,6 +13,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
     // Social / Friends
     case sharedWorkout = "shared_workout"
     case friendRequest = "friend_request"
+    case contactJoined = "contact_joined"
+    case challengeInvite = "challenge_invite"
+    case challengeUpdate = "challenge_update"
+    case challengeProgress = "challenge_progress"
+    case challengeCancelled = "challenge_cancelled"
     
     // Progress & Achievements
     case personalRecord = "personal_record"
@@ -40,6 +45,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .comebackReminder: return "Comeback Motivation"
         case .sharedWorkout: return "Shared Workouts"
         case .friendRequest: return "Friend Requests"
+        case .contactJoined: return "Contact Joined"
+        case .challengeInvite: return "Challenge Invites"
+        case .challengeUpdate: return "Challenge Updates"
+        case .challengeProgress: return "Challenge Progress"
+        case .challengeCancelled: return "Challenge Cancelled"
         case .personalRecord: return "Personal Records"
         case .streakMilestone: return "Streak Celebrations"
         case .levelUp: return "Level Up Alerts"
@@ -61,6 +71,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .comebackReminder: return "Motivate you to return after time away"
         case .sharedWorkout: return "Notify when friends send you workouts"
         case .friendRequest: return "Notify when you receive friend requests"
+        case .contactJoined: return "Notify when your contacts join Fit33"
+        case .challengeInvite: return "Notify when friends challenge you"
+        case .challengeUpdate: return "Updates on your active challenges"
+        case .challengeProgress: return "Notify when opponent completes their daily goal"
+        case .challengeCancelled: return "Notify when a challenge is cancelled"
         case .personalRecord: return "Celebrate when you beat your best"
         case .streakMilestone: return "Celebrate streak milestones"
         case .levelUp: return "Notify when you level up"
@@ -82,6 +97,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .comebackReminder: return "arrow.counterclockwise"
         case .sharedWorkout: return "paperplane.fill"
         case .friendRequest: return "person.badge.plus"
+        case .contactJoined: return "person.crop.circle.badge.checkmark"
+        case .challengeInvite: return "trophy.fill"
+        case .challengeUpdate: return "chart.line.uptrend.xyaxis"
+        case .challengeProgress: return "flame.fill"
+        case .challengeCancelled: return "xmark.circle.fill"
         case .personalRecord: return "trophy.fill"
         case .streakMilestone: return "flame.fill"
         case .levelUp: return "star.fill"
@@ -103,6 +123,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .comebackReminder: return .purple
         case .sharedWorkout: return .blue
         case .friendRequest: return .green
+        case .contactJoined: return .purple
+        case .challengeInvite: return .orange
+        case .challengeUpdate: return .purple
+        case .challengeProgress: return .blue
+        case .challengeCancelled: return .red
         case .personalRecord: return .yellow
         case .streakMilestone: return .orange
         case .levelUp: return .purple
@@ -125,6 +150,11 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .comebackReminder,        // Re-engage dormant users
              .sharedWorkout,           // Social engagement - friends sending workouts
              .friendRequest,           // Social engagement - new friends
+             .contactJoined,           // Social engagement - contacts joining app
+             .challengeInvite,         // Social engagement - friend challenges
+             .challengeUpdate,         // Keep users engaged with active challenges
+             .challengeProgress,       // Notify when opponent completes daily goal
+             .challengeCancelled,      // Important to know when challenge ends
              .personalRecord,          // Celebrate achievements
              .streakMilestone,         // Celebrate consistency
              .levelUp,                 // Gamification engagement
@@ -177,7 +207,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         case .workout:
             return [.dailyWorkoutReminder, .streakProtection, .workoutComplete, .comebackReminder]
         case .social:
-            return [.sharedWorkout, .friendRequest]
+            return [.sharedWorkout, .friendRequest, .challengeInvite, .challengeUpdate]
         case .achievements:
             return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
         case .health:
@@ -408,10 +438,44 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             intentIdentifiers: []
         )
         
+        // Challenge invite category
+        let viewChallengeAction = UNNotificationAction(
+            identifier: "VIEW_CHALLENGE",
+            title: "View Challenge",
+            options: [.foreground]
+        )
+        
+        let acceptChallengeAction = UNNotificationAction(
+            identifier: "ACCEPT_CHALLENGE",
+            title: "Accept",
+            options: [.foreground]
+        )
+        
+        let challengeInviteCategory = UNNotificationCategory(
+            identifier: "CHALLENGE_INVITE",
+            actions: [acceptChallengeAction, viewChallengeAction],
+            intentIdentifiers: []
+        )
+        
+        // Contact joined category - add as friend action
+        let addFriendAction = UNNotificationAction(
+            identifier: "ADD_FRIEND",
+            title: "Add Friend",
+            options: [.foreground]
+        )
+        
+        let contactJoinedCategory = UNNotificationCategory(
+            identifier: "CONTACT_JOINED",
+            actions: [addFriendAction],
+            intentIdentifiers: []
+        )
+        
         UNUserNotificationCenter.current().setNotificationCategories([
             workoutCategory,
             nutritionCategory,
-            sharedWorkoutCategory
+            sharedWorkoutCategory,
+            challengeInviteCategory,
+            contactJoinedCategory
         ])
     }
     
@@ -757,6 +821,90 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "friend_request_\(requestId)")
     }
     
+    /// Challenge invite notification - when a friend challenges you
+    func sendChallengeInviteNotification(fromName: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.challengeInvite) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(fromName) wants to challenge you! 🏆"
+        content.body = "Accept the \"\(challengeTitle)\" challenge and prove yourself!"
+        content.sound = .default
+        content.categoryIdentifier = "CHALLENGE_INVITE"
+        
+        content.userInfo = [
+            "type": "challenge_invite",
+            "challenge_id": challengeId,
+            "sender_name": fromName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "challenge_invite_\(challengeId)")
+    }
+    
+    /// Challenge accepted notification - when opponent accepts your challenge
+    func sendChallengeAcceptedNotification(opponentName: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.challengeUpdate) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Challenge Accepted! ⚔️"
+        content.body = "\(opponentName) accepted your \"\(challengeTitle)\" challenge. Game on!"
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "challenge_accepted",
+            "challenge_id": challengeId,
+            "opponent_name": opponentName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "challenge_accepted_\(challengeId)")
+    }
+    
+    /// Challenge progress notification - when opponent logs progress
+    func sendChallengeProgressNotification(opponentName: String, challengeTitle: String, isOpponentAhead: Bool) {
+        guard isNotificationEnabled(.challengeUpdate) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        
+        if isOpponentAhead {
+            content.title = "\(opponentName) is pulling ahead! 😤"
+            content.body = "Don't let them win the \"\(challengeTitle)\" challenge!"
+        } else {
+            content.title = "You're in the lead! 💪"
+            content.body = "Keep it up in the \"\(challengeTitle)\" challenge!"
+        }
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "challenge_progress",
+            "opponent_name": opponentName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "challenge_progress_\(Date().timeIntervalSince1970)")
+    }
+    
+    /// Challenge completed notification - when a challenge ends
+    func sendChallengeCompletedNotification(challengeTitle: String, didWin: Bool, challengeId: String) {
+        guard isNotificationEnabled(.challengeUpdate) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        
+        if didWin {
+            content.title = "You Won! 🏆"
+            content.body = "Congratulations! You crushed the \"\(challengeTitle)\" challenge!"
+        } else {
+            content.title = "Challenge Complete"
+            content.body = "The \"\(challengeTitle)\" challenge has ended. Ready for a rematch?"
+        }
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "challenge_completed",
+            "challenge_id": challengeId,
+            "did_win": didWin
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "challenge_completed_\(challengeId)")
+    }
+    
     /// Workout completed - cancel today's reminders
     func workoutCompleted() {
         // Cancel today's workout reminders since they did it
@@ -889,6 +1037,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 DeepLinkManager.shared.pendingDestination = .mealsTab
                 print("🍎 [NOTIFICATIONS] User tapped Log Food - navigating to meals")
                 
+            case "ADD_FRIEND":
+                // Navigate to friend suggestions/requests when "Add Friend" tapped
+                DeepLinkManager.shared.pendingDestination = .friendRequests
+                print("👥 [NOTIFICATIONS] User tapped Add Friend from contact joined notification")
+                
             case "SNOOZE_1H":
                 // Reschedule notification for 1 hour later
                 self.snoozeNotification(categoryIdentifier: categoryIdentifier, hours: 1)
@@ -936,6 +1089,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .friends
             Task { await FriendService.shared.fetchFriends() }
             print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
+            
+        case "challenge_invite":
+            // Direct to home screen so user sees the challenge invite widget
+            Task { await ChallengeService.shared.fetchPendingInvites() }
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget")
+            
+        case "challenge_accepted", "challenge_progress", "challenge_completed":
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                Task { await ChallengeService.shared.fetchActiveChallenges() }
+                print("🏆 [NOTIFICATIONS] Opening challenge detail: \(challengeId)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .challenges
+                print("🏆 [NOTIFICATIONS] Opening challenges list")
+            }
+            
+        case "challenge_cancelled":
+            // Refresh challenges to remove the cancelled one
+            Task { await ChallengeService.shared.fetchActiveChallenges() }
+            DeepLinkManager.shared.pendingDestination = .challenges
+            print("🏆 [NOTIFICATIONS] Challenge was cancelled, refreshing challenges")
             
         // Achievement notifications
         case "personal_record":
@@ -1008,6 +1183,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .statsTab
             print("🏆 [NOTIFICATIONS] Opening stats for achievement")
             
+        case "CONTACT_JOINED":
+            DeepLinkManager.shared.pendingDestination = .friendRequests
+            print("👥 [NOTIFICATIONS] Opening friend requests from contact joined notification")
+            
         default:
             print("📱 [NOTIFICATIONS] User opened notification: \(category)")
         }
@@ -1032,5 +1211,35 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         )
         
         UNUserNotificationCenter.current().add(request)
+    }
+    
+    // MARK: - Contact Joined Notification
+    
+    /// Send notification when a contact joins Fit33
+    func sendContactJoinedNotification(contactName: String, newUserId: String) {
+        guard isNotificationEnabled(.contactJoined) else {
+            print("⚠️ [NOTIFICATIONS] Contact joined notifications disabled")
+            return
+        }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(contactName) joined Fit33! 🎉"
+        content.body = "Your contact is now on Fit33 - Add them as a friend!"
+        content.categoryIdentifier = "CONTACT_JOINED"
+        content.sound = .default
+        content.userInfo = [
+            "type": "contact_joined",
+            "new_user_id": newUserId
+        ]
+        
+        // Add thread identifier for grouping
+        content.threadIdentifier = "contact_joined"
+        
+        sendImmediateNotification(
+            content: content,
+            identifier: "contact_joined_\(newUserId)_\(Date().timeIntervalSince1970)"
+        )
+        
+        print("📬 [NOTIFICATIONS] Sent contact joined notification for \(contactName)")
     }
 }

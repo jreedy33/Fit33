@@ -6,8 +6,9 @@ import SwiftUI
 struct FriendsListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
-    // Use StateObject wrapper to prevent unnecessary re-renders during navigation
-    @StateObject private var friendService = FriendService.shared
+    // Use ObservedObject for singletons to observe without owning lifecycle
+    @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var contactsService = ContactsService.shared
     
     // Initial tab can be set via deep link (0: Friends, 1: Requests, 2: Search)
     var initialTab: Int = 0
@@ -108,6 +109,12 @@ struct FriendsListView: View {
                 Task {
                     await friendService.fetchFriends()
                     preloadFriendPhotos()
+                }
+            }
+            // Load contact suggestions when switching to Search tab (tab 2)
+            if newTab == 2 && contactsService.canAccessContacts && !contactsService.hasCheckedContacts {
+                Task {
+                    await contactsService.fetchContactsAndFindFriends()
                 }
             }
         }
@@ -358,23 +365,16 @@ struct FriendsListView: View {
                         }
                         .padding(.top, 50)
                     } else if searchText.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "at")
-                                .font(.system(size: 50))
-                                .foregroundColor(.blue.opacity(0.5))
-                            
-                            Text("Find Friends")
-                                .font(.headline)
-                            
-                            Text("Search by username to find\nand add friends")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.top, 50)
+                        // Show contact suggestions or permission prompt
+                        contactSuggestionsSection
                     } else {
                         ForEach(friendService.searchResults) { user in
-                            UserSearchResultCard(user: user)
+                            UserSearchResultCard(user: user, onRespondToRequest: {
+                                // Switch to Requests tab when user taps "Respond"
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    selectedTab = 1
+                                }
+                            })
                         }
                     }
                 }
@@ -412,6 +412,502 @@ struct FriendsListView: View {
             isSearching = false
         }
     }
+    
+    // MARK: - Contact Suggestions Section
+    
+    @ViewBuilder
+    private var contactSuggestionsSection: some View {
+        VStack(spacing: 20) {
+            // Show contact permission prompt FIRST if not yet granted
+            if contactsService.shouldShowPermissionPrompt {
+                // Prominent permission prompt at the top
+                contactPermissionPromptHero
+                    .padding(.top, 20)
+                
+                // Then show search instruction below
+                VStack(spacing: 8) {
+                    HStack {
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(height: 1)
+                        Text("or search by username")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(height: 1)
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.top, 10)
+            } else {
+                // Normal flow - show search header first
+                VStack(spacing: 8) {
+                    Image(systemName: "at")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.blue, .purple.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    Text("Find Friends")
+                        .font(.headline)
+                    
+                    Text("Search by username above")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 30)
+                
+                // Then show contact suggestions or states
+                if contactsService.canAccessContacts {
+                    if contactsService.isLoading {
+                        ProgressView("Finding friends from contacts...")
+                            .padding(.top, 20)
+                    } else if !contactsService.suggestedFriends.isEmpty {
+                        suggestedFriendsSection
+                    } else if contactsService.hasCheckedContacts {
+                        // Checked but no suggestions found
+                        VStack(spacing: 8) {
+                            Image(systemName: "person.2.slash")
+                                .font(.system(size: 30))
+                                .foregroundColor(.secondary.opacity(0.5))
+                            Text("No contacts on Fit33 yet")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Invite your friends to join!")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                        .padding(.top, 20)
+                    }
+                } else if contactsService.permissionDenied {
+                    contactPermissionDeniedView
+                }
+            }
+        }
+    }
+    
+    // MARK: - Hero Contact Permission Prompt (shown first time)
+    
+    private var contactPermissionPromptHero: some View {
+        VStack(spacing: 16) {
+            // Icon with animation hint
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green.opacity(0.15), .teal.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 100, height: 100)
+                
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 50))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .teal],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            
+            Text("Find Friends from Contacts")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("See which of your contacts are already on Fit33 and add them as friends instantly!")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            
+            Button(action: {
+                HapticManager.impact(.medium)
+                Task {
+                    await contactsService.requestAccess()
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.rectangle.stack.fill")
+                        .font(.system(size: 18))
+                    Text("Connect Contacts")
+                        .font(.headline)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [.green, .teal],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(16)
+                .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
+            }
+            .padding(.horizontal, 30)
+            .padding(.top, 8)
+            
+            // Privacy note
+            HStack(spacing: 4) {
+                Image(systemName: "lock.shield")
+                    .font(.caption2)
+                Text("Your contacts stay private and are never shared")
+                    .font(.caption2)
+            }
+            .foregroundColor(.secondary.opacity(0.7))
+            .padding(.top, 4)
+        }
+        .padding(.vertical, 24)
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(cardBackground)
+                .shadow(color: .green.opacity(0.12), radius: 16, x: 0, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(
+                    LinearGradient(
+                        colors: [.green.opacity(0.4), .teal.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+        )
+        .padding(.horizontal, 16)
+    }
+    
+    private var suggestedFriendsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Divider with label
+            HStack {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+                Text("From Your Contacts")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+            }
+            .padding(.top, 10)
+            
+            // Suggested friends list
+            ForEach(contactsService.suggestedFriends) { friend in
+                SuggestedFriendCard(
+                    friend: friend,
+                    onRespondToRequest: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedTab = 1
+                        }
+                    },
+                    onActionCompleted: {
+                        // Refresh suggestions and sent requests after sending
+                        Task {
+                            await contactsService.refreshSuggestions()
+                            await friendService.fetchSentRequests()
+                        }
+                    }
+                )
+            }
+        }
+    }
+    
+    private var contactPermissionDeniedView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+                Text("or")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 40)
+            
+            VStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.badge.xmark")
+                    .font(.system(size: 30))
+                    .foregroundColor(.secondary.opacity(0.5))
+                
+                Text("Contact Access Disabled")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Button(action: {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    Text("Open Settings")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            .padding(.top, 10)
+        }
+    }
+}
+
+// MARK: - Suggested Friend Card
+
+struct SuggestedFriendCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var friendService = FriendService.shared
+    let friend: SuggestedFriend
+    var onRespondToRequest: (() -> Void)?
+    var onActionCompleted: (() -> Void)?
+    
+    @State private var isProcessing = false
+    @State private var requestSent = false
+    
+    var body: some View {
+        HStack(spacing: 14) {
+            // Avatar
+            avatarView
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Username
+                if let username = friend.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                }
+                
+                // Name
+                if let name = friend.name, !name.isEmpty {
+                    Text(name)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                
+                // "From contacts" label
+                HStack(spacing: 4) {
+                    Image(systemName: "person.crop.rectangle.stack")
+                        .font(.system(size: 10))
+                    Text("In your contacts")
+                        .font(.caption2)
+                }
+                .foregroundColor(.green)
+            }
+            
+            Spacer()
+            
+            // Action button
+            actionButton
+        }
+        .padding(16)
+        .background(PremiumCardBackground(accentColor: .green))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: .green.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
+    }
+    
+    private var avatarView: some View {
+        Group {
+            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 50, height: 50)
+                            .clipShape(Circle())
+                    case .failure(_), .empty:
+                        defaultAvatar
+                    @unknown default:
+                        defaultAvatar
+                    }
+                }
+            } else {
+                defaultAvatar
+            }
+        }
+        .frame(width: 50, height: 50)
+    }
+    
+    private var defaultAvatar: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.green, Color.teal],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 50, height: 50)
+            
+            Text(friend.initials)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+        }
+    }
+    
+    @ViewBuilder
+    private var actionButton: some View {
+        if friend.isFriend {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                Text("Friends")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.green)
+        } else if friend.hasOutgoingRequest || requestSent {
+            Text("Pending")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.orange)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .stroke(Color.orange, lineWidth: 1)
+                )
+        } else if friend.hasIncomingRequest {
+            Button(action: { onRespondToRequest?() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 12))
+                    Text("Respond")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color.green, Color.teal],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                )
+            }
+        } else {
+            Button(action: { sendRequest() }) {
+                HStack(spacing: 4) {
+                    if isProcessing {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 12))
+                    }
+                    Text("Add")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color.blue, Color.purple.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                )
+            }
+            .disabled(isProcessing)
+        }
+    }
+    
+    private func sendRequest() {
+        isProcessing = true
+        HapticManager.impact(.medium)
+        Task {
+            let success = await friendService.sendFriendRequest(toUserId: friend.userId)
+            await MainActor.run {
+                if success {
+                    requestSent = true
+                    HapticManager.notification(.success)
+                    onActionCompleted?()
+                } else {
+                    HapticManager.notification(.error)
+                }
+                isProcessing = false
+            }
+        }
+    }
+}
+
+// MARK: - Premium Card Background (matches exercise cards)
+
+struct PremiumCardBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var accentColor: Color = .blue
+    
+    var body: some View {
+        ZStack {
+            // Bottom shadow layer (deepest) - color glow
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                .offset(y: 5)
+                .blur(radius: 3)
+            
+            // Middle shadow layer
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
+                .offset(y: 3)
+            
+            // Main card background with gradient
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.16), Color(white: 0.11)]
+                            : [Color.white, Color.white.opacity(0.96)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            // Inner highlight (top edge glow)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.4), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            // Colored accent border
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [accentColor.opacity(colorScheme == .dark ? 0.35 : 0.25), accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
 }
 
 // MARK: - Friend Card
@@ -420,10 +916,6 @@ struct FriendCard: View {
     @Environment(\.colorScheme) private var colorScheme
     let friend: Friend
     let onTap: () -> Void
-    
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         Button(action: onTap) {
@@ -461,13 +953,11 @@ struct FriendCard: View {
                     .foregroundColor(.secondary.opacity(0.5))
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
-                    .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-            )
+            .background(PremiumCardBackground(accentColor: .blue))
         }
         .buttonStyle(PlainButtonStyle())
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: .blue.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 16, x: 0, y: 8)
     }
 }
 
@@ -475,14 +965,10 @@ struct FriendCard: View {
 
 struct FriendRequestCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     let request: FriendRequest
     
     @State private var isProcessing = false
-    
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var initials: String {
         guard let name = request.fromUserName, !name.isEmpty else { return "?" }
@@ -548,15 +1034,9 @@ struct FriendRequestCard: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.green.opacity(0.3), lineWidth: 1)
-        )
+        .background(PremiumCardBackground(accentColor: .green))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: .green.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 16, x: 0, y: 8)
     }
     
     // Keeping for backwards compatibility with initials property
@@ -610,15 +1090,11 @@ struct FriendRequestCard: View {
 
 struct SentFriendRequestCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     let request: SentFriendRequest
     
     @State private var isProcessing = false
     @State private var showCancelConfirmation = false
-    
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -680,15 +1156,9 @@ struct SentFriendRequestCard: View {
             .opacity(isProcessing ? 0.5 : 1)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-        )
+        .background(PremiumCardBackground(accentColor: .orange))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: .orange.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
         .confirmationDialog(
             "Cancel Friend Request?",
             isPresented: $showCancelConfirmation,
@@ -726,15 +1196,12 @@ struct SentFriendRequestCard: View {
 
 struct UserSearchResultCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     let user: UserSearchResult
+    var onRespondToRequest: (() -> Void)?  // Called when they sent us a request and we tap "Respond"
     
     @State private var isProcessing = false
     @State private var requestSent = false
-    
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -783,11 +1250,9 @@ struct UserSearchResultCard: View {
             actionButton
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-        )
+        .background(PremiumCardBackground(accentColor: .purple))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: .purple.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
     }
     
     private var defaultAvatar: some View {
@@ -811,6 +1276,7 @@ struct UserSearchResultCard: View {
     @ViewBuilder
     private var actionButton: some View {
         if user.isFriend {
+            // Already friends
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 12))
@@ -819,7 +1285,8 @@ struct UserSearchResultCard: View {
                     .fontWeight(.semibold)
             }
             .foregroundColor(.green)
-        } else if user.hasPendingRequest || requestSent {
+        } else if user.hasOutgoingRequest == true || requestSent {
+            // I sent THEM a request - waiting for their response
             Text("Pending")
                 .font(.caption)
                 .fontWeight(.semibold)
@@ -830,7 +1297,30 @@ struct UserSearchResultCard: View {
                     Capsule()
                         .stroke(Color.orange, lineWidth: 1)
                 )
+        } else if user.hasIncomingRequest == true {
+            // THEY sent ME a request - I need to respond
+            Button(action: { onRespondToRequest?() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 12))
+                    Text("Respond")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color.green, Color.teal],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                )
+            }
         } else {
+            // No relationship - can add as friend
             Button(action: { sendRequest() }) {
                 HStack(spacing: 4) {
                     Image(systemName: "person.badge.plus")

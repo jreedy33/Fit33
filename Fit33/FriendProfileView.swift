@@ -6,17 +6,34 @@ import CoreData
 struct FriendProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var friendService = FriendService.shared
+    
+    // NOTE: Removed @ObservedObject for FriendService and ChallengeService
+    // to prevent sheet dismissal when these services update in the background.
+    // Instead, we load data once into local state.
     
     let friend: Friend
     
     @State private var showingCreateWorkout = false
+    @State private var showingCreateChallenge = false
     @State private var showingUnfriendConfirmation = false
     @State private var isUnfriending = false
+    @State private var friendChallenges: [FriendChallenge] = []
+    @State private var selectedChallenge: ActiveChallenge?
+    @State private var showingChallengeDetail = false
+    @State private var activeChallengesWithFriend: [ActiveChallenge] = []
+    @State private var sentWorkoutsToFriend: [SentWorkout] = []
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
     }
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark 
+            ? [Color(white: 0.18), Color(white: 0.12)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    // activeChallengesWithFriend is now a @State variable loaded on appear
     
     var body: some View {
         NavigationView {
@@ -39,8 +56,21 @@ struct FriendProfileView: View {
                         // Stats
                         statsSection
                         
+                        // Active Challenge Widget (if any)
+                        if let activeChallenge = activeChallengesWithFriend.first {
+                            activeChallengeSection(challenge: activeChallenge)
+                        }
+                        
                         // Create Workout Button
                         createWorkoutButton
+                        
+                        // Create Challenge Button
+                        createChallengeButton
+                        
+                        // Past Challenges Section
+                        if !friendChallenges.isEmpty {
+                            challengeHistorySection
+                        }
                         
                         // Shared Workouts History
                         sharedHistorySection
@@ -63,6 +93,25 @@ struct FriendProfileView: View {
             .sheet(isPresented: $showingCreateWorkout) {
                 CreateWorkoutForFriendView(friend: friend)
             }
+            .sheet(isPresented: $showingCreateChallenge, onDismiss: {
+                print("🔔 [CHALLENGE SHEET] onDismiss callback triggered")
+            }) {
+                ChallengeSetupView(friend: friend)
+                    .onAppear {
+                        print("🔔 [CHALLENGE SHEET] Sheet content appeared")
+                    }
+            }
+            .onChange(of: showingCreateChallenge) { oldValue, newValue in
+                print("🔔 [CHALLENGE SHEET] State changed: \(oldValue) → \(newValue)")
+                if !newValue && oldValue {
+                    print("⚠️ [CHALLENGE SHEET] Sheet dismissed unexpectedly!")
+                }
+            }
+            .sheet(isPresented: $showingChallengeDetail) {
+                if let challenge = selectedChallenge {
+                    ChallengeDetailView(challenge: challenge)
+                }
+            }
             .alert("Unfriend \(friend.displayName)?", isPresented: $showingUnfriendConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Unfriend", role: .destructive) {
@@ -70,6 +119,50 @@ struct FriendProfileView: View {
                 }
             } message: {
                 Text("You will no longer be able to share workouts with each other.")
+            }
+            .onAppear {
+                print("📱 [FRIEND PROFILE] View appeared for \(friend.friendName ?? "friend")")
+                loadData()
+            }
+        }
+    }
+    
+    // MARK: - Load Data
+    
+    private func loadData() {
+        // Load data into local state to avoid re-renders from service updates
+        // which can cause sheet dismissal
+        
+        // Load active challenges with this friend
+        activeChallengesWithFriend = ChallengeService.shared.activeChallenges.filter { $0.opponentId == friend.friendId }
+        
+        // Load sent workouts to this friend
+        sentWorkoutsToFriend = FriendService.shared.sentWorkouts.filter { $0.toUserId == friend.friendId }
+        
+        // Load challenge history
+        Task {
+            friendChallenges = await ChallengeService.shared.getChallengesWithFriend(friendId: friend.friendId)
+        }
+        
+        print("📱 [FRIEND PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts")
+    }
+    
+    // MARK: - Active Challenge Section
+    
+    private func activeChallengeSection(challenge: ActiveChallenge) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(.orange)
+                Text("Active Challenge")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 4)
+            
+            ActiveChallengeWidget(challenge: challenge) {
+                selectedChallenge = challenge
+                showingChallengeDetail = true
             }
         }
     }
@@ -111,91 +204,93 @@ struct FriendProfileView: View {
     private var statsSection: some View {
         HStack(spacing: 12) {
             // Fitness Goal
-            VStack(spacing: 8) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.orange, .red],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                Text(friend.fitnessGoal ?? "Not set")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                Text("Goal")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(cardBackground)
+            statCard(
+                icon: "flame.fill",
+                gradientColors: [.orange, .red],
+                value: friend.fitnessGoal ?? "Not set",
+                label: "Goal"
             )
             
             // Experience Level
-            VStack(spacing: 8) {
-                Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.green, .mint],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                Text(friend.experienceLevel ?? "Not set")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                Text("Level")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(cardBackground)
+            statCard(
+                icon: "chart.bar.fill",
+                gradientColors: [.green, .mint],
+                value: friend.experienceLevel ?? "Not set",
+                label: "Level"
             )
             
             // Workouts Shared
-            VStack(spacing: 8) {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 20))
-                    .foregroundStyle(
+            statCard(
+                icon: "arrow.left.arrow.right",
+                gradientColors: [.blue, .cyan],
+                value: "\(friend.totalWorkoutsShared)",
+                label: "Shared"
+            )
+        }
+    }
+    
+    private func statCard(icon: String, gradientColors: [Color], value: String, label: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            Text(value)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            ZStack {
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
                         LinearGradient(
-                            colors: [.blue, .cyan],
+                            colors: cardBackgroundGradient,
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 
-                Text("\(friend.totalWorkoutsShared)")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
                 
-                Text("Shared")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                // Colored accent border
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [gradientColors[0].opacity(colorScheme == .dark ? 0.3 : 0.2), gradientColors[1].opacity(colorScheme == .dark ? 0.2 : 0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(cardBackground)
-            )
-        }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
     }
     
     // MARK: - Create Workout Button
@@ -207,22 +302,17 @@ struct FriendProfileView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [.blue.opacity(0.2), .purple.opacity(0.2)],
+                                gradient: Gradient(colors: [.blue, .purple]),
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .frame(width: 50, height: 50)
+                        .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: "dumbbell.fill")
                         .font(.system(size: 22))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.blue, .purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .foregroundColor(.white)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -240,16 +330,278 @@ struct FriendProfileView: View {
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                ZStack {
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                    
+                    // Blue/purple accent border
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.purple.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
             )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+            .shadow(color: .blue.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Create Challenge Button
+    
+    /// Check if there's already an active challenge with this friend
+    private var hasActiveChallengeWithFriend: Bool {
+        !activeChallengesWithFriend.isEmpty
+    }
+    
+    /// The active challenge with this friend (if any)
+    private var activeChallengeWithFriend: ActiveChallenge? {
+        activeChallengesWithFriend.first
+    }
+    
+    private var createChallengeButton: some View {
+        Group {
+            if let activeChallenge = activeChallengeWithFriend {
+                // Show active challenge status instead of create button
+                activeChallengeCard(challenge: activeChallenge)
+            } else {
+                // Show create challenge button
+                Button(action: {
+                    print("🔔 [CHALLENGE BUTTON] Tapped! Setting showingCreateChallenge = true")
+                    showingCreateChallenge = true
+                }) {
+                    createChallengeButtonContent
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+    
+    private var createChallengeButtonContent: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [.orange, .red]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 50, height: 50)
+                    .shadow(color: .orange.opacity(0.4), radius: 6, x: 0, y: 3)
+                
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Create Challenge with \(friend.friendName?.components(separatedBy: " ").first ?? "Friend")")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                Text("Steps, workouts, running & more")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.orange, .red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+        }
+        .padding(16)
+        .background(
+            ZStack {
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: cardBackgroundGradient,
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                
+                // Orange/red accent border
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.red.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .orange.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
+    }
+    
+    // MARK: - Active Challenge Card (shows when challenge already exists with friend)
+    
+    private func activeChallengeCard(challenge: ActiveChallenge) -> some View {
+        Button(action: {
+            selectedChallenge = challenge
+            showingChallengeDetail = true
+        }) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.blue, .cyan]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
+                    
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Active Challenge")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("\(challenge.title) • \(challenge.daysRemaining) days left")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Score comparison
+                VStack(spacing: 2) {
+                    Text(challenge.amWinning ? "🏆" : "")
+                        .font(.system(size: 10))
+                    Text("\(challenge.myTotalProgress) - \(challenge.opponentTotalProgress)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(challenge.amWinning ? .green : (challenge.opponentTotalProgress > challenge.myTotalProgress ? .red : .primary))
+                }
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.blue)
+            }
+            .padding(16)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+            .shadow(color: .blue.opacity(colorScheme == .dark ? 0.2 : 0.15), radius: 12, x: 0, y: 0) // Even glow
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Challenge History Section
+    
+    private var challengeHistorySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundColor(.secondary)
+                Text("Challenge History")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 4)
+            
+            VStack(spacing: 8) {
+                ForEach(friendChallenges.prefix(3)) { challenge in
+                    FriendChallengeRow(challenge: challenge) {
+                        // Find matching active challenge or show completed state
+                        if let activeMatch = activeChallengesWithFriend.first(where: { $0.challengeId == challenge.challengeId }) {
+                            selectedChallenge = activeMatch
+                            showingChallengeDetail = true
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Shared History Section
@@ -265,48 +617,127 @@ struct FriendProfileView: View {
             }
             .padding(.horizontal, 4)
             
-            if friend.totalWorkoutsShared == 0 {
+            if sentWorkoutsToFriend.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "arrow.left.arrow.right.circle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary.opacity(0.5))
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue.opacity(0.15), .cyan.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 60, height: 60)
+                        
+                        Image(systemName: "arrow.left.arrow.right.circle")
+                            .font(.system(size: 28))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
                     
                     Text("No workouts shared yet")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
                     
                     Text("Create a workout to get started!")
                         .font(.caption)
-                        .foregroundColor(.secondary.opacity(0.7))
+                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: cardBackgroundGradient,
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: colorScheme == .dark
+                                        ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                        
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(colorScheme == .dark ? 0.3 : 0.2), Color.cyan.opacity(colorScheme == .dark ? 0.2 : 0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
                 )
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
             } else {
                 // Show recent shared workouts
                 VStack(spacing: 0) {
-                    ForEach(recentSharedWorkouts) { workout in
-                        SharedWorkoutHistoryRow(workout: workout)
+                    ForEach(sentWorkoutsToFriend) { workout in
+                        SharedWorkoutHistoryRow(workout: workout, colorScheme: colorScheme)
                         
-                        if workout.id != recentSharedWorkouts.last?.id {
+                        if workout.id != sentWorkoutsToFriend.last?.id {
                             Divider().padding(.leading, 50)
                         }
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: cardBackgroundGradient,
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: colorScheme == .dark
+                                        ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                        
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(colorScheme == .dark ? 0.2 : 0.15), Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
                 )
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
             }
         }
     }
     
-    private var recentSharedWorkouts: [SentWorkout] {
-        friendService.sentWorkouts.filter { $0.toUserId == friend.friendId }
-    }
+    // recentSharedWorkouts is now using sentWorkoutsToFriend @State variable
     
     // MARK: - Unfriend Button
     
@@ -344,7 +775,7 @@ struct FriendProfileView: View {
     private func unfriend() {
         isUnfriending = true
         Task {
-            let success = await friendService.removeFriend(friendshipId: friend.friendshipId)
+            let success = await FriendService.shared.removeFriend(friendshipId: friend.friendshipId)
             if success {
                 dismiss()
             }
@@ -357,18 +788,30 @@ struct FriendProfileView: View {
 
 struct SharedWorkoutHistoryRow: View {
     let workout: SentWorkout
+    let colorScheme: ColorScheme
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: workout.statusIcon)
-                .font(.system(size: 18))
-                .foregroundColor(workout.statusColor)
-                .frame(width: 36)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [workout.statusColor.opacity(0.2), workout.statusColor.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: workout.statusIcon)
+                    .font(.system(size: 16))
+                    .foregroundColor(workout.statusColor)
+            }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(workout.workoutName)
                     .font(.subheadline)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
                     .foregroundColor(.primary)
                 
                 Text(formatDate(workout.createdAt))
@@ -380,17 +823,17 @@ struct SharedWorkoutHistoryRow: View {
             
             Text(workout.status.capitalized)
                 .font(.caption)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
                 .foregroundColor(workout.statusColor)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, 5)
                 .background(
                     Capsule()
                         .fill(workout.statusColor.opacity(0.15))
                 )
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
     }
     
     private func formatDate(_ date: Date) -> String {

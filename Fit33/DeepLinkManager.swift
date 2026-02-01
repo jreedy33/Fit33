@@ -21,6 +21,11 @@ class DeepLinkManager: ObservableObject {
         case receivedWorkout(workoutId: String)
         case receivedWorkouts
         
+        // Challenges
+        case challenges         // List of active challenges
+        case challengeInvite(challengeId: String)
+        case challengeDetail(challengeId: String)
+        
         // Dashboard Widgets (navigate to Home + scroll to widget)
         case hydration          // Home tab > Hydration widget
         case stepTracker        // Home tab > Step tracker widget
@@ -124,6 +129,14 @@ class DeepLinkManager: ObservableObject {
             NotificationCenter.default.post(name: Notification.Name("InBodyCallback"), object: url)
             return true
             
+        case "fitbit":
+            // Handle Fitbit OAuth callback
+            // Format: fit33://fitbit?code=xxx
+            print("⌚ [DEEPLINK] Fitbit OAuth callback received - forwarding to FitbitService")
+            // Post notification for any listening views
+            NotificationCenter.default.post(name: Notification.Name("FitbitCallback"), object: url)
+            return true
+            
         case "login-callback":
             // Handle OAuth callback (Google, Facebook, etc.)
             // Format: fit33://login-callback#access_token=xxx&...
@@ -190,6 +203,20 @@ class DeepLinkManager: ObservableObject {
             // Format: fit33://personalrecord
             pendingDestination = .personalRecord
             print("🏆 [DEEPLINK] Navigating to personal records")
+            return true
+            
+        case "challenge", "challenges":
+            // Format: fit33://challenge/{challengeId} or fit33://challenges
+            let path = url.path
+            let challengeId = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            
+            if !challengeId.isEmpty {
+                pendingDestination = .challengeDetail(challengeId: challengeId)
+                print("🏆 [DEEPLINK] Navigating to challenge: \(challengeId)")
+            } else {
+                pendingDestination = .challenges
+                print("🏆 [DEEPLINK] Navigating to challenges list")
+            }
             return true
             
         default:

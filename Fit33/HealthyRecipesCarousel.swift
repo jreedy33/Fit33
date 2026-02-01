@@ -85,6 +85,11 @@ struct HealthyRecipesCarousel: View {
         .onDisappear {
             stopRefreshTimer()
         }
+        // Refresh when preferences change (cache invalidated)
+        .onChange(of: preferenceService.hasPreferencesSet) { newValue in
+            print("🔄 [CAROUSEL] Preferences changed (\(newValue)) - refreshing")
+            loadRecipes()
+        }
         .background(
             Group {
                 // Recipe Detail Navigation
@@ -129,8 +134,8 @@ struct HealthyRecipesCarousel: View {
     private var recipeCarousel: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 16) {
-                ForEach(Array(displayedRecipes.prefix(8).enumerated()), id: \.element.id) { index, recipe in
-                    // First recipe is always free, rest require premium
+                ForEach(Array(displayedRecipes.prefix(12).enumerated()), id: \.element.id) { index, recipe in
+                    // First 2 recipes are always free, rest require premium
                     let isLocked = !premiumManager.isPremiumUser && index >= freeRecipeLimit
                     
                     PremiumRecipeCard(
@@ -160,7 +165,12 @@ struct HealthyRecipesCarousel: View {
     private var subtitleText: String {
         let hour = Calendar.current.component(.hour, from: Date())
         
-        if isPersonalized {
+        if isPersonalized && preferenceService.hasPreferencesSet {
+            let likedCount = preferenceService.getLikedIngredients().count
+            if likedCount > 0 {
+                let firstLiked = preferenceService.getLikedIngredients().prefix(2).joined(separator: ", ")
+                return "Featuring \(firstLiked) & more"
+            }
             return "Based on your preferences"
         }
         
@@ -180,16 +190,16 @@ struct HealthyRecipesCarousel: View {
     private func loadRecipes() {
         Task {
             // Check if we should refresh or use cached
-            if preferenceService.shouldRefreshCarousel() {
-                // Try to get personalized recommendations
-                let personalized = await preferenceService.getRotatedCarouselRecipes(count: 10)
+            if preferenceService.shouldRefreshCarousel() || displayedRecipes.isEmpty {
+                // Try to get personalized recommendations (fetch more for variety)
+                let personalized = await preferenceService.getRotatedCarouselRecipes(count: 15)
                 
                 if !personalized.isEmpty {
                     displayedRecipes = personalized
-                    isPersonalized = true
+                    isPersonalized = preferenceService.hasPreferencesSet
                 } else {
                     // Fall back to time-based suggestions
-                    let timeBased = await preferenceService.getMealSuggestionsForCurrentTime(count: 10)
+                    let timeBased = await preferenceService.getMealSuggestionsForCurrentTime(count: 15)
                     
                     if !timeBased.isEmpty {
                         displayedRecipes = timeBased
@@ -201,18 +211,16 @@ struct HealthyRecipesCarousel: View {
                         isPersonalized = false
                     }
                 }
-            } else if displayedRecipes.isEmpty {
-                // First load - get default recipes
-                await spoonacularService.fetchHealthyRecipes()
-                displayedRecipes = spoonacularService.healthyRecipes
+                
+                print("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes (personalized: \(isPersonalized))")
             }
         }
     }
     
-    // MARK: - Refresh Timer (rotates recipes every 4 hours)
+    // MARK: - Refresh Timer (rotates recipes every hour for freshness)
     private func startRefreshTimer() {
-        // Check every 30 minutes if we should refresh
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { _ in
+        // Check every 15 minutes if we should refresh
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { _ in
             if preferenceService.shouldRefreshCarousel() {
                 loadRecipes()
             }

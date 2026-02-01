@@ -126,6 +126,21 @@ struct Fit33App: App {
         Task(priority: .userInitiated) {
             let context = PersistenceController.shared.container.viewContext
             await StartupCache.shared.warmUp(context: context)
+            
+            // ⚡️ INSTANT TAB SWITCHING: Enable eager mode after startup cache is warmed
+            await MainActor.run {
+                LazyTabManager.shared.enableEagerMode()
+            }
+        }
+        
+        // ⚡️ INSTANT TAB SWITCHING: Begin aggressive preloading for all tabs
+        // This runs in parallel with startup cache and pre-fetches ALL tab data
+        Task(priority: .userInitiated) {
+            // Short delay to let the UI appear first
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+            
+            let context = PersistenceController.shared.container.viewContext
+            await TabPreloader.shared.beginPreloading(context: context)
         }
         
         // 👤 Initialize gender filter service (centralized gender management)
@@ -560,6 +575,12 @@ struct Fit33App: App {
                                UserManager.shared.hasCompletedOnboarding {
                                 try? await UserManager.shared.syncProfileToCloud()
                             }
+                        }
+                        
+                        // 📊 Sync all health data (Fitbit, Strava, etc.) - throttled to prevent excessive syncs
+                        // This single call handles Fitbit, Strava, and aggregated health data
+                        Task {
+                            await HealthDataService.shared.syncAllHealthData()
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

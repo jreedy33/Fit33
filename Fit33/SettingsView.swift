@@ -3,6 +3,9 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var stravaService = StravaService.shared
+    @StateObject private var fitbitService = FitbitService.shared
+    @StateObject private var healthKitService = HealthKitService.shared
     
     @State private var versionTapCount = 0
     @State private var showDevMenu = false
@@ -465,22 +468,126 @@ struct SettingsView: View {
                                             Text("Strava")
                                                 .font(.body)
                                                 .foregroundColor(.primary)
-                                            Text(StravaService.shared.isConnected ? "Connected • Cardio synced" : "Sync cardio activities")
+                                            Text(stravaService.isConnected ? "Connected • Cardio synced" : "Sync cardio activities")
                                                 .font(.caption)
-                                                .foregroundColor(StravaService.shared.isConnected ? .green : .secondary)
+                                                .foregroundColor(stravaService.isConnected ? .green : .secondary)
                                         }
                                         
                                         Spacer()
                                         
-                                        if StravaService.shared.isConnected {
+                                        if stravaService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
-                                                .font(.system(size: 14))
+                                                .font(.system(size: 20))
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Fitbit Integration
+                                NavigationLink(destination: FitbitSettingsView()) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 0, green: 0.73, blue: 0.77).opacity(0.15), Color(red: 0, green: 0.55, blue: 0.58).opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "heart.circle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color(red: 0, green: 0.73, blue: 0.77), Color(red: 0, green: 0.55, blue: 0.58)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
                                         }
                                         
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Fitbit")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(fitbitService.isConnected ? "Connected • Steps & workouts synced" : "Sync steps, workouts & sleep")
+                                                .font(.caption)
+                                                .foregroundColor(fitbitService.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if fitbitService.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 20))
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Apple Health Integration (Nike Run Club, Apple Watch, etc.)
+                                NavigationLink(destination: HealthKitSettingsView()) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color.red.opacity(0.15), Color.pink.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "heart.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color.red, Color.pink],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Apple Health")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(healthKitService.isAuthorized ? "Connected • Nike Run Club & more" : "Nike Run Club, Apple Watch & more")
+                                                .font(.caption)
+                                                .foregroundColor(healthKitService.isAuthorized ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if healthKitService.isAuthorized {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 20))
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                        }
                                     }
                                     .padding(.vertical, 12)
                                     .padding(.horizontal, 16)

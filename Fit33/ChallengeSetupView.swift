@@ -1,0 +1,1039 @@
+//
+//  ChallengeSetupView.swift
+//  Fit33
+//
+//  Create a new challenge with a friend - select type, duration, and target
+//
+
+import SwiftUI
+
+struct ChallengeSetupView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    
+    // NOTE: Removed @ObservedObject for ChallengeService to prevent sheet dismissal
+    // when the service updates. Templates are loaded into local state instead.
+    
+    let friend: Friend
+    
+    // Challenge configuration
+    @State private var selectedTemplate: ChallengeTemplate?
+    @State private var selectedType: ChallengeType = .steps
+    @State private var customTitle = ""
+    @State private var dailyTarget: Int = 10000
+    @State private var durationDays: Int = 7
+    @State private var startDate: Date = Date().addingTimeInterval(86400) // Tomorrow
+    @State private var showingCustomSetup = false
+    
+    // UI State
+    @State private var isCreating = false
+    @State private var showingSuccess = false
+    
+    // Local template state (loaded once, not observed)
+    @State private var templates: [ChallengeTemplate] = []
+    @State private var isLoadingTemplates = true
+    
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color.white
+    }
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark 
+            ? [Color(white: 0.18), Color(white: 0.12)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    // Group templates by type (using local state)
+    private var groupedTemplates: [ChallengeType: [ChallengeTemplate]] {
+        Dictionary(grouping: templates) { template in
+            ChallengeType(rawValue: template.challengeType) ?? .steps
+        }
+    }
+    
+    private var featuredTemplates: [ChallengeTemplate] {
+        templates.filter { $0.isFeatured }
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Background
+                LinearGradient(
+                    gradient: Gradient(colors: colorScheme == .dark
+                        ? [Color(red: 0.06, green: 0.08, blue: 0.14), Color(red: 0.04, green: 0.05, blue: 0.08)]
+                        : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                if showingCustomSetup {
+                    customSetupView
+                } else {
+                    templateSelectionView
+                }
+            }
+            .navigationTitle("Challenge \(friend.friendName?.components(separatedBy: " ").first ?? "Friend")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                print("🏆 [CHALLENGE SETUP] View appeared for friend: \(friend.friendName ?? "unknown")")
+                loadTemplates()
+            }
+            .onDisappear {
+                print("🏆 [CHALLENGE SETUP] View DISAPPEARED!")
+            }
+            .alert("Challenge Sent! 🎯", isPresented: $showingSuccess) {
+                Button("Done") { dismiss() }
+            } message: {
+                Text("\(friend.friendName?.components(separatedBy: " ").first ?? "Your friend") will receive a notification to accept your challenge.")
+            }
+        }
+    }
+    
+    // MARK: - Template Selection View
+    
+    private var templateSelectionView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header with friend info
+                challengeHeader
+                
+                // Loading state
+                if isLoadingTemplates && templates.isEmpty {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Loading challenges...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                }
+                
+                // Featured Challenges
+                if !featuredTemplates.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
+                            Text("Popular Challenges")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 4)
+                        
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                            ForEach(featuredTemplates) { template in
+                                TemplateCard(
+                                    template: template,
+                                    isSelected: selectedTemplate?.id == template.id,
+                                    onSelect: { selectTemplate(template) }
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // All challenge types
+                ForEach(ChallengeType.allCases) { type in
+                    if let templates = groupedTemplates[type], !templates.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: type.icon)
+                                    .foregroundColor(type.color)
+                                Text(type.displayName + "s")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 4)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(templates.filter { !$0.isFeatured }) { template in
+                                    TemplateRow(
+                                        template: template,
+                                        isSelected: selectedTemplate?.id == template.id,
+                                        onSelect: { selectTemplate(template) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Custom Challenge Option
+                Button(action: { showingCustomSetup = true }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [.purple, .pink]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+                                .shadow(color: .purple.opacity(0.4), radius: 6, x: 0, y: 3)
+                            
+                            Image(systemName: "plus")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Create Custom Challenge")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Set your own goals and duration")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .pink],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    }
+                    .padding(16)
+                    .background(
+                        ZStack {
+                            // Main card background with gradient
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: cardBackgroundGradient,
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                            
+                            // Inner highlight (top edge glow)
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: colorScheme == .dark
+                                            ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1
+                                )
+                            
+                            // Purple/pink accent border
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        }
+                    )
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+                    .shadow(color: .purple.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 100)
+        }
+        .overlay(alignment: .bottom) {
+            if selectedTemplate != nil {
+                startChallengeButton
+            }
+        }
+    }
+    
+    // MARK: - Challenge Header
+    
+    private var challengeHeader: some View {
+        HStack(spacing: 16) {
+            // VS style display
+            HStack(spacing: 12) {
+                // Current user avatar placeholder
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.white)
+                    )
+                
+                Text("VS")
+                    .font(.headline)
+                    .fontWeight(.black)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.orange, .red],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                
+                // Friend avatar
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 50,
+                    showGradientRing: true,
+                    gradientColors: [.orange, .red]
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Challenge")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text(friend.displayName)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+            
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(cardBackground)
+                .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
+        )
+    }
+    
+    // MARK: - Custom Setup View
+    
+    private var customSetupView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Back button
+                HStack {
+                    Button(action: { showingCustomSetup = false }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                            Text("Templates")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                    }
+                    Spacer()
+                }
+                
+                // Challenge Type Picker
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Challenge Type")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 4)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(ChallengeType.allCases) { type in
+                                Button(action: { selectedType = type }) {
+                                    VStack(spacing: 8) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: selectedType == type ? type.gradientColors : [Color.gray.opacity(0.2), Color.gray.opacity(0.3)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 56, height: 56)
+                                            
+                                            Image(systemName: type.icon)
+                                                .font(.system(size: 22))
+                                                .foregroundColor(selectedType == type ? .white : .gray)
+                                        }
+                                        
+                                        Text(type.displayName.replacingOccurrences(of: " Challenge", with: ""))
+                                            .font(.caption2)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(selectedType == type ? .primary : .secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                }
+                
+                // Challenge Title
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Challenge Name")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    TextField("e.g., 10K Steps Daily", text: $customTitle)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(.systemGray6))
+                        )
+                }
+                .padding(.horizontal, 4)
+                
+                // Daily Target
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Daily Target")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 16) {
+                        // Decrease button
+                        Button(action: { decreaseTarget() }) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue)
+                        }
+                        
+                        VStack(spacing: 2) {
+                            Text("\(dailyTarget.formatted())")
+                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            
+                            Text(targetUnitDisplay)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(minWidth: 120)
+                        
+                        // Increase button
+                        Button(action: { increaseTarget() }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(cardBackground)
+                    )
+                }
+                .padding(.horizontal, 4)
+                
+                // Duration
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Duration")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 8) {
+                        ForEach([7, 14, 21, 30], id: \.self) { days in
+                            Button(action: { durationDays = days }) {
+                                Text(days == 7 ? "1 Week" : days == 14 ? "2 Weeks" : days == 21 ? "3 Weeks" : "1 Month")
+                                    .font(.subheadline)
+                                    .fontWeight(durationDays == days ? .semibold : .regular)
+                                    .foregroundColor(durationDays == days ? .white : .primary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        Capsule()
+                                            .fill(durationDays == days
+                                                ? LinearGradient(colors: selectedType.gradientColors, startPoint: .leading, endPoint: .trailing)
+                                                : LinearGradient(colors: [cardBackground, cardBackground], startPoint: .leading, endPoint: .trailing))
+                                    )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+                
+                // Start Date
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Start Date")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    DatePicker("", selection: $startDate, in: Date()..., displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 4)
+                
+                // Preview Card
+                challengePreviewCard
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 120)
+        }
+        .overlay(alignment: .bottom) {
+            createCustomChallengeButton
+        }
+    }
+    
+    // MARK: - Preview Card
+    
+    private var challengePreviewCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Preview")
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.horizontal, 4)
+            
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: selectedType.gradientColors,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 50, height: 50)
+                        
+                        Image(systemName: selectedType.icon)
+                            .font(.system(size: 22))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(customTitle.isEmpty ? "\(dailyTarget.formatted()) \(targetUnitDisplay) Daily" : customTitle)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Text("\(durationDays) days • Starts \(startDate.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Progress preview
+                HStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("0")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Text("Your Progress")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text("vs")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    VStack(spacing: 4) {
+                        Text("0")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Text(friend.friendName?.components(separatedBy: " ").first ?? "Friend")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(cardBackground)
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+            )
+        }
+    }
+    
+    // MARK: - Start Challenge Button (Template)
+    
+    private var startChallengeButton: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            HStack(spacing: 16) {
+                if let template = selectedTemplate {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        Text("\(template.defaultDurationDays) days")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: { createChallengeFromTemplate() }) {
+                    HStack(spacing: 8) {
+                        if isCreating {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                            Text("Send Challenge")
+                        }
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.orange, .red],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+                }
+                .disabled(isCreating)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(cardBackground)
+        }
+    }
+    
+    // MARK: - Create Custom Challenge Button
+    
+    private var createCustomChallengeButton: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            Button(action: { createCustomChallenge() }) {
+                HStack(spacing: 8) {
+                    if isCreating {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                        Text("Send Challenge")
+                    }
+                }
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: canCreateCustom ? [.orange, .red] : [.gray, .gray],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+            .disabled(!canCreateCustom || isCreating)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(cardBackground)
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    private var targetUnitDisplay: String {
+        switch selectedType {
+        case .steps: return "steps"
+        case .walk, .run, .activeMinutes: return "minutes"
+        case .lift, .workoutStreak: return "workouts"
+        }
+    }
+    
+    private var canCreateCustom: Bool {
+        dailyTarget > 0
+    }
+    
+    private func selectTemplate(_ template: ChallengeTemplate) {
+        HapticManager.impact(.light)
+        selectedTemplate = template
+    }
+    
+    private func increaseTarget() {
+        HapticManager.impact(.light)
+        switch selectedType {
+        case .steps:
+            dailyTarget = min(50000, dailyTarget + 1000)
+        case .walk, .run, .activeMinutes:
+            dailyTarget = min(180, dailyTarget + 5)
+        case .lift, .workoutStreak:
+            dailyTarget = min(3, dailyTarget + 1)
+        }
+    }
+    
+    private func decreaseTarget() {
+        HapticManager.impact(.light)
+        switch selectedType {
+        case .steps:
+            dailyTarget = max(1000, dailyTarget - 1000)
+        case .walk, .run, .activeMinutes:
+            dailyTarget = max(5, dailyTarget - 5)
+        case .lift, .workoutStreak:
+            dailyTarget = max(1, dailyTarget - 1)
+        }
+    }
+    
+    private func loadTemplates() {
+        // Load templates into local state WITHOUT triggering @Published updates
+        // This prevents other views (DashboardView, etc.) from re-rendering
+        // which could dismiss this sheet
+        print("🏆 [CHALLENGE SETUP] Starting template load (silent)...")
+        
+        Task {
+            // Use the silent method that doesn't update @Published
+            let fetchedTemplates = await ChallengeService.shared.getTemplatesWithoutPublishing()
+            
+            await MainActor.run {
+                self.templates = fetchedTemplates
+                self.isLoadingTemplates = false
+                print("🏆 [CHALLENGE SETUP] Template load complete - \(fetchedTemplates.count) templates")
+            }
+        }
+    }
+    
+    private func createChallengeFromTemplate() {
+        guard let template = selectedTemplate else { return }
+        
+        HapticManager.impact(.medium)
+        isCreating = true
+        
+        Task {
+            let challengeId = await ChallengeService.shared.createChallenge(
+                opponentId: friend.friendId,
+                type: template.type ?? .steps,
+                title: template.title,
+                description: template.description,
+                dailyTarget: template.defaultDailyTarget,
+                targetUnit: template.targetUnit,
+                startDate: Date().addingTimeInterval(86400),
+                durationDays: template.defaultDurationDays
+            )
+            
+            isCreating = false
+            
+            if challengeId != nil {
+                HapticManager.notification(.success)
+                showingSuccess = true
+            } else {
+                HapticManager.notification(.error)
+            }
+        }
+    }
+    
+    private func createCustomChallenge() {
+        HapticManager.impact(.medium)
+        isCreating = true
+        
+        let title = customTitle.isEmpty ? "\(dailyTarget.formatted()) \(targetUnitDisplay) Daily" : customTitle
+        
+        Task {
+            let challengeId = await ChallengeService.shared.createChallenge(
+                opponentId: friend.friendId,
+                type: selectedType,
+                title: title,
+                dailyTarget: dailyTarget,
+                targetUnit: targetUnitDisplay,
+                startDate: startDate,
+                durationDays: durationDays
+            )
+            
+            isCreating = false
+            
+            if challengeId != nil {
+                HapticManager.notification(.success)
+                showingSuccess = true
+            } else {
+                HapticManager.notification(.error)
+            }
+        }
+    }
+}
+
+// MARK: - Template Card
+
+struct TemplateCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    
+    let template: ChallengeTemplate
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    private var type: ChallengeType {
+        template.type ?? .steps
+    }
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark 
+            ? [Color(white: 0.18), Color(white: 0.12)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(spacing: 12) {
+                // Emoji/Icon with gradient circle
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: type.gradientColors),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .shadow(color: type.color.opacity(0.4), radius: 8, x: 0, y: 4)
+                    
+                    Text(template.displayEmoji)
+                        .font(.system(size: 24))
+                }
+                
+                VStack(spacing: 4) {
+                    Text(template.title)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("\(template.defaultDurationDays) days")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .padding(.horizontal, 8)
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - color glow
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(type.color.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: isSelected 
+                                    ? type.gradientColors
+                                    : [type.color.opacity(colorScheme == .dark ? 0.4 : 0.3), type.gradientColors.last?.opacity(colorScheme == .dark ? 0.3 : 0.2) ?? type.color.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: type.color.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Template Row
+
+struct TemplateRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    
+    let template: ChallengeTemplate
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    private var type: ChallengeType {
+        template.type ?? .steps
+    }
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark 
+            ? [Color(white: 0.18), Color(white: 0.12)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Emoji with gradient background
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: type.gradientColors),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 40, height: 40)
+                        .shadow(color: type.color.opacity(0.3), radius: 4, x: 0, y: 2)
+                    
+                    Text(template.displayEmoji)
+                        .font(.system(size: 18))
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(template.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    if let description = template.description {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                
+                Spacer()
+                
+                Text("\(template.defaultDurationDays)d")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(type.color.opacity(0.1))
+                    )
+                
+                // Selection indicator
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(
+                        isSelected 
+                            ? AnyShapeStyle(LinearGradient(colors: type.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            : AnyShapeStyle(Color.secondary.opacity(0.3))
+                    )
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                ZStack {
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: isSelected 
+                                    ? type.gradientColors
+                                    : [type.color.opacity(colorScheme == .dark ? 0.3 : 0.2), type.gradientColors.last?.opacity(colorScheme == .dark ? 0.2 : 0.1) ?? type.color.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+            .shadow(color: type.color.opacity(isSelected ? 0.2 : 0.08), radius: 12, x: 0, y: 6)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+#Preview {
+    ChallengeSetupView(friend: Friend(
+        friendshipId: UUID(),
+        friendId: UUID(),
+        friendName: "Leo Smith",
+        friendEmail: nil,
+        friendUsername: "leosmith",
+        fitnessGoal: "Build Muscle",
+        experienceLevel: "Intermediate",
+        profilePhotoUrl: nil,
+        friendsSince: Date(),
+        totalWorkoutsShared: 5
+    ))
+}

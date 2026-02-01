@@ -250,6 +250,9 @@ final class StravaService: ObservableObject {
             // Save activities to Supabase for persistence
             await saveActivitiesToCloud(activities)
             
+            // Check new activities against challenges
+            await syncActivitiesToChallenges(activities)
+            
             print("✅ [STRAVA] Synced \(activities.count) activities")
             
         } catch {
@@ -305,40 +308,148 @@ final class StravaService: ObservableObject {
     
     // MARK: - Data Persistence
     
-    /// Save synced activities to Supabase
+    /// Save synced activities to cardio_workouts table (integrates with app's workout system)
     private func saveActivitiesToCloud(_ activities: [StravaActivity]) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
+        var savedCount = 0
+        var skippedCount = 0
+        
         for activity in activities {
-            let stravaActivity = StravaActivityRecord(
-                id: UUID(),
-                userId: userId,
-                stravaId: activity.id,
-                name: activity.name,
-                type: activity.type,
-                sportType: activity.sportType,
-                startDate: activity.startDate,
-                distance: activity.distance,
-                movingTime: activity.movingTime,
-                elapsedTime: activity.elapsedTime,
+            // Only sync cardio activities (skip weight training, yoga, etc.)
+            guard isCardioActivity(activity.type) else {
+                skippedCount += 1
+                continue
+            }
+            
+            // Map Strava activity type to app's activity type
+            let activityType = mapStravaActivityType(activity.type)
+            
+            // Convert speed from m/s to km/h
+            let avgSpeedKmh = activity.averageSpeed.map { $0 * 3.6 }
+            let maxSpeedKmh = activity.maxSpeed.map { $0 * 3.6 }
+            
+            // Calculate completed_at from start + duration
+            let completedAt = activity.startDate.addingTimeInterval(Double(activity.movingTime))
+            
+            // Create the cardio workout insert record
+            let insert = StravaCardioWorkoutInsert(
+                userId: userId.uuidString,
+                activityType: activityType,
+                workoutName: activity.name,
+                goalType: "open_goal",
+                goalAchieved: true, // Already completed
+                durationSeconds: activity.movingTime,
+                distanceMeters: activity.distance,
+                caloriesBurned: Double(activity.calories ?? 0),
+                averageSpeed: avgSpeedKmh,
+                maxSpeed: maxSpeedKmh,
+                averageHeartRate: activity.averageHeartrate.map { Int($0) },
+                maxHeartRate: activity.maxHeartrate.map { Int($0) },
                 totalElevationGain: activity.totalElevationGain,
-                averageSpeed: activity.averageSpeed,
-                maxSpeed: activity.maxSpeed,
-                averageHeartrate: activity.averageHeartrate,
-                maxHeartrate: activity.maxHeartrate,
-                calories: activity.calories,
-                sufferScore: activity.sufferScore,
-                syncedAt: Date()
+                startedAt: ISO8601DateFormatter().string(from: activity.startDate),
+                completedAt: ISO8601DateFormatter().string(from: completedAt),
+                source: "strava",
+                externalId: String(activity.id),
+                externalUrl: "https://www.strava.com/activities/\(activity.id)"
             )
             
             do {
                 try await SupabaseManager.shared.supabaseClient
-                    .from("strava_activities")
-                    .upsert(stravaActivity, onConflict: "user_id,strava_id")
+                    .from("cardio_workouts")
+                    .upsert(insert, onConflict: "user_id,source,external_id")
                     .execute()
+                savedCount += 1
             } catch {
-                print("⚠️ [STRAVA] Failed to save activity \(activity.id): \(error)")
+                // If upsert fails due to constraint, try without conflict handling
+                // This handles the case where the unique index doesn't exist yet
+                do {
+                    // Check if already exists
+                    let existing: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                        .from("cardio_workouts")
+                        .select()
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("source", value: "strava")
+                        .eq("external_id", value: String(activity.id))
+                        .execute()
+                        .value
+                    
+                    if existing.isEmpty {
+                        // Insert new
+                        try await SupabaseManager.shared.supabaseClient
+                            .from("cardio_workouts")
+                            .insert(insert)
+                            .execute()
+                        savedCount += 1
+                    } else {
+                        skippedCount += 1 // Already exists
+                    }
+                } catch {
+                    print("⚠️ [STRAVA] Failed to save activity \(activity.id): \(error)")
+                }
             }
+        }
+        
+        print("✅ [STRAVA] Synced \(savedCount) activities to cardio_workouts, skipped \(skippedCount)")
+        
+        // 🔥 Update streak if we synced any activities from today
+        // Check if any synced activity was from today
+        let calendar = Calendar.current
+        let todayActivities = activities.filter { calendar.isDateInToday($0.startDate) }
+        if !todayActivities.isEmpty {
+            await MainActor.run {
+                UserManager.shared.updateStreak()
+                print("🔥 [STRAVA] Updated streak - found \(todayActivities.count) activities from today")
+            }
+        }
+    }
+    
+    /// Check if a Strava activity type is cardio (vs strength/yoga/etc)
+    private func isCardioActivity(_ type: String) -> Bool {
+        let cardioTypes = ["Run", "Ride", "Walk", "Hike", "Swim", "VirtualRun", "VirtualRide", 
+                          "Rowing", "Elliptical", "StairStepper", "Crossfit", "Workout"]
+        return cardioTypes.contains(type)
+    }
+    
+    /// Map Strava activity type to app's activity type
+    private func mapStravaActivityType(_ stravaType: String) -> String {
+        switch stravaType {
+        case "Run": return "outdoor_run"
+        case "VirtualRun": return "treadmill"
+        case "Ride": return "outdoor_cycle"
+        case "VirtualRide": return "indoor_cycle"
+        case "Walk", "Hike": return "walk"
+        case "Swim": return "swimming"
+        case "Rowing": return "rowing"
+        case "Elliptical": return "elliptical"
+        case "StairStepper": return "stair_climber"
+        case "Crossfit", "Workout": return "hiit"
+        default: return "outdoor_run"
+        }
+    }
+    
+    // MARK: - Sync Activities to Challenges
+    
+    /// Check Strava activities against active challenges and log progress
+    private func syncActivitiesToChallenges(_ activities: [StravaActivity]) async {
+        // Only process today's activities for challenges
+        let calendar = Calendar.current
+        let todayActivities = activities.filter { calendar.isDateInToday($0.startDate) }
+        
+        guard !todayActivities.isEmpty else {
+            print("📊 [STRAVA] No activities from today to sync to challenges")
+            return
+        }
+        
+        print("🏆 [STRAVA] Checking \(todayActivities.count) today's activities against challenges...")
+        
+        for activity in todayActivities {
+            await ChallengeService.shared.checkStravaWorkoutForChallenges(
+                workoutType: activity.type,
+                distanceMeters: activity.distance,
+                durationSeconds: activity.movingTime,
+                source: "strava"
+            )
         }
     }
     
@@ -656,8 +767,52 @@ struct StravaTotals: Codable {
     }
 }
 
-// MARK: - Database Record
+// MARK: - Database Records
 
+/// Insert record for saving Strava activities to cardio_workouts table
+struct StravaCardioWorkoutInsert: Codable {
+    let userId: String
+    let activityType: String
+    let workoutName: String?
+    let goalType: String
+    let goalAchieved: Bool
+    let durationSeconds: Int
+    let distanceMeters: Double
+    let caloriesBurned: Double
+    let averageSpeed: Double?
+    let maxSpeed: Double?
+    let averageHeartRate: Int?
+    let maxHeartRate: Int?
+    let totalElevationGain: Double?
+    let startedAt: String
+    let completedAt: String
+    let source: String
+    let externalId: String
+    let externalUrl: String
+    
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case activityType = "activity_type"
+        case workoutName = "workout_name"
+        case goalType = "goal_type"
+        case goalAchieved = "goal_achieved"
+        case durationSeconds = "duration_seconds"
+        case distanceMeters = "distance_meters"
+        case caloriesBurned = "calories_burned"
+        case averageSpeed = "average_speed"
+        case maxSpeed = "max_speed"
+        case averageHeartRate = "average_heart_rate"
+        case maxHeartRate = "max_heart_rate"
+        case totalElevationGain = "total_elevation_gain"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+        case source
+        case externalId = "external_id"
+        case externalUrl = "external_url"
+    }
+}
+
+/// Legacy record for strava_activities table (kept for backwards compatibility)
 struct StravaActivityRecord: Codable {
     let id: UUID
     let userId: UUID

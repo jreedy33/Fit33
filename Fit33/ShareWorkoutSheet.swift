@@ -11,7 +11,7 @@ struct ShareWorkoutSheet: View {
     let workout: Workout
     let accentColor: Color
     
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     @State private var showingFriendPicker = false
     @State private var selectedFriend: Friend?
     @State private var messageText = ""

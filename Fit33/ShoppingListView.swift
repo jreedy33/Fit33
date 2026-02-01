@@ -424,6 +424,380 @@ struct RecipeSelectRow: View {
     }
 }
 
+// MARK: - My Shopping List View (Organized by Meal)
+struct MyShoppingListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                (colorScheme == .dark ? Color.black : Color(white: 0.95))
+                    .ignoresSafeArea()
+                
+                if savedMealsService.shoppingListItems.isEmpty {
+                    myEmptyState
+                } else {
+                    myShoppingListContent
+                }
+            }
+            .navigationTitle("Shopping List")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") { dismiss() }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !savedMealsService.shoppingListItems.isEmpty {
+                        Menu {
+                            Button(role: .destructive, action: {
+                                savedMealsService.clearCheckedItems()
+                            }) {
+                                Label("Clear Checked", systemImage: "checkmark.circle")
+                            }
+                            
+                            Button(role: .destructive, action: {
+                                savedMealsService.clearAllShoppingList()
+                            }) {
+                                Label("Clear All", systemImage: "trash")
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: shareMyList) {
+                                Label("Share List", systemImage: "square.and.arrow.up")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var myEmptyState: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.orange, .red],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 80, height: 80)
+                    .shadow(color: .orange.opacity(0.4), radius: 10, x: 0, y: 5)
+                
+                Image(systemName: "cart.fill")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            
+            Text("Shopping List Empty")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Add meals to your shopping list\nfrom the recipe detail page")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+    
+    private var myShoppingListContent: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Summary card
+                summaryCard
+                
+                // Items grouped by MEAL (recipe)
+                let groupedByMeal = Dictionary(grouping: savedMealsService.shoppingListItems) { 
+                    $0.fromRecipe ?? "Other Items" 
+                }
+                let sortedMeals = groupedByMeal.keys.sorted()
+                
+                ForEach(sortedMeals, id: \.self) { mealName in
+                    ShoppingMealSection(
+                        mealName: mealName,
+                        items: groupedByMeal[mealName] ?? []
+                    )
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+    
+    private var summaryCard: some View {
+        HStack(spacing: 16) {
+            // Meals count
+            VStack(spacing: 4) {
+                Text("\(uniqueMealCount)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.orange)
+                Text("Meals")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Divider()
+                .frame(height: 40)
+            
+            // Items count
+            VStack(spacing: 4) {
+                Text("\(savedMealsService.shoppingListItems.count)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("Items")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Divider()
+                .frame(height: 40)
+            
+            // Checked count
+            VStack(spacing: 4) {
+                Text("\(myCheckedCount)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.green)
+                Text("Done")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Progress ring
+            ZStack {
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 4)
+                    .frame(width: 50, height: 50)
+                
+                Circle()
+                    .trim(from: 0, to: progressPercentage)
+                    .stroke(
+                        LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                
+                Text("\(Int(progressPercentage * 100))%")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+        )
+        .padding(.horizontal)
+    }
+    
+    private var uniqueMealCount: Int {
+        Set(savedMealsService.shoppingListItems.compactMap { $0.fromRecipe }).count
+    }
+    
+    private var myCheckedCount: Int {
+        savedMealsService.shoppingListItems.filter { $0.isChecked }.count
+    }
+    
+    private var progressPercentage: CGFloat {
+        guard !savedMealsService.shoppingListItems.isEmpty else { return 0 }
+        return CGFloat(myCheckedCount) / CGFloat(savedMealsService.shoppingListItems.count)
+    }
+    
+    private func shareMyList() {
+        var listText = "🛒 My Shopping List\n\n"
+        
+        let groupedByMeal = Dictionary(grouping: savedMealsService.shoppingListItems) { 
+            $0.fromRecipe ?? "Other Items" 
+        }
+        
+        for (meal, items) in groupedByMeal.sorted(by: { $0.key < $1.key }) {
+            listText += "🍽️ \(meal)\n"
+            for item in items {
+                let checkbox = item.isChecked ? "✅" : "⬜️"
+                listText += "   \(checkbox) \(item.name.capitalized) - \(item.formattedAmount)\n"
+            }
+            listText += "\n"
+        }
+        
+        let activityVC = UIActivityViewController(
+            activityItems: [listText],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+}
+
+// MARK: - Shopping Meal Section (Expandable)
+struct ShoppingMealSection: View {
+    let mealName: String
+    let items: [ShoppingListItem]
+    
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    @State private var isExpanded = false // Collapsed by default - tap to show ingredients
+    
+    private var checkedCount: Int {
+        items.filter { $0.isChecked }.count
+    }
+    
+    private var allChecked: Bool {
+        items.allSatisfy { $0.isChecked }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Meal Header
+            Button(action: { withAnimation(.spring(response: 0.3)) { isExpanded.toggle() } }) {
+                HStack(spacing: 12) {
+                    // Meal icon with completion indicator
+                    ZStack {
+                        Circle()
+                            .fill(
+                                allChecked 
+                                    ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    : LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        if allChecked {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                        } else {
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(mealName)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(allChecked ? .secondary : .primary)
+                            .strikethrough(allChecked)
+                            .lineLimit(2)
+                        
+                        Text("\(checkedCount)/\(items.count) ingredients")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Chevron
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 4)
+                }
+                .padding(14)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Ingredients (expandable)
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal)
+                
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        ShoppingIngredientRow(item: item)
+                        
+                        if item.id != items.last?.id {
+                            Divider()
+                                .padding(.leading, 56)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        )
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Shopping Ingredient Row
+struct ShoppingIngredientRow: View {
+    let item: ShoppingListItem
+    
+    @ObservedObject private var savedMealsService = SavedMealsService.shared
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Checkbox
+            Button(action: {
+                withAnimation(.spring(response: 0.2)) {
+                    savedMealsService.toggleShoppingItemChecked(id: item.id)
+                }
+            }) {
+                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(item.isChecked ? .green : .secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Ingredient name and amount
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name.capitalized)
+                    .font(.subheadline)
+                    .foregroundColor(item.isChecked ? .secondary : .primary)
+                    .strikethrough(item.isChecked)
+                
+                if let aisle = item.aisle, !aisle.isEmpty {
+                    Text(aisle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Amount
+            Text(item.formattedAmount)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            // Delete button
+            Button(action: {
+                withAnimation {
+                    savedMealsService.removeFromShoppingList(id: item.id)
+                }
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary.opacity(0.6))
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
 // MARK: - Preview
 #Preview {
     ShoppingListSheet()

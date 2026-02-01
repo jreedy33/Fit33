@@ -544,6 +544,9 @@ class SupabaseManager: ObservableObject {
                 // Clear profile photo cache - critical for multi-user scenarios
                 ProfilePhotoCache.shared.clearCache()
                 
+                // Clear challenge cache - ensures no challenge data leaks between users
+                ChallengeService.shared.clearCache()
+                
                 // Mark that user manually signed out (for development mode)
                 UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
                 
@@ -561,63 +564,176 @@ class SupabaseManager: ObservableObject {
     }
     
     /// Delete the current user's account completely
-    /// This uses a Supabase function to delete from auth.users (requires running supabase_delete_user_function.sql)
+    /// This uses a Supabase function to delete from auth.users (requires running DELETE_USER_ACCOUNT.sql)
     func deleteAccount() async throws {
         guard let userId = currentUser?.id else {
             throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
         }
         
-        print("🗑️ Starting account deletion for user: \(userId.uuidString)")
-        print("🔐 Current auth.uid from session: \(currentUser?.id.uuidString ?? "nil")")
+        print("🗑️ ════════════════════════════════════════")
+        print("🗑️ STARTING ACCOUNT DELETION")
+        print("🗑️ User ID: \(userId.uuidString)")
+        print("🗑️ ════════════════════════════════════════")
         
         await MainActor.run { isLoading = true }
         
+        // STEP 1: Always delete all user data from tables first (this always works)
+        print("🗑️ Step 1: Deleting all user data from tables...")
+        await deleteAllUserDataFromTables(userId: userId)
+        
+        // STEP 2: Delete profile photo from storage
+        print("🗑️ Step 2: Deleting profile photo...")
+        await deleteProfilePhotoFromStorage(userId: userId)
+        
+        // STEP 3: Try to delete from auth.users via RPC (requires DELETE_USER_ACCOUNT.sql)
+        print("🗑️ Step 3: Attempting to delete from auth.users via RPC...")
+        var authUserDeleted = false
         do {
-            // Delete profile photo from Supabase Storage first
-            await deleteProfilePhotoFromStorage(userId: userId)
-            
-            // Call the database function that deletes the user from auth.users
-            // This function also deletes from all related tables
-            print("📡 Calling RPC delete_user_account...")
             let result: Bool = try await client
                 .rpc("delete_user_account", params: ["user_id_to_delete": userId.uuidString])
                 .execute()
                 .value
             
-            print("📡 RPC returned: \(result)")
-            
+            authUserDeleted = result
             if result {
-                print("✅ User deleted from database via RPC function")
+                print("✅ User deleted from auth.users via RPC")
             } else {
-                print("⚠️ RPC function returned false - deletion may have failed")
-                print("⚠️ This usually means auth.uid() != user_id in the function")
-                // Try fallback deletion
-                try await fallbackDeleteAccount(userId: userId)
+                print("⚠️ RPC returned false - auth.users entry may still exist")
             }
-            
-            // Sign out locally (the server-side user is already deleted)
-            try? await client.auth.signOut()
-            
-            await MainActor.run {
-                PersistenceController.shared.clearAllUserData()
-                // Clear profile photo cache - critical for multi-user scenarios
-                ProfilePhotoCache.shared.clearCache()
-                UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
-                currentUser = nil
-                isAuthenticated = false
-                isLoading = false
-            }
-            
-            print("✅ Account deleted successfully - user can re-register with same email")
         } catch {
-            await MainActor.run { isLoading = false }
-            print("❌ Account deletion RPC error: \(error)")
-            print("❌ Error details: \(error.localizedDescription)")
-            
-            // Fallback: If RPC fails, try manual deletion (won't delete from auth.users though)
-            print("⚠️ Attempting fallback deletion...")
-            try await fallbackDeleteAccount(userId: userId)
+            print("⚠️ RPC delete_user_account failed: \(error.localizedDescription)")
+            print("⚠️ Run DELETE_USER_ACCOUNT.sql in Supabase to enable full deletion")
+            // Continue anyway - profile data is already deleted
         }
+        
+        // STEP 4: Sign out and clear local data
+        print("🗑️ Step 4: Signing out and clearing local data...")
+        try? await client.auth.signOut()
+        
+        await MainActor.run {
+            PersistenceController.shared.clearAllUserData()
+            ProfilePhotoCache.shared.clearCache()
+            ChallengeService.shared.clearCache()
+            ChallengeService.shared.activeChallenges = []
+            ChallengeService.shared.pendingInvites = []
+            UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
+            currentUser = nil
+            isAuthenticated = false
+            isLoading = false
+        }
+        
+        print("🗑️ ════════════════════════════════════════")
+        if authUserDeleted {
+            print("✅ ACCOUNT FULLY DELETED - user can re-register with same email")
+        } else {
+            print("⚠️ PROFILE DATA DELETED but auth.users entry may remain")
+            print("⚠️ User may need to use a different email or run DELETE_USER_ACCOUNT.sql")
+        }
+        print("🗑️ ════════════════════════════════════════")
+    }
+    
+    /// Delete all user data from all tables (comprehensive cleanup)
+    private func deleteAllUserDataFromTables(userId: UUID) async {
+        // Order matters due to foreign key constraints - delete child tables first
+        let deletions: [(table: String, column: String)] = [
+            // Challenge data (delete daily progress first)
+            ("challenge_daily_progress", "user_id"),
+            ("challenge_participants", "user_id"),
+            
+            // Friend/social data
+            ("friend_requests", "sender_id"),
+            ("friend_requests", "receiver_id"),
+            ("friendships", "user_id"),
+            ("friendships", "friend_id"),
+            ("sent_workouts", "sender_id"),
+            ("sent_workouts", "receiver_id"),
+            
+            // Contact sync data
+            ("user_synced_contacts", "user_id"),
+            ("contact_joined_notifications", "notified_user_id"),
+            
+            // Push notifications
+            ("user_push_tokens", "user_id"),
+            ("push_notification_queue", "recipient_user_id"),
+            
+            // Workout data
+            ("workout_history", "user_id"),
+            ("workouts", "user_id"),
+            ("exercise_usage_logs", "user_id"),
+            
+            // Program data
+            ("user_active_programs", "user_id"),
+            ("user_custom_programs", "user_id"),
+            ("program_history", "user_id"),
+            
+            // Food/meal data
+            ("meal_logs", "user_id"),
+            ("user_food_history", "user_id"),
+            ("user_food_frequency", "user_id"),
+            ("user_ingredient_preferences", "user_id"),
+            ("user_cuisine_preferences", "user_id"),
+            
+            // Favorites and custom content
+            ("user_favorites", "user_id"),
+            ("favorite_workouts", "user_id"),
+            ("custom_exercises", "user_id"),
+            
+            // Health data
+            ("step_tracking", "user_id"),
+            ("weight_logs", "user_id"),
+            ("hydration_logs", "user_id"),
+            
+            // Strava integration
+            ("user_strava_tokens", "user_id"),
+            ("strava_activities", "user_id"),
+            
+            // Cardio workouts
+            ("cardio_workouts", "user_id"),
+            
+            // Other user data
+            ("bug_reports", "user_id"),
+            ("user_progress", "user_id")
+        ]
+        
+        for (table, column) in deletions {
+            do {
+                try await client
+                    .from(table)
+                    .delete()
+                    .eq(column, value: userId.uuidString)
+                    .execute()
+                print("  ✓ Deleted from \(table)")
+            } catch {
+                // Table might not exist or no data - continue
+                print("  ⚠️ \(table): \(error.localizedDescription)")
+            }
+        }
+        
+        // Delete challenges created by this user
+        do {
+            try await client
+                .from("friend_challenges")
+                .delete()
+                .eq("creator_id", value: userId.uuidString)
+                .execute()
+            print("  ✓ Deleted created challenges")
+        } catch {
+            print("  ⚠️ friend_challenges (creator): \(error.localizedDescription)")
+        }
+        
+        // Finally delete the user profile
+        do {
+            try await client
+                .from("user_profiles")
+                .delete()
+                .eq("id", value: userId.uuidString)
+                .execute()
+            print("  ✓ Deleted user_profiles")
+        } catch {
+            print("  ⚠️ user_profiles: \(error.localizedDescription)")
+        }
+        
+        print("🗑️ All user data deletion complete")
     }
     
     /// Delete profile photo from Supabase Storage
@@ -634,70 +750,6 @@ class SupabaseManager: ObservableObject {
         }
     }
     
-    /// Fallback deletion method if the RPC function isn't set up
-    /// Note: This won't delete from auth.users - user won't be able to re-register with same email
-    private func fallbackDeleteAccount(userId: UUID) async throws {
-        // Delete from all user tables (comprehensive list)
-        let tables = [
-            // User profile and settings
-            ("user_profiles", "id"),
-            ("user_progress", "user_id"),
-            
-            // Workout data
-            ("workout_history", "user_id"),
-            ("workouts", "user_id"),
-            ("exercise_usage_logs", "user_id"),
-            
-            // Program data
-            ("user_active_programs", "user_id"),
-            ("user_custom_programs", "user_id"),
-            ("program_history", "user_id"),
-            
-            // Food/meal data
-            ("meal_logs", "user_id"),
-            ("user_food_history", "user_id"),
-            ("user_food_frequency", "user_id"),
-            
-            // Favorites and custom content
-            ("user_favorites", "user_id"),
-            ("favorite_workouts", "user_id"),
-            ("custom_exercises", "user_id"),
-            
-            // Other user data
-            ("step_tracking", "user_id"),
-            ("bug_reports", "user_id")
-        ]
-        
-        for (table, column) in tables {
-            do {
-                try await client
-                    .from(table)
-                    .delete()
-                    .eq(column, value: userId.uuidString)
-                    .execute()
-            } catch {
-                print("⚠️ Could not delete from \(table): \(error.localizedDescription)")
-            }
-        }
-        
-        // Delete profile photo from storage
-        await deleteProfilePhotoFromStorage(userId: userId)
-        
-        try? await client.auth.signOut()
-        
-        await MainActor.run {
-            PersistenceController.shared.clearAllUserData()
-            // Clear profile photo cache - critical for multi-user scenarios
-            ProfilePhotoCache.shared.clearCache()
-            UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
-            currentUser = nil
-            isAuthenticated = false
-            isLoading = false
-        }
-        
-        print("⚠️ Fallback deletion complete - Note: auth.users entry still exists")
-        print("⚠️ Run supabase_delete_user_function.sql to enable full account deletion")
-    }
     
     func resetPassword(email: String) async throws {
         await MainActor.run { isLoading = true }
@@ -2655,6 +2707,11 @@ class SupabaseManager: ObservableObject {
             await checkAndSaveCardioPRs(workout: workout, workoutId: id)
         }
         
+        // 🔥 Update user streak (cardio workouts count as workout sessions!)
+        await MainActor.run {
+            UserManager.shared.updateStreak()
+        }
+        
         return workoutId
     }
     
@@ -4362,6 +4419,12 @@ struct CardioWorkoutDTO: Codable {
     let startedAt: String
     let completedAt: String
     
+    // Source tracking (for Strava, Apple Health, etc.)
+    let source: String?
+    let externalId: String?
+    let externalUrl: String?
+    let totalElevationGain: Double?
+    
     enum CodingKeys: String, CodingKey {
         case id
         case activityType = "activity_type"
@@ -4384,6 +4447,15 @@ struct CardioWorkoutDTO: Codable {
         case equipmentType = "equipment_type"
         case startedAt = "started_at"
         case completedAt = "completed_at"
+        case source
+        case externalId = "external_id"
+        case externalUrl = "external_url"
+        case totalElevationGain = "total_elevation_gain"
+    }
+    
+    /// Whether this workout was synced from Strava
+    var isFromStrava: Bool {
+        source == "strava"
     }
 }
 

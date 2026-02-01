@@ -510,6 +510,9 @@ struct WorkoutProgressView: View {
                             .padding(.bottom, 16)
                         
                         LazyVStack(spacing: 20) {
+                            // Health Insights Quick Access
+                            healthInsightsCard
+                            
                             // Fitness Rings Section
                             fitnessRingsSection
                             
@@ -792,6 +795,109 @@ struct WorkoutProgressView: View {
             }
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+    }
+    
+    // MARK: - Health Insights Card
+    private var healthInsightsCard: some View {
+        NavigationLink(destination: HealthInsightsView()) {
+            HStack(spacing: 16) {
+                // Icon with gradient background
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: [.purple, .indigo],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                    
+                    Image(systemName: "heart.text.square.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Health Insights")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 8) {
+                        if HealthKitService.shared.isAuthorized {
+                            sourceTag("Apple Health", color: .red)
+                        }
+                        if FitbitService.shared.isConnected {
+                            sourceTag("Fitbit", color: Color(red: 0, green: 0.73, blue: 0.77))
+                        }
+                        if StravaService.shared.isConnected {
+                            sourceTag("Strava", color: Color(red: 252/255, green: 76/255, blue: 2/255))
+                        }
+                        if !HealthKitService.shared.isAuthorized && !FitbitService.shared.isConnected && !StravaService.shared.isConnected {
+                            Text("Connect devices for full insights")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 2) {
+                    // Show steps from HealthKit first, then Fitbit as fallback
+                    if HealthKitService.shared.isAuthorized && HealthKitService.shared.todaySteps > 0 {
+                        Text("\(formatSteps(HealthKitService.shared.todaySteps))")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Text("steps today")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if FitbitService.shared.isConnected, let steps = FitbitService.shared.todaySummary?.steps {
+                        Text("\(formatSteps(steps))")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Text("steps today")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func sourceTag(_ name: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(name)
+                .font(.caption2)
+                .fontWeight(.medium)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.15))
+        .cornerRadius(6)
+    }
+    
+    private func formatSteps(_ steps: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: steps)) ?? "\(steps)"
     }
     
     // MARK: - Streak Section

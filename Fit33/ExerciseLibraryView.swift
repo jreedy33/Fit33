@@ -659,10 +659,21 @@ struct ExerciseLibraryView: View {
         if filterKey != lastFilterKey {
             lastFilterKey = filterKey
             searchResultsCache.removeAll() // Invalidate search cache
-            preFilteredExercises = applyFiltersOnly(to: exercises)
-            #if DEBUG
-            print("⚡️ [PERF] Rebuilt filter cache: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
-            #endif
+            
+            // ⚡️ OPTIMIZED: Use fast filter for default "Recommended" + "All" selections
+            if selectedCategory == "All" && selectedEquipment == "All" && selectedMuscleGroup == "All" && exerciseFilter == .recommended {
+                // Use optimized recommended filter with precomputed name set
+                preFilteredExercises = applyOptimizedRecommendedFilter(to: exercises)
+                #if DEBUG
+                print("⚡️ [PERF] Optimized recommended filter: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                #endif
+            } else {
+                // Standard filter path
+                preFilteredExercises = applyFiltersOnly(to: exercises)
+                #if DEBUG
+                print("⚡️ [PERF] Rebuilt filter cache: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                #endif
+            }
         }
         
         // For search: use ultra-fast local search on pre-filtered results
@@ -937,6 +948,29 @@ struct ExerciseLibraryView: View {
         
         // Only return correction for EXACT match
         return typoMap[query] ?? query
+    }
+    
+    // ⚡️ OPTIMIZED: Fast recommended filter using precomputed Set lookup
+    private func applyOptimizedRecommendedFilter(to exercises: [Exercise]) -> [Exercise] {
+        // Use precomputed set for O(1) lookup instead of O(n) contains check
+        let recommendedSet = ExerciseLibraryFilterCache.shared.recommendedExerciseNames
+        
+        return exercises.filter { exercise in
+            guard let name = exercise.name?.lowercased() else { return false }
+            
+            // Fast check: does name contain any recommended exercise?
+            // First try exact word boundary matches (most common case)
+            for rec in recommendedSet {
+                if name == rec || 
+                   name.hasPrefix(rec + " ") || 
+                   name.hasPrefix(rec + "(") ||
+                   name.contains(" " + rec + " ") ||
+                   name.contains(" " + rec + "(") {
+                    return true
+                }
+            }
+            return false
+        }
     }
     
     /// Apply category/equipment/muscle filters WITHOUT search

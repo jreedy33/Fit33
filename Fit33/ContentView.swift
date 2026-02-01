@@ -370,6 +370,7 @@ struct MainTabView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var lazyTabManager = LazyTabManager.shared
     @StateObject private var tabSwitchOptimizer = TabSwitchOptimizer.shared
+    @StateObject private var tabPreloader = TabPreloader.shared  // ⚡️ For instant tab switching
     @State private var selectedTab: Int = 0
     @State private var scrollToTopTrigger: UUID = UUID()
     @State private var showNotificationPermissionPrompt = false
@@ -393,7 +394,7 @@ struct MainTabView: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
-            // ⚡️ PERFORMANCE: Use TabView with lazy-loaded content
+            // ⚡️ INSTANT TAB SWITCHING: All tabs preloaded for zero-lag transitions
             TabView(selection: $selectedTab) {
                 // Tab 0: Dashboard (always loaded - primary tab)
                 DashboardView()
@@ -407,7 +408,7 @@ struct MainTabView: View {
                     }
                     .tag(0)
                 
-                // Tab 1: Exercise Library (lazy loaded)
+                // Tab 1: Exercise Library (preloaded for instant access)
                 LazyTabContent(tab: .exercises) {
                     ExerciseLibraryView()
                 }
@@ -421,7 +422,7 @@ struct MainTabView: View {
                 }
                 .tag(1)
                 
-                // Tab 2: Workout (lazy loaded but prioritized)
+                // Tab 2: Workout (preloaded and prioritized)
                 LazyTabContent(tab: .workout) {
                     WorkoutTabView()
                 }
@@ -446,7 +447,7 @@ struct MainTabView: View {
                 }
                 .tag(2)
                 
-                // Tab 3: Meals (lazy loaded)
+                // Tab 3: Meals (preloaded)
                 LazyTabContent(tab: .nutrition) {
                     SimpleMealPlanView()
                 }
@@ -460,7 +461,7 @@ struct MainTabView: View {
                 }
                 .tag(3)
                 
-                // Tab 4: Progress (lazy loaded - heavy view)
+                // Tab 4: Progress (preloaded for instant stats)
                 LazyTabContent(tab: .progress) {
                     WorkoutProgressView()
                 }
@@ -473,6 +474,12 @@ struct MainTabView: View {
                     }
                 }
                 .tag(4)
+            }
+            // ⚡️ INSTANT TRANSITIONS: Disable animation when tabs are preloaded
+            .transaction { transaction in
+                if tabPreloader.isPreloadingComplete {
+                    transaction.animation = nil
+                }
             }
         .tint(currentTabColor)
         .onChange(of: workoutManager.shouldNavigateToWorkoutTab) { _, shouldNavigate in
@@ -545,14 +552,19 @@ struct MainTabView: View {
         }
         .onChange(of: selectedTab) { oldValue, newValue in
             if oldValue != newValue {
+                // ⚡️ INSTANT TAB SWITCHING: When tabs are preloaded, transition is instant
+                let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
+                
                 // ⚡️ PERFORMANCE: Start optimized tab transition
                 tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
                 
                 // Mark tab as visited for lazy loading
                 if let tab = LazyTabManager.Tab(rawValue: newValue) {
                     lazyTabManager.markVisited(tab)
-                    // Prefetch data for destination tab
-                    SmartPrefetch.shared.prefetchForTab(tab)
+                    // Only prefetch if not already preloaded
+                    if !isInstantSwitch {
+                        SmartPrefetch.shared.prefetchForTab(tab)
+                    }
                 }
                 
                 // Log tab switch with screen IDs
@@ -568,7 +580,8 @@ struct MainTabView: View {
                     "to_tab_index": newValue,
                     "from_screen_id": fromScreen.rawValue,
                     "to_screen_id": toScreen.rawValue,
-                    "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000)
+                    "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
+                    "is_instant": isInstantSwitch
                 ])
 
                 scrollToTopTrigger = UUID()
@@ -768,6 +781,12 @@ struct MainTabView: View {
             selectedTab = 2
             // Don't clear - WorkoutTabView handles the navigation
             print("🔗 [DEEPLINK] Switched to Workout tab for social feature")
+            
+        // Challenges - handled by WorkoutTabView
+        case .challenges, .challengeInvite, .challengeDetail:
+            selectedTab = 2
+            // Don't clear - WorkoutTabView handles the navigation
+            print("🔗 [DEEPLINK] Switched to Workout tab for challenge feature")
         }
     }
     
@@ -992,7 +1011,7 @@ struct SimpleMealPlanView: View {
                 .environmentObject(userManager)
         }
         .sheet(isPresented: $showShoppingList) {
-            ShoppingListSheet()
+            MyShoppingListView()
         }
     }
     
@@ -1516,27 +1535,14 @@ struct SimpleMealPlanView: View {
                 }
             }
         }
-       
-        .padding(18)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(20)
         .background(
             ZStack {
-                // Bottom shadow layer (deepest) - teal colored
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16)
+                // Main card background with gradient (matches Stats Today's Activity)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
+                            colors: colorScheme == .dark
                                 ? [Color(white: 0.15), Color(white: 0.10)]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
@@ -1545,10 +1551,10 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: colorScheme == .dark 
+                            colors: colorScheme == .dark
                                 ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
                                 : [Color.white, Color.white.opacity(0.5), Color.clear],
                             startPoint: .top,
@@ -1556,24 +1562,9 @@ struct SimpleMealPlanView: View {
                         ),
                         lineWidth: 1.5
                     )
-                
-                // Colored accent border - teal/cyan gradient (matches Daily Steps)
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
             }
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: Color.teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Smart Daily Summary Widget

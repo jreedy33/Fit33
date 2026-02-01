@@ -82,6 +82,9 @@ class HealthKitManager: ObservableObject {
             try await healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead)
             await MainActor.run {
                 self.isAuthorized = true
+                // Sync with HealthKitService so Settings shows "Connected" ✅
+                UserDefaults.standard.set(true, forKey: "healthkit_authorized")
+                HealthKitService.shared.isAuthorized = true
             }
             print("✅ HealthKit authorized for steps + workout writing")
             
@@ -92,6 +95,9 @@ class HealthKitManager: ObservableObject {
             await fetchTodaySteps()
             await fetchWeeklySteps()
             await fetchMonthlyAverage()
+            
+            // Also sync HealthKitService data
+            await HealthKitService.shared.syncAllData(force: true)
         } catch {
             print("❌ HealthKit authorization error: \(error)")
             throw error
@@ -313,7 +319,24 @@ class HealthKitManager: ObservableObject {
     private func checkAuthorization() {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let status = healthStore.authorizationStatus(for: stepType)
-        isAuthorized = (status == .sharingAuthorized)
+        
+        // Check both the write authorization status AND the UserDefaults flag
+        // UserDefaults is set when user approves via ANY authorization request
+        let hasWriteAuth = (status == .sharingAuthorized)
+        let hasStoredAuth = UserDefaults.standard.bool(forKey: "healthkit_authorized")
+        
+        isAuthorized = hasWriteAuth || hasStoredAuth
+        
+        // Keep UserDefaults and HealthKitService in sync
+        if isAuthorized && !hasStoredAuth {
+            UserDefaults.standard.set(true, forKey: "healthkit_authorized")
+        }
+        if isAuthorized {
+            // HealthKitService is @MainActor, so we need to update it on main thread
+            Task { @MainActor in
+                HealthKitService.shared.isAuthorized = true
+            }
+        }
         
         if isAuthorized {
             startObservingSteps()

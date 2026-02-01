@@ -344,6 +344,7 @@ struct StravaAuthSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isAuthenticating = false
     @State private var errorMessage: String?
+    @State private var webAuthSession: ASWebAuthenticationSession?
     
     var body: some View {
         NavigationStack {
@@ -436,11 +437,11 @@ struct StravaAuthSheet: View {
                 }
             }
             .onOpenURL { url in
-                handleCallback(url)
+                Task { await handleCallback(url) }
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StravaCallback"))) { notification in
                 if let url = notification.object as? URL {
-                    handleCallback(url)
+                    Task { await handleCallback(url) }
                 }
             }
         }
@@ -465,25 +466,53 @@ struct StravaAuthSheet: View {
         isAuthenticating = true
         errorMessage = nil
         
-        // Open Strava auth in browser
-        UIApplication.shared.open(authURL)
+        // Use ASWebAuthenticationSession for in-app browser
+        webAuthSession = ASWebAuthenticationSession(
+            url: authURL,
+            callbackURLScheme: "fit33"
+        ) { callbackURL, error in
+            Task { @MainActor in
+                if let error = error {
+                    // User cancelled or error occurred
+                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        print("🔐 [STRAVA] User cancelled login")
+                    } else {
+                        errorMessage = error.localizedDescription
+                    }
+                    isAuthenticating = false
+                    return
+                }
+                
+                guard let callbackURL = callbackURL else {
+                    errorMessage = "No callback URL received"
+                    isAuthenticating = false
+                    return
+                }
+                
+                // Handle the callback
+                await handleCallback(callbackURL)
+            }
+        }
+        
+        // Configure the session
+        webAuthSession?.presentationContextProvider = WebAuthContextProvider.shared
+        webAuthSession?.prefersEphemeralWebBrowserSession = false
+        
+        // Start the session
+        webAuthSession?.start()
     }
     
-    private func handleCallback(_ url: URL) {
-        guard url.scheme == "fit33" && url.host == "strava" else { return }
-        
-        Task {
-            do {
-                try await strava.handleCallback(url: url)
-                await MainActor.run {
-                    isAuthenticating = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    isAuthenticating = false
-                }
+    private func handleCallback(_ url: URL) async {
+        do {
+            try await strava.handleCallback(url: url)
+            await MainActor.run {
+                isAuthenticating = false
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+                isAuthenticating = false
             }
         }
     }

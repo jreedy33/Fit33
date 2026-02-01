@@ -735,7 +735,11 @@ struct CardioWorkoutDetailView_Previews: PreviewProvider {
                 equipmentName: nil,
                 equipmentType: nil,
                 startedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-1800)),
-                completedAt: ISO8601DateFormatter().string(from: Date())
+                completedAt: ISO8601DateFormatter().string(from: Date()),
+                source: nil,
+                externalId: nil,
+                externalUrl: nil,
+                totalElevationGain: nil
             ))
         }
     }

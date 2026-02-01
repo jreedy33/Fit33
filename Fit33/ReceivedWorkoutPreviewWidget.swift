@@ -519,7 +519,7 @@ struct ReceivedWorkoutPreviewWidget: View {
 /// Shows the most recent pending workout, with ability to show more
 
 struct ReceivedWorkoutPreviewContainer: View {
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false

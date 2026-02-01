@@ -1013,6 +1013,9 @@ class WorkoutManager: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════════
         Task { @MainActor in
             NotificationManager.shared.workoutCompleted()
+            
+            // Sync workout completion to active challenges (lift/workout_streak)
+            await ChallengeService.shared.syncFit33WorkoutToChallenge(workoutType: "strength")
         }
         
         isWorkoutActive = false

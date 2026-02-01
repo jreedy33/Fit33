@@ -13,7 +13,7 @@ struct ReceivedWorkoutsView: View {
     
     // Use StateObject wrapper to prevent unnecessary re-renders during navigation
     // The view will still observe changes, but won't be recreated
-    @StateObject private var friendService = FriendService.shared
+    @ObservedObject private var friendService = FriendService.shared
     
     // Only read DeepLinkManager and AdManager values when needed, don't observe
     private var deepLinkManager: DeepLinkManager { DeepLinkManager.shared }

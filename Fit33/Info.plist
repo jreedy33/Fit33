@@ -43,6 +43,8 @@
 	<string>Fit33 uses Bluetooth to connect to fitness equipment and heart rate monitors.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Fit33 uses your camera to scan food barcodes and take profile photos.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Fit33 uses your contacts to help you find friends who are already using the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Fit33 needs access to your photo library to set a profile picture.</string>
 	<key>NSHealthShareUsageDescription</key>
@@ -60,6 +62,8 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<true/>
 	</dict>
+	<key>CFBundleGetInfoString</key>
+	<string></string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

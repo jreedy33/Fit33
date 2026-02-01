@@ -57,6 +57,20 @@ enum AppConfig {
         static let scopes = "read,activity:read_all"
     }
     
+    // MARK: - Fitbit Configuration
+    
+    enum Fitbit {
+        static let clientId = "23TRK9"
+        /// Note: Client secret should ideally be server-side only
+        static let clientSecret = "fce0600b5906701e6922142e56d44ce3"
+        static let redirectUri = "fit33://fitbit"
+        static let authorizationUrl = "https://www.fitbit.com/oauth2/authorize"
+        static let tokenUrl = "https://api.fitbit.com/oauth2/token"
+        static let apiBaseUrl = "https://api.fitbit.com"
+        // Scopes: activity, heartrate, sleep, weight, nutrition, profile, settings
+        static let scopes = "activity heartrate sleep weight profile"
+    }
+    
     // MARK: - InBody Configuration
     
     enum InBody {

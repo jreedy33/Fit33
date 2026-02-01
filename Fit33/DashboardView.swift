@@ -27,6 +27,11 @@ struct DashboardView: View {
     @State private var pendingWorkoutType: PendingWorkoutType? = nil
     @State private var navigateToTodaysWorkout = false
     @State private var programWidgetRotation: Double = 0
+    
+    // Swipeable widget state (challenges + programs)
+    @State private var selectedWidgetPage: Int = 0
+    @State private var widgetSwipeInProgress: Bool = false
+    @ObservedObject private var challengeService = ChallengeService.shared
     @State private var navigateToCustomWorkout = false
     @State private var navigateToAutoWorkout = false
     @State private var navigateToGeneratedPrograms = false
@@ -189,6 +194,10 @@ struct DashboardView: View {
                         .environmentObject(userManager)
                         .padding(.bottom, 16)
                     
+                    // Challenge Preview Widget (shows pending challenge invites)
+                    ChallengePreviewContainer()
+                        .padding(.bottom, 16)
+                    
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
                         .font(.title3)
@@ -197,8 +206,8 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.bottom, 12)
                     
-                    // Unified Smart Program Widget
-                    unifiedProgramWidget
+                    // Swipeable Program & Challenge Widget
+                    swipeableProgramChallengeWidget
                         .padding(.bottom, 16)
                     
                     // Main workout creation buttons
@@ -262,8 +271,10 @@ struct DashboardView: View {
                 }
                 }
                 .refreshable {
-                    // Pull-to-refresh: fetch new workouts and friend requests
+                    // Pull-to-refresh: fetch new workouts, friend requests, and challenges
                     await FriendService.shared.refreshHomeScreenData()
+                    await ChallengeService.shared.fetchPendingInvites()
+                    await ChallengeService.shared.fetchActiveChallenges()
                     
                     // Also refresh other data
                     await loadRecentCardioWorkouts()
@@ -387,6 +398,10 @@ struct DashboardView: View {
             await FriendService.shared.loadPendingRequests()
             await FriendService.shared.loadReceivedWorkouts()
             
+            // Load active challenges and pending invites (persists across app restarts)
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchPendingInvites()
+            
             // Load profile photo for home icon
             await loadProfilePhoto()
         }
@@ -404,6 +419,9 @@ struct DashboardView: View {
             if oldPhase == .background && newPhase == .active {
                 Task {
                     await FriendService.shared.refreshHomeScreenData()
+                    // Also refresh challenges when returning from background
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    await ChallengeService.shared.fetchPendingInvites()
                 }
             }
         }
@@ -1920,6 +1938,390 @@ struct DashboardView: View {
         .shadow(color: programColor.opacity(colorScheme == .dark ? 0.2 : 0.15), radius: 24, x: 0, y: 0)
     }
     
+    // MARK: - Swipeable Program & Challenge Widget
+    
+    /// Build array of widgets to display (up to 3 challenges + 1 program = max 4, but we allow 3 challenges max)
+    private var widgetsToDisplay: [AnyView] {
+        var widgets: [AnyView] = []
+        
+        // Add challenge widgets (up to 3)
+        for challenge in challengeService.activeChallenges.prefix(3) {
+            widgets.append(AnyView(activeChallengeDetailWidget(challenge: challenge)))
+        }
+        
+        // Add program widget if available
+        if activeSmartProgramForWidget != nil || topRecommendedSmartProgram != nil || isFirstTimeUser {
+            widgets.append(AnyView(unifiedProgramWidget))
+        }
+        
+        return widgets
+    }
+    
+    private var swipeableProgramChallengeWidget: some View {
+        let widgets = widgetsToDisplay
+        let widgetCount = widgets.count
+        
+        // If multiple widgets exist, show swipeable container
+        if widgetCount > 1 {
+            return AnyView(
+                VStack(spacing: 4) {
+                    GeometryReader { geometry in
+                        let cardWidth = geometry.size.width
+                        let spacing: CGFloat = 16 // Space between cards
+                        
+                        HStack(spacing: spacing) {
+                            ForEach(0..<widgetCount, id: \.self) { index in
+                                widgets[index]
+                                    .frame(width: cardWidth)
+                                    .opacity(selectedWidgetPage == index ? 1 : 0)
+                            }
+                        }
+                        .offset(x: -CGFloat(selectedWidgetPage) * (cardWidth + spacing))
+                    }
+                    .frame(height: 156)
+                    // No .clipped() - allows glow to render naturally
+                    .animation(.easeOut(duration: 0.2), value: selectedWidgetPage) // Snappy animation
+                    // High priority gesture that recognizes swipes before buttons
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 8)
+                            .onEnded { value in
+                                let horizontalAmount = value.translation.width
+                                let verticalAmount = abs(value.translation.height)
+                                
+                                // Only trigger if movement is primarily horizontal
+                                if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                                    HapticManager.impact(.medium)
+                                    if horizontalAmount < 0 && selectedWidgetPage < widgetCount - 1 {
+                                        // Swipe left - go to next
+                                        selectedWidgetPage += 1
+                                    } else if horizontalAmount > 0 && selectedWidgetPage > 0 {
+                                        // Swipe right - go to previous
+                                        selectedWidgetPage -= 1
+                                    }
+                                }
+                            }
+                    )
+                    
+                    // Custom page indicators (tappable to switch)
+                    HStack(spacing: 8) {
+                        ForEach(0..<widgetCount, id: \.self) { index in
+                            Circle()
+                                .fill(selectedWidgetPage == index ? Color.primary : Color.gray.opacity(0.3))
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(selectedWidgetPage == index ? 1.0 : 0.8)
+                                .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
+                                .onTapGesture {
+                                    HapticManager.impact(.light)
+                                    selectedWidgetPage = index
+                                }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onChange(of: widgetCount) { oldCount, newCount in
+                    // Reset to valid page if widgets were removed
+                    if selectedWidgetPage >= newCount {
+                        selectedWidgetPage = max(0, newCount - 1)
+                    }
+                }
+            )
+        } else if widgetCount == 1 {
+            // Single widget - no pagination needed
+            return AnyView(widgets[0])
+        } else {
+            // No widgets - show program recommendation
+            return AnyView(unifiedProgramWidget)
+        }
+    }
+    
+    // MARK: - Active Challenge Widget (Legacy - kept for single challenge scenarios)
+    
+    private var activeChallengeWidget: some View {
+        Group {
+            if let challenge = challengeService.activeChallenges.first {
+                activeChallengeDetailWidget(challenge: challenge)
+            } else {
+                EmptyView()
+            }
+        }
+    }
+    
+    private func activeChallengeDetailWidget(challenge: ActiveChallenge) -> some View {
+        let challengeColor = Color.blue // All active challenges use blue
+        
+        return VStack(spacing: 0) {
+            // Header - Challenge info
+            NavigationLink(destination: ChallengeDetailView(challenge: challenge)) {
+                HStack(alignment: .center, spacing: 10) {
+                    // VS indicator with trophy
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [challengeColor.opacity(0.2), challengeColor.opacity(0.05)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [challengeColor, challengeColor.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    // Challenge info
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(challenge.title)
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 6) {
+                            Text("vs \(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(challenge.daysRemaining) days left")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(challengeColor)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Progress comparison section
+            HStack(spacing: 0) {
+                // Left accent bar (matching program widget style)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(challengeColor)
+                    .frame(width: 4)
+                    .padding(.vertical, 4)
+                
+                HStack(spacing: 16) {
+                    // Your progress (with photo)
+                    HStack(spacing: 10) {
+                        // User photo
+                        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                            Image(uiImage: cachedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 36, height: 36)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(challenge.amWinning ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
+                                )
+                        } else {
+                            Circle()
+                                .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Text(userManager.currentUser?.name?.prefix(1).uppercased() ?? "Y")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(challenge.amWinning ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
+                                )
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Text("You")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                                if challenge.amWinning {
+                                    Image(systemName: "crown.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.yellow)
+                                }
+                            }
+                            
+                            Text(formatChallengeProgress(challenge.myTotalProgress, unit: challenge.targetUnit))
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(challenge.amWinning ? .green : .primary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // VS divider
+                    VStack(spacing: 2) {
+                        Text("vs")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [challengeColor, challengeColor.opacity(0.7)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        if challenge.myTotalProgress != challenge.opponentTotalProgress {
+                            let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
+                            Text(challenge.amWinning ? "+\(formatChallengeProgress(diff, unit: challenge.targetUnit))" : "-\(formatChallengeProgress(diff, unit: challenge.targetUnit))")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(challenge.amWinning ? .green : .red)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Opponent progress (with photo)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HStack(spacing: 4) {
+                                if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
+                                    Image(systemName: "crown.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.yellow)
+                                }
+                                Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                            }
+                            
+                            Text(formatChallengeProgress(challenge.opponentTotalProgress, unit: challenge.targetUnit))
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? .green : .primary)
+                        }
+                        
+                        // Opponent photo
+                        if let photoUrl = challenge.opponentPhotoUrl, !photoUrl.isEmpty {
+                            AsyncImage(url: URL(string: photoUrl)) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Circle()
+                                    .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .overlay(
+                                        Text(challenge.opponentName?.prefix(1).uppercased() ?? "F")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(.white)
+                                    )
+                            }
+                            .frame(width: 36, height: 36)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
+                            )
+                        } else {
+                            Circle()
+                                .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Text(challenge.opponentName?.prefix(1).uppercased() ?? "F")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
+                                )
+                        }
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark 
+                        ? Color.white.opacity(0.04) 
+                        : Color.black.opacity(0.03))
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background(
+            ZStack {
+                // Even glow layer - uniform around all edges
+                RoundedRectangle(cornerRadius: 26)
+                    .stroke(challengeColor.opacity(0.5), lineWidth: 3)
+                    .blur(radius: 8)
+                
+                // Rotating accent glow (subtle shimmer effect)
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(
+                        AngularGradient(
+                            colors: [
+                                challengeColor.opacity(0.6),
+                                challengeColor.opacity(0.2),
+                                challengeColor.opacity(0.6),
+                                challengeColor.opacity(0.2)
+                            ],
+                            center: .center,
+                            startAngle: .degrees(activeWidgetGlowRotation),
+                            endAngle: .degrees(activeWidgetGlowRotation + 360)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 4)
+                
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Accent border
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [challengeColor.opacity(0.3), challengeColor.opacity(0.1), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            }
+        )
+        .shadow(color: challengeColor.opacity(colorScheme == .dark ? 0.4 : 0.3), radius: 20, x: 0, y: 0) // Even glow
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
+    }
+    
+    private func formatChallengeProgress(_ value: Int, unit: String) -> String {
+        if value >= 10000 {
+            return String(format: "%.1fk", Double(value) / 1000)
+        }
+        return value.formatted()
+    }
+    
     // MARK: - Unified Smart Program Widget
     
     /// Determines if this is a brand new user who hasn't started any workout or program
@@ -2271,7 +2673,8 @@ struct DashboardView: View {
                     )
             }
         )
-        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 8)
+        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.35 : 0.25), radius: 20, x: 0, y: 0) // Even glow
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
     }
     
     private func programDetailPill(icon: String, value: String, label: String) -> some View {
@@ -2544,38 +2947,20 @@ struct DashboardView: View {
             ZStack {
                 // Rotating glow when workout not complete
                 if !isTodayCompleted {
-                    // Outer glow layer
+                    // Even glow layer - uniform around all edges
                     RoundedRectangle(cornerRadius: 26)
-                        .stroke(
-                            AngularGradient(
-                                colors: [
-                                    programColor.opacity(0.7),
-                                    programColor.opacity(0.3),
-                                    programColor.opacity(0.05),
-                                    Color.clear,
-                                    programColor.opacity(0.05),
-                                    programColor.opacity(0.3),
-                                    programColor.opacity(0.7)
-                                ],
-                                center: .center,
-                                startAngle: .degrees(activeWidgetGlowRotation),
-                                endAngle: .degrees(activeWidgetGlowRotation + 360)
-                            ),
-                            lineWidth: 4
-                        )
-                        .blur(radius: 6)
+                        .stroke(programColor.opacity(0.5), lineWidth: 3)
+                        .blur(radius: 8)
                     
-                    // Inner sharper glow
-                    RoundedRectangle(cornerRadius: 24)
+                    // Rotating accent glow (subtle shimmer effect)
+                    RoundedRectangle(cornerRadius: 25)
                         .stroke(
                             AngularGradient(
                                 colors: [
-                                    programColor.opacity(0.8),
+                                    programColor.opacity(0.6),
                                     programColor.opacity(0.2),
-                                    Color.clear,
-                                    Color.clear,
-                                    programColor.opacity(0.2),
-                                    programColor.opacity(0.8)
+                                    programColor.opacity(0.6),
+                                    programColor.opacity(0.2)
                                 ],
                                 center: .center,
                                 startAngle: .degrees(activeWidgetGlowRotation),
@@ -2583,7 +2968,7 @@ struct DashboardView: View {
                             ),
                             lineWidth: 2
                         )
-                        .blur(radius: 2)
+                        .blur(radius: 4)
                 }
                 
                 RoundedRectangle(cornerRadius: 24)
@@ -2611,7 +2996,8 @@ struct DashboardView: View {
                     )
             }
         )
-        .shadow(color: !isTodayCompleted ? programColor.opacity(colorScheme == .dark ? 0.35 : 0.25) : Color.black.opacity(colorScheme == .dark ? 0.15 : 0.06), radius: !isTodayCompleted ? 24 : 12, x: 0, y: !isTodayCompleted ? 8 : 4)
+        .shadow(color: !isTodayCompleted ? programColor.opacity(colorScheme == .dark ? 0.4 : 0.3) : Color.black.opacity(colorScheme == .dark ? 0.15 : 0.06), radius: !isTodayCompleted ? 20 : 12, x: 0, y: 0) // Even glow
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
     }
     
     // MARK: - Browse Programs Widget (Fallback)
@@ -3214,8 +3600,8 @@ struct DashboardView: View {
                         )
                 }
             )
-            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 12, x: 0, y: 6)
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 6, x: 0, y: 3)
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.3 : 0.2), radius: 12, x: 0, y: 0) // Even glow
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 8, x: 0, y: 3) // Subtle depth
         }
         .buttonStyle(PlainButtonStyle())
         .confirmationDialog("Start \(program.personalizedName)?", isPresented: $showStartProgramConfirm, titleVisibility: .visible) {
@@ -4029,25 +4415,48 @@ struct RecentCardioWorkoutCard: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        // Activity name with Cardio badge
+                        // Activity name with source badge (Strava or Cardio)
                         HStack(spacing: 8) {
-                            Text(activityInfo.name)
+                            Text(cardioWorkout.isFromStrava ? (cardioWorkout.workoutName ?? activityInfo.name) : activityInfo.name)
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
                             
-                            // Cardio badge in activity color
-                            Text("Cardio")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(activityInfo.color)
-                                .padding(.horizontal, 6)
+                            // Source badge - Strava (orange) or Cardio (activity color)
+                            if cardioWorkout.isFromStrava {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "figure.run")
+                                        .font(.system(size: 9, weight: .bold))
+                                    Text("Strava")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
                                 .background(
                                     Capsule()
-                                        .fill(activityInfo.color.opacity(0.15))
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
                                 )
+                            } else {
+                                Text("Cardio")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(activityInfo.color)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(activityInfo.color.opacity(0.15))
+                                    )
+                            }
                         }
                         
                         // Date with relative time

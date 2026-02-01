@@ -7,9 +7,11 @@ struct RecipeBrowserView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = RecipeBrowserViewModel()
     @ObservedObject private var premiumManager = PremiumManager.shared
+    @ObservedObject private var preferencesService = RecipePreferenceService.shared
     @State private var selectedRecipe: SpoonacularRecipe?
     @State private var showingRecipeDetail = false
     @State private var showingPremiumUpgrade = false
+    @State private var showingPreferences = false
     
     // Free users can only view 1 recipe
     private let freeRecipeLimit = 1
@@ -24,6 +26,11 @@ struct RecipeBrowserView: View {
             VStack(spacing: 0) {
                 // Search Header
                 searchHeader
+                
+                // Active Preferences Banner (if user has preferences set)
+                if preferencesService.hasPreferencesSet {
+                    preferenceBanner
+                }
                 
                 // Filter Chips
                 filterChipsSection
@@ -44,45 +51,71 @@ struct RecipeBrowserView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    // Sort options
-                    Section("Sort By") {
-                        Button {
-                            viewModel.sortOption = .healthiness
-                            Task { await viewModel.searchRecipes() }
-                        } label: {
-                            Label("Healthiness", systemImage: viewModel.sortOption == .healthiness ? "checkmark" : "")
-                        }
-                        
-                        Button {
-                            viewModel.sortOption = .protein
-                            Task { await viewModel.searchRecipes() }
-                        } label: {
-                            Label("Protein", systemImage: viewModel.sortOption == .protein ? "checkmark" : "")
-                        }
-                        
-                        Button {
-                            viewModel.sortOption = .calories
-                            Task { await viewModel.searchRecipes() }
-                        } label: {
-                            Label("Calories", systemImage: viewModel.sortOption == .calories ? "checkmark" : "")
-                        }
-                        
-                        Button {
-                            viewModel.sortOption = .time
-                            Task { await viewModel.searchRecipes() }
-                        } label: {
-                            Label("Cook Time", systemImage: viewModel.sortOption == .time ? "checkmark" : "")
-                        }
+                HStack(spacing: 12) {
+                    // Preferences button
+                    Button {
+                        showingPreferences = true
+                    } label: {
+                        Image(systemName: preferencesService.hasPreferencesSet ? "slider.horizontal.3" : "gearshape")
+                            .font(.body)
+                            .foregroundColor(preferencesService.hasPreferencesSet ? .orange : .primary)
                     }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle")
-                        .font(.body)
+                    
+                    // Sort menu
+                    Menu {
+                        // Sort options
+                        Section("Sort By") {
+                            Button {
+                                viewModel.sortOption = .healthiness
+                                Task { await viewModel.searchRecipes() }
+                            } label: {
+                                Label("Healthiness", systemImage: viewModel.sortOption == .healthiness ? "checkmark" : "")
+                            }
+                            
+                            Button {
+                                viewModel.sortOption = .protein
+                                Task { await viewModel.searchRecipes() }
+                            } label: {
+                                Label("Protein", systemImage: viewModel.sortOption == .protein ? "checkmark" : "")
+                            }
+                            
+                            Button {
+                                viewModel.sortOption = .calories
+                                Task { await viewModel.searchRecipes() }
+                            } label: {
+                                Label("Calories", systemImage: viewModel.sortOption == .calories ? "checkmark" : "")
+                            }
+                            
+                            Button {
+                                viewModel.sortOption = .time
+                                Task { await viewModel.searchRecipes() }
+                            } label: {
+                                Label("Cook Time", systemImage: viewModel.sortOption == .time ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                            .font(.body)
+                    }
                 }
             }
         }
         .task {
+            // Load preferences into view model
+            viewModel.excludeIngredients = preferencesService.getDislikedIngredients()
+            viewModel.includeIngredients = preferencesService.getLikedIngredients()
             await viewModel.searchRecipes()
+        }
+        .sheet(isPresented: $showingPreferences) {
+            RecipePreferencesView()
+        }
+        .onChange(of: showingPreferences) { _, isShowing in
+            if !isShowing {
+                // Refresh recipes when preferences sheet closes
+                viewModel.excludeIngredients = preferencesService.getDislikedIngredients()
+                viewModel.includeIngredients = preferencesService.getLikedIngredients()
+                Task { await viewModel.searchRecipes() }
+            }
         }
         .background(
             NavigationLink(
@@ -109,6 +142,57 @@ struct RecipeBrowserView: View {
                 }
             )
         }
+    }
+    
+    // MARK: - Preference Banner
+    private var preferenceBanner: some View {
+        Button {
+            showingPreferences = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.subheadline)
+                    .foregroundColor(.orange)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Personalized Recommendations")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    let likedCount = preferencesService.getLikedIngredients().count
+                    let avoidedCount = preferencesService.getDislikedIngredients().count
+                    Text("\(likedCount) liked • \(avoidedCount) avoided")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.15), Color.red.opacity(0.1)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
     
     // MARK: - Search Header
@@ -384,8 +468,12 @@ class RecipeBrowserViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var hasMoreResults = true
     
+    // User preferences (set from RecipePreferenceService)
+    var includeIngredients: [String] = []
+    var excludeIngredients: [String] = []
+    
     private var currentOffset = 0
-    private let pageSize = 20
+    private let pageSize = 24 // Increased from 20 for more variety
     private let apiKey = AppConfig.spoonacularApiKey
     private let baseURL = "https://api.spoonacular.com"
     
@@ -407,14 +495,24 @@ class RecipeBrowserViewModel: ObservableObject {
             URLQueryItem(name: "offset", value: "0"),
             URLQueryItem(name: "addRecipeNutrition", value: "true"),
             URLQueryItem(name: "sort", value: sortOption.rawValue),
-            URLQueryItem(name: "sortDirection", value: sortOption == .calories ? "asc" : "desc")
+            URLQueryItem(name: "sortDirection", value: sortOption == .calories ? "asc" : "desc"),
+            URLQueryItem(name: "instructionsRequired", value: "true"),
+            URLQueryItem(name: "fillIngredients", value: "true")
         ]
         
-        // Add search query
+        // Add search query - SIMPLE queries work best with Spoonacular
         if !searchQuery.isEmpty {
             queryItems.append(URLQueryItem(name: "query", value: searchQuery))
+            print("🍽️ [BROWSER] User search: \(searchQuery)")
+        } else if !includeIngredients.isEmpty {
+            // Use FIRST ingredient only as query (not all of them - that's too restrictive)
+            let firstIngredient = includeIngredients.first ?? "chicken"
+            queryItems.append(URLQueryItem(name: "query", value: "\(firstIngredient) dinner"))
+            print("🍽️ [BROWSER] Ingredient query: \(firstIngredient) dinner")
         } else {
-            queryItems.append(URLQueryItem(name: "query", value: "healthy"))
+            // Simple default - let sort=healthiness handle it
+            queryItems.append(URLQueryItem(name: "query", value: "dinner"))
+            print("🍽️ [BROWSER] Default query: dinner (sorted by healthiness)")
         }
         
         // Add diet filter
@@ -422,15 +520,25 @@ class RecipeBrowserViewModel: ObservableObject {
             queryItems.append(URLQueryItem(name: "diet", value: diet.apiValue))
         }
         
+        // DON'T use includeIngredients filter - too strict and causes 0 results!
+        // Instead, liked ingredients are included in the query string above
+        
+        // Add user's disliked ingredients - only exclude these (this is safer)
+        if !excludeIngredients.isEmpty {
+            // Only use top 3 to avoid over-filtering
+            let topDislikes = excludeIngredients.prefix(3).joined(separator: ",")
+            queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
+        }
+        
         // Add quick filter constraints
         if let quickFilter = selectedQuickFilter {
             switch quickFilter {
             case .highProtein:
-                queryItems.append(URLQueryItem(name: "minProtein", value: "30"))
+                queryItems.append(URLQueryItem(name: "minProtein", value: "25"))
             case .lowCarb:
-                queryItems.append(URLQueryItem(name: "maxCarbs", value: "20"))
+                queryItems.append(URLQueryItem(name: "maxCarbs", value: "25"))
             case .lowCalorie:
-                queryItems.append(URLQueryItem(name: "maxCalories", value: "400"))
+                queryItems.append(URLQueryItem(name: "maxCalories", value: "450"))
             case .quickMeals:
                 queryItems.append(URLQueryItem(name: "maxReadyTime", value: "30"))
             }
@@ -445,11 +553,22 @@ class RecipeBrowserViewModel: ObservableObject {
             return
         }
         
+        print("🍽️ [BROWSER] Fetching: \(url.absoluteString.prefix(200))...")
+        
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            
+            print("🍽️ [BROWSER] Response status: \(httpResponse.statusCode)")
+            
+            guard httpResponse.statusCode == 200 else {
+                // Log the error response
+                if let errorBody = String(data: data, encoding: .utf8) {
+                    print("🍽️ [BROWSER] Error: \(errorBody)")
+                }
                 throw URLError(.badServerResponse)
             }
             
@@ -460,7 +579,10 @@ class RecipeBrowserViewModel: ObservableObject {
             hasMoreResults = searchResponse.totalResults > pageSize
             currentOffset = pageSize
             
+            print("🍽️ [BROWSER] ✅ Loaded \(recipes.count) recipes (total available: \(searchResponse.totalResults))")
+            
         } catch {
+            print("🍽️ [BROWSER] ❌ Error: \(error)")
             errorMessage = error.localizedDescription
         }
         
@@ -524,17 +646,25 @@ class RecipeBrowserViewModel: ObservableObject {
             URLQueryItem(name: "offset", value: String(currentOffset)),
             URLQueryItem(name: "addRecipeNutrition", value: "true"),
             URLQueryItem(name: "sort", value: sortOption.rawValue),
-            URLQueryItem(name: "sortDirection", value: sortOption == .calories ? "asc" : "desc")
+            URLQueryItem(name: "sortDirection", value: sortOption == .calories ? "asc" : "desc"),
+            URLQueryItem(name: "instructionsRequired", value: "true")
         ]
         
+        // Use same query logic as searchRecipes
         if !searchQuery.isEmpty {
             queryItems.append(URLQueryItem(name: "query", value: searchQuery))
         } else {
-            queryItems.append(URLQueryItem(name: "query", value: "healthy"))
+            queryItems.append(URLQueryItem(name: "query", value: "dinner"))
         }
         
         if let diet = selectedDiet {
             queryItems.append(URLQueryItem(name: "diet", value: diet.apiValue))
+        }
+        
+        // Only exclude disliked ingredients (don't require liked ingredients)
+        if !excludeIngredients.isEmpty {
+            let topDislikes = excludeIngredients.prefix(3).joined(separator: ",")
+            queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
         
         var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!

@@ -10,6 +10,12 @@ struct ProfileView: View {
     @EnvironmentObject var supabaseManager: SupabaseManager
     @EnvironmentObject var workoutManager: WorkoutManager
     
+    // Connected apps (for reactive UI updates)
+    @StateObject private var stravaService = StravaService.shared
+    @StateObject private var fitbitService = FitbitService.shared
+    @StateObject private var inBodyService = InBodyService.shared
+    @StateObject private var healthKitService = HealthKitService.shared
+    
     // Editing states
     @State private var isEditingPersonal = false
     @State private var isEditingBody = false
@@ -40,10 +46,14 @@ struct ProfileView: View {
     @State private var showingDeleteAccountConfirmation = false
     @State private var isDeleting = false
     
-    // Friend system - use @State for counts to avoid re-render loops during navigation
-    @State private var pendingRequestCount: Int = 0
-    @State private var unreadWorkoutCount: Int = 0
+    // Friend system
     @State private var hasLoadedFriendData = false
+    @ObservedObject private var friendService = FriendService.shared
+    
+    // Profile stats navigation
+    @State private var showWorkoutHistory = false
+    @State private var showFriendsList = false
+    @State private var showReceivedWorkouts = false
     
     // Profile photo
     @State private var profilePhotoURL: String? = nil
@@ -102,97 +112,6 @@ struct ProfileView: View {
                         .padding(.bottom, 16)
                     
                     VStack(spacing: 16) {
-                        // Friends & Sharing Section
-                        ProfileSection(
-                            title: "FRIENDS & SHARING",
-                            icon: "person.2.fill",
-                            iconColor: .blue
-                        ) {
-                            VStack(spacing: 0) {
-                                // Friends List
-                                NavigationLink(destination: FriendsListView()) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "person.2.fill")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.blue)
-                                            .frame(width: 28)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Friends")
-                                                .font(.subheadline)
-                                                .foregroundColor(.primary)
-                                            
-                                            Text("Manage friends & send workouts")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Badge for pending requests
-                                        if pendingRequestCount > 0 {
-                                            Text("\(pendingRequestCount)")
-                                                .font(.caption2)
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Capsule().fill(Color.red))
-                                        }
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.secondary.opacity(0.5))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                
-                                Divider().padding(.leading, 50)
-                                
-                                // Received Workouts
-                                NavigationLink(destination: ReceivedWorkoutsView()) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "tray.full.fill")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.green)
-                                            .frame(width: 28)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Received Workouts")
-                                                .font(.subheadline)
-                                                .foregroundColor(.primary)
-                                            
-                                            Text("Workouts sent to you by friends")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Badge for unread workouts
-                                        if unreadWorkoutCount > 0 {
-                                            Text("\(unreadWorkoutCount)")
-                                                .font(.caption2)
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Capsule().fill(Color.red))
-                                        }
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.secondary.opacity(0.5))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                        
                         // Personal Information Section
                         ProfileEditableSection(
                             title: "PERSONAL INFORMATION",
@@ -504,14 +423,51 @@ struct ProfileView: View {
                                             Text("Strava")
                                                 .font(.subheadline)
                                                 .foregroundColor(.primary)
-                                            Text(StravaService.shared.isConnected ? "Connected" : "Sync cardio activities")
+                                            Text(stravaService.isConnected ? "Connected" : "Sync cardio activities")
                                                 .font(.caption)
-                                                .foregroundColor(StravaService.shared.isConnected ? .green : .secondary)
+                                                .foregroundColor(stravaService.isConnected ? .green : .secondary)
                                         }
                                         
                                         Spacer()
                                         
-                                        if StravaService.shared.isConnected {
+                                        if stravaService.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider()
+                                    .padding(.leading, 56)
+                                
+                                // Fitbit
+                                NavigationLink(destination: FitbitSettingsView()) {
+                                    HStack(spacing: 12) {
+                                        // Fitbit teal icon
+                                        Image(systemName: "heart.circle.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Fitbit")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text(fitbitService.isConnected ? "Connected" : "Sync health & activity")
+                                                .font(.caption)
+                                                .foregroundColor(fitbitService.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if fitbitService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
                                         }
@@ -541,14 +497,51 @@ struct ProfileView: View {
                                             Text("InBody")
                                                 .font(.subheadline)
                                                 .foregroundColor(.primary)
-                                            Text(InBodyService.shared.isConnected ? "Connected" : "Body composition tracking")
+                                            Text(inBodyService.isConnected ? "Connected" : "Body composition tracking")
                                                 .font(.caption)
-                                                .foregroundColor(InBodyService.shared.isConnected ? .green : .secondary)
+                                                .foregroundColor(inBodyService.isConnected ? .green : .secondary)
                                         }
                                         
                                         Spacer()
                                         
-                                        if InBodyService.shared.isConnected {
+                                        if inBodyService.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Divider()
+                                    .padding(.leading, 56)
+                                
+                                // Apple Health (Nike Run Club, Apple Watch, etc.)
+                                NavigationLink(destination: HealthKitSettingsView()) {
+                                    HStack(spacing: 12) {
+                                        // Apple Health red/pink icon
+                                        Image(systemName: "heart.fill")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.red)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Apple Health")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text(healthKitService.isAuthorized ? "Connected" : "Nike Run Club & more")
+                                                .font(.caption)
+                                                .foregroundColor(healthKitService.isAuthorized ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if healthKitService.isAuthorized {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
                                         }
@@ -682,9 +675,6 @@ struct ProfileView: View {
                 let friendService = FriendService.shared
                 await friendService.loadPendingRequests()
                 await friendService.loadReceivedWorkouts()
-                // Update local state once to avoid continuous re-renders during navigation
-                pendingRequestCount = friendService.pendingRequests.count
-                unreadWorkoutCount = friendService.unreadWorkoutCount
             }
         }
         .sheet(isPresented: $showUsernameSheet) {
@@ -812,6 +802,9 @@ struct ProfileView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
+            
+            // Instagram-style Stats Row
+            profileStatsRow
         }
         .confirmationDialog("Profile Photo", isPresented: $showingPhotoOptions) {
             Button("Take Photo") {
@@ -841,6 +834,153 @@ struct ProfileView: View {
                 }
             }
         }
+        .background(
+            Group {
+                // Hidden NavigationLinks for programmatic navigation (works with NavigationView)
+                NavigationLink(
+                    destination: WorkoutHistoryFullView(),
+                    isActive: $showWorkoutHistory
+                ) { EmptyView() }
+                
+                // Navigate to: Requests tab (1) if pending requests, Search tab (2) if 0 friends, else Friends tab (0)
+                NavigationLink(
+                    destination: FriendsListView(initialTab: friendService.pendingRequests.count > 0 ? 1 : (friendService.friends.count == 0 ? 2 : 0)),
+                    isActive: $showFriendsList
+                ) { EmptyView() }
+                
+                NavigationLink(
+                    destination: ReceivedWorkoutsView(),
+                    isActive: $showReceivedWorkouts
+                ) { EmptyView() }
+            }
+        )
+    }
+    
+    // MARK: - Profile Stats Row (Instagram-style, Floating)
+    
+    private var profileStatsRow: some View {
+        HStack(spacing: 0) {
+            // Completed Workouts
+            Button(action: {
+                HapticManager.impact(.light)
+                showWorkoutHistory = true
+            }) {
+                VStack(spacing: 6) {
+                    Text("\(userManager.currentUser?.totalWorkouts ?? 0)")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Workouts")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Divider
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(width: 1, height: 44)
+            
+            // Friends (with red dot for pending requests, or + badge if 0 friends)
+            Button(action: {
+                HapticManager.impact(.light)
+                showFriendsList = true
+            }) {
+                VStack(spacing: 6) {
+                    // Show 0 with + icon inline if no friends
+                    if friendService.friends.count == 0 {
+                        HStack(spacing: 2) {
+                            Text("0")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(.primary)
+                            
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.blue, .purple.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .offset(y: -4)  // Slightly raised
+                        }
+                    } else {
+                        ZStack(alignment: .topTrailing) {
+                            Text("\(friendService.friends.count)")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(.primary)
+                            
+                            // Red dot for pending friend requests
+                            if friendService.pendingRequests.count > 0 {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: 12, y: -4)
+                            }
+                        }
+                    }
+                    
+                    Text("Friends")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Divider
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(width: 1, height: 44)
+            
+            // Received Workouts
+            Button(action: {
+                HapticManager.impact(.light)
+                showReceivedWorkouts = true
+            }) {
+                VStack(spacing: 6) {
+                    ZStack(alignment: .topTrailing) {
+                        Text("\(friendService.receivedWorkouts.count)")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        // Red dot for unread workouts
+                        if friendService.unreadWorkoutCount > 0 {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 10, height: 10)
+                                .offset(x: 12, y: -4)
+                        }
+                    }
+                    
+                    Text("Received")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.vertical, 18)
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(colorScheme == .dark ? Color(white: 0.1) : Color.white)
+                .shadow(
+                    color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.12),
+                    radius: 16,
+                    x: 0,
+                    y: 8
+                )
+        )
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
     }
     
     private var defaultAvatarContent: some View {

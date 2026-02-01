@@ -236,6 +236,7 @@ class FriendService: ObservableObject {
             
             print("✅ Friend request sent")
             await fetchUnreadCount()
+            await fetchSentRequests()  // Refresh sent requests list
             return true
         } catch {
             print("❌ Error sending friend request: \(error)")
@@ -878,7 +879,9 @@ struct UserSearchResult: Codable, Identifiable {
     let experienceLevel: String?
     let profilePhotoUrl: String?
     let isFriend: Bool
-    let hasPendingRequest: Bool
+    let hasPendingRequest: Bool        // Either direction (for backwards compatibility)
+    let hasOutgoingRequest: Bool?      // I sent THEM a request (show "Pending")
+    let hasIncomingRequest: Bool?      // THEY sent ME a request (show "Respond")
     
     var id: UUID { userId }
     
@@ -914,6 +917,8 @@ struct UserSearchResult: Codable, Identifiable {
         case profilePhotoUrl = "profile_photo_url"
         case isFriend = "is_friend"
         case hasPendingRequest = "has_pending_request"
+        case hasOutgoingRequest = "has_outgoing_request"
+        case hasIncomingRequest = "has_incoming_request"
     }
 }
 

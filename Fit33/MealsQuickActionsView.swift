@@ -6,7 +6,7 @@ struct MealsQuickActionsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var showMealPlanGenerator: Bool
     @Binding var showRecipeImport: Bool
-    @Binding var showRestaurantSearch: Bool
+    @Binding var showRestaurantSearch: Bool  // Kept for compatibility but not used here
     @Binding var showShoppingList: Bool
     
     private var cardBackgroundGradient: [Color] {
@@ -23,44 +23,136 @@ struct MealsQuickActionsView: View {
                 .foregroundColor(.primary)
                 .padding(.leading, 4)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
+            // 3 tall/skinny tiles in a row
+            HStack(spacing: 12) {
                 // Meal Plan Generator
-                MealQuickActionButton(
+                MealQuickActionTile(
                     icon: "calendar.badge.plus",
-                    title: "Meal Planner",
-                    subtitle: "Generate plan",
+                    title: "Meal\nPlanner",
                     gradient: [.mint, .green],
                     action: { showMealPlanGenerator = true }
                 )
                 
                 // Import Recipe
-                MealQuickActionButton(
+                MealQuickActionTile(
                     icon: "link.badge.plus",
-                    title: "Import Recipe",
-                    subtitle: "From any URL",
+                    title: "Import\nRecipe",
                     gradient: [.blue, .cyan],
                     action: { showRecipeImport = true }
                 )
                 
-                // Restaurant Search
-                MealQuickActionButton(
-                    icon: "fork.knife.circle",
-                    title: "Eat Out",
-                    subtitle: "Restaurant foods",
-                    gradient: [.orange, .yellow],
-                    action: { showRestaurantSearch = true }
-                )
-                
                 // Shopping List
-                MealQuickActionButton(
+                MealQuickActionTile(
                     icon: "cart.fill",
-                    title: "Shopping List",
-                    subtitle: "From recipes",
+                    title: "Shopping\nList",
                     gradient: [.purple, .pink],
                     action: { showShoppingList = true }
                 )
             }
         }
+    }
+}
+
+// MARK: - Meal Quick Action Tile (Tall/Skinny style)
+struct MealQuickActionTile: View {
+    let icon: String
+    let title: String
+    let gradient: [Color]
+    let action: () -> Void
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark
+            ? [Color(white: 0.14), Color(white: 0.09)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            action()
+        }) {
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: gradient),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 140)
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - color glow
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(gradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [gradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: gradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

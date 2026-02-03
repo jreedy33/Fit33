@@ -6,6 +6,7 @@ struct FoodSearchView: View {
     let onAdd: (FoodEntry) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
     
     @StateObject private var foodService = USDAFoodService.shared
     @State private var searchText = ""
@@ -13,6 +14,7 @@ struct FoodSearchView: View {
     @State private var searchDebouncer: Timer?
     @State private var showingQuickAccess = true
     @State private var showingNutritionScanner = false
+    @State private var showingRestaurantSearch = false
     @State private var isWaitingForSearch = false  // Track debounce state to prevent flash
     
     var body: some View {
@@ -105,6 +107,10 @@ struct FoodSearchView: View {
                 .hidden()
             }
         )
+        .sheet(isPresented: $showingRestaurantSearch) {
+            RestaurantSearchSheet()
+                .environmentObject(userManager)
+        }
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -154,7 +160,7 @@ struct FoodSearchView: View {
             .padding(.horizontal)
             .padding(.top, 8)
             
-            // Modern Search Bar
+            // Modern Search Bar with glow effect
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 18, weight: .semibold))
@@ -186,21 +192,6 @@ struct FoodSearchView: View {
                         }
                     }
                 
-                // Camera button
-                Button(action: {
-                    print("📸 [SEARCH VIEW] Camera button tapped")
-                    showingNutritionScanner = true
-                }) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(mealTypeColor)
-                        .padding(8)
-                        .background(
-                            Circle()
-                                .fill(mealTypeColor.opacity(0.15))
-                        )
-                }
-                
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
@@ -212,10 +203,94 @@ struct FoodSearchView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
-                    .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+                ZStack {
+                    // Bottom shadow layer - subtle color glow
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(mealTypeColor.opacity(colorScheme == .dark ? 0.1 : 0.06))
+                        .offset(y: 6)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
+                        .offset(y: 3)
+                    
+                    // Main card background
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark 
+                                    ? [Color(white: 0.14), Color(white: 0.09)]
+                                    : [Color.white, Color.white.opacity(0.95)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.4), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Subtle accent border
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [mealTypeColor.opacity(colorScheme == .dark ? 0.25 : 0.2), mealTypeColor.opacity(colorScheme == .dark ? 0.15 : 0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
             )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+            .shadow(color: mealTypeColor.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 14, x: 0, y: 7)
+            .padding(.horizontal)
+            
+            // Action Tiles - Search, Scan, Eat Out (below search bar)
+            HStack(spacing: 12) {
+                // Search Tile (active by default)
+                AddFoodActionTile(
+                    icon: "magnifyingglass",
+                    title: "Search",
+                    gradient: [.blue, .cyan],
+                    isActive: true,
+                    action: { /* Already showing search */ }
+                )
+                
+                // Scan Tile
+                AddFoodActionTile(
+                    icon: "camera.fill",
+                    title: "Scan",
+                    gradient: [.purple, .pink],
+                    isActive: false,
+                    action: {
+                        print("📸 [SEARCH VIEW] Scan tile tapped")
+                        showingNutritionScanner = true
+                    }
+                )
+                
+                // Eat Out Tile
+                AddFoodActionTile(
+                    icon: "fork.knife",
+                    title: "Eat Out",
+                    gradient: [.orange, .yellow],
+                    isActive: false,
+                    action: {
+                        print("🍔 [SEARCH VIEW] Eat Out tile tapped")
+                        showingRestaurantSearch = true
+                    }
+                )
+            }
             .padding(.horizontal)
         }
         .padding(.bottom, 16)
@@ -329,10 +404,12 @@ struct FoodSearchView: View {
                     .font(.headline)
                     .fontWeight(.medium)
                 
-                ForEach(sampleSearches, id: \.self) { search in
-                    Button(action: { searchText = search }) {
+                ForEach(sampleSearchesWithEmojis, id: \.name) { item in
+                    Button(action: { searchText = item.name }) {
                         HStack {
-                            Text(search)
+                            Text(item.emoji)
+                                .font(.title3)
+                            Text(item.name)
                                 .foregroundColor(.primary)
                             Spacer()
                             Image(systemName: "arrow.up.left")
@@ -490,9 +567,11 @@ struct FoodSearchView: View {
                     .font(.headline)
                     .foregroundColor(.primary)
                 
-                ForEach(["Eggs", "Chicken breast", "Brown rice", "Banana"], id: \.self) { suggestion in
+                ForEach([("🥚", "Eggs"), ("🍗", "Chicken breast"), ("🍚", "Brown rice"), ("🍌", "Banana")], id: \.1) { emoji, suggestion in
                     Button(action: { searchText = suggestion }) {
                         HStack {
+                            Text(emoji)
+                                .font(.title3)
                             Text(suggestion)
                                 .foregroundColor(.primary)
                             Spacer()
@@ -558,8 +637,15 @@ struct FoodSearchView: View {
         }
     }
     
-    private var sampleSearches: [String] {
-        ["Eggs", "Chicken breast", "Brown rice", "Banana", "Greek yogurt", "Salmon"]
+    private var sampleSearchesWithEmojis: [(emoji: String, name: String)] {
+        [
+            ("🥚", "Eggs"),
+            ("🍗", "Chicken breast"),
+            ("🍚", "Brown rice"),
+            ("🍌", "Banana"),
+            ("🥛", "Greek yogurt"),
+            ("🐟", "Salmon")
+        ]
     }
 }
 
@@ -569,83 +655,128 @@ struct FoodSearchResultRow: View {
     let food: ProcessedFoodItem
     let onTap: () -> Void
     
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var foodService = USDAFoodService.shared
     @State private var isFavorite: Bool = false
     
     var body: some View {
         HStack(spacing: 12) {
-            // Food Icon
-            Image(systemName: foodIcon)
-                .font(.title2)
-                .foregroundColor(.green)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                // Food Name with star if favorited
-                HStack(spacing: 4) {
-                    Text(food.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    
-                    if isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.caption2)
-                            .foregroundColor(.yellow)
-                    }
-                }
+            // Food emoji with vibrant gradient background (matching exercise cards)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: categoryGradient,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
-                // Brand and Category
-                if let category = food.category {
-                    Text(category)
+                Text(getFoodEmoji(for: food))
+                    .font(.system(size: 20))
+            }
+            
+            // Food details
+            VStack(alignment: .leading, spacing: 2) {
+                Text(food.displayName)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    if let category = food.category {
+                        Text(category)
+                            .font(.caption)
+                            .foregroundColor(categoryColor)
+                            .fontWeight(.medium)
+                    }
+                    
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text("\(Int(food.nutrition.calories)) cal")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    
+                    Spacer()
                 }
-                
-                // Serving Info
-                Text("Per \(formatServingSize(food.servingSize)) \(food.servingUnit)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            // Favorite star button
-            Button(action: toggleFavorite) {
-                Image(systemName: isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 18))
-                    .foregroundColor(isFavorite ? .yellow : .gray.opacity(0.5))
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Nutrition Preview
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(Int(food.nutrition.calories)) cal")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Text("\(Int(food.nutrition.protein))p • \(Int(food.nutrition.carbohydrates))c • \(Int(food.nutrition.totalFat))f")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+            // Favorite star indicator
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.yellow)
             }
             
-            // Tap to view details
-            Button(action: onTap) {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(PlainButtonStyle())
+            // Chevron inside the card
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .background(
+            ZStack {
+                // Bottom shadow layer (deepest) - category colored (subtle)
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(categoryGradient[0].opacity(colorScheme == .dark ? 0.06 : 0.03))
+                    .offset(y: 4)
+                    .blur(radius: 2)
+                
+                // Middle shadow layer (subtle)
+                RoundedRectangle(cornerRadius: 26)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
+                    .offset(y: 2)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 25)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                : [Color.white, Color.white.opacity(0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color.white.opacity(0.08), Color.clear]
+                                : [Color.white, Color.white.opacity(0.3), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                
+                // Subtle accent border
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                categoryGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
+                                categoryGradient[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.05), radius: 6, x: 0, y: 3)
+        .shadow(color: categoryGradient[0].opacity(colorScheme == .dark ? 0.08 : 0.04), radius: 8, x: 0, y: 4)
         .onTapGesture {
             onTap()
         }
@@ -663,25 +794,53 @@ struct FoodSearchResultRow: View {
         }
     }
     
-    private var foodIcon: String {
-        guard let category = food.category?.lowercased() else { return "leaf" }
+    private var categoryColor: Color {
+        guard let category = food.category?.lowercased() else { return .gray }
         
         if category.contains("dairy") || category.contains("milk") {
-            return "drop"
-        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") || category.contains("chicken") {
-            return "flame"
+            return .blue
+        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") {
+            return .red
         } else if category.contains("fish") || category.contains("seafood") {
-            return "fish"
+            return .cyan
         } else if category.contains("fruit") {
-            return "apple"
+            return .pink
         } else if category.contains("vegetable") {
-            return "carrot"
+            return .green
         } else if category.contains("grain") || category.contains("cereal") || category.contains("bread") {
-            return "wheat"
-        } else if category.contains("nut") || category.contains("seed") {
-            return "circle.hexagongrid"
+            return .orange
+        } else if category.contains("nut") || category.contains("seed") || category.contains("legume") {
+            return .brown
+        } else if category.contains("beverage") {
+            return .teal
         } else {
-            return "leaf"
+            return .gray
+        }
+    }
+    
+    private var categoryGradient: [Color] {
+        guard let category = food.category?.lowercased() else {
+            return [Color.green, Color.teal]
+        }
+        
+        if category.contains("dairy") || category.contains("milk") {
+            return [Color.blue, Color.cyan]
+        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") || category.contains("pork") {
+            return [Color.red, Color.orange]
+        } else if category.contains("fish") || category.contains("seafood") {
+            return [Color.cyan, Color.blue]
+        } else if category.contains("fruit") {
+            return [Color.pink, Color.red]
+        } else if category.contains("vegetable") {
+            return [Color.green, Color.teal]
+        } else if category.contains("grain") || category.contains("cereal") || category.contains("bread") {
+            return [Color.orange, Color.yellow]
+        } else if category.contains("nut") || category.contains("seed") || category.contains("legume") {
+            return [Color.brown, Color.orange]
+        } else if category.contains("beverage") {
+            return [Color.teal, Color.blue]
+        } else {
+            return [Color.green, Color.teal]
         }
     }
     
@@ -701,88 +860,132 @@ struct QuickAccessFoodRow: View {
     let badge: String?
     let onTap: () -> Void
     
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var foodService = USDAFoodService.shared
     @State private var isFavorite: Bool = false
     
     var body: some View {
         HStack(spacing: 12) {
-            // Food Icon
-            Image(systemName: foodIcon)
-                .font(.title2)
-                .foregroundColor(.green)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                // Food Name
-                HStack(spacing: 6) {
-                    Text(food.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    
-                    if isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.caption2)
-                            .foregroundColor(.yellow)
-                    }
-                    
-                    if let badge = badge {
-                        Text(badge)
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(badgeColor(for: badge))
-                            )
-                    }
-                }
+            // Food emoji with vibrant gradient background (matching exercise cards)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: categoryGradient,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
-                // Serving Info
-                Text("Per \(formatServingSize(food.servingSize)) \(food.servingUnit)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Text(getFoodEmoji(for: food))
+                    .font(.system(size: 20))
+            }
+            
+            // Food details
+            VStack(alignment: .leading, spacing: 2) {
+                Text(food.displayName)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    if let category = food.category {
+                        Text(category)
+                            .font(.caption)
+                            .foregroundColor(categoryColor)
+                            .fontWeight(.medium)
+                    }
+                    
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text("\(Int(food.nutrition.calories)) cal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                }
             }
             
             Spacer()
             
-            // Favorite star button
-            Button(action: toggleFavorite) {
-                Image(systemName: isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 18))
-                    .foregroundColor(isFavorite ? .yellow : .gray.opacity(0.5))
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Nutrition Preview
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(Int(food.nutrition.calories)) cal")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Text("\(Int(food.nutrition.protein))p • \(Int(food.nutrition.carbohydrates))c • \(Int(food.nutrition.totalFat))f")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+            // Favorite star indicator
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.yellow)
             }
             
-            // Quick add button
-            Button(action: onTap) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title3)
-                    .foregroundColor(.green)
-            }
-            .buttonStyle(PlainButtonStyle())
+            // Chevron inside the card
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .background(
+            ZStack {
+                // Bottom shadow layer (deepest) - category colored (subtle)
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(categoryGradient[0].opacity(colorScheme == .dark ? 0.06 : 0.03))
+                    .offset(y: 4)
+                    .blur(radius: 2)
+                
+                // Middle shadow layer (subtle)
+                RoundedRectangle(cornerRadius: 26)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
+                    .offset(y: 2)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 25)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                : [Color.white, Color.white.opacity(0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color.white.opacity(0.08), Color.clear]
+                                : [Color.white, Color.white.opacity(0.3), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                
+                // Subtle accent border
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                categoryGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
+                                categoryGradient[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.05), radius: 6, x: 0, y: 3)
+        .shadow(color: categoryGradient[0].opacity(colorScheme == .dark ? 0.08 : 0.04), radius: 8, x: 0, y: 4)
         .padding(.horizontal)
+        .onTapGesture {
+            onTap()
+        }
         .onAppear {
             isFavorite = foodService.isFavorite(foodItemId: food.id)
         }
@@ -797,34 +1000,53 @@ struct QuickAccessFoodRow: View {
         }
     }
     
-    private var foodIcon: String {
-        guard let category = food.category?.lowercased() else { return "leaf" }
+    private var categoryColor: Color {
+        guard let category = food.category?.lowercased() else { return .gray }
         
         if category.contains("dairy") || category.contains("milk") {
-            return "drop.fill"
-        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") || category.contains("chicken") {
-            return "flame.fill"
+            return .blue
+        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") {
+            return .red
         } else if category.contains("fish") || category.contains("seafood") {
-            return "fish.fill"
+            return .cyan
         } else if category.contains("fruit") {
-            return "apple"
+            return .pink
         } else if category.contains("vegetable") {
-            return "carrot.fill"
+            return .green
         } else if category.contains("grain") || category.contains("cereal") || category.contains("bread") {
-            return "wheat"
-        } else if category.contains("nut") || category.contains("seed") {
-            return "circle.hexagongrid.fill"
+            return .orange
+        } else if category.contains("nut") || category.contains("seed") || category.contains("legume") {
+            return .brown
+        } else if category.contains("beverage") {
+            return .teal
         } else {
-            return "leaf.fill"
+            return .gray
         }
     }
     
-    private func badgeColor(for badge: String) -> Color {
-        switch badge {
-        case "RECENT": return .blue
-        case "FAVORITE": return .yellow
-        case "FREQUENT": return .orange
-        default: return .gray
+    private var categoryGradient: [Color] {
+        guard let category = food.category?.lowercased() else {
+            return [Color.green, Color.teal]
+        }
+        
+        if category.contains("dairy") || category.contains("milk") {
+            return [Color.blue, Color.cyan]
+        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") || category.contains("pork") {
+            return [Color.red, Color.orange]
+        } else if category.contains("fish") || category.contains("seafood") {
+            return [Color.cyan, Color.blue]
+        } else if category.contains("fruit") {
+            return [Color.pink, Color.red]
+        } else if category.contains("vegetable") {
+            return [Color.green, Color.teal]
+        } else if category.contains("grain") || category.contains("cereal") || category.contains("bread") {
+            return [Color.orange, Color.yellow]
+        } else if category.contains("nut") || category.contains("seed") || category.contains("legume") {
+            return [Color.brown, Color.orange]
+        } else if category.contains("beverage") {
+            return [Color.teal, Color.blue]
+        } else {
+            return [Color.green, Color.teal]
         }
     }
     
@@ -837,6 +1059,295 @@ struct QuickAccessFoodRow: View {
     }
 }
 
+// MARK: - Food Emoji Helper
+
+/// Returns a food emoji based on the food name and category
+/// Comprehensive mapping of foods to their corresponding emojis
+func getFoodEmoji(for food: ProcessedFoodItem) -> String {
+    let name = food.displayName.lowercased()
+    let category = food.category?.lowercased() ?? ""
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // FRUITS 🍎
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("apple") { return "🍎" }
+    if name.contains("banana") { return "🍌" }
+    if name.contains("orange") && !name.contains("chicken") { return "🍊" }
+    if name.contains("lemon") { return "🍋" }
+    if name.contains("lime") { return "🍋‍🟩" }
+    if name.contains("grape") { return "🍇" }
+    if name.contains("watermelon") { return "🍉" }
+    if name.contains("melon") || name.contains("cantaloupe") || name.contains("honeydew") { return "🍈" }
+    if name.contains("strawberry") || name.contains("strawberries") { return "🍓" }
+    if name.contains("blueberry") || name.contains("blueberries") { return "🫐" }
+    if name.contains("cherry") || name.contains("cherries") { return "🍒" }
+    if name.contains("peach") { return "🍑" }
+    if name.contains("pear") { return "🍐" }
+    if name.contains("mango") { return "🥭" }
+    if name.contains("pineapple") { return "🍍" }
+    if name.contains("coconut") { return "🥥" }
+    if name.contains("kiwi") { return "🥝" }
+    if name.contains("avocado") { return "🥑" }
+    if name.contains("tomato") { return "🍅" }
+    if name.contains("olive") { return "🫒" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // VEGETABLES 🥦
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("broccoli") { return "🥦" }
+    if name.contains("carrot") { return "🥕" }
+    if name.contains("corn") { return "🌽" }
+    if name.contains("cucumber") { return "🥒" }
+    if name.contains("lettuce") || name.contains("salad") { return "🥬" }
+    if name.contains("spinach") || name.contains("kale") || name.contains("greens") { return "🥬" }
+    if name.contains("pepper") && !name.contains("black pepper") { return "🫑" }
+    if name.contains("hot pepper") || name.contains("chili") || name.contains("jalapeño") { return "🌶️" }
+    if name.contains("onion") { return "🧅" }
+    if name.contains("garlic") { return "🧄" }
+    if name.contains("potato") && !name.contains("sweet") { return "🥔" }
+    if name.contains("sweet potato") || name.contains("yam") { return "🍠" }
+    if name.contains("eggplant") || name.contains("aubergine") { return "🍆" }
+    if name.contains("mushroom") { return "🍄" }
+    if name.contains("peanut") && !name.contains("butter") { return "🥜" }
+    if name.contains("bean") || name.contains("legume") { return "🫘" }
+    if name.contains("pea") { return "🫛" }
+    if name.contains("ginger") { return "🫚" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // PROTEINS 🥩
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("egg") && !name.contains("eggplant") { return "🥚" }
+    if name.contains("chicken") { return "🍗" }
+    if name.contains("turkey") { return "🦃" }
+    if name.contains("beef") || name.contains("steak") { return "🥩" }
+    if name.contains("pork") || name.contains("ham") { return "🥓" }
+    if name.contains("bacon") { return "🥓" }
+    if name.contains("sausage") || name.contains("hot dog") { return "🌭" }
+    if name.contains("fish") || name.contains("salmon") || name.contains("tuna") || 
+       name.contains("cod") || name.contains("tilapia") || name.contains("halibut") { return "🐟" }
+    if name.contains("shrimp") || name.contains("prawn") { return "🦐" }
+    if name.contains("crab") { return "🦀" }
+    if name.contains("lobster") { return "🦞" }
+    if name.contains("oyster") { return "🦪" }
+    if name.contains("squid") || name.contains("calamari") { return "🦑" }
+    if name.contains("octopus") { return "🐙" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // DAIRY 🧀
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("milk") { return "🥛" }
+    if name.contains("cheese") { return "🧀" }
+    if name.contains("butter") && !name.contains("peanut") && !name.contains("almond") { return "🧈" }
+    if name.contains("yogurt") || name.contains("yoghurt") { return "🥛" }
+    if name.contains("ice cream") { return "🍦" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // GRAINS & BREAD 🍞
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("bread") || name.contains("toast") { return "🍞" }
+    if name.contains("croissant") { return "🥐" }
+    if name.contains("bagel") { return "🥯" }
+    if name.contains("pretzel") { return "🥨" }
+    if name.contains("pancake") { return "🥞" }
+    if name.contains("waffle") { return "🧇" }
+    if name.contains("rice") { return "🍚" }
+    if name.contains("pasta") || name.contains("spaghetti") || name.contains("noodle") { return "🍝" }
+    if name.contains("cereal") || name.contains("oat") || name.contains("granola") { return "🥣" }
+    if name.contains("cookie") || name.contains("biscuit") { return "🍪" }
+    if name.contains("cake") { return "🍰" }
+    if name.contains("pie") { return "🥧" }
+    if name.contains("donut") || name.contains("doughnut") { return "🍩" }
+    if name.contains("muffin") || name.contains("cupcake") { return "🧁" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // NUTS & SEEDS 🥜
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("almond") { return "🌰" }
+    if name.contains("peanut") { return "🥜" }
+    if name.contains("walnut") || name.contains("pecan") || name.contains("hazelnut") { return "🌰" }
+    if name.contains("cashew") || name.contains("pistachio") { return "🌰" }
+    if name.contains("chestnut") { return "🌰" }
+    if category.contains("nut") || category.contains("seed") { return "🌰" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // BEVERAGES 🧃
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("coffee") { return "☕" }
+    if name.contains("tea") && !name.contains("steak") { return "🍵" }
+    if name.contains("juice") { return "🧃" }
+    if name.contains("smoothie") || name.contains("shake") { return "🥤" }
+    if name.contains("soda") || name.contains("cola") { return "🥤" }
+    if name.contains("beer") { return "🍺" }
+    if name.contains("wine") { return "🍷" }
+    if name.contains("cocktail") { return "🍸" }
+    if name.contains("water") { return "💧" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // CONDIMENTS & SPREADS 🍯
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("honey") { return "🍯" }
+    if name.contains("peanut butter") || name.contains("almond butter") { return "🥜" }
+    if name.contains("jam") || name.contains("jelly") { return "🍓" }
+    if name.contains("ketchup") { return "🍅" }
+    if name.contains("mustard") { return "🟡" }
+    if name.contains("mayo") || name.contains("mayonnaise") { return "🥚" }
+    if name.contains("sauce") { return "🫙" }
+    if name.contains("oil") { return "🫒" }
+    if name.contains("vinegar") { return "🫙" }
+    if name.contains("salt") { return "🧂" }
+    if name.contains("syrup") { return "🍁" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // PREPARED FOODS 🍔
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("burger") || name.contains("hamburger") { return "🍔" }
+    if name.contains("pizza") { return "🍕" }
+    if name.contains("sandwich") || name.contains("sub") { return "🥪" }
+    if name.contains("taco") { return "🌮" }
+    if name.contains("burrito") { return "🌯" }
+    if name.contains("hot dog") || name.contains("hotdog") { return "🌭" }
+    if name.contains("fries") || name.contains("french fries") { return "🍟" }
+    if name.contains("popcorn") { return "🍿" }
+    if name.contains("soup") { return "🍲" }
+    if name.contains("salad") { return "🥗" }
+    if name.contains("sushi") { return "🍣" }
+    if name.contains("ramen") { return "🍜" }
+    if name.contains("curry") { return "🍛" }
+    if name.contains("dumpling") { return "🥟" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // SWEETS & DESSERTS 🍫
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("chocolate") { return "🍫" }
+    if name.contains("candy") { return "🍬" }
+    if name.contains("lollipop") { return "🍭" }
+    if name.contains("pudding") || name.contains("custard") { return "🍮" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // SUPPLEMENTS & PROTEIN 💪
+    // ═══════════════════════════════════════════════════════════════════
+    if name.contains("protein") && (name.contains("powder") || name.contains("shake") || name.contains("bar")) { return "💪" }
+    if name.contains("vitamin") || name.contains("supplement") { return "💊" }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // CATEGORY-BASED FALLBACKS
+    // ═══════════════════════════════════════════════════════════════════
+    if category.contains("fruit") { return "🍎" }
+    if category.contains("vegetable") { return "🥬" }
+    if category.contains("meat") || category.contains("poultry") { return "🍖" }
+    if category.contains("fish") || category.contains("seafood") { return "🐟" }
+    if category.contains("dairy") { return "🥛" }
+    if category.contains("grain") || category.contains("cereal") { return "🌾" }
+    if category.contains("legume") { return "🫘" }
+    if category.contains("beverage") { return "🥤" }
+    if category.contains("snack") { return "🍿" }
+    if category.contains("sweet") || category.contains("dessert") { return "🍰" }
+    if category.contains("condiment") || category.contains("sauce") { return "🫙" }
+    
+    // Default
+    return "🍽️"
+}
+
+// MARK: - Add Food Action Tile
+
+struct AddFoodActionTile: View {
+    let icon: String
+    let title: String
+    let gradient: [Color]
+    let isActive: Bool
+    let action: () -> Void
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var cardBackgroundGradient: [Color] {
+        colorScheme == .dark
+            ? [Color(white: 0.14), Color(white: 0.09)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: gradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                        .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 100)
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - color glow
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(gradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 6)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 3)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [gradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
+            .shadow(color: gradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 16, x: 0, y: 8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
 #Preview {
     FoodSearchView(mealType: .breakfast) { _ in }
+        .environmentObject(UserManager.shared)
 }

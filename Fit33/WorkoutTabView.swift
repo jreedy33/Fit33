@@ -321,7 +321,7 @@ struct WorkoutHomeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 100)
+            .padding(.bottom, 20)
             }
             .onAppear {
                 // Force immediate rendering
@@ -354,12 +354,12 @@ struct WorkoutHomeView: View {
                 .font(.system(size: 42, weight: .bold))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.green, .green, .green, Color(red: 0.2, green: 0.9, blue: 0.5).opacity(0.8)],
+                        colors: [Color.green, Color.green, Color(red: 0.4, green: 0.95, blue: 0.5).opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-                .shadow(color: .green.opacity(0.4), radius: 6, x: 0, y: 2)
+                .shadow(color: Color.green.opacity(0.4), radius: 6, x: 0, y: 2)
             
             Spacer()
             

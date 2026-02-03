@@ -821,6 +821,24 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "friend_request_\(requestId)")
     }
     
+    /// Friend request accepted notification - when someone accepts your request
+    func sendFriendRequestAcceptedNotification(accepterName: String, friendId: String) {
+        guard isNotificationEnabled(.friendRequest) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(accepterName) accepted your request! 🎉"
+        content.body = "You're now workout buddies. Start training together!"
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "friend_request_accepted",
+            "friend_id": friendId,
+            "accepter_name": accepterName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "friend_accepted_\(friendId)")
+    }
+    
     /// Challenge invite notification - when a friend challenges you
     func sendChallengeInviteNotification(fromName: String, challengeTitle: String, challengeId: String) {
         guard isNotificationEnabled(.challengeInvite) && isAuthorized else { return }

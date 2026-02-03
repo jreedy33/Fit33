@@ -31,6 +31,37 @@ class KeyboardObserver: ObservableObject {
     }
 }
 
+// MARK: - Onboarding Session Manager
+// Tracks onboarding session for debugging
+class OnboardingSessionManager: ObservableObject {
+    static let shared = OnboardingSessionManager()
+    
+    @Published var currentSessionId: String?
+    @Published var sessionStartTime: Date?
+    
+    private init() {}
+    
+    func startNewSession() {
+        currentSessionId = UUID().uuidString
+        sessionStartTime = Date()
+        print("📱 [ONBOARDING] New session started: \(currentSessionId ?? "nil")")
+    }
+    
+    func endSession() {
+        if let startTime = sessionStartTime {
+            let duration = Date().timeIntervalSince(startTime)
+            print("📱 [ONBOARDING] Session ended. Duration: \(Int(duration))s")
+        }
+        currentSessionId = nil
+        sessionStartTime = nil
+    }
+    
+    var sessionDuration: TimeInterval {
+        guard let startTime = sessionStartTime else { return 0 }
+        return Date().timeIntervalSince(startTime)
+    }
+}
+
 // MARK: - New Onboarding Flow
 // Clean, professional onboarding with auth + profile setup
 
@@ -317,6 +348,8 @@ struct NewOnboardingView: View {
         
     // Navigate to step and set appropriate focus
     private func navigateTo(_ step: OnboardingStep, animated: Bool = true) {
+        let previousStep = currentStep
+        
         // Map onboarding step to screen ID
         let screenMap: [OnboardingStep: SessionLogManager.Screen] = [
             .auth: .authScreen,
@@ -348,6 +381,33 @@ struct NewOnboardingView: View {
             stepName: "\(step)",
             action: "navigated"
         )
+        
+        // Log step completion to cloud (for debugging UK user issue)
+        Task {
+            // Log the previous step as completed
+            if previousStep != step {
+                await supabaseManager.logOnboardingEvent(
+                    eventType: "step_completed",
+                    stepName: "\(previousStep)",
+                    eventData: [
+                        "step_number": previousStep.rawValue,
+                        "next_step": "\(step)",
+                        "session_duration": OnboardingSessionManager.shared.sessionDuration
+                    ]
+                )
+            }
+            
+            // Log the new step as started
+            await supabaseManager.logOnboardingEvent(
+                eventType: "step_started",
+                stepName: "\(step)",
+                eventData: [
+                    "step_number": step.rawValue,
+                    "previous_step": "\(previousStep)",
+                    "is_editing": isEditingFromConfirmation
+                ]
+            )
+        }
         
         // Change step - with or without animation
         print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
@@ -616,6 +676,26 @@ struct NewOnboardingView: View {
         // NOTE: Removed the onChange(of: supabaseManager.isAuthenticated) handler
         // because it was incorrectly triggering on session restore at app launch.
         // The OAuthNewUserNeedsOnboarding notification is the correct and only trigger.
+        .onAppear {
+            // Start a new onboarding session for logging
+            OnboardingSessionManager.shared.startNewSession()
+            
+            // Log session start to cloud
+            Task {
+                await supabaseManager.logOnboardingEvent(
+                    eventType: "session_started",
+                    stepName: "auth",
+                    eventData: [
+                        "initial_step": "\(currentStep)",
+                        "is_authenticated": supabaseManager.isAuthenticated
+                    ]
+                )
+            }
+        }
+        .onDisappear {
+            // End the session when view disappears
+            OnboardingSessionManager.shared.endSession()
+        }
     }
     
     /// Handle OAuth user onboarding - pre-fill data and navigate to username step
@@ -625,42 +705,42 @@ struct NewOnboardingView: View {
         let metadata = supabaseManager.currentUser?.userMetadata ?? [:]
         print("🔐 [OAUTH] Current user metadata: \(metadata)")
         
-        // Pre-fill FULL name from OAuth provider (first + last)
+        // Pre-fill FULL NAME (first + last) from OAuth provider
         // Try ALL sources to find the name - be flexible with type casting
-        var foundName: String? = nil
+        var foundFullName: String? = nil
         
-        // 1. Try UserDefaults first (stored by Fit33App.swift during callback)
+        // 1. Try UserDefaults first (stored by SupabaseManager during sign-in)
         if let oauthName = UserDefaults.standard.string(forKey: "pending_oauth_name"), !oauthName.isEmpty {
-            foundName = oauthName
+            foundFullName = oauthName
             UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
             print("🔐 [OAUTH] Got full name from UserDefaults: \(oauthName)")
         }
         
         // 2. Try user metadata - handle various types (String, AnyJSON, etc.)
-        if foundName == nil {
+        if foundFullName == nil {
             // Try full_name first
             if let fullNameValue = metadata["full_name"] {
                 let fullNameString = String(describing: fullNameValue)
                 if !fullNameString.isEmpty && fullNameString != "nil" && fullNameString != "<null>" {
-                    foundName = fullNameString
+                    foundFullName = fullNameString
                     print("🔐 [OAUTH] Got full name from metadata (full_name): \(fullNameString)")
                 }
             }
             
             // Try name as fallback
-            if foundName == nil, let nameValue = metadata["name"] {
+            if foundFullName == nil, let nameValue = metadata["name"] {
                 let nameString = String(describing: nameValue)
                 if !nameString.isEmpty && nameString != "nil" && nameString != "<null>" {
-                    foundName = nameString
+                    foundFullName = nameString
                     print("🔐 [OAUTH] Got full name from metadata (name): \(nameString)")
                 }
             }
         }
         
-        // Set the name if we found one
-        if let foundName = foundName, !foundName.isEmpty {
-            name = foundName
-            print("🔐 [OAUTH] ✅ Set name to: '\(foundName)'")
+        // Set the full name if we found one
+        if let foundFullName = foundFullName, !foundFullName.isEmpty {
+            name = foundFullName
+            print("🔐 [OAUTH] ✅ Set full name to: '\(foundFullName)'")
         } else {
             print("🔐 [OAUTH] ⚠️ Could not find name in any source")
         }
@@ -836,7 +916,7 @@ struct NewOnboardingView: View {
             let nameValid = !needsNameInput || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return isUsernameValid && isUsernameAvailable && nameValid
         case .basics: return selectedGender != nil && !birthday.isEmpty
-        case .body: return !heightFeetInchesDigits.isEmpty && !weight.isEmpty
+        case .body: return isHeightValid && isWeightValid
         case .goal: return !selectedGoals.isEmpty
         case .experience: return !selectedExperience.isEmpty
         case .strengthAssessment: return true
@@ -4645,37 +4725,144 @@ struct NewOnboardingView: View {
             duration: 0 // We don't track duration yet
         )
         
+        // Collect all onboarding data for logging
+        let heightCmValue = Double(heightInCm)
+        var weightKgValue: Double = 0
+        if let w = Double(weight) {
+            weightKgValue = weightUnit == .lbs ? w / 2.20462 : w
+        }
+        let ageValue = calculatedAge > 0 ? calculatedAge : nil
+        
+        let onboardingData: [String: Any] = [
+            "name": name,
+            "email": email.isEmpty ? (supabaseManager.currentUser?.email ?? "none") : email,
+            "username": username.isEmpty ? "none" : username,
+            "age": ageValue ?? 0,
+            "gender": selectedGender ?? "not_specified",
+            "height_cm": heightCmValue,
+            "weight_kg": weightKgValue,
+            "fitness_goals": selectedGoals.sorted().joined(separator: ", "),
+            "experience_level": selectedExperience,
+            "equipment": Array(selectedEquipment),
+            "available_days": selectedDays,
+            "workout_environment": selectedWorkoutLocation.rawValue,
+            "limitations_count": selectedLimitations.count,
+            "has_profile_photo": profilePhotoImage != nil,
+            "is_authenticated": supabaseManager.isAuthenticated,
+            "auth_provider": detectedAuthProvider,
+            "session_duration_seconds": OnboardingSessionManager.shared.sessionDuration
+        ]
+        
+        // Log the completion attempt
+        Task {
+            await supabaseManager.logOnboardingEvent(
+                eventType: "onboarding_completed",
+                stepName: "complete",
+                eventData: onboardingData
+            )
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // FIELD-LEVEL LOGGING: Log each field at "collected" stage
+            // This captures exactly what was entered in the UI
+            // ═══════════════════════════════════════════════════════════════════
+            print("📊 [FIELD LOG] Logging all collected field values...")
+            
+            await supabaseManager.logOnboardingField(fieldName: "name", stage: "collected", value: name)
+            await supabaseManager.logOnboardingField(fieldName: "email", stage: "collected", value: email.isEmpty ? supabaseManager.currentUser?.email : email)
+            await supabaseManager.logOnboardingField(fieldName: "username", stage: "collected", value: username.isEmpty ? nil : username)
+            await supabaseManager.logOnboardingField(fieldName: "birthday", stage: "collected", value: birthday, rawInput: birthday)
+            await supabaseManager.logOnboardingField(fieldName: "age", stage: "collected", value: ageValue, rawInput: birthday, convertedValue: ageValue != nil ? "\(ageValue!) years" : nil)
+            await supabaseManager.logOnboardingField(fieldName: "gender", stage: "collected", value: selectedGender)
+            await supabaseManager.logOnboardingField(fieldName: "height_cm", stage: "collected", value: heightCmValue > 0 ? heightCmValue : nil, rawInput: heightUnit == .ftIn ? heightFeetInchesDigits : "\(heightCm) cm", convertedValue: "\(heightCmValue) cm")
+            await supabaseManager.logOnboardingField(fieldName: "weight_kg", stage: "collected", value: weightKgValue > 0 ? weightKgValue : nil, rawInput: "\(weight) \(weightUnit.rawValue)", convertedValue: "\(weightKgValue) kg")
+            await supabaseManager.logOnboardingField(fieldName: "fitness_goal", stage: "collected", value: selectedGoals.isEmpty ? nil : selectedGoals.sorted().joined(separator: ", "))
+            await supabaseManager.logOnboardingField(fieldName: "experience_level", stage: "collected", value: selectedExperience.isEmpty ? nil : selectedExperience)
+            await supabaseManager.logOnboardingField(fieldName: "equipment", stage: "collected", value: selectedEquipment.isEmpty ? nil : Array(selectedEquipment))
+            await supabaseManager.logOnboardingField(fieldName: "available_days", stage: "collected", value: selectedDays > 0 ? selectedDays : nil)
+            await supabaseManager.logOnboardingField(fieldName: "workout_environment", stage: "collected", value: selectedWorkoutLocation.rawValue)
+        }
+        
         // For OAuth users (Apple/Google/Facebook), create the profile NOW at the end of onboarding
         // This ensures we don't create "zombie" accounts if user abandons onboarding
         if supabaseManager.isAuthenticated {
             Task {
+                // Log profile creation start
+                await supabaseManager.logOnboardingEvent(
+                    eventType: "profile_create_started",
+                    stepName: "complete",
+                    eventData: onboardingData
+                )
+                
                 do {
-                    // Calculate values needed for profile
-                    let heightCm = Double(heightInCm)
-                    var weightKg: Double = 0
-                    if let w = Double(weight) {
-                        weightKg = weightUnit == .lbs ? w / 2.20462 : w
-                    }
-                    let ageValue = calculatedAge > 0 ? calculatedAge : nil
+                    // ═══════════════════════════════════════════════════════════════════
+                    // FIELD-LEVEL LOGGING: Log each field at "sent_to_db" stage
+                    // This captures exactly what we're sending to Supabase
+                    // ═══════════════════════════════════════════════════════════════════
+                    print("📊 [FIELD LOG] Logging values being sent to database...")
+                    
+                    let emailToSend = email.isEmpty ? (supabaseManager.currentUser?.email ?? "") : email
+                    let heightToSend = heightCmValue > 0 ? heightCmValue : nil
+                    let weightToSend = weightKgValue > 0 ? weightKgValue : nil
+                    let goalsToSend = selectedGoals.isEmpty ? nil : selectedGoals.sorted().joined(separator: ", ")
+                    let experienceToSend = selectedExperience.isEmpty ? nil : selectedExperience
+                    let equipmentToSend = selectedEquipment.isEmpty ? nil : Array(selectedEquipment)
+                    let daysToSend = selectedDays > 0 ? selectedDays : nil
+                    
+                    await supabaseManager.logOnboardingField(fieldName: "name", stage: "sent_to_db", value: name)
+                    await supabaseManager.logOnboardingField(fieldName: "email", stage: "sent_to_db", value: emailToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "username", stage: "sent_to_db", value: username.isEmpty ? nil : username)
+                    await supabaseManager.logOnboardingField(fieldName: "age", stage: "sent_to_db", value: ageValue)
+                    await supabaseManager.logOnboardingField(fieldName: "gender", stage: "sent_to_db", value: selectedGender)
+                    await supabaseManager.logOnboardingField(fieldName: "height_cm", stage: "sent_to_db", value: heightToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "weight_kg", stage: "sent_to_db", value: weightToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "fitness_goal", stage: "sent_to_db", value: goalsToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "experience_level", stage: "sent_to_db", value: experienceToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "equipment", stage: "sent_to_db", value: equipmentToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "available_days", stage: "sent_to_db", value: daysToSend)
+                    await supabaseManager.logOnboardingField(fieldName: "workout_environment", stage: "sent_to_db", value: selectedWorkoutLocation.rawValue)
                     
                     print("🔐 [ONBOARDING] Creating profile for OAuth user...")
                     try await supabaseManager.createProfileForOAuthUser(
                         name: name,
-                        email: email.isEmpty ? (supabaseManager.currentUser?.email ?? "") : email,
+                        email: emailToSend,
                         username: username.isEmpty ? nil : username,
                         age: ageValue,
                         gender: selectedGender,
-                        heightCm: heightCm > 0 ? heightCm : nil,
-                        weightKg: weightKg > 0 ? weightKg : nil,
-                        fitnessGoal: selectedGoals.isEmpty ? nil : selectedGoals.sorted().joined(separator: ", "),
-                        experienceLevel: selectedExperience.isEmpty ? nil : selectedExperience,
-                        equipment: selectedEquipment.isEmpty ? nil : Array(selectedEquipment),
-                        availableDays: selectedDays > 0 ? selectedDays : nil,
+                        heightCm: heightToSend,
+                        weightKg: weightToSend,
+                        fitnessGoal: goalsToSend,
+                        experienceLevel: experienceToSend,
+                        equipment: equipmentToSend,
+                        availableDays: daysToSend,
                         workoutEnvironment: selectedWorkoutLocation.rawValue
                     )
                     print("✅ [ONBOARDING] OAuth user profile created successfully!")
+                    
+                    // Log success
+                    await supabaseManager.logOnboardingEvent(
+                        eventType: "profile_create_success",
+                        stepName: "complete",
+                        eventData: ["user_id": supabaseManager.currentUser?.id.uuidString ?? "unknown"]
+                    )
+                    
+                    // ═══════════════════════════════════════════════════════════════════
+                    // VERIFY: Read back what was actually saved to the database
+                    // This will log each field at "verified_in_db" stage
+                    // ═══════════════════════════════════════════════════════════════════
+                    print("📊 [FIELD LOG] Verifying what was actually saved to database...")
+                    await supabaseManager.verifyAndLogSavedProfile()
+                    
                 } catch {
                     print("❌ [ONBOARDING] Failed to create OAuth profile: \(error.localizedDescription)")
+                    
+                    // Log the error with full details
+                    await supabaseManager.logOnboardingEvent(
+                        eventType: "profile_create_error",
+                        stepName: "complete",
+                        eventData: onboardingData,
+                        errorMessage: error.localizedDescription
+                    )
+                    
                     // Continue with local setup even if cloud fails
                 }
             }
@@ -4840,17 +5027,17 @@ struct NewOnboardingView: View {
             case .success(let credentials):
                 print("🍎 [APPLE AUTH] Got Apple credentials, starting Supabase auth...")
                 
-                // Extract name from Apple credentials (only available on FIRST sign-in)
+                // Extract FULL NAME (first + last) from Apple credentials (only available on FIRST sign-in)
                 // Apple only provides the name once, so we need to capture and persist it
-                var appleProvidedName: String? = nil
+                var appleProvidedFullName: String? = nil
                 if let fullName = credentials.fullName {
                     let firstName = fullName.givenName ?? ""
                     let lastName = fullName.familyName ?? ""
                     print("🍎 [APPLE AUTH] Raw name components - givenName: '\(fullName.givenName ?? "nil")', familyName: '\(fullName.familyName ?? "nil")'")
                     let fullNameStr = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
                     if !fullNameStr.isEmpty {
-                        appleProvidedName = fullNameStr
-                        print("🍎 [APPLE AUTH] Got name from Apple: \(fullNameStr)")
+                        appleProvidedFullName = fullNameStr
+                        print("🍎 [APPLE AUTH] Got FULL NAME from Apple: \(fullNameStr)")
                     } else {
                         print("🍎 [APPLE AUTH] ⚠️ Apple returned empty name components (this happens after first sign-in)")
                     }
@@ -4863,26 +5050,56 @@ struct NewOnboardingView: View {
                 Task {
                     do {
                         // Returns true if this is a NEW user who needs onboarding
-                        // Pass the Apple-provided name so it can be persisted
+                        // Pass the Apple-provided FULL NAME (first + last) so it can be persisted
                         let isNewUser = try await supabaseManager.signInWithApple(
                             idToken: credentials.identityToken,
                             nonce: credentials.nonce,
-                            appleProvidedName: appleProvidedName
+                            appleProvidedName: appleProvidedFullName
                         )
                         print("🍎 [APPLE AUTH] Supabase signInWithApple returned. isNewUser: \(isNewUser)")
                         
-                        // Set the FULL name in onboarding state (first + last)
+                        // Set the FULL NAME (first + last) in onboarding state
                         await MainActor.run {
-                            if let providedName = appleProvidedName, !providedName.isEmpty {
-                                name = providedName
-                                print("🍎 [APPLE AUTH] Using full name: '\(providedName)'")
+                            print("🍎 [APPLE AUTH] 🔍 Looking for user's full name...")
+                            print("🍎 [APPLE AUTH] 🔍 appleProvidedFullName: \(appleProvidedFullName ?? "nil")")
+                            
+                            if let providedFullName = appleProvidedFullName, !providedFullName.isEmpty {
+                                name = providedFullName
+                                print("🍎 [APPLE AUTH] ✅ Using full name from credentials: '\(providedFullName)'")
                             } else if let userId = supabaseManager.currentUser?.id {
-                                // Try to get persisted name from previous Apple sign-in
-                                if let persistedName = UserDefaults.standard.string(forKey: "apple_user_name_\(userId.uuidString)"), !persistedName.isEmpty {
-                                    name = persistedName
-                                    print("🍎 [APPLE AUTH] Using persisted full name: '\(persistedName)'")
+                                print("🍎 [APPLE AUTH] 🔍 Checking persisted names for userId: \(userId.uuidString.prefix(8))...")
+                                
+                                // Try to get persisted full name from previous Apple sign-in
+                                let persistedKey = "apple_user_name_\(userId.uuidString)"
+                                let persistedFullName = UserDefaults.standard.string(forKey: persistedKey)
+                                print("🍎 [APPLE AUTH] 🔍 UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")")
+                                
+                                if let persistedFullName = persistedFullName, 
+                                   !persistedFullName.isEmpty, 
+                                   persistedFullName != "Apple User" {
+                                    name = persistedFullName
+                                    print("🍎 [APPLE AUTH] ✅ Using persisted full name from UserDefaults: '\(persistedFullName)'")
+                                } else {
+                                    let pendingName = UserDefaults.standard.string(forKey: "pending_oauth_name")
+                                    print("🍎 [APPLE AUTH] 🔍 UserDefaults[pending_oauth_name]: \(pendingName ?? "nil")")
+                                    
+                                    if let pendingName = pendingName,
+                                       !pendingName.isEmpty,
+                                       pendingName != "Apple User" {
+                                        // Check pending_oauth_name (just set by SupabaseManager)
+                                        name = pendingName
+                                        print("🍎 [APPLE AUTH] ✅ Using pending OAuth full name: '\(pendingName)'")
+                                    } else {
+                                        print("🍎 [APPLE AUTH] ⚠️ No valid name found in any source")
+                                        print("🍎 [APPLE AUTH] ℹ️ This happens when:")
+                                        print("🍎 [APPLE AUTH] ℹ️  1. Apple has already provided name (only does it once)")
+                                        print("🍎 [APPLE AUTH] ℹ️  2. Persisted name was cleared (e.g., account deleted)")
+                                        print("🍎 [APPLE AUTH] ℹ️  3. User is using private relay email")
+                                    }
                                 }
                             }
+                            
+                            print("🍎 [APPLE AUTH] 📝 Final full name value: '\(name)'")
                         }
                         
                         // Get email - try Apple credentials first, then Supabase session
@@ -5588,6 +5805,7 @@ struct DaySelectorButton: View {
 
 // MARK: - Large Goal Card
 struct GoalCardLarge: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let subtitle: String
@@ -5597,39 +5815,37 @@ struct GoalCardLarge: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 10) {
-                Text(emoji)
-                    .font(.system(size: 44))
+                // Emoji with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 60, height: 60)
+                            .blur(radius: 14)
+                    }
+                    Text(emoji)
+                        .font(.system(size: 44))
+                }
                 
                 Text(title)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                 
                 Text(subtitle)
                     .font(.system(size: 13))
-                    .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
+                    .foregroundColor(.secondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 130)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(isSelected ?
-                          LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                          LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .shadow(color: isSelected ? .blue.opacity(0.35) : .black.opacity(0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 24)
             .overlay(
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 22))
-                            .foregroundColor(.white)
+                            .foregroundColor(.blue)
                             .padding(10)
                     }
                 },
@@ -5643,6 +5859,7 @@ struct GoalCardLarge: View {
 
 // MARK: - Large Experience Card
 struct ExperienceCardLarge: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let subtitle: String
@@ -5653,10 +5870,21 @@ struct ExperienceCardLarge: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // Emoji with background circle
+                // Emoji with background circle and glow
                 ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: 62, height: 62)
+                            .blur(radius: 10)
+                    }
+                    
                     Circle()
-                        .fill(isSelected ? Color.white.opacity(0.2) : Color.blue.opacity(0.1))
+                        .fill(
+                            isSelected
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color.blue.opacity(0.08), colorScheme == .dark ? Color(white: 0.18) : Color.blue.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
                         .frame(width: 56, height: 56)
                     
                     Text(emoji)
@@ -5666,15 +5894,15 @@ struct ExperienceCardLarge: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
                         .font(.system(size: 14))
-                        .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
+                        .foregroundColor(.secondary)
                     
                     Text(detail)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(isSelected ? .white.opacity(0.7) : .blue.opacity(0.7))
+                        .foregroundColor(.blue.opacity(0.7))
                 }
                 
                 Spacer()
@@ -5682,23 +5910,12 @@ struct ExperienceCardLarge: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 26))
-                        .foregroundColor(.white)
+                        .foregroundColor(.blue)
                 }
             }
             .padding(16)
             .frame(height: 90)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(isSelected ?
-                          LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .leading, endPoint: .trailing) :
-                          LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground)], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .shadow(color: isSelected ? .blue.opacity(0.35) : .black.opacity(0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: isSelected, cornerRadius: 24)
         }
         .scaleEffect(isSelected ? 1.01 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
@@ -5707,6 +5924,7 @@ struct ExperienceCardLarge: View {
 
 // MARK: - Large Equipment Card
 struct EquipmentCardLarge: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let isSelected: Bool
@@ -5715,37 +5933,32 @@ struct EquipmentCardLarge: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Text(emoji)
-                    .font(.system(size: 36))
+                // Emoji with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 50, height: 50)
+                            .blur(radius: 12)
+                    }
+                    Text(emoji)
+                        .font(.system(size: 36))
+                }
                 
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 100)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(
-                        LinearGradient(
-                            colors: isSelected ? [Color.blue, Color.purple.opacity(0.8)] : [Color(.systemBackground), Color(.systemBackground)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: isSelected ? Color.blue.opacity(0.35) : Color.black.opacity(0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 22)
             .overlay(
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(.white)
+                            .foregroundColor(.blue)
                             .padding(8)
                     }
                 },
@@ -5759,6 +5972,7 @@ struct EquipmentCardLarge: View {
 
 // MARK: - Equipment Card with SF Symbol (UX Audit Fix #5)
 struct EquipmentCardWithIcon: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let iconName: String
     let subtitle: String
@@ -5768,48 +5982,41 @@ struct EquipmentCardWithIcon: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: iconName)
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(
-                        isSelected ? 
-                        AnyShapeStyle(Color.white) : 
-                        AnyShapeStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    )
-                    .frame(height: 36)
+                // Icon with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 48, height: 48)
+                            .blur(radius: 10)
+                    }
+                    Image(systemName: iconName)
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(
+                            AnyShapeStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        )
+                        .frame(height: 36)
+                }
                 
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                 
                 Text(subtitle)
                     .font(.system(size: 10))
-                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                    .foregroundColor(.secondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 110)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(
-                        LinearGradient(
-                            colors: isSelected ? [Color.blue, Color.purple.opacity(0.8)] : [Color(.systemBackground), Color(.systemBackground)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: isSelected ? Color.blue.opacity(0.35) : Color.black.opacity(0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 22)
             .overlay(
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundColor(.white)
+                            .foregroundColor(.blue)
                             .padding(8)
                     }
                 },
@@ -5823,6 +6030,7 @@ struct EquipmentCardWithIcon: View {
 
 // MARK: - Workout Location Card
 struct WorkoutLocationCard: View {
+    @Environment(\.colorScheme) var colorScheme
     let environment: WorkoutEnvironmentService.WorkoutEnvironment
     let emoji: String
     let subtitle: String
@@ -5832,27 +6040,36 @@ struct WorkoutLocationCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // Emoji icon
-                Text(emoji)
-                    .font(.system(size: 32))
-                    .frame(width: 56, height: 56)
-                    .background(
+                // Emoji icon with glow
+                ZStack {
+                    if isSelected {
                         Circle()
-                            .fill(isSelected ? 
-                                  LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                                  LinearGradient(colors: [Color(.systemGray5), Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                    )
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: 62, height: 62)
+                            .blur(radius: 10)
+                    }
+                    
+                    Circle()
+                        .fill(
+                            isSelected
+                                ? LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color(.systemGray5), colorScheme == .dark ? Color(white: 0.18) : Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .frame(width: 56, height: 56)
+                    
+                    Text(emoji)
+                        .font(.system(size: 32))
+                }
                 
                 // Text content
                 VStack(alignment: .leading, spacing: 4) {
                     Text(environment.displayName)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
                         .font(.system(size: 13))
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(.secondary)
                 }
                 
                 Spacer()
@@ -5861,26 +6078,12 @@ struct WorkoutLocationCard: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 24))
-                        .foregroundColor(.white)
+                        .foregroundColor(.blue)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: isSelected ? [Color.blue, Color.purple.opacity(0.8)] : [Color(.systemBackground), Color(.systemBackground)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: isSelected ? Color.blue.opacity(0.35) : Color.black.opacity(0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: isSelected, cornerRadius: 22)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
@@ -5889,6 +6092,7 @@ struct WorkoutLocationCard: View {
 
 // MARK: - Strength Level Card
 struct StrengthLevelCard: View {
+    @Environment(\.colorScheme) var colorScheme
     let level: StrengthProfileRecommendationEngine.StrengthLevel
     let emoji: String
     let title: String
@@ -5899,15 +6103,20 @@ struct StrengthLevelCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // Emoji icon with gradient background
+                // Emoji icon with gradient background and glow
                 ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.orange.opacity(0.4))
+                            .frame(width: 58, height: 58)
+                            .blur(radius: 10)
+                    }
+                    
                     Circle()
                         .fill(
-                            LinearGradient(
-                                colors: isSelected ? [.orange, .red.opacity(0.8)] : [Color(.systemGray5), Color(.systemGray5)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                            isSelected
+                                ? LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color(.systemGray5), colorScheme == .dark ? Color(white: 0.18) : Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 52, height: 52)
                     
@@ -5919,11 +6128,11 @@ struct StrengthLevelCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundColor(isSelected ? .orange : .primary)
                     
                     Text(subtitle)
                         .font(.system(size: 13))
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(.secondary)
                 }
                 
                 Spacer()
@@ -5932,7 +6141,7 @@ struct StrengthLevelCard: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 24))
-                        .foregroundColor(.white)
+                        .foregroundColor(.orange)
                 } else {
                     // Strength dots indicator
                     HStack(spacing: 4) {
@@ -5946,21 +6155,7 @@ struct StrengthLevelCard: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: isSelected ? [Color.orange, Color.red.opacity(0.85)] : [Color(.systemBackground), Color(.systemBackground)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: isSelected ? Color.orange.opacity(0.4) : Color.black.opacity(0.05), radius: isSelected ? 10 : 4, x: 0, y: isSelected ? 4 : 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .orange, secondaryColor: .red, isSelected: isSelected, cornerRadius: 20)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
@@ -6026,6 +6221,7 @@ struct DaySelectorButtonLarge: View {
 }
 
 struct OnboardingGoalCard: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let subtitle: String
@@ -6035,37 +6231,35 @@ struct OnboardingGoalCard: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Text(emoji)
-                    .font(.system(size: 28))
+                // Emoji with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 40, height: 40)
+                            .blur(radius: 10)
+                    }
+                    Text(emoji)
+                        .font(.system(size: 28))
+                }
                 
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                    .foregroundColor(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .padding(.horizontal, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isSelected ?
-                          LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                          LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .shadow(color: isSelected ? .blue.opacity(0.3) : .black.opacity(0.05), radius: isSelected ? 6 : 3, x: 0, y: isSelected ? 3 : 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 18)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
@@ -6073,6 +6267,7 @@ struct OnboardingGoalCard: View {
 }
 
 struct OnboardingExperienceCard: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let subtitle: String
@@ -6082,18 +6277,27 @@ struct OnboardingExperienceCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(emoji)
-                    .font(.title2)
+                // Emoji with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 36, height: 36)
+                            .blur(radius: 8)
+                    }
+                    Text(emoji)
+                        .font(.title2)
+                }
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(.secondary)
                 }
                 
                 Spacer()
@@ -6101,28 +6305,18 @@ struct OnboardingExperienceCard: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3)
-                        .foregroundColor(.white)
+                        .foregroundColor(.blue)
                 }
             }
             .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isSelected ?
-                          LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .leading, endPoint: .trailing) :
-                          LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground)], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .shadow(color: isSelected ? .blue.opacity(0.3) : .black.opacity(0.05), radius: isSelected ? 6 : 3, x: 0, y: isSelected ? 3 : 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 18)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 
 struct OnboardingEquipmentChip: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let emoji: String
     let isSelected: Bool
@@ -6131,29 +6325,28 @@ struct OnboardingEquipmentChip: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Text(emoji)
-                    .font(.title3)
+                // Emoji with glow
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue.opacity(0.35))
+                            .frame(width: 30, height: 30)
+                            .blur(radius: 8)
+                    }
+                    Text(emoji)
+                        .font(.title3)
+                }
                 
                 Text(title)
                     .font(.caption2)
                     .fontWeight(.medium)
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(
-                        LinearGradient(
-                            colors: isSelected ? [Color.blue, Color.purple.opacity(0.8)] : [Color(.systemBackground), Color(.systemBackground)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.black.opacity(0.05), radius: isSelected ? 6 : 3, x: 0, y: isSelected ? 3 : 2)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 16)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(
@@ -6208,6 +6401,7 @@ struct SummaryRow: View {
 
 // MARK: - Confirmation List Section
 struct ConfirmationListSection<Content: View>: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     @ViewBuilder let content: Content
     
@@ -6224,16 +6418,8 @@ struct ConfirmationListSection<Content: View>: View {
             VStack(spacing: 0) {
                 content
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color(.systemGray5), lineWidth: 0.5)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: false, cornerRadius: 18)
         }
     }
 }
@@ -6285,6 +6471,7 @@ struct ConfirmationListRow: View {
 
 // MARK: - Compact Confirmation Card
 struct CompactConfirmationCard: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let items: [(icon: String, value: String)]
     let onEdit: () -> Void
@@ -6327,15 +6514,7 @@ struct CompactConfirmationCard: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.blue.opacity(0.1), lineWidth: 1)
-            )
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: false, cornerRadius: 16)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -6343,6 +6522,7 @@ struct CompactConfirmationCard: View {
 
 // MARK: - Confirmation Section
 struct ConfirmationSection<Content: View>: View {
+    @Environment(\.colorScheme) var colorScheme
     let title: String
     let onEdit: () -> Void
     @ViewBuilder let content: Content
@@ -6367,20 +6547,12 @@ struct ConfirmationSection<Content: View>: View {
             }
             .padding(.horizontal, 4)
             
-            // Content box - tappable
+            // Content box - tappable with exercise library style
             Button(action: onEdit) {
                 VStack(spacing: 0) {
                     content
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.systemBackground))
-                        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.blue.opacity(0.1), lineWidth: 1)
-                )
+                .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: false, cornerRadius: 20)
             }
             .buttonStyle(PlainButtonStyle())
         }
@@ -6646,13 +6818,13 @@ struct LimitationCardOnboardingWide: View {
                             .fill(
                                 isSelected
                                     ? LinearGradient(colors: [area.color, area.color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color.gray.opacity(0.08), colorScheme == .dark ? Color(white: 0.18) : Color.gray.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 44, height: 44)
                         
                         Image(systemName: area.icon)
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(isSelected ? .white : .gray)
+                            .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                     }
                     
                     // Title and status
@@ -6711,29 +6883,7 @@ struct LimitationCardOnboardingWide: View {
                     }
                 }
                 .padding(16)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                        
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color.white.opacity(0.1), Color.clear]
-                                        : [Color.white.opacity(0.8), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(isSelected ? area.color.opacity(0.6) : Color.clear, lineWidth: 2)
-                )
-                .shadow(color: isSelected ? area.color.opacity(0.3) : .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+                .onboardingCardStyle(accentColor: area.color, secondaryColor: area.color.opacity(0.7), isSelected: isSelected, cornerRadius: 20)
             }
             .buttonStyle(.plain)
             
@@ -6833,7 +6983,7 @@ struct LimitationCardOnboarding: View {
                 }
             }) {
                 VStack(spacing: 6) {
-                    // Icon with glow effect (matching auto-gen style)
+                    // Icon with glow effect (matching exercise library style)
                     ZStack {
                         // Soft glow when selected
                         if isSelected {
@@ -6847,13 +6997,13 @@ struct LimitationCardOnboarding: View {
                             .fill(
                                 isSelected
                                     ? LinearGradient(colors: [area.color, area.color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color.gray.opacity(0.08), colorScheme == .dark ? Color(white: 0.18) : Color.gray.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 44, height: 44)
                         
                         Image(systemName: area.icon)
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(isSelected ? .white : .gray)
+                            .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                     }
                     
                     Text(area.rawValue)
@@ -6884,31 +7034,7 @@ struct LimitationCardOnboarding: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 110)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                        
-                        // Inner highlight for depth
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color.white.opacity(0.1), Color.clear]
-                                        : [Color.white.opacity(0.8), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(isSelected ? area.color.opacity(0.6) : Color.clear, lineWidth: 2)
-                )
-                // Floating shadow with color glow when selected
-                .shadow(color: isSelected ? area.color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+                .onboardingCardStyle(accentColor: area.color, secondaryColor: area.color.opacity(0.7), isSelected: isSelected, cornerRadius: 20)
                 .overlay(
                     Group {
                         if isSelected {

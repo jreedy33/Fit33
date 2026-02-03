@@ -20,31 +20,23 @@ struct HealthyRecipesCarousel: View {
     private let freeRecipeLimit = 1
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Section Header
+        VStack(alignment: .leading, spacing: 12) {
+            // Section Header (OUTSIDE the card - matches other sections)
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "fork.knife.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.orange, .red],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        Text(isPersonalized ? "Recommended for You" : "Healthy Recipes")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                    }
-                    
-                    Text(subtitleText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Image(systemName: "fork.knife.circle.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.orange, .red],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                Text(isPersonalized ? "Recommended for You" : "Healthy Recipes")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
                 
                 Spacer()
                 
@@ -64,20 +56,28 @@ struct HealthyRecipesCarousel: View {
             }
             .padding(.horizontal, 4)
             
-            // Content
-            if (spoonacularService.isLoading || preferenceService.isLoadingRecommendations) && displayedRecipes.isEmpty {
-                loadingView
-            } else if let error = spoonacularService.errorMessage {
-                errorView(error)
-            } else if displayedRecipes.isEmpty {
-                emptyStateView
-            } else {
-                recipeCarousel
+            // Content Card
+            VStack(alignment: .leading, spacing: 8) {
+                // Subtitle (inside the card)
+                Text(subtitleText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                
+                if (spoonacularService.isLoading || preferenceService.isLoadingRecommendations) && displayedRecipes.isEmpty {
+                    loadingView
+                } else if let error = spoonacularService.errorMessage {
+                    errorView(error)
+                } else if displayedRecipes.isEmpty {
+                    emptyStateView
+                } else {
+                    recipeCarousel
+                }
             }
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(carouselBackground)
         }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 16)
-        .background(carouselBackground)
         .onAppear {
             loadRecipes()
             startRefreshTimer()
@@ -156,7 +156,7 @@ struct HealthyRecipesCarousel: View {
                     )
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
     }
@@ -240,7 +240,7 @@ struct HealthyRecipesCarousel: View {
                     RecipeCardSkeleton()
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
     }

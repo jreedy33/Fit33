@@ -132,6 +132,11 @@ struct DashboardView: View {
     @State private var showingWidgetSettings = false
     @AppStorage("showWeightTrackerWidget") private var showWeightTrackerWidget = true  // Default ON
     @AppStorage("showHydrationWidget") private var showHydrationWidget = false
+    @AppStorage("showMacrosWidget") private var showMacrosWidget = false  // Nutrition macros quick-access
+    
+    // Nutrition data for macros widget
+    @ObservedObject private var mealService = MealService.shared
+    @State private var selectedMacrosPage: Int = 0  // For swipeable macros cards
     
     // Used to force NavigationView to reset when switching tabs
     @State private var navigationViewId = UUID()
@@ -210,9 +215,22 @@ struct DashboardView: View {
                     swipeableProgramChallengeWidget
                         .padding(.bottom, 16)
                     
+                    // Quick Macros Widget - Position based on other widgets
+                    // If weight OR hydration is ON: show ABOVE workout buttons
+                    if showMacrosWidget && (showWeightTrackerWidget || showHydrationWidget) {
+                        dashboardMacrosWidget
+                            .padding(.bottom, 16)
+                    }
+                    
                     // Main workout creation buttons
                     startWorkoutButton
                         .padding(.bottom, 20)
+                    
+                    // Quick Macros Widget - If no weight/hydration: show BELOW workout buttons
+                    if showMacrosWidget && !showWeightTrackerWidget && !showHydrationWidget {
+                        dashboardMacrosWidget
+                            .padding(.bottom, 20)
+                    }
                     
                     // Step Tracker Card
                     StepTrackerCard()
@@ -231,7 +249,7 @@ struct DashboardView: View {
                         .id("statsOverview")
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 100) // Add extra bottom padding to prevent tab bar overlap
+                .padding(.bottom, 20)
                 }
                 .scrollContentBackground(.hidden)
                 .coordinateSpace(name: "scroll")
@@ -271,12 +289,16 @@ struct DashboardView: View {
                 }
                 }
                 .refreshable {
-                    // Pull-to-refresh: fetch new workouts, friend requests, and challenges
-                    await FriendService.shared.refreshHomeScreenData()
+                    // STEP 1: Sync latest HealthKit data (steps, workouts, etc.)
+                    // This will also call syncHealthKitDataToChallenges() internally
+                    await HealthKitService.shared.syncAllData(force: true)
+                    
+                    // STEP 2: Fetch updated challenges from database (reflects any changes)
                     await ChallengeService.shared.fetchPendingInvites()
                     await ChallengeService.shared.fetchActiveChallenges()
                     
-                    // Also refresh other data
+                    // STEP 3: Refresh friend data and other home screen content
+                    await FriendService.shared.refreshHomeScreenData()
                     await loadRecentCardioWorkouts()
                     await loadPersonalizedRecommendation()
                 }
@@ -292,9 +314,10 @@ struct DashboardView: View {
             .sheet(isPresented: $showingWidgetSettings) {
                 WidgetSettingsSheet(
                     showWeightTracker: $showWeightTrackerWidget,
-                    showHydration: $showHydrationWidget
+                    showHydration: $showHydrationWidget,
+                    showMacros: $showMacrosWidget
                 )
-                .presentationDetents([.height(420)])
+                .presentationDetents([.height(480)])
                 .presentationDragIndicator(.visible)
             }
             .background(
@@ -418,10 +441,15 @@ struct DashboardView: View {
             // This prevents refresh from interfering with navigation
             if oldPhase == .background && newPhase == .active {
                 Task {
-                    await FriendService.shared.refreshHomeScreenData()
-                    // Also refresh challenges when returning from background
+                    // Sync HealthKit first (includes challenge sync)
+                    await HealthKitService.shared.syncAllData(force: true)
+                    
+                    // Fetch updated challenges from database
                     await ChallengeService.shared.fetchActiveChallenges()
                     await ChallengeService.shared.fetchPendingInvites()
+                    
+                    // Refresh friend data
+                    await FriendService.shared.refreshHomeScreenData()
                 }
             }
         }
@@ -1386,6 +1414,319 @@ struct DashboardView: View {
         }
     }
     
+    // MARK: - Dashboard Macros Widget (Quick Access)
+    private var dashboardMacrosWidget: some View {
+        let consumedCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
+        let consumedProtein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+        let consumedFat = mealService.todaysMeals.reduce(0) { $0 + $1.fat }
+        
+        // Goals (simplified calculation)
+        let calorieGoal: Int = {
+            guard let user = userManager.currentUser else { return 2200 }
+            let weight = user.weight > 0 ? Int(user.weight) : 150
+            let height = user.height > 0 ? Int(user.height) : 170
+            if weight > 0 && height > 0 {
+                let bmr = (10 * Double(weight)) + (6.25 * Double(height)) - 150
+                return Int(bmr * 1.55)
+            }
+            return 2200
+        }()
+        let proteinGoal = max(100, Int(Double(userManager.currentUser?.weight ?? 150) * 0.8))
+        let fatGoal = (calorieGoal * 30 / 100) / 9
+        
+        // Progress calculations
+        let caloriesProgress = calorieGoal > 0 ? min(Double(consumedCalories) / Double(calorieGoal), 1.5) : 0
+        let proteinProgress = proteinGoal > 0 ? min(Double(consumedProtein) / Double(proteinGoal), 1.5) : 0
+        let fatProgress = fatGoal > 0 ? min(Double(consumedFat) / Double(fatGoal), 1.5) : 0
+        let caloriesExceeded = consumedCalories > calorieGoal
+        let fatExceeded = consumedFat > fatGoal
+        
+        return VStack(spacing: 8) {
+            // Swipeable cards (Today's Macros + Weekly Progress)
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                
+                HStack(spacing: spacing) {
+                    // Card 0: Today's Macros (compact version)
+                    compactMacrosCard(
+                        consumedCalories: consumedCalories,
+                        calorieGoal: calorieGoal,
+                        consumedProtein: consumedProtein,
+                        proteinGoal: proteinGoal,
+                        consumedFat: consumedFat,
+                        fatGoal: fatGoal,
+                        caloriesProgress: caloriesProgress,
+                        proteinProgress: proteinProgress,
+                        fatProgress: fatProgress,
+                        caloriesExceeded: caloriesExceeded,
+                        fatExceeded: fatExceeded
+                    )
+                    .frame(width: cardWidth)
+                    .opacity(selectedMacrosPage == 0 ? 1 : 0)
+                    
+                    // Card 1: Weekly Progress (compact version)
+                    compactWeeklyProgressCard
+                        .frame(width: cardWidth)
+                        .opacity(selectedMacrosPage == 1 ? 1 : 0)
+                }
+                .offset(x: -CGFloat(selectedMacrosPage) * (cardWidth + spacing))
+            }
+            .frame(height: 160)
+            .animation(.easeOut(duration: 0.25), value: selectedMacrosPage)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let verticalAmount = abs(value.translation.height)
+                        
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                            HapticManager.impact(.medium)
+                            if horizontalAmount < 0 && selectedMacrosPage < 1 {
+                                selectedMacrosPage = 1
+                            } else if horizontalAmount > 0 && selectedMacrosPage > 0 {
+                                selectedMacrosPage = 0
+                            }
+                        }
+                    }
+            )
+            
+            // Page indicators
+            HStack(spacing: 8) {
+                ForEach(0..<2, id: \.self) { index in
+                    Circle()
+                        .fill(selectedMacrosPage == index ? Color.teal : Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(selectedMacrosPage == index ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 0.2), value: selectedMacrosPage)
+                        .onTapGesture {
+                            HapticManager.impact(.light)
+                            selectedMacrosPage = index
+                        }
+                }
+            }
+        }
+    }
+    
+    private func compactMacrosCard(
+        consumedCalories: Int,
+        calorieGoal: Int,
+        consumedProtein: Int,
+        proteinGoal: Int,
+        consumedFat: Int,
+        fatGoal: Int,
+        caloriesProgress: Double,
+        proteinProgress: Double,
+        fatProgress: Double,
+        caloriesExceeded: Bool,
+        fatExceeded: Bool
+    ) -> some View {
+        NavigationLink(destination: SimpleMealPlanView()) {
+            HStack(spacing: 20) {
+                // Triple ring (larger to fill space)
+                NutritionTripleRing(
+                    caloriesProgress: caloriesProgress,
+                    proteinProgress: proteinProgress,
+                    fatProgress: fatProgress,
+                    size: 100,
+                    caloriesExceeded: caloriesExceeded,
+                    fatExceeded: fatExceeded
+                )
+                
+                // Legend with values
+                VStack(alignment: .leading, spacing: 10) {
+                    macroLegendRow(name: "Calories", current: consumedCalories, goal: calorieGoal, color: caloriesExceeded ? .red : .teal)
+                    macroLegendRow(name: "Protein", current: consumedProtein, goal: proteinGoal, color: .blue)
+                    macroLegendRow(name: "Fat", current: consumedFat, goal: fatGoal, color: fatExceeded ? .red : .purple)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - teal color glow
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border (teal)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: .teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func macroLegendRow(name: String, current: Int, goal: Int, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            
+            Text(name)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+            
+            Text("\(current)")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+            +
+            Text("/\(goal)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    
+    private var compactWeeklyProgressCard: some View {
+        NavigationLink(destination: SimpleMealPlanView()) {
+            VStack(spacing: 12) {
+                // Header
+                HStack {
+                    Text("Weekly Progress")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chart.bar.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.teal)
+                }
+                
+                // Simple weekly overview
+                HStack(spacing: 6) {
+                    ForEach(0..<7, id: \.self) { dayOffset in
+                        let date = Calendar.current.date(byAdding: .day, value: -6 + dayOffset, to: Date())!
+                        let dayName = Calendar.current.shortWeekdaySymbols[Calendar.current.component(.weekday, from: date) - 1]
+                        let mealsLogged = getMealsForDay(date)
+                        let hasData = mealsLogged > 0
+                        let isToday = Calendar.current.isDateInToday(date)
+                        
+                        VStack(spacing: 6) {
+                            Text(dayName.prefix(1))
+                                .font(.system(size: 11, weight: isToday ? .bold : .medium))
+                                .foregroundColor(isToday ? .teal : .secondary)
+                            
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(hasData 
+                                    ? LinearGradient(colors: [.teal, .mint], startPoint: .bottom, endPoint: .top)
+                                    : LinearGradient(colors: [Color.gray.opacity(0.2)], startPoint: .bottom, endPoint: .top)
+                                )
+                                .frame(height: CGFloat(min(mealsLogged * 14 + 10, 70)))
+                                .frame(maxHeight: 70, alignment: .bottom)
+                            
+                            Text("\(mealsLogged)")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(hasData ? .primary : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .padding(16)
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - teal color glow
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border (teal)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: .teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func getMealsForDay(_ date: Date) -> Int {
+        return mealService.getMealsForDate(date).count
+    }
+    
     private func handleWorkoutSelection(type: PendingWorkoutType) {
         // 🔧 Debounce: Prevent double-taps
         guard !isNavigating else { return }
@@ -2003,11 +2344,11 @@ struct DashboardView: View {
                     )
                     
                     // Custom page indicators (tappable to switch)
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ForEach(0..<widgetCount, id: \.self) { index in
                             Circle()
                                 .fill(selectedWidgetPage == index ? Color.primary : Color.gray.opacity(0.3))
-                                .frame(width: 8, height: 8)
+                                .frame(width: 6, height: 6)
                                 .scaleEffect(selectedWidgetPage == index ? 1.0 : 0.8)
                                 .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
                                 .onTapGesture {
@@ -2119,9 +2460,9 @@ struct DashboardView: View {
                     .frame(width: 4)
                     .padding(.vertical, 4)
                 
-                HStack(spacing: 16) {
+                HStack(spacing: 8) {
                     // Your progress (with photo)
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         // User photo
                         if let cachedImage = ProfilePhotoCache.shared.cachedImage {
                             Image(uiImage: cachedImage)
@@ -2148,31 +2489,34 @@ struct DashboardView: View {
                                 )
                         }
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 3) {
                                 Text("You")
-                                    .font(.subheadline)
+                                    .font(.caption)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.secondary)
                                 if challenge.amWinning {
                                     Image(systemName: "crown.fill")
-                                        .font(.system(size: 10))
+                                        .font(.system(size: 8))
                                         .foregroundColor(.yellow)
                                 }
                             }
                             
                             Text(formatChallengeProgress(challenge.myTotalProgress, unit: challenge.targetUnit))
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(challenge.amWinning ? .green : .primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
+                        .frame(maxWidth: 85, alignment: .leading)
                     }
                     
-                    Spacer()
+                    Spacer(minLength: 4)
                     
                     // VS divider
                     VStack(spacing: 2) {
                         Text("vs")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [challengeColor, challengeColor.opacity(0.7)],
@@ -2184,33 +2528,39 @@ struct DashboardView: View {
                         if challenge.myTotalProgress != challenge.opponentTotalProgress {
                             let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
                             Text(challenge.amWinning ? "+\(formatChallengeProgress(diff, unit: challenge.targetUnit))" : "-\(formatChallengeProgress(diff, unit: challenge.targetUnit))")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.system(size: 8, weight: .bold, design: .rounded))
                                 .foregroundColor(challenge.amWinning ? .green : .red)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                         }
                     }
+                    .frame(minWidth: 30)
                     
-                    Spacer()
+                    Spacer(minLength: 4)
                     
                     // Opponent progress (with photo)
-                    HStack(spacing: 10) {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HStack(spacing: 4) {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 3) {
                                 if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
                                     Image(systemName: "crown.fill")
-                                        .font(.system(size: 10))
+                                        .font(.system(size: 8))
                                         .foregroundColor(.yellow)
                                 }
                                 Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
-                                    .font(.subheadline)
+                                    .font(.caption)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
                             
                             Text(formatChallengeProgress(challenge.opponentTotalProgress, unit: challenge.targetUnit))
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? .green : .primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
+                        .frame(maxWidth: 85, alignment: .trailing)
                         
                         // Opponent photo
                         if let photoUrl = challenge.opponentPhotoUrl, !photoUrl.isEmpty {
@@ -2486,7 +2836,14 @@ struct DashboardView: View {
                 )
                 .onTapGesture {
                     if let user = userManager.currentUser {
-                        _ = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user)
+                        if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user) {
+                            // Navigate to the first day of the program
+                            if let firstDay = startedProgram.generatedDays.first {
+                                workoutManager.navigateProgramData = startedProgram
+                                workoutManager.navigateProgramDay = firstDay
+                                workoutManager.shouldNavigateToProgramDay = true
+                            }
+                        }
                     }
                 }
             }
@@ -2615,7 +2972,14 @@ struct DashboardView: View {
             // Start button
             Button(action: {
                 if let user = userManager.currentUser {
-                    _ = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user)
+                    if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user) {
+                        // Navigate to the first day of the program
+                        if let firstDay = startedProgram.generatedDays.first {
+                            workoutManager.navigateProgramData = startedProgram
+                            workoutManager.navigateProgramDay = firstDay
+                            workoutManager.shouldNavigateToProgramDay = true
+                        }
+                    }
                 }
             }) {
                 HStack {
@@ -3608,7 +3972,14 @@ struct DashboardView: View {
             Button("Start Program") {
                 if let toStart = programToStart,
                    let user = userManager.currentUser {
-                    _ = SmartProgramEngine.shared.startProgram(templateId: toStart.template.id, for: user)
+                    if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: toStart.template.id, for: user) {
+                        // Navigate to the first day of the program
+                        if let firstDay = startedProgram.generatedDays.first {
+                            workoutManager.navigateProgramData = startedProgram
+                            workoutManager.navigateProgramDay = firstDay
+                            workoutManager.shouldNavigateToProgramDay = true
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -5617,9 +5988,11 @@ struct DashboardWeightWidget: View {
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingInput) {
-            WeightInputSheet(weightService: weightService)
+            WeightInputSheet(weightService: weightService, autoFocus: $showingInput)
                 .presentationDetents([.height(280)])
                 .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled)
+                .interactiveDismissDisabled(false)
         }
         .sheet(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .weightTracking)
@@ -5900,6 +6273,7 @@ struct DashboardWeightWidget: View {
 // MARK: - Weight Input Sheet
 struct WeightInputSheet: View {
     @ObservedObject var weightService: WeightTrackingService
+    @Binding var autoFocus: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var weightInput = ""
@@ -5907,6 +6281,11 @@ struct WeightInputSheet: View {
     
     // Match the WeightTrackerWidget color scheme (orange/yellow)
     private let gradientColors: [Color] = [.orange, .yellow]
+    
+    init(weightService: WeightTrackingService, autoFocus: Binding<Bool>) {
+        self.weightService = weightService
+        self._autoFocus = autoFocus
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -5935,6 +6314,12 @@ struct WeightInputSheet: View {
                     .multilineTextAlignment(.center)
                     .focused($isInputFocused)
                     .frame(maxWidth: 200)
+                    .onAppear {
+                        // Focus immediately on appear
+                        DispatchQueue.main.async {
+                            isInputFocused = true
+                        }
+                    }
                 
                 Text(weightService.usesLbs ? "lbs" : "kg")
                     .font(.title)
@@ -5967,12 +6352,13 @@ struct WeightInputSheet: View {
             Spacer()
         }
         .onAppear {
-            isInputFocused = true
             // Pre-fill with current weight if logged today
             if weightService.hasLoggedToday, let todayWeight = weightService.todayLog {
                 let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
                 weightInput = String(format: "%.1f", displayWeight)
             }
+            // Focus immediately - no delay
+            isInputFocused = true
         }
     }
     
@@ -6428,6 +6814,7 @@ struct HydrationQuickAddSheet: View {
 struct WidgetSettingsSheet: View {
     @Binding var showWeightTracker: Bool
     @Binding var showHydration: Bool
+    @Binding var showMacros: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -6485,6 +6872,14 @@ struct WidgetSettingsSheet: View {
             
             // Widget options
             VStack(spacing: 16) {
+                widgetOptionRow(
+                    icon: "chart.pie.fill",
+                    title: "Quick Macros",
+                    subtitle: "Today's nutrition at a glance",
+                    gradientColors: [Color.teal, Color.mint],
+                    isSelected: $showMacros
+                )
+                
                 widgetOptionRow(
                     icon: "scalemass.fill",
                     title: "Weight Tracker",

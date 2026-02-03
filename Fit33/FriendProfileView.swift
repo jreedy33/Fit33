@@ -109,7 +109,16 @@ struct FriendProfileView: View {
             }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
-                    ChallengeDetailView(challenge: challenge)
+                    NavigationView {
+                        ChallengeDetailView(challenge: challenge)
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    Button("Close") {
+                                        showingChallengeDetail = false
+                                    }
+                                }
+                            }
+                    }
                 }
             }
             .alert("Unfriend \(friend.displayName)?", isPresented: $showingUnfriendConfirmation) {

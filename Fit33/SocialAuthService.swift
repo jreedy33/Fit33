@@ -25,6 +25,9 @@ class SocialAuthService: NSObject, ObservableObject {
     // Completion handler for Apple Sign-In
     private var appleSignInCompletion: ((Result<AppleSignInCredentials, Error>) -> Void)?
     
+    // Guard to prevent multiple simultaneous sign-in attempts
+    private var isSignInInProgress = false
+    
     private override init() {
         super.init()
     }
@@ -41,9 +44,18 @@ class SocialAuthService: NSObject, ObservableObject {
     
     /// Initiates Apple Sign-In flow
     func signInWithApple(completion: @escaping (Result<AppleSignInCredentials, Error>) -> Void) {
+        // Prevent multiple simultaneous sign-in attempts (prevents nonce mismatch)
+        guard !isSignInInProgress else {
+            print("🍎 [APPLE AUTH] ⚠️ Sign-in already in progress, ignoring duplicate request")
+            return
+        }
+        
+        isSignInInProgress = true
         let nonce = randomNonceString()
         currentNonce = nonce
         appleSignInCompletion = completion
+        
+        print("🍎 [APPLE AUTH] Starting sign-in with nonce: \(nonce.prefix(8))...")
         
         let appleIDProvider = ASAuthorizationAppleIDProvider()
         let request = appleIDProvider.createRequest()
@@ -113,6 +125,11 @@ class SocialAuthService: NSObject, ObservableObject {
 // MARK: - ASAuthorizationControllerDelegate
 extension SocialAuthService: ASAuthorizationControllerDelegate {
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        defer {
+            // Reset the flag after completion
+            isSignInInProgress = false
+        }
+        
         DispatchQueue.main.async {
             self.isLoading = false
         }
@@ -123,9 +140,12 @@ extension SocialAuthService: ASAuthorizationControllerDelegate {
               let authorizationCodeData = appleIDCredential.authorizationCode,
               let authorizationCode = String(data: authorizationCodeData, encoding: .utf8),
               let nonce = currentNonce else {
+            print("🍎 [APPLE AUTH] ❌ Failed to extract credentials or nonce")
             appleSignInCompletion?(.failure(SocialAuthError.invalidCredentials))
             return
         }
+        
+        print("🍎 [APPLE AUTH] ✅ Authorization complete with nonce: \(nonce.prefix(8))...")
         
         let credentials = AppleSignInCredentials(
             identityToken: identityToken,
@@ -139,11 +159,17 @@ extension SocialAuthService: ASAuthorizationControllerDelegate {
     }
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        defer {
+            // Reset the flag after error
+            isSignInInProgress = false
+        }
+        
         DispatchQueue.main.async {
             self.isLoading = false
             self.errorMessage = error.localizedDescription
         }
         
+        print("🍎 [APPLE AUTH] ❌ Authorization error: \(error.localizedDescription)")
         appleSignInCompletion?(.failure(error))
     }
 }

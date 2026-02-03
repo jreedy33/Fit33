@@ -30,7 +30,9 @@ struct WeightTrackerWidget: View {
             PremiumUpgradeView(triggeringFeature: .weightTracking)
         }
         .sheet(isPresented: $showingAddSheet) {
-            LogWeightSheet(weightService: weightService)
+            LogWeightSheet(weightService: weightService, autoFocus: $showingAddSheet)
+                .presentationBackgroundInteraction(.enabled)
+                .interactiveDismissDisabled(false)
         }
         .sheet(isPresented: $showingDetailView) {
             WeightDetailView(weightService: weightService)
@@ -39,34 +41,36 @@ struct WeightTrackerWidget: View {
     
     // MARK: - Actual Widget Content
     private var actualWidget: some View {
-        VStack(spacing: 0) {
-            // Header row
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row (OUTSIDE the card - matches other sections)
             HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "scalemass.fill")
-                        .font(.title3)
-                        .foregroundStyle(
-                            LinearGradient(colors: gradient, startPoint: .top, endPoint: .bottom)
-                        )
-                    
-                    Text("Weight Tracker")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                }
+                Image(systemName: "scalemass.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                
+                Text("Weight Tracker")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
                 
                 Spacer()
                 
                 Button(action: { HapticManager.selectionChanged(); showingDetailView = true }) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.subheadline)
-                        .foregroundColor(primaryColor.opacity(0.8))
+                    HStack(spacing: 4) {
+                        Text("Details")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.orange)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 4)
             
-            // Swipeable carousel
+            // Card content
             TabView(selection: $currentPage) {
                 // Page 1: Weight Entry Card
                 weightEntryCard
@@ -77,25 +81,55 @@ struct WeightTrackerWidget: View {
                     .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 165)
+            .frame(height: 180)
+            .background(widgetBackground)
             
-            // Page indicators
-            HStack(spacing: 8) {
+            // Page indicators (OUTSIDE the card)
+            HStack(spacing: 6) {
                 ForEach(0..<2, id: \.self) { index in
                     Circle()
                         .fill(currentPage == index ? Color.orange : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(currentPage == index ? 1.0 : 0.8)
                         .animation(.easeInOut(duration: 0.2), value: currentPage)
                 }
             }
-            .padding(.top, 8)
-            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity)
         }
-        .background(
+    }
+    
+    // MARK: - Widget Background
+    private var widgetBackground: some View {
+        ZStack {
+            // Bottom shadow layer (deepest) - orange glow
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.orange.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 8)
+                .blur(radius: 4)
+            
+            // Middle shadow layer
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 4)
+            
+            // Main card background
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
-        )
-        .overlay(
+            
+            // Inner highlight (top edge glow)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            // Colored accent border (orange)
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(
                     LinearGradient(
@@ -106,256 +140,405 @@ struct WeightTrackerWidget: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1.5
+                    lineWidth: 1
                 )
-        )
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .orange.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Locked Widget for Free Users
     private var lockedWidget: some View {
-        ZStack {
-            // Show the actual widget content (non-interactive)
-            VStack(spacing: 0) {
-                // Header row
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "scalemass.fill")
-                            .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(colors: gradient, startPoint: .top, endPoint: .bottom)
-                            )
-                        
-                        Text("Weight Tracker")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                    }
-                    
-                    Spacer()
-                    
-                    // PRO badge
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                        Text("PRO")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(LinearGradient(
-                                colors: [Color.blue, Color.purple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ))
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row (OUTSIDE the card - matches other sections)
+            HStack {
+                Image(systemName: "scalemass.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
                 
+                Text("Weight Tracker")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                // PRO badge
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                    Text("PRO")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color.blue, Color.purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                )
+            }
+            .padding(.horizontal, 4)
+            
+            // Card content with lock overlay
+            ZStack {
                 // Show preview of actual content (slightly blurred)
                 TabView(selection: .constant(0)) {
                     weightEntryCard
                         .tag(0)
-                        .allowsHitTesting(false) // Disable interaction
+                        .allowsHitTesting(false)
                     
                     weightGraphCard
                         .tag(1)
-                        .allowsHitTesting(false) // Disable interaction
+                        .allowsHitTesting(false)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 165)
-                .blur(radius: 2) // Subtle blur
-                .opacity(0.6) // Dimmed
+                .frame(height: 180)
+                .blur(radius: 2)
+                .opacity(0.6)
+                .background(lockedWidgetBackground)
                 
-                // Page indicators
-                HStack(spacing: 8) {
-                    ForEach(0..<2, id: \.self) { index in
-                        Circle()
-                            .fill(index == 0 ? Color.orange : Color.gray.opacity(0.3))
-                            .frame(width: 8, height: 8)
-                    }
-                }
-                .padding(.top, 8)
-                .padding(.bottom, 16)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.blue.opacity(0.4),
-                                Color.purple.opacity(0.3)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
-            )
-            
-            // Lock overlay on top
-            Button(action: {
-                HapticManager.tap()
-                showingPremiumUpgrade = true
-            }) {
-                ZStack {
-                    // Semi-transparent overlay
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.black.opacity(0.3))
-                    
-                    // Lock icon and message
-                    VStack(spacing: 12) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.blue, .purple],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                // Lock overlay on top
+                Button(action: {
+                    HapticManager.tap()
+                    showingPremiumUpgrade = true
+                }) {
+                    ZStack {
+                        // Semi-transparent overlay
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.black.opacity(0.3))
                         
-                        Text("Tap to Unlock")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
+                        // Lock icon and message
+                        VStack(spacing: 12) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 36))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.blue, .purple],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            
+                            Text("Tap to Unlock")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                        }
                     }
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .buttonStyle(PlainButtonStyle())
+            
+            // Page indicators (OUTSIDE the card)
+            HStack(spacing: 6) {
+                ForEach(0..<2, id: \.self) { index in
+                    Circle()
+                        .fill(index == 0 ? Color.orange : Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(index == 0 ? 1.0 : 0.8)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+    
+    // MARK: - Locked Widget Background
+    private var lockedWidgetBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
+            
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.4),
+                            Color.purple.opacity(0.3)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
         }
     }
     
     // MARK: - Weight Entry Card
     private var weightEntryCard: some View {
-        VStack(spacing: 16) {
-            // Main content row
-            HStack(alignment: .center, spacing: 16) {
+        VStack(spacing: 12) {
+            // Header row with status pill
+            HStack {
                 // Weight display
-                VStack(alignment: .leading, spacing: 6) {
-                    if weightService.hasLoggedToday {
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(formatWeight(weightService.currentWeight))
-                                .font(.system(size: 42, weight: .bold, design: .rounded))
-                                .foregroundStyle(
-                                    LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing)
-                                )
-                            
-                            Text(weightService.weightUnitSuffix)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(.green)
-                            Text("Logged today")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.green)
-                        }
-                    } else {
-                        Text("Log Today's Weight")
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(formatWeight(weightService.currentWeight))
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
                         
-                        if weightService.currentWeight > 0 {
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("Last:")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Text("\(formatWeight(weightService.currentWeight))")
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                                    .foregroundStyle(
-                                        LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing)
-                                    )
-                                Text(weightService.weightUnitSuffix)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                        Text(weightService.weightUnitSuffix)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Status indicator
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(weightService.hasLoggedToday ? Color.green : Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text(weightService.hasLoggedToday ? "Logged today" : "Not logged yet")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
                     }
                 }
                 
                 Spacer()
                 
-                // Log button - bigger
+                // Trend badge
+                if weightService.monthlyTrend.count >= 2 {
+                    HStack(spacing: 3) {
+                        Image(systemName: weightService.weeklyChange >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(formatWeightChangeShort(weightService.weeklyChange))
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(weeklyChangeColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(weeklyChangeColor.opacity(0.15))
+                    .cornerRadius(8)
+                }
+                
+                // Log button
                 Button(action: { HapticManager.impact(.medium); showingAddSheet = true }) {
                     ZStack {
                         Circle()
                             .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 56, height: 56)
-                            .shadow(color: .orange.opacity(0.4), radius: 8, y: 4)
+                            .frame(width: 40, height: 40)
                         
                         Image(systemName: weightService.hasLoggedToday ? "pencil" : "plus")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.white)
                     }
                 }
                 .buttonStyle(ScaleButtonStyle())
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
             
-            // Stats row - bigger
-            HStack(spacing: 0) {
-                // Weekly change
-                HStack(spacing: 6) {
-                    Image(systemName: weightService.weeklyChange >= 0 ? "arrow.up.right" : "arrow.down.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(weeklyChangeColor)
-                    
-                    Text(formatWeightChange(weightService.weeklyChange))
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(weeklyChangeColor)
-                }
-                .frame(maxWidth: .infinity)
-                
-                Rectangle()
-                    .fill(Color.gray.opacity(0.25))
-                    .frame(width: 1, height: 28)
-                
-                // Streak
-                HStack(spacing: 6) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.orange)
-                    
-                    Text("\(weightService.statistics?.streakDays ?? 0) days")
-                        .font(.system(size: 15, weight: .bold))
-                }
-                .frame(maxWidth: .infinity)
-                
-                // Goal (if set)
-                if let goal = weightService.weightGoal {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.25))
-                        .frame(width: 1, height: 28)
-                    
-                    HStack(spacing: 6) {
-                        Image(systemName: "target")
-                            .font(.system(size: 14))
-                            .foregroundColor(goal.goalType.color)
+            // Goal progress section (if goal set)
+            if let goal = weightService.weightGoal {
+                HStack(spacing: 12) {
+                    // Goal type indicator
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: goal.goalType.icon)
+                                .font(.system(size: 10))
+                                .foregroundColor(goal.goalType.color)
+                            Text(goal.goalType.displayName)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
                         
-                        Text("\(formatWeight(goal.targetWeight))")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(goal.goalType.color)
+                        // Progress bar
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.gray.opacity(0.2))
+                                
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: geo.size.width * min(weightService.goalProgress, 1.0))
+                            }
+                        }
+                        .frame(height: 6)
                     }
                     .frame(maxWidth: .infinity)
+                    
+                    // Goal stats
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(Int(weightService.goalProgress * 100))%")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(primaryColor)
+                        
+                        Text("\(formatWeight(goal.targetWeight)) goal")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 20)
+            
+            Divider()
+                .padding(.horizontal, 16)
+            
+            // Stats row with insights
+            HStack(spacing: 0) {
+                // Streak
+                VStack(spacing: 4) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.orange)
+                        Text("\(weightService.statistics?.streakDays ?? 0)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                    }
+                    Text("day streak")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                // Weekly range
+                VStack(spacing: 4) {
+                    let weeklyData = weightService.monthlyTrend.suffix(7)
+                    let range = weeklyRange(from: Array(weeklyData))
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue)
+                        Text(range)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    Text("weekly range")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                // Consistency
+                VStack(spacing: 4) {
+                    let consistency = calculateLoggingConsistency()
+                    HStack(spacing: 2) {
+                        Image(systemName: consistency >= 70 ? "checkmark.circle.fill" : "circle.dashed")
+                            .font(.system(size: 12))
+                            .foregroundColor(consistency >= 70 ? .green : .gray)
+                        Text("\(consistency)%")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    Text("consistency")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, 16)
+            
+            // Smart tip
+            HStack(spacing: 6) {
+                Text(weightTipEmoji)
+                    .font(.system(size: 11))
+                Text(weightTip)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
         }
+    }
+    
+    // Calculate weekly weight range
+    private func weeklyRange(from data: [WeightTrendPoint]) -> String {
+        guard !data.isEmpty else { return "--" }
+        let weights = data.map { $0.weight }
+        let min = weights.min() ?? 0
+        let max = weights.max() ?? 0
+        let range = max - min
+        return String(format: "%.1f", range)
+    }
+    
+    // Calculate logging consistency (last 7 days)
+    private func calculateLoggingConsistency() -> Int {
+        let recentLogs = weightService.monthlyTrend.suffix(7)
+        guard !recentLogs.isEmpty else { return 0 }
+        
+        // Get unique days logged in last 7 days
+        let calendar = Calendar.current
+        let today = Date()
+        var daysLogged = 0
+        
+        for dayOffset in 0..<7 {
+            guard let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let targetDay = calendar.startOfDay(for: targetDate)
+            
+            if recentLogs.contains(where: { calendar.startOfDay(for: $0.date) == targetDay }) {
+                daysLogged += 1
+            }
+        }
+        
+        return Int((Double(daysLogged) / 7.0) * 100)
+    }
+    
+    private var weightTipEmoji: String {
+        if !weightService.hasLoggedToday {
+            let hour = Calendar.current.component(.hour, from: Date())
+            if hour < 10 { return "☀️" }
+            return "⏰"
+        }
+        
+        if let goal = weightService.weightGoal {
+            let onTrack = isOnTrackForGoal(goal)
+            return onTrack ? "🎯" : "💪"
+        }
+        
+        return "✨"
+    }
+    
+    private var weightTip: String {
+        if !weightService.hasLoggedToday {
+            let hour = Calendar.current.component(.hour, from: Date())
+            if hour < 10 {
+                return "Morning weigh-in is most accurate!"
+            }
+            return "Don't forget to log today's weight"
+        }
+        
+        if let goal = weightService.weightGoal {
+            let remaining = abs(weightService.currentWeight - goal.targetWeight)
+            if remaining < 1 {
+                return "Almost at your goal! Keep it up!"
+            }
+            
+            switch goal.goalType {
+            case .lose:
+                return "\(formatWeight(remaining)) \(weightService.weightUnitSuffix) to go – you've got this!"
+            case .gain:
+                return "\(formatWeight(remaining)) \(weightService.weightUnitSuffix) to gain – stay consistent!"
+            case .maintain:
+                return "Great job maintaining your weight!"
+            }
+        }
+        
+        let consistency = calculateLoggingConsistency()
+        if consistency < 50 {
+            return "Log daily for better insights"
+        }
+        
+        return "Consistency is key to progress!"
+    }
+    
+    private func isOnTrackForGoal(_ goal: WeightGoal) -> Bool {
+        switch goal.goalType {
+        case .lose:
+            return weightService.weeklyChange <= 0
+        case .gain:
+            return weightService.weeklyChange >= 0
+        case .maintain:
+            return abs(weightService.weeklyChange) < 1
+        }
+    }
+    
+    private func formatWeightChangeShort(_ change: Double) -> String {
+        let sign = change >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", change))"
     }
     
     // MARK: - Weight Graph Card
@@ -570,6 +753,41 @@ struct MiniStatBadge: View {
     }
 }
 
+// MARK: - Weight Stat Pill
+
+struct WeightStatPill: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(color)
+            
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(colorScheme == .dark ? 0.15 : 0.1))
+        )
+    }
+}
+
 // MARK: - Trend Stat Badge
 
 struct TrendStatBadge: View {
@@ -599,6 +817,7 @@ struct TrendStatBadge: View {
 
 struct LogWeightSheet: View {
     @ObservedObject var weightService: WeightTrackingService
+    @Binding var autoFocus: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     
@@ -608,6 +827,11 @@ struct LogWeightSheet: View {
     @FocusState private var isWeightFocused: Bool
     
     private let gradient: [Color] = [.orange, .yellow]
+    
+    init(weightService: WeightTrackingService, autoFocus: Binding<Bool>) {
+        self.weightService = weightService
+        self._autoFocus = autoFocus
+    }
     
     // Parse weight handling both period and comma as decimal separator
     private var parsedWeight: Double? {
@@ -632,6 +856,12 @@ struct LogWeightSheet: View {
                                 .multilineTextAlignment(.center)
                                 .focused($isWeightFocused)
                                 .frame(maxWidth: 180)
+                                .onAppear {
+                                    // Focus immediately on appear
+                                    DispatchQueue.main.async {
+                                        isWeightFocused = true
+                                    }
+                                }
                             
                             Text(weightService.weightUnitSuffix)
                                 .font(.title)
@@ -724,19 +954,26 @@ struct LogWeightSheet: View {
                 }
             }
         }
+        .onChange(of: autoFocus) { _, newValue in
+            // Focus immediately when sheet opens
+            if newValue {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                    isWeightFocused = true
+                }
+            }
+        }
         .onAppear {
-            isWeightFocused = true
-            // Pre-fill with the most recent logged weight
-            // This ensures tomorrow's default is today's input
+            // Pre-fill with the most recent logged weight FIRST
             if let mostRecentLog = weightService.recentLogs.first {
                 let recentWeight = UnitSettingsManager.shared.weightUnit == .imperial 
                     ? mostRecentLog.weightLbs 
                     : mostRecentLog.weightKg
                 weightInput = String(format: "%.1f", recentWeight)
             } else if weightService.currentWeight > 0 {
-                // Fallback to current weight from service
                 weightInput = String(format: "%.1f", weightService.currentWeight)
             }
+            // Focus immediately - keyboard appears during sheet animation
+            isWeightFocused = true
         }
     }
     
@@ -809,35 +1046,37 @@ struct WeightDetailView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Progress summary card
-                    progressSummaryCard
-                    
-                    // Goal card
-                    goalCard
-                    
-                    // Statistics grid
-                    statisticsGrid
-                    
-                    // Full chart
-                    fullChartSection
-                    
-                    // Recent entries
-                    recentEntriesSection
+            ZStack {
+                // Dark background - matches Steps/Hydration detail
+                Color(red: 0.06, green: 0.07, blue: 0.09)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Progress summary card
+                        progressSummaryCard
+                            .padding(.horizontal, 20)
+                            .padding(.top, 20)
+                        
+                        // Goal card
+                        goalCard
+                            .padding(.horizontal, 20)
+                        
+                        // Statistics grid
+                        statisticsGrid
+                            .padding(.horizontal, 20)
+                        
+                        // Full chart
+                        fullChartSection
+                            .padding(.horizontal, 20)
+                        
+                        // Recent entries
+                        recentEntriesSection
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 40)
+                    }
                 }
-                .padding()
             }
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color.orange.opacity(0.1), Color.yellow.opacity(0.05)]
-                        : [Color.orange.opacity(0.15), Color.yellow.opacity(0.08)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-            )
             .navigationTitle("Weight Tracker")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -845,6 +1084,7 @@ struct WeightDetailView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(.orange)
                 }
             }
             .sheet(isPresented: $showingGoalSheet) {
@@ -860,21 +1100,22 @@ struct WeightDetailView: View {
             VStack(spacing: 4) {
                 Text("Current Weight")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(String(format: "%.1f", weightService.currentWeight))
                         .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
                     
                     Text(weightService.weightUnitSuffix)
                         .font(.title2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
             }
             
             // Change indicators
             HStack(spacing: 24) {
-                ChangeIndicator(
+                DarkChangeIndicator(
                     title: "This Week",
                     change: weightService.weeklyChange,
                     suffix: weightService.weightUnitSuffix
@@ -882,8 +1123,9 @@ struct WeightDetailView: View {
                 
                 Divider()
                     .frame(height: 40)
+                    .background(Color.gray.opacity(0.3))
                 
-                ChangeIndicator(
+                DarkChangeIndicator(
                     title: "This Month",
                     change: weightService.monthlyChange,
                     suffix: weightService.weightUnitSuffix
@@ -892,8 +1134,9 @@ struct WeightDetailView: View {
                 if let stats = weightService.statistics {
                     Divider()
                         .frame(height: 40)
+                        .background(Color.gray.opacity(0.3))
                     
-                    ChangeIndicator(
+                    DarkChangeIndicator(
                         title: "Total",
                         change: stats.totalChange,
                         suffix: weightService.weightUnitSuffix
@@ -901,8 +1144,8 @@ struct WeightDetailView: View {
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
+        .padding(24)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
     }
     
@@ -913,6 +1156,7 @@ struct WeightDetailView: View {
                 Text("Your Goal")
                     .font(.headline)
                     .fontWeight(.bold)
+                    .foregroundColor(.white)
                 
                 Spacer()
                 
@@ -928,7 +1172,7 @@ struct WeightDetailView: View {
                     // Goal type icon
                     ZStack {
                         Circle()
-                            .fill(goal.goalType.color.opacity(0.15))
+                            .fill(goal.goalType.color.opacity(0.2))
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: goal.goalType.icon)
@@ -939,11 +1183,12 @@ struct WeightDetailView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(goal.goalType.displayName)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                         
                         Text("\(String(format: "%.1f", goal.targetWeight)) \(weightService.weightUnitSuffix)")
                             .font(.title3)
                             .fontWeight(.bold)
+                            .foregroundColor(.white)
                     }
                     
                     Spacer()
@@ -951,7 +1196,7 @@ struct WeightDetailView: View {
                     // Progress ring
                     ZStack {
                         Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 6)
                         
                         Circle()
                             .trim(from: 0, to: weightService.goalProgress)
@@ -963,6 +1208,7 @@ struct WeightDetailView: View {
                         
                         Text("\(Int(weightService.goalProgress * 100))%")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
                     }
                     .frame(width: 50, height: 50)
                 }
@@ -970,25 +1216,25 @@ struct WeightDetailView: View {
                 HStack {
                     Image(systemName: "target")
                         .font(.title2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                     
                     Text("Set a weight goal to track your progress")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                     
                     Spacer()
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
+        .padding(20)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
     }
     
     // MARK: - Statistics Grid
     private var statisticsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            WeightStatBox(
+            DarkWeightStatBox(
                 title: "Starting",
                 value: String(format: "%.1f", weightService.statistics?.startingWeight ?? 0),
                 unit: weightService.weightUnitSuffix,
@@ -996,7 +1242,7 @@ struct WeightDetailView: View {
                 color: .blue
             )
             
-            WeightStatBox(
+            DarkWeightStatBox(
                 title: "Lowest",
                 value: String(format: "%.1f", weightService.statistics?.lowestWeight ?? 0),
                 unit: weightService.weightUnitSuffix,
@@ -1004,7 +1250,7 @@ struct WeightDetailView: View {
                 color: .green
             )
             
-            WeightStatBox(
+            DarkWeightStatBox(
                 title: "Highest",
                 value: String(format: "%.1f", weightService.statistics?.highestWeight ?? 0),
                 unit: weightService.weightUnitSuffix,
@@ -1012,7 +1258,7 @@ struct WeightDetailView: View {
                 color: .red
             )
             
-            WeightStatBox(
+            DarkWeightStatBox(
                 title: "Entries",
                 value: "\(weightService.statistics?.totalEntries ?? 0)",
                 unit: "logs",
@@ -1024,68 +1270,72 @@ struct WeightDetailView: View {
     
     // MARK: - Full Chart Section
     private var fullChartSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("30-Day Trend")
                 .font(.headline)
                 .fontWeight(.bold)
+                .foregroundColor(.white)
             
             if weightService.monthlyTrend.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.system(size: 40))
-                        .foregroundColor(.secondary.opacity(0.5))
+                        .foregroundColor(.gray.opacity(0.5))
                     
                     Text("Start logging to see your trend")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
-                .background(Color(.tertiarySystemBackground))
-                .cornerRadius(16)
             } else {
                 DetailedWeightChart(
                     data: weightService.monthlyTrend,
                     usesLbs: weightService.usesLbs
                 )
                 .frame(height: 200)
-                .padding()
-                .background(Color(.tertiarySystemBackground))
-                .cornerRadius(16)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
+        .padding(20)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
     }
     
     // MARK: - Recent Entries Section
     private var recentEntriesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Recent Entries")
                 .font(.headline)
                 .fontWeight(.bold)
+                .foregroundColor(.white)
             
             if weightService.recentLogs.isEmpty {
                 Text("No entries yet")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
-                    .padding()
+                    .padding(.vertical, 20)
             } else {
-                ForEach(weightService.recentLogs.prefix(10)) { log in
-                    WeightEntryRow(
-                        log: log,
-                        usesLbs: weightService.usesLbs,
-                        onDelete: {
-                            Task { await weightService.deleteLog(log) }
+                VStack(spacing: 12) {
+                    ForEach(weightService.recentLogs.prefix(10)) { log in
+                        DarkWeightEntryRow(
+                            log: log,
+                            usesLbs: weightService.usesLbs,
+                            onDelete: {
+                                Task { await weightService.deleteLog(log) }
+                            }
+                        )
+                        
+                        if log.id != weightService.recentLogs.prefix(10).last?.id {
+                            Divider()
+                                .background(Color.gray.opacity(0.3))
                         }
-                    )
+                    }
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
+        .padding(20)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
     }
 }
@@ -1113,6 +1363,114 @@ struct ChangeIndicator: View {
             }
             .foregroundColor(change >= 0 ? .orange : .green)
         }
+    }
+}
+
+// MARK: - Dark Change Indicator (for dark detail view)
+
+struct DarkChangeIndicator: View {
+    let title: String
+    let change: Double
+    let suffix: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.gray)
+            
+            HStack(spacing: 4) {
+                Image(systemName: change >= 0 ? "arrow.up" : "arrow.down")
+                    .font(.caption)
+                
+                Text(String(format: "%+.1f %@", change, suffix))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(change >= 0 ? .orange : .green)
+        }
+    }
+}
+
+// MARK: - Dark Weight Stat Box (for dark detail view)
+
+struct DarkWeightStatBox: View {
+    let title: String
+    let value: String
+    let unit: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+            
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            Text(unit)
+                .font(.caption)
+                .foregroundColor(.gray)
+            
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(white: 0.12))
+        .cornerRadius(14)
+    }
+}
+
+// MARK: - Dark Weight Entry Row (for dark detail view)
+
+struct DarkWeightEntryRow: View {
+    let log: WeightLog
+    let usesLbs: Bool
+    let onDelete: () -> Void
+    
+    private var weight: Double {
+        usesLbs ? log.weightLbs : log.weightKg
+    }
+    
+    private var suffix: String {
+        usesLbs ? "lbs" : "kg"
+    }
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(formatDate(log.loggedAt))
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                
+                if let notes = log.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+            
+            Text("\(String(format: "%.1f", weight)) \(suffix)")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.orange)
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

@@ -496,33 +496,55 @@ final class VideoPlaybackEngine: ObservableObject {
         cacheQueue.async { [weak self] in
             guard let self = self else { return }
             
-            let count = self.warmCache.count
-            for cached in self.warmCache.values {
+            var clearedCount = 0
+            var protectedCount = 0
+            
+            // Only clear videos that aren't currently playing
+            for (key, cached) in self.warmCache {
+                // Protect actively playing videos from cache cleanup
+                if cached.player.timeControlStatus == .playing {
+                    protectedCount += 1
+                    #if DEBUG
+                    print("🛡️ [VIDEO] Protecting active video from cleanup: \(key)")
+                    #endif
+                    continue
+                }
+                
                 self.cleanupPlayer(cached.player, looper: cached.looper)
+                self.warmCache.removeValue(forKey: key)
+                clearedCount += 1
             }
-            self.warmCache.removeAll()
-            self.warmCacheOrder.removeAll()
+            
+            // Remove from order list as well
+            self.warmCacheOrder = self.warmCacheOrder.filter { self.warmCache.keys.contains($0) }
             
             #if DEBUG
-            print("🧹 [VIDEO] Cleared \(count) warm cache entries")
+            print("🧹 [VIDEO] Cleared \(clearedCount) warm cache entries, protected \(protectedCount) active videos")
             #endif
         }
     }
     
     /// Reduce memory footprint (for memory pressure)
     func reduceMemoryFootprint() {
-        // Clear warm cache
+        // Clear warm cache (protects active videos)
         clearWarmCache()
         
-        // Reduce hot cache to just favorites
+        // Reduce hot cache to just favorites and active videos
         cacheQueue.async { [weak self] in
             guard let self = self else { return }
             
             var keysToRemove: [String] = []
-            for (key, _) in self.hotCache {
-                if !self.favoriteExercises.contains(key) {
-                    keysToRemove.append(key)
+            for (key, cached) in self.hotCache {
+                // Protect actively playing videos
+                if cached.player.timeControlStatus == .playing {
+                    continue
                 }
+                // Protect favorites
+                if self.favoriteExercises.contains(key) {
+                    continue
+                }
+                // Remove non-favorites that aren't playing
+                keysToRemove.append(key)
             }
             
             for key in keysToRemove {

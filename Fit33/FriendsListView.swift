@@ -19,6 +19,7 @@ struct FriendsListView: View {
     @State private var showingFriendProfile: Friend?
     @State private var showingReceivedWorkouts = false
     @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
+    @State private var isRefreshingRequests = false // For pull-to-refresh on requests tab
     
     // Adaptive colors
     private var cardBackground: Color {
@@ -91,8 +92,18 @@ struct FriendsListView: View {
                 selectedTab = initialTab
             }
             
-            // Only load data on first appear to prevent navigation disruption
-            // Subsequent appears (e.g., returning from detail view) skip the load
+            // ALWAYS refresh pending requests when coming from a deep link (notification tap)
+            // This ensures the request is fetched and displayed even if there's a race condition
+            if initialTab == 1 {
+                print("👥 [FRIENDS] Opened from notification - forcing refresh of pending requests")
+                Task {
+                    await friendService.fetchPendingRequests()
+                    await friendService.fetchSentRequests()
+                }
+            }
+            
+            // Only load ALL data on first appear to prevent navigation disruption
+            // Subsequent appears (e.g., returning from detail view) skip the full load
             guard !hasLoadedInitialData else { return }
             hasLoadedInitialData = true
             
@@ -245,6 +256,18 @@ struct FriendsListView: View {
     private var requestsContent: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
+                // Loading indicator when refreshing
+                if isRefreshingRequests {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Refreshing...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 10)
+                }
+                
                 // Incoming Requests Section
                 if !friendService.pendingRequests.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
@@ -283,8 +306,8 @@ struct FriendsListView: View {
                     }
                 }
                 
-                // Empty state - only show if both incoming and sent are empty
-                if friendService.pendingRequests.isEmpty && friendService.sentRequests.isEmpty {
+                // Empty state - only show if both incoming and sent are empty AND not loading
+                if friendService.pendingRequests.isEmpty && friendService.sentRequests.isEmpty && !isRefreshingRequests {
                     emptyRequestsState
                         .padding(.top, 50)
                 }
@@ -292,9 +315,18 @@ struct FriendsListView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 100)
         }
-        .task {
-            // Fetch sent requests when tab is shown
+        .refreshable {
+            // Pull-to-refresh to force reload requests
+            print("👥 [FRIENDS] Pull-to-refresh on requests tab")
+            await friendService.fetchPendingRequests()
             await friendService.fetchSentRequests()
+        }
+        .task {
+            // Fetch requests when tab is shown
+            isRefreshingRequests = true
+            await friendService.fetchPendingRequests()
+            await friendService.fetchSentRequests()
+            isRefreshingRequests = false
         }
     }
     

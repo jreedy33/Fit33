@@ -1063,6 +1063,27 @@ struct BugReportCard: View {
                     }
                 }
                 
+                // User info row
+                HStack(spacing: 8) {
+                    Image(systemName: "person.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    Text(bug.displayUserName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    if bug.userEmail != nil {
+                        Text("•")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(bug.displayUserEmail)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                
                 // Description preview
                 Text(bug.description)
                     .font(.subheadline)
@@ -1126,6 +1147,9 @@ struct BugDetailView: View {
     @StateObject private var bugService = BugReportService.shared
     @State private var showingDeleteConfirmation = false
     @State private var showingFullScreenshot = false
+    @State private var showingFullLog = false
+    @State private var showingShareSheet = false
+    @State private var shareItems: [Any] = []
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
@@ -1138,9 +1162,17 @@ struct BugDetailView: View {
                     // Status section
                     statusSection
                     
+                    // User info section (for contacting reporter)
+                    userInfoSection
+                    
                     // Screenshot section
                     if bug.hasScreenshot {
                         screenshotSection
+                    }
+                    
+                    // Session log section
+                    if bug.hasSessionLog {
+                        sessionLogSection
                     }
                     
                     // Description section
@@ -1190,6 +1222,12 @@ struct BugDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingShareSheet) {
+            ActivityShareSheet(items: shareItems)
+        }
+        .sheet(isPresented: $showingFullLog) {
+            BugReportFullLogView(log: bug.sessionLog ?? "", bugId: bug.id)
+        }
         .alert("Delete Bug Report?", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -1237,6 +1275,85 @@ struct BugDetailView: View {
         .cornerRadius(12)
     }
     
+    private var userInfoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "person.circle.fill")
+                    .foregroundColor(.blue)
+                Text("Reporter")
+                    .font(.headline)
+                Spacer()
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                // Username
+                HStack(spacing: 8) {
+                    Image(systemName: "person.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 20)
+                    Text(bug.displayUserName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                
+                // Email with copy button
+                HStack(spacing: 8) {
+                    Image(systemName: "envelope.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 20)
+                    Text(bug.displayUserEmail)
+                        .font(.subheadline)
+                        .foregroundColor(bug.userEmail != nil ? .primary : .secondary)
+                    
+                    Spacer()
+                    
+                    if let email = bug.userEmail {
+                        Button {
+                            UIPasteboard.general.string = email
+                            let generator = UINotificationFeedbackGenerator()
+                            generator.notificationOccurred(.success)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                
+                // User ID if available
+                if let userId = bug.userId {
+                    HStack(spacing: 8) {
+                        Image(systemName: "key.fill")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                        Text(userId.uuidString.prefix(8) + "...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospaced()
+                        
+                        Spacer()
+                        
+                        Button {
+                            UIPasteboard.general.string = userId.uuidString
+                            let generator = UINotificationFeedbackGenerator()
+                            generator.notificationOccurred(.success)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(12)
+    }
+    
     private var screenshotSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -1245,9 +1362,18 @@ struct BugDetailView: View {
                 Text("Screenshot")
                     .font(.headline)
                 Spacer()
-                Text("Tap to enlarge")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                
+                // Share button
+                if let screenshot = bug.decodedScreenshot {
+                    Button {
+                        shareItems = [screenshot]
+                        showingShareSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                }
             }
             
             if let screenshot = bug.decodedScreenshot {
@@ -1288,6 +1414,70 @@ struct BugDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     )
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(12)
+    }
+    
+    private var sessionLogSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "doc.text.fill")
+                    .foregroundColor(.orange)
+                Text("Session Log")
+                    .font(.headline)
+                Spacer()
+                
+                // Copy button
+                Button {
+                    UIPasteboard.general.string = bug.sessionLog
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+                
+                // Share button
+                Button {
+                    if let log = bug.sessionLog {
+                        shareItems = [log]
+                        showingShareSheet = true
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+            }
+            
+            // Log preview
+            if let log = bug.sessionLog {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(log.prefix(500)) + (log.count > 500 ? "..." : ""))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(12)
+                    
+                    Button {
+                        showingFullLog = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "eye")
+                            Text("View Full Log (\(log.count) chars)")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.orange)
+                        .cornerRadius(8)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
         .padding()
@@ -1789,6 +1979,102 @@ struct QualityAuditTabContent: View {
     }
 }
 #endif
+
+// MARK: - Full Log View (for Bug Reports)
+struct BugReportFullLogView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    let log: String
+    let bugId: UUID
+    @State private var showingShareSheet = false
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Quick stats
+                    HStack(spacing: 16) {
+                        logStatBadge(icon: "doc.text", value: "\(log.count)", label: "chars")
+                        logStatBadge(icon: "text.line.first.and.arrowtriangle.forward", value: "\(log.components(separatedBy: "\n").count)", label: "lines")
+                    }
+                    .padding(.horizontal)
+                    
+                    // Log content
+                    Text(log)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(colorScheme == .dark ? Color(white: 0.1) : Color(white: 0.95))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                }
+                .padding(.vertical)
+            }
+            .background(colorScheme == .dark ? Color(white: 0.08) : Color(red: 0.95, green: 0.96, blue: 0.98))
+            .navigationTitle("Session Log")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // Copy button
+                    Button {
+                        UIPasteboard.general.string = log
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    
+                    // Share button
+                    Button {
+                        showingShareSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ActivityShareSheet(items: [log])
+        }
+    }
+    
+    private func logStatBadge(icon: String, value: String, label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundColor(.blue)
+            Text(value)
+                .font(.caption)
+                .fontWeight(.bold)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(8)
+    }
+}
+
+// Simple share sheet wrapper for bug reports
+struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
 
 #Preview("Dev Menu") {
     NavigationView {

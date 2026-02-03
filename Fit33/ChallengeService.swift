@@ -308,7 +308,7 @@ class ChallengeService: ObservableObject {
         dailyTarget: Int? = nil,
         totalTarget: Int? = nil,
         targetUnit: String = "count",
-        startDate: Date = Date().addingTimeInterval(86400), // Tomorrow
+        startDate: Date = Date(), // Today - challenge starts when opponent accepts
         durationDays: Int = 7
     ) async -> UUID? {
         do {
@@ -349,10 +349,57 @@ class ChallengeService: ObservableObject {
             // Refresh active challenges
             await fetchActiveChallenges()
             
+            // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier
+            // This ensures creators get credit for progress made before creating the challenge
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            let challengeStartDay = calendar.startOfDay(for: startDate)
+            
+            if challengeStartDay <= today {
+                print("🔄 [CHALLENGES] Challenge starts today - syncing creator's existing progress...")
+                await syncCreatorProgressOnCreate(
+                    challengeId: challengeId,
+                    challengeType: type,
+                    targetUnit: targetUnit
+                )
+            }
+            
             return challengeId
         } catch {
             print("❌ [CHALLENGES] Error creating challenge: \(error)")
             return nil
+        }
+    }
+    
+    /// Sync creator's existing health data when they create a challenge that starts today
+    /// This ensures they get credit for progress already made before creating the challenge
+    private func syncCreatorProgressOnCreate(challengeId: UUID, challengeType: ChallengeType, targetUnit: String) async {
+        print("🔄 [CHALLENGES] Syncing creator's existing progress for newly created challenge...")
+        
+        // First, refresh HealthKit data to ensure we have the latest
+        print("📱 [CHALLENGES] Refreshing HealthKit data for creator...")
+        await HealthKitService.shared.syncAllData(force: true)
+        
+        // Calculate progress from all available health data sources
+        let progressValue = await calculateTotalProgressFromAllSources(
+            challengeType: challengeType.rawValue,
+            targetUnit: targetUnit
+        )
+        
+        if progressValue > 0 {
+            print("📊 [CHALLENGES] Found existing creator progress: \(progressValue) \(targetUnit)")
+            
+            let success = await logProgress(
+                challengeId: challengeId,
+                progressValue: progressValue,
+                source: "healthkit"
+            )
+            
+            if success {
+                print("✅ [CHALLENGES] Logged creator's initial progress of \(progressValue) \(targetUnit)")
+            }
+        } else {
+            print("ℹ️ [CHALLENGES] No existing progress to sync for creator")
         }
     }
     
@@ -432,7 +479,7 @@ class ChallengeService: ObservableObject {
             let success = await logProgress(
                 challengeId: challengeId,
                 progressValue: progressValue,
-                source: "initial_sync"
+                source: "healthkit"
             )
             
             if success {
@@ -647,15 +694,24 @@ class ChallengeService: ObservableObject {
         print("🔄 [CHALLENGES] Syncing HealthKit data to \(activeChallenges.count) active challenges...")
         
         for challenge in activeChallenges {
-            // Only sync if challenge is active (not pending)
-            guard challenge.status == "active" else { continue }
+            print("📊 [CHALLENGES] Checking challenge '\(challenge.title)' (status: \(challenge.status))")
+            
+            // Sync if challenge is active OR pending (pending means accepted but waiting for start date)
+            // This ensures users who accept early get credit for progress made before start date
+            guard challenge.status == "active" || challenge.status == "pending" else {
+                print("⏭️ [CHALLENGES] Skipping '\(challenge.title)' - status is '\(challenge.status)'")
+                continue
+            }
             
             let progressValue = await calculateProgressFromHealthKit(
                 challengeType: challenge.challengeType,
                 targetUnit: challenge.targetUnit
             )
             
+            print("📊 [CHALLENGES] Calculated \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'")
+            
             if progressValue > 0 {
+                print("🔄 [CHALLENGES] Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'...")
                 let success = await logProgress(
                     challengeId: challenge.challengeId,
                     progressValue: progressValue,
@@ -664,9 +720,15 @@ class ChallengeService: ObservableObject {
                 
                 if success {
                     print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to '\(challenge.title)' from HealthKit")
+                } else {
+                    print("❌ [CHALLENGES] Failed to sync progress for '\(challenge.title)'")
                 }
+            } else {
+                print("⏭️ [CHALLENGES] Skipping '\(challenge.title)' - progressValue is 0")
             }
         }
+        
+        print("✅ [CHALLENGES] HealthKit sync complete for all challenges")
     }
     
     /// Calculate progress value from HealthKit based on challenge type
@@ -856,6 +918,61 @@ class ChallengeService: ObservableObject {
         }
     }
     
+    // MARK: - Multi-Source Challenge Integration
+    
+    /// Log progress from any source (Fitbit, Strava, HealthKit, etc.)
+    /// This is called by HealthDataService to sync all sources to challenges
+    func logProgressFromSource(challengeType: String, progressValue: Int, source: String) async {
+        guard progressValue > 0 else { return }
+        
+        for challenge in activeChallenges {
+            guard challenge.status == "active" || challenge.status == "pending" else { continue }
+            guard challenge.challengeType == challengeType else { continue }
+            
+            let success = await logProgress(
+                challengeId: challenge.challengeId,
+                progressValue: progressValue,
+                source: source
+            )
+            
+            if success {
+                print("✅ [CHALLENGES] Logged \(source) \(challengeType): \(progressValue) to '\(challenge.title)'")
+            }
+        }
+    }
+    
+    /// Recalculate progress for all active challenges from all sources
+    /// Called after all health data sources have synced
+    func recalculateAllChallengeProgress() async {
+        guard !activeChallenges.isEmpty else { return }
+        
+        print("🔄 [CHALLENGES] Recalculating progress for \(activeChallenges.count) challenges...")
+        
+        for challenge in activeChallenges {
+            guard challenge.status == "active" || challenge.status == "pending" else { continue }
+            
+            // Calculate total progress from ALL sources
+            let totalProgress = await calculateTotalProgressFromAllSources(
+                challengeType: challenge.challengeType,
+                targetUnit: challenge.targetUnit
+            )
+            
+            if totalProgress > 0 {
+                // Log the max progress (this handles deduplication via the database)
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: totalProgress,
+                    source: "aggregated"
+                )
+            }
+        }
+        
+        // Refresh challenges to show updated progress
+        await fetchActiveChallenges()
+        
+        print("✅ [CHALLENGES] All challenge progress recalculated")
+    }
+    
     // MARK: - Get Challenge Details
     
     func getChallengeDetails(challengeId: UUID) async -> ChallengeDetails? {
@@ -873,6 +990,32 @@ class ChallengeService: ObservableObject {
         } catch {
             print("❌ [CHALLENGES] Error fetching challenge details: \(error)")
             return nil
+        }
+    }
+    
+    // MARK: - Toggle Notification Preference
+    
+    /// Toggle whether to receive push notifications when opponent completes their daily challenge
+    func toggleChallengeNotificationPreference(challengeId: UUID, notify: Bool) async -> Bool {
+        do {
+            struct ToggleParams: Encodable {
+                let p_challenge_id: String
+                let p_notify: Bool
+            }
+            
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("toggle_challenge_notification_preference", params: ToggleParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_notify: notify
+                ))
+                .execute()
+                .value
+            
+            print("✅ [CHALLENGES] Notification preference updated: \(notify ? "ON" : "OFF")")
+            return true
+        } catch {
+            print("❌ [CHALLENGES] Error updating notification preference: \(error)")
+            return false
         }
     }
     
@@ -1253,12 +1396,18 @@ struct ChallengeDetails: Codable, Identifiable {
     let durationDays: Int
     let status: String
     let createdAt: Date
+    let notifyOnOpponentComplete: Bool?
     let participants: [ChallengeParticipantDetails]?
     
     var id: UUID { challengeId }
     
     var startDate: Date { parseFlexibleDate(startDateString) }
     var endDate: Date { parseFlexibleDate(endDateString) }
+    
+    /// Returns the notification preference, defaulting to true if not set
+    var shouldNotifyOnOpponentComplete: Bool {
+        notifyOnOpponentComplete ?? true
+    }
     
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
@@ -1273,6 +1422,7 @@ struct ChallengeDetails: Codable, Identifiable {
         case durationDays = "duration_days"
         case status
         case createdAt = "created_at"
+        case notifyOnOpponentComplete = "notify_on_opponent_complete"
         case participants
     }
 }

@@ -53,6 +53,7 @@ struct MealPlanView: View {
                 print("Food entry received: \(foodEntry.name)")
                 addFoodEntry(foodEntry)
             }
+            .environmentObject(userManager)
         }
         .onChange(of: showingAddFood) { isShowing in
             print("Sheet presentation state changed: \(isShowing)")

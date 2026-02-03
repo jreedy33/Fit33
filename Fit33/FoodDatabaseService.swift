@@ -270,7 +270,14 @@ class FoodDatabaseService: ObservableObject {
             
             let (data, _) = try await URLSession.shared.data(for: urlRequest)
             
-            // Decode
+            // First check if this is an error response from the edge function
+            if let errorResponse = try? JSONDecoder().decode(EdgeFunctionErrorResponse.self, from: data),
+               let errorMessage = errorResponse.error {
+                print("❌ [CLOUD] Edge function error: \(errorMessage)")
+                throw NSError(domain: "EdgeFunction", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+            }
+            
+            // Decode the search response
             let response = try JSONDecoder().decode(CloudFoodSearchResponse.self, from: data)
             
             print("✅ [CLOUD] Found \(response.foods.count) foods (source: \(response.source))")
@@ -701,8 +708,11 @@ class FoodDatabaseService: ObservableObject {
 
 // MARK: - Cloud Food Models
 
-// CloudFood matches the USDA API JSON structure (camelCase)
+/// CloudFood handles BOTH direct USDA API responses AND cached database responses
+/// Database returns snake_case columns with direct nutrition values
+/// USDA API returns camelCase with foodNutrients array
 struct CloudFood: Decodable {
+    // Core identifiers
     let fdcId: Int
     let description: String
     let dataType: String?
@@ -712,59 +722,209 @@ struct CloudFood: Decodable {
     let servingSize: Double?
     let servingSizeUnit: String?
     let householdServingFullText: String?
+    
+    // Direct nutrition values (from database cache)
+    let calories: Double?
+    let protein: Double?
+    let carbohydrates: Double?
+    let totalFat: Double?
+    let saturatedFat: Double?
+    let fiber: Double?
+    let sugar: Double?
+    let sodium: Double?
+    let cholesterol: Double?
+    let calcium: Double?
+    let iron: Double?
+    let vitaminC: Double?
+    
+    // Raw nutrient array (from USDA API or database nutrition_data column)
     let foodNutrients: [USDANutrient]?
+    
+    // Portions from USDA (for serving size options like "1 cup", "100g", etc.)
+    let portions: [CloudFoodPortion]?
+    
+    // CodingKeys to handle snake_case from database AND camelCase from USDA API
+    enum CodingKeys: String, CodingKey {
+        case fdcId = "fdc_id"
+        case fdcIdCamel = "fdcId"
+        case description
+        case name  // Database uses 'name' column
+        case dataType = "data_type"
+        case dataTypeCamel = "dataType"
+        case brandName = "brand_name"
+        case brandNameCamel = "brandName"
+        case brandOwner = "brand_owner"
+        case brandOwnerCamel = "brandOwner"
+        case foodCategory = "category"
+        case foodCategoryCamel = "foodCategory"
+        case servingSize = "serving_size"
+        case servingSizeCamel = "servingSize"
+        case servingSizeUnit = "serving_unit"
+        case servingSizeUnitCamel = "servingSizeUnit"
+        case householdServingFullText = "household_serving"
+        case householdServingFullTextCamel = "householdServingFullText"
+        // Direct nutrition columns
+        case calories
+        case protein
+        case carbohydrates
+        case totalFat = "total_fat"
+        case saturatedFat = "saturated_fat"
+        case fiber
+        case sugar
+        case sodium
+        case cholesterol
+        case calcium
+        case iron
+        case vitaminC = "vitamin_c"
+        // Raw nutrient data
+        case foodNutrients
+        case nutritionData = "nutrition_data"
+        // Portions
+        case portions
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // fdcId: try snake_case first, then camelCase
+        if let id = try? container.decode(Int.self, forKey: .fdcId) {
+            fdcId = id
+        } else if let id = try? container.decode(Int.self, forKey: .fdcIdCamel) {
+            fdcId = id
+        } else {
+            throw DecodingError.keyNotFound(CodingKeys.fdcId, DecodingError.Context(codingPath: container.codingPath, debugDescription: "fdcId or fdc_id required"))
+        }
+        
+        // description: try description first, then name (database column)
+        if let desc = try? container.decode(String.self, forKey: .description) {
+            description = desc
+        } else if let name = try? container.decode(String.self, forKey: .name) {
+            description = name
+        } else {
+            throw DecodingError.keyNotFound(CodingKeys.description, DecodingError.Context(codingPath: container.codingPath, debugDescription: "description or name required"))
+        }
+        
+        // dataType
+        dataType = (try? container.decode(String.self, forKey: .dataType)) ?? (try? container.decode(String.self, forKey: .dataTypeCamel))
+        
+        // brandName
+        brandName = (try? container.decode(String.self, forKey: .brandName)) ?? (try? container.decode(String.self, forKey: .brandNameCamel))
+        
+        // brandOwner  
+        brandOwner = (try? container.decode(String.self, forKey: .brandOwner)) ?? (try? container.decode(String.self, forKey: .brandOwnerCamel))
+        
+        // foodCategory
+        foodCategory = (try? container.decode(String.self, forKey: .foodCategory)) ?? (try? container.decode(String.self, forKey: .foodCategoryCamel))
+        
+        // servingSize
+        servingSize = (try? container.decode(Double.self, forKey: .servingSize)) ?? (try? container.decode(Double.self, forKey: .servingSizeCamel))
+        
+        // servingSizeUnit
+        servingSizeUnit = (try? container.decode(String.self, forKey: .servingSizeUnit)) ?? (try? container.decode(String.self, forKey: .servingSizeUnitCamel))
+        
+        // householdServingFullText
+        householdServingFullText = (try? container.decode(String.self, forKey: .householdServingFullText)) ?? (try? container.decode(String.self, forKey: .householdServingFullTextCamel))
+        
+        // Direct nutrition values (from database cache)
+        calories = try? container.decode(Double.self, forKey: .calories)
+        protein = try? container.decode(Double.self, forKey: .protein)
+        carbohydrates = try? container.decode(Double.self, forKey: .carbohydrates)
+        totalFat = try? container.decode(Double.self, forKey: .totalFat)
+        saturatedFat = try? container.decode(Double.self, forKey: .saturatedFat)
+        fiber = try? container.decode(Double.self, forKey: .fiber)
+        sugar = try? container.decode(Double.self, forKey: .sugar)
+        sodium = try? container.decode(Double.self, forKey: .sodium)
+        cholesterol = try? container.decode(Double.self, forKey: .cholesterol)
+        calcium = try? container.decode(Double.self, forKey: .calcium)
+        iron = try? container.decode(Double.self, forKey: .iron)
+        vitaminC = try? container.decode(Double.self, forKey: .vitaminC)
+        
+        // foodNutrients: try camelCase first, then nutrition_data from database
+        if let nutrients = try? container.decode([USDANutrient].self, forKey: .foodNutrients) {
+            foodNutrients = nutrients
+        } else if let nutrients = try? container.decode([USDANutrient].self, forKey: .nutritionData) {
+            foodNutrients = nutrients
+        } else {
+            foodNutrients = nil
+        }
+        
+        // Portions
+        portions = try? container.decode([CloudFoodPortion].self, forKey: .portions)
+    }
     
     func toProcessedFoodItem() -> ProcessedFoodItem {
         print("🔄 [CloudFood] Converting FDC \(fdcId): \(description)")
         
-        // Extract nutrition from foodNutrients array
-        var calories: Double = 0
-        var protein: Double = 0
-        var carbs: Double = 0
-        var fat: Double = 0
-        var saturatedFat: Double = 0
-        var fiber: Double = 0
-        var sugar: Double = 0
-        var sodium: Double = 0
-        var cholesterol: Double = 0
-        var calcium: Double = 0
-        var iron: Double = 0
-        var vitaminC: Double = 0
+        // PRIORITY 1: Use direct nutrition values from database cache
+        // These are the accurate USDA values stored per 100g
+        var finalCalories: Double = calories ?? 0
+        var finalProtein: Double = protein ?? 0
+        var finalCarbs: Double = carbohydrates ?? 0
+        var finalFat: Double = totalFat ?? 0
+        var finalSaturatedFat: Double = saturatedFat ?? 0
+        var finalFiber: Double = fiber ?? 0
+        var finalSugar: Double = sugar ?? 0
+        var finalSodium: Double = sodium ?? 0
+        var finalCholesterol: Double = cholesterol ?? 0
+        var finalCalcium: Double = calcium ?? 0
+        var finalIron: Double = iron ?? 0
+        var finalVitaminC: Double = vitaminC ?? 0
         
-        if let nutrients = foodNutrients {
+        // PRIORITY 2: If direct values are all zero, try foodNutrients array
+        let hasDirectValues = finalCalories > 0 || finalProtein > 0 || finalCarbs > 0 || finalFat > 0
+        
+        if !hasDirectValues, let nutrients = foodNutrients {
+            print("📊 [CloudFood] Using foodNutrients array (\(nutrients.count) nutrients)")
             for nutrient in nutrients {
                 switch nutrient.nutrientNumber {
-                case "208": calories = nutrient.value
-                case "203": protein = nutrient.value
-                case "205": carbs = nutrient.value
-                case "204": fat = nutrient.value
-                case "606": saturatedFat = nutrient.value
-                case "291": fiber = nutrient.value
-                case "269": sugar = nutrient.value
-                case "307": sodium = nutrient.value
-                case "601": cholesterol = nutrient.value
-                case "301": calcium = nutrient.value
-                case "303": iron = nutrient.value
-                case "401": vitaminC = nutrient.value
+                case "208": finalCalories = nutrient.value
+                case "203": finalProtein = nutrient.value
+                case "205": finalCarbs = nutrient.value
+                case "204": finalFat = nutrient.value
+                case "606": finalSaturatedFat = nutrient.value
+                case "291": finalFiber = nutrient.value
+                case "269": finalSugar = nutrient.value
+                case "307": finalSodium = nutrient.value
+                case "601": finalCholesterol = nutrient.value
+                case "301": finalCalcium = nutrient.value
+                case "303": finalIron = nutrient.value
+                case "401": finalVitaminC = nutrient.value
                 default: break
                 }
             }
         }
         
+        print("📊 [CloudFood] Final nutrition: \(Int(finalCalories)) cal, \(finalProtein)p, \(finalCarbs)c, \(finalFat)f")
+        
         let nutrition = NutritionInfo(
-            calories: calories,
-            protein: protein,
-            carbohydrates: carbs,
-            totalFat: fat,
-            saturatedFat: saturatedFat,
-            fiber: fiber,
-            sugar: sugar,
-            sodium: sodium,
-            cholesterol: cholesterol,
-            calcium: calcium,
-            iron: iron,
-            vitaminC: vitaminC
+            calories: finalCalories,
+            protein: finalProtein,
+            carbohydrates: finalCarbs,
+            totalFat: finalFat,
+            saturatedFat: finalSaturatedFat,
+            fiber: finalFiber,
+            sugar: finalSugar,
+            sodium: finalSodium,
+            cholesterol: finalCholesterol,
+            calcium: finalCalcium,
+            iron: finalIron,
+            vitaminC: finalVitaminC
         )
+        
+        // Convert portions to FoodPortion array
+        let foodPortions: [FoodPortion] = (portions ?? []).map { portion in
+            FoodPortion(
+                id: portion.id,
+                amount: portion.amount,
+                unit: portion.unit,
+                gramWeight: portion.gramWeight,
+                description: portion.portionDescription
+            )
+        }
+        
+        // For Foundation/SR Legacy foods, ensure we have 100g as default
+        // USDA nutrition data is ALWAYS per 100g for these data types
+        let effectiveServingSize = servingSize ?? 100.0
         
         let result = ProcessedFoodItem(
             id: fdcId,
@@ -772,13 +932,14 @@ struct CloudFood: Decodable {
             brandName: brandName,
             description: description,
             category: foodCategory,
-            servingSize: servingSize ?? 100.0,
+            servingSize: effectiveServingSize,
             servingUnit: servingSizeUnit ?? "g",
             nutrition: nutrition,
-            portions: []
+            portions: foodPortions,
+            dataType: dataType  // Pass dataType for ranking
         )
         
-        print("✅ [CloudFood] Converted successfully")
+        print("✅ [CloudFood] Converted successfully with \(foodPortions.count) portions, dataType: \(dataType ?? "unknown")")
         return result
     }
 }
@@ -788,7 +949,46 @@ struct CloudFoodPortion: Decodable {
     let amount: Double
     let unit: String
     let gramWeight: Double
-    let description: String?
+    let portionDescription: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case amount
+        case unit
+        case gramWeight = "gram_weight"
+        case gramWeightCamel = "gramWeight"
+        case description  // Original USDA format
+        case portionDescription  // Edge function format
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // id: with fallback to 0
+        id = (try? container.decode(Int.self, forKey: .id)) ?? 0
+        
+        // amount: with fallback to 1
+        amount = (try? container.decode(Double.self, forKey: .amount)) ?? 1.0
+        
+        // unit: with fallback to "serving" if missing or null
+        unit = (try? container.decode(String.self, forKey: .unit)) ?? "serving"
+        
+        // gramWeight: try snake_case first, then camelCase, then default
+        if let gw = try? container.decode(Double.self, forKey: .gramWeight) {
+            gramWeight = gw
+        } else if let gw = try? container.decode(Double.self, forKey: .gramWeightCamel) {
+            gramWeight = gw
+        } else {
+            gramWeight = 100.0 // Default to 100g if not specified
+        }
+        
+        // portionDescription: try both keys
+        if let desc = try? container.decode(String.self, forKey: .portionDescription) {
+            portionDescription = desc
+        } else {
+            portionDescription = try? container.decode(String.self, forKey: .description)
+        }
+    }
 }
 
 struct CloudFoodSearchResponse: Decodable {
@@ -801,6 +1001,11 @@ struct CloudFoodSearchResponse: Decodable {
 struct CloudFoodDetailsResponse: Decodable {
     let source: String
     let food: CloudFood
+}
+
+/// Response when edge function returns an error
+struct EdgeFunctionErrorResponse: Decodable {
+    let error: String?
 }
 
 // MARK: - Frequent Food Item
@@ -857,7 +1062,8 @@ struct FrequentFoodItem: Identifiable {
             servingSize: servingSize,
             servingUnit: servingUnit,
             nutrition: nutrition,
-            portions: []
+            portions: [],
+            dataType: "Hardcoded"  // Local hardcoded foods
         )
     }
 }

@@ -7,6 +7,7 @@ struct BugReport: Codable, Identifiable {
     let id: UUID
     let userId: UUID?
     let userName: String?
+    let userEmail: String?
     let description: String
     let expectedBehavior: String?
     let reproducesEveryTime: Bool
@@ -17,6 +18,7 @@ struct BugReport: Codable, Identifiable {
     let appVersion: String?
     let screenName: String?
     let additionalInfo: String?
+    let sessionLog: String?
     let status: String
     let createdAt: Date
     
@@ -24,6 +26,7 @@ struct BugReport: Codable, Identifiable {
         case id
         case userId = "user_id"
         case userName = "user_name"
+        case userEmail = "user_email"
         case description
         case expectedBehavior = "expected_behavior"
         case reproducesEveryTime = "reproduces_every_time"
@@ -34,6 +37,7 @@ struct BugReport: Codable, Identifiable {
         case appVersion = "app_version"
         case screenName = "screen_name"
         case additionalInfo = "additional_info"
+        case sessionLog = "session_log"
         case status
         case createdAt = "created_at"
     }
@@ -43,12 +47,16 @@ struct BugReport: Codable, Identifiable {
     var displayOsVersion: String { osVersion ?? "Unknown" }
     var displayAppVersion: String { appVersion ?? "Unknown" }
     var displayExpectedBehavior: String { expectedBehavior ?? "" }
+    var displayUserName: String { userName ?? "Anonymous" }
+    var displayUserEmail: String { userEmail ?? "No email" }
+    var hasSessionLog: Bool { sessionLog != nil && !sessionLog!.isEmpty }
 }
 
 struct BugReportInsert: Codable {
     let id: UUID
     let userId: UUID?
     let userName: String?
+    let userEmail: String?
     let description: String
     let expectedBehavior: String
     let reproducesEveryTime: Bool
@@ -65,6 +73,7 @@ struct BugReportInsert: Codable {
         case id
         case userId = "user_id"
         case userName = "user_name"
+        case userEmail = "user_email"
         case description
         case expectedBehavior = "expected_behavior"
         case reproducesEveryTime = "reproduces_every_time"
@@ -269,16 +278,20 @@ class BugReportService: ObservableObject {
             let osVersion = "\(device.systemName) \(device.systemVersion)"
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
             
-            // Get user ID and name
+            // Get user ID, name, and email
             let userIdString: String
             let userName: String?
+            let userEmail: String?
             if let userId = SupabaseManager.shared.currentUser?.id {
                 userIdString = userId.uuidString
                 // Get user name from UserManager
                 userName = UserManager.shared.currentUser?.name
+                // Get email from SupabaseManager auth user
+                userEmail = SupabaseManager.shared.currentUser?.email
             } else {
                 userIdString = "anonymous"
                 userName = nil
+                userEmail = nil
             }
             
             // Create the report using the Codable struct
@@ -286,6 +299,7 @@ class BugReportService: ObservableObject {
                 id: UUID(),
                 userId: SupabaseManager.shared.currentUser?.id,
                 userName: userName,
+                userEmail: userEmail,
                 description: description,
                 expectedBehavior: expectedBehavior,
                 reproducesEveryTime: reproducesEveryTime,
@@ -304,6 +318,7 @@ class BugReportService: ObservableObject {
             print("  - Has screenshot: \(screenshotBase64 != nil)")
             print("  - User ID: \(userIdString)")
             print("  - User Name: \(userName ?? "anonymous")")
+            print("  - User Email: \(userEmail ?? "none")")
             
             // Insert using Codable struct
             let response = try await SupabaseManager.shared.supabaseClient

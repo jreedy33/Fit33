@@ -50,7 +50,10 @@ enum AppConfig {
         static let clientId = "198007"
         /// Note: Client secret should ideally be server-side only
         static let clientSecret = "fa5151258db944c5878d653c3166e7f08e2b92f3"
-        static let redirectUri = "fit33://strava"
+        /// IMPORTANT: In Strava API settings (https://www.strava.com/settings/api),
+        /// set "Authorization Callback Domain" to: localhost
+        /// This allows custom URL scheme redirects to work
+        static let redirectUri = "fit33://localhost/strava"
         static let authorizationUrl = "https://www.strava.com/oauth/authorize"
         static let tokenUrl = "https://www.strava.com/oauth/token"
         static let apiBaseUrl = "https://www.strava.com/api/v3"

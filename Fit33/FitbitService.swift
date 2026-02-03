@@ -558,6 +558,36 @@ final class FitbitService: ObservableObject {
                 UserManager.shared.updateStreak()
                 print("🔥 [FITBIT] Updated streak - found \(todayActivities.count) activities from today")
             }
+            
+            // 🏆 Sync today's activities to challenges
+            await syncActivitiesToChallenges(todayActivities)
+        }
+    }
+    
+    /// Sync Fitbit activities to active challenges
+    private func syncActivitiesToChallenges(_ activities: [FitbitActivity]) async {
+        let calendar = Calendar.current
+        let todayActivities = activities.filter { activity in
+            if let date = ISO8601DateFormatter().date(from: activity.startTime) {
+                return calendar.isDateInToday(date)
+            }
+            return false
+        }
+        
+        guard !todayActivities.isEmpty else {
+            print("📊 [FITBIT] No activities from today to sync to challenges")
+            return
+        }
+        
+        print("🏆 [FITBIT] Checking \(todayActivities.count) today's activities against challenges...")
+        
+        for activity in todayActivities {
+            await ChallengeService.shared.checkStravaWorkoutForChallenges(
+                workoutType: activity.activityName,
+                distanceMeters: activity.distance ?? 0,
+                durationSeconds: activity.activeDuration / 1000, // Convert from ms
+                source: "fitbit"
+            )
         }
     }
     

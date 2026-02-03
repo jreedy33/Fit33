@@ -336,6 +336,7 @@ RETURNS BOOLEAN AS $$
 DECLARE
     v_current_user_id UUID := auth.uid();
     v_challenge_status TEXT;
+    v_all_accepted BOOLEAN;
 BEGIN
     -- Verify user is a pending participant
     IF NOT EXISTS (
@@ -353,16 +354,26 @@ BEGIN
         joined_at = CASE WHEN p_accept THEN NOW() ELSE NULL END
     WHERE challenge_id = p_challenge_id AND user_id = v_current_user_id;
     
-    -- If accepted, check if challenge should start
+    -- If accepted, activate challenge immediately when both users have accepted
     IF p_accept THEN
-        -- If all participants accepted and start date is today or past, activate
-        IF NOT EXISTS (
+        -- Check if all participants have accepted
+        SELECT NOT EXISTS (
             SELECT 1 FROM challenge_participants
             WHERE challenge_id = p_challenge_id AND status = 'pending'
-        ) THEN
+        ) INTO v_all_accepted;
+        
+        -- If everyone accepted, activate immediately and set start date to today
+        IF v_all_accepted THEN
             UPDATE friend_challenges
-            SET status = 'active', updated_at = NOW()
-            WHERE id = p_challenge_id AND start_date <= CURRENT_DATE;
+            SET 
+                status = 'active',
+                start_date = CURRENT_DATE,  -- Start today!
+                end_date = CURRENT_DATE + (end_date - start_date),  -- Preserve duration
+                updated_at = NOW()
+            WHERE id = p_challenge_id 
+            AND status = 'pending';
+            
+            RAISE NOTICE 'Challenge activated immediately - starts today!';
         END IF;
     END IF;
     
@@ -934,9 +945,9 @@ BEGIN
     SET status = 'cancelled', updated_at = NOW()
     WHERE id = p_challenge_id;
     
-    -- Update participant statuses
+    -- Update participant statuses to 'left' (cancelled isn't a valid status for participants)
     UPDATE challenge_participants
-    SET status = 'cancelled', updated_at = NOW()
+    SET status = 'left'
     WHERE challenge_id = p_challenge_id;
     
     -- Queue notification to opponent if they exist

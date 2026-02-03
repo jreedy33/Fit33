@@ -34,9 +34,6 @@ struct PersonalizedProgramsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
-                // Header
-                headerSection
-                
                 // Active Program Widget (replaces "Best Match" when program is active)
                 if let active = activeProgram {
                     activeFullProgramWidget(active)
@@ -80,46 +77,6 @@ struct PersonalizedProgramsView: View {
         .ignoresSafeArea()
     }
     
-    // MARK: - Header
-    
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.purple, .blue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("10 Programs Built For You")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    
-                    Text("Personalized based on your goals, equipment & experience")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding(16)
-        .background(Color.cardBackground)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
-    }
     
     // MARK: - Active Program Full Widget
     

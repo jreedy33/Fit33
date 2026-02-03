@@ -1179,7 +1179,7 @@ struct ExerciseLibraryView: View {
                         .padding(.horizontal, 16)
                         // Add extra top padding when ad banner is showing to prevent overlap
                         .padding(.top, (!PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled) ? 70 : 4)
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 20)
                     }
                     .scrollDismissesKeyboard(.immediately)
                     .id(forceRenderID)

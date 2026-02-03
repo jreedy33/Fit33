@@ -280,44 +280,88 @@ class SupabaseManager: ObservableObject {
                 // Get email from Supabase session (Apple provides this to Supabase)
                 let appleEmail = session.user.email ?? "apple_user_\(session.user.id.uuidString.prefix(8))@private.appleid.com"
                 
-                // Priority for name:
-                // 1. appleProvidedName (directly from Apple credentials - only first sign-in)
-                // 2. Persisted name from previous sign-in (UserDefaults)
-                // 3. Supabase user metadata
-                // 4. Email prefix (if not private relay)
-                // 5. Fallback "Apple User"
-                var appleName: String
+                // Priority for FULL NAME (first + last):
+                // 1. appleProvidedName (FULL NAME directly from Apple credentials - only first sign-in)
+                // 2. Persisted full name from previous sign-in (UserDefaults - per user)
+                // 3. Global Apple name cache (survives account deletion)
+                // 4. Supabase user metadata (full_name or name)
+                // 5. Email prefix (if not private relay and looks like a real name)
+                // 6. Don't store anything (let user enter their name)
+                var appleFullName: String?
+                
+                print("🔍 [APPLE] Starting name resolution for user: \(session.user.id.uuidString.prefix(8))...")
+                print("🔍 [APPLE] appleProvidedName: \(appleProvidedName ?? "nil")")
                 
                 if let providedName = appleProvidedName, !providedName.isEmpty, providedName != "Apple User" {
-                    appleName = providedName
+                    appleFullName = providedName
                     // Persist for future sign-ins (Apple only provides name once)
+                    // Store both per-user AND globally (global survives account deletion)
                     UserDefaults.standard.set(providedName, forKey: "apple_user_name_\(session.user.id.uuidString)")
-                    print("💾 [APPLE] Persisted user name for future sign-ins: \(providedName)")
-                } else if let persistedName = UserDefaults.standard.string(forKey: "apple_user_name_\(session.user.id.uuidString)"), !persistedName.isEmpty {
-                    appleName = persistedName
-                    print("📂 [APPLE] Using persisted name from previous sign-in: \(persistedName)")
-                } else if let fullName = session.user.userMetadata["full_name"] as? String, !fullName.isEmpty {
-                    appleName = fullName
-                } else if let name = session.user.userMetadata["name"] as? String, !name.isEmpty {
-                    appleName = name
-                } else if let email = session.user.email, !email.contains("privaterelay") {
-                    // Use part of email as name if no name provided
-                    appleName = email.components(separatedBy: "@").first ?? "Apple User"
+                    UserDefaults.standard.set(providedName, forKey: "apple_global_name")
+                    print("💾 [APPLE] Persisted user FULL NAME for future sign-ins: \(providedName)")
+                    print("💾 [APPLE] Also stored globally as fallback")
                 } else {
-                    appleName = "Apple User"
+                    // Check per-user persisted name
+                    let persistedKey = "apple_user_name_\(session.user.id.uuidString)"
+                    let persistedFullName = UserDefaults.standard.string(forKey: persistedKey)
+                    print("🔍 [APPLE] Checking UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")")
+                    
+                    if let persistedFullName = persistedFullName, 
+                       !persistedFullName.isEmpty,
+                       persistedFullName != "Apple User" {
+                        appleFullName = persistedFullName
+                        print("📂 [APPLE] Using persisted FULL NAME from previous sign-in: \(persistedFullName)")
+                    } else {
+                        // Check global name cache (survives account deletion)
+                        let globalName = UserDefaults.standard.string(forKey: "apple_global_name")
+                        print("🔍 [APPLE] Checking global cache [apple_global_name]: \(globalName ?? "nil")")
+                        
+                        if let globalName = globalName, !globalName.isEmpty, globalName != "Apple User" {
+                            appleFullName = globalName
+                            // Restore to per-user cache
+                            UserDefaults.standard.set(globalName, forKey: "apple_user_name_\(session.user.id.uuidString)")
+                            print("📂 [APPLE] Using GLOBAL cached name (restored from previous session): \(globalName)")
+                        } else if let fullName = session.user.userMetadata["full_name"] as? String, !fullName.isEmpty {
+                            print("🔍 [APPLE] Checking metadata full_name: \(fullName)")
+                            if fullName != "Apple User" {
+                                appleFullName = fullName
+                            }
+                        } else if let name = session.user.userMetadata["name"] as? String, !name.isEmpty {
+                            print("🔍 [APPLE] Checking metadata name: \(name)")
+                            if name != "Apple User" {
+                                appleFullName = name
+                            }
+                        } else if let email = session.user.email, !email.contains("privaterelay"), !email.contains("@icloud") {
+                            // Only use email prefix if it looks like a real name (not private relay or iCloud)
+                            let emailPrefix = email.components(separatedBy: "@").first ?? ""
+                            // Check if email prefix looks like a real name (contains letters, not too many numbers)
+                            let letterCount = emailPrefix.filter { $0.isLetter }.count
+                            print("🔍 [APPLE] Checking email prefix: \(emailPrefix) (letters: \(letterCount))")
+                            if letterCount > 2 && emailPrefix.count > 2 {
+                                appleFullName = emailPrefix.capitalized
+                            }
+                        }
+                    }
                 }
                 
-                print("📧 Apple Sign-In - Email: \(appleEmail), Name: \(appleName)")
+                print("📧 Apple Sign-In - Email: \(appleEmail), Full Name: \(appleFullName ?? "(none - user will enter)")")
                 
                 // ⚠️ IMPORTANT: Do NOT create profile here!
                 // The profile should only be created when user taps "Create Account" at end of onboarding.
                 // This prevents "zombie" accounts with null data if user abandons onboarding.
-                // Store the Apple data temporarily - profile will be created in completeOnboarding()
-                UserDefaults.standard.set(appleName, forKey: "pending_oauth_name")
+                // Store the Apple FULL NAME temporarily ONLY if we have a valid one - profile will be created in completeOnboarding()
+                if let fullName = appleFullName, !fullName.isEmpty {
+                    UserDefaults.standard.set(fullName, forKey: "pending_oauth_name")
+                    print("🔐 [APPLE] Stored pending full name: \(fullName)")
+                } else {
+                    // Don't store anything - user will be prompted to enter their name
+                    UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
+                    print("🔐 [APPLE] ⚠️ No valid name available - user will be prompted to enter name")
+                    print("🔐 [APPLE] ℹ️ To fix: Sign out of Apple ID in Settings > [Your Name] > Sign In & Security > Apps Using Your Apple ID > Fit33 > Stop Using Apple ID")
+                    print("🔐 [APPLE] ℹ️ Then sign in again - Apple will provide your name on the FIRST sign-in with a new connection")
+                }
                 UserDefaults.standard.set(appleEmail, forKey: "pending_oauth_email")
                 UserDefaults.standard.synchronize()
-                print("🔐 [APPLE] Stored pending profile data (will create on onboarding completion)")
-                print("🔐 [APPLE] Pending name: \(appleName), email: \(appleEmail)")
                 
                 isNewUser = true
                 print("👤 New Apple user - needs onboarding")
@@ -765,6 +809,225 @@ class SupabaseManager: ObservableObject {
         }
     }
     
+    // MARK: - Onboarding Logging
+    
+    /// Log an onboarding event to the database for debugging
+    func logOnboardingEvent(
+        eventType: String,
+        stepName: String? = nil,
+        eventData: [String: Any]? = nil,
+        errorMessage: String? = nil,
+        sessionId: String? = nil
+    ) async {
+        do {
+            // Get device info
+            let deviceInfo: [String: Any] = [
+                "device_model": getDeviceModel(),
+                "os_version": UIDevice.current.systemVersion,
+                "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+                "build_number": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
+                "locale": Locale.current.identifier,
+                "timezone": TimeZone.current.identifier,
+                "language": Locale.preferredLanguages.first ?? "unknown",
+                "region": Locale.current.region?.identifier ?? "unknown"
+            ]
+            
+            // Build params
+            var params: [String: Any] = [
+                "p_event_type": eventType,
+                "p_device_info": deviceInfo
+            ]
+            
+            if let userId = currentUser?.id {
+                params["p_user_id"] = userId.uuidString
+            }
+            
+            if let sessionId = sessionId ?? OnboardingSessionManager.shared.currentSessionId {
+                params["p_session_id"] = sessionId
+            }
+            
+            if let stepName = stepName {
+                params["p_step_name"] = stepName
+            }
+            
+            if let eventData = eventData {
+                params["p_event_data"] = eventData
+            }
+            
+            if let errorMessage = errorMessage {
+                params["p_error_message"] = errorMessage
+            }
+            
+            // Call the RPC function (convert to Encodable for Supabase)
+            try await client.rpc("log_onboarding_event", params: params.toEncodable()).execute()
+            
+            print("📝 [ONBOARDING LOG] \(eventType) - \(stepName ?? "N/A")")
+        } catch {
+            // Don't throw - logging should never break the app
+            print("⚠️ [ONBOARDING LOG] Failed to log event: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Get the device model name
+    private func getDeviceModel() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        return identifier
+    }
+    
+    /// Log an individual field's value at a specific stage (collected, sent_to_db, verified_in_db)
+    func logOnboardingField(
+        fieldName: String,
+        stage: String, // "collected", "sent_to_db", "verified_in_db"
+        value: Any?,
+        rawInput: String? = nil,
+        convertedValue: String? = nil,
+        sessionId: String? = nil
+    ) async {
+        do {
+            // Determine field type and string value
+            let (fieldValue, fieldType) = stringifyValue(value)
+            
+            // Get device info
+            let deviceInfo: [String: Any] = [
+                "device_model": getDeviceModel(),
+                "os_version": UIDevice.current.systemVersion,
+                "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+                "locale": Locale.current.identifier,
+                "timezone": TimeZone.current.identifier,
+                "region": Locale.current.region?.identifier ?? "unknown"
+            ]
+            
+            var params: [String: Any] = [
+                "p_field_name": fieldName,
+                "p_stage": stage,
+                "p_field_type": fieldType,
+                "p_device_info": deviceInfo
+            ]
+            
+            if let userId = currentUser?.id {
+                params["p_user_id"] = userId.uuidString
+            }
+            
+            if let sessionId = sessionId ?? OnboardingSessionManager.shared.currentSessionId {
+                params["p_session_id"] = sessionId
+            }
+            
+            if let fieldValue = fieldValue {
+                params["p_field_value"] = fieldValue
+            }
+            
+            if let rawInput = rawInput {
+                params["p_raw_input"] = rawInput
+            }
+            
+            if let convertedValue = convertedValue {
+                params["p_converted_value"] = convertedValue
+            }
+            
+            try await client.rpc("log_onboarding_field", params: params.toEncodable()).execute()
+            
+            let valueDesc = fieldValue ?? "NULL"
+            print("📊 [FIELD LOG] \(fieldName) @ \(stage): \(valueDesc)")
+        } catch {
+            print("⚠️ [FIELD LOG] Failed: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Convert any value to a string representation for logging
+    private func stringifyValue(_ value: Any?) -> (String?, String) {
+        guard let value = value else {
+            return (nil, "null")
+        }
+        
+        if let str = value as? String {
+            return (str.isEmpty ? nil : str, "string")
+        } else if let num = value as? Int {
+            return (String(num), "number")
+        } else if let num = value as? Int16 {
+            return (String(num), "number")
+        } else if let num = value as? Double {
+            return (String(num), "number")
+        } else if let arr = value as? [String] {
+            return (arr.isEmpty ? nil : arr.joined(separator: ", "), "array")
+        } else if let bool = value as? Bool {
+            return (String(bool), "boolean")
+        } else {
+            return (String(describing: value), "unknown")
+        }
+    }
+    
+    /// Verify what's actually saved in the database and log it
+    func verifyAndLogSavedProfile() async {
+        guard let userId = currentUser?.id else { return }
+        
+        do {
+            struct ProfileRow: Decodable {
+                let name: String?
+                let email: String?
+                let username: String?
+                let age: Int?
+                let gender: String?
+                let height_cm: Double?
+                let weight_kg: Double?
+                let fitness_goal: String?
+                let experience_level: String?
+                let equipment: [String]?
+                let available_days: Int?
+                let workout_environment: String?
+                let birthday: String?
+            }
+            
+            let response: ProfileRow = try await client
+                .from("user_profiles")
+                .select("name, email, username, age, gender, height_cm, weight_kg, fitness_goal, experience_level, equipment, available_days, workout_environment, birthday")
+                .eq("id", value: userId.uuidString)
+                .single()
+                .execute()
+                .value
+            
+            // Log each field as verified in DB
+            let fieldsToVerify: [(String, Any?)] = [
+                ("name", response.name),
+                ("email", response.email),
+                ("username", response.username),
+                ("age", response.age),
+                ("gender", response.gender),
+                ("height_cm", response.height_cm),
+                ("weight_kg", response.weight_kg),
+                ("fitness_goal", response.fitness_goal),
+                ("experience_level", response.experience_level),
+                ("equipment", response.equipment),
+                ("available_days", response.available_days),
+                ("workout_environment", response.workout_environment),
+                ("birthday", response.birthday)
+            ]
+            
+            for (fieldName, fieldValue) in fieldsToVerify {
+                await logOnboardingField(
+                    fieldName: fieldName,
+                    stage: "verified_in_db",
+                    value: fieldValue
+                )
+            }
+            
+            print("✅ [VERIFY] Logged all verified field values from database")
+            
+        } catch {
+            print("❌ [VERIFY] Failed to verify saved profile: \(error.localizedDescription)")
+            await logOnboardingEvent(
+                eventType: "error",
+                stepName: "verify_profile",
+                errorMessage: "Failed to read back profile: \(error.localizedDescription)"
+            )
+        }
+    }
+    
     // MARK: - User Profile
     
     private func createUserProfile(userId: UUID, name: String, email: String, hasCompletedOnboarding: Bool = false) async throws {
@@ -906,13 +1169,56 @@ class SupabaseManager: ObservableObject {
             has_completed_onboarding: true  // Profile created at end of onboarding = complete
         )
         
-        try await client
-            .from("user_profiles")
-            .upsert(profile, onConflict: "id")
-            .execute()
+        // Log the upsert attempt with all data for debugging
+        print("🔐 [PROFILE] Attempting upsert with data:")
+        print("   - id: \(userId.uuidString)")
+        print("   - name: \(name)")
+        print("   - email: \(email)")
+        print("   - username: \(username ?? "nil")")
+        print("   - age: \(age ?? 0)")
+        print("   - gender: \(gender ?? "nil")")
+        print("   - height_cm: \(heightCm ?? 0)")
+        print("   - weight_kg: \(weightKg ?? 0)")
+        print("   - fitness_goal: \(fitnessGoal ?? "nil")")
+        print("   - experience_level: \(experienceLevel ?? "nil")")
+        print("   - equipment: \(equipment ?? [])")
+        print("   - available_days: \(availableDays ?? 0)")
+        print("   - workout_environment: \(workoutEnvironment ?? "nil")")
+        
+        do {
+            try await client
+                .from("user_profiles")
+                .upsert(profile, onConflict: "id")
+                .execute()
+            print("✅ [PROFILE] Upsert to user_profiles succeeded")
+        } catch {
+            print("❌ [PROFILE] Upsert FAILED: \(error)")
+            print("❌ [PROFILE] Error details: \(error.localizedDescription)")
+            
+            // Log the error to the onboarding_logs table
+            await logOnboardingEvent(
+                eventType: "profile_update_error",
+                stepName: "createProfileForOAuthUser",
+                eventData: [
+                    "user_id": userId.uuidString,
+                    "name": name,
+                    "email": email,
+                    "attempted_action": "upsert"
+                ],
+                errorMessage: error.localizedDescription
+            )
+            
+            throw error
+        }
         
         // Create initial progress record
-        try await createUserProgress(userId: userId)
+        do {
+            try await createUserProgress(userId: userId)
+            print("✅ [PROFILE] User progress record created")
+        } catch {
+            print("⚠️ [PROFILE] Failed to create user progress (non-fatal): \(error.localizedDescription)")
+            // Don't throw - profile was created successfully
+        }
         
         // Clear the pending OAuth data from UserDefaults
         await MainActor.run {

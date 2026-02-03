@@ -5,10 +5,15 @@ import Foundation
 struct ActiveWorkoutView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
     // AdManager accessed lazily via .shared to avoid blocking view init
     @Binding var isPresented: Bool
+    
+    // 📱 Orientation tracking - ensures proper layout on rotation
+    @StateObject private var orientationManager = OrientationManager.shared
     
     // ⚡️ PERFORMANCE: Use centralized HapticManager (pre-warmed generators)
     
@@ -71,18 +76,20 @@ struct ActiveWorkoutView: View {
     }
     
     var body: some View {
-        ZStack {
-            // Full screen background gradient
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                    : [Color.blue.opacity(0.15), Color.purple.opacity(0.08), Color(.systemGroupedBackground)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            
-            VStack(spacing: 0) {
+        // 📱 GeometryReader ensures proper layout calculations on orientation change
+        GeometryReader { geometry in
+            ZStack {
+                // Full screen background gradient
+                LinearGradient(
+                    gradient: Gradient(colors: colorScheme == .dark
+                        ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
+                        : [Color.blue.opacity(0.15), Color.purple.opacity(0.08), Color(.systemGroupedBackground)]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                VStack(spacing: 0) {
                 // Program Day Badge - only show if this is a program workout
                 if let dayNumber = workoutManager.currentProgramDayNumber,
                    let dayFocus = workoutManager.currentProgramDayFocus {
@@ -378,6 +385,8 @@ struct ActiveWorkoutView: View {
                 .padding(.bottom, 4)
             }
             .background(Color.clear)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         // Banner ad overlay - floats on top, doesn't affect scroll content size
         .overlay(alignment: .top) {
@@ -389,8 +398,22 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
-        // ✅ SwiftUI handles orientation changes naturally - no forced rebuild needed
-        // ⚠️ DO NOT add .id() here - it causes timer restart on rotation!
+        // 📱 Respond to orientation changes properly
+        // Using GeometryReader proxy and size class changes ensures layout updates without resetting state
+        .onChange(of: horizontalSizeClass) { _, _ in
+            // Trigger layout recalculation on orientation change
+            OrientationManager.shared.updateScreenDimensions()
+        }
+        .onChange(of: verticalSizeClass) { _, _ in
+            // Trigger layout recalculation on orientation change  
+            OrientationManager.shared.updateScreenDimensions()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // Force re-layout when device orientation changes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                OrientationManager.shared.updateScreenDimensions()
+            }
+        }
         .onAppear {
             // ⚡️ PERFORMANCE: Start timer FIRST (instant feedback to user)
             startTimer()

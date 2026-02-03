@@ -64,9 +64,17 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error("Error:", error);
+    // Return a response that iOS can decode (with source, foods, etc.)
+    // This prevents decoding errors when the edge function encounters an issue
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ 
+        source: "error",
+        foods: [],
+        totalHits: 0,
+        query: "",
+        error: error.message 
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
@@ -79,8 +87,30 @@ async function handleSearch(supabase: any, params: SearchRequest) {
 
   if (!query || query.trim().length === 0) {
     return new Response(
-      JSON.stringify({ error: "Query is required" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ 
+        source: "error",
+        foods: [],
+        totalHits: 0,
+        query: query || "",
+        error: "Query is required" 
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+  
+  // USDA API requires minimum 3 characters for search
+  // Return empty results for shorter queries to avoid API errors
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length < 3) {
+    console.log(`⏭️ Query too short (${trimmedQuery.length} chars), skipping USDA API`);
+    return new Response(
+      JSON.stringify({ 
+        source: "local",
+        foods: [],
+        totalHits: 0,
+        query: trimmedQuery
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
@@ -110,20 +140,27 @@ async function handleSearch(supabase: any, params: SearchRequest) {
         .map((id: number) => cachedFoods.find((f: any) => f.id === id))
         .filter((f: any) => f !== undefined);
       
-      // Update cache search count
-      await supabase
-        .from("food_search_cache")
-        .update({ 
-          search_count: supabase.raw("search_count + 1"),
-          last_searched_at: new Date().toISOString()
-        })
-        .eq("normalized_query", normalizedQuery);
+      // Transform database rows to API format (camelCase with foodNutrients array)
+      const transformedFoods = orderedFoods.map(transformToApiFormat);
+      
+      // Update cache search count using RPC to increment
+      try {
+        await supabase.rpc("increment_food_search_count", { 
+          query_text: normalizedQuery 
+        });
+      } catch (e) {
+        // Non-critical - just update timestamp if RPC doesn't exist
+        await supabase
+          .from("food_search_cache")
+          .update({ last_searched_at: new Date().toISOString() })
+          .eq("normalized_query", normalizedQuery);
+      }
 
       return new Response(
         JSON.stringify({
           source: "cache",
-          foods: orderedFoods,
-          totalHits: orderedFoods.length,
+          foods: transformedFoods,
+          totalHits: transformedFoods.length,
           query
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -131,21 +168,101 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     }
   }
 
-  console.log(`⚡ Cache miss - fetching from USDA API`);
+  console.log(`⚡ Cache miss - fetching from USDA API for query: "${query}"`);
 
-  // Step 2: Fetch from USDA API
-  const dataTypeParam = dataTypes?.join(",") || "Foundation,SR Legacy,Survey (FNDDS),Branded";
-  const usdaUrl = `${USDA_BASE_URL}/foods/search?query=${encodeURIComponent(query)}&dataType=${dataTypeParam}&pageSize=${pageSize}&pageNumber=${pageNumber}&api_key=${USDA_API_KEY}`;
-
-  const usdaResponse = await fetch(usdaUrl);
+  // Step 2: Fetch from USDA API using PARALLEL calls
+  // CRITICAL: Make separate calls for Foundation Foods to ensure they're always included
+  // Foundation Foods have the most accurate, lab-verified nutrition data
   
-  if (!usdaResponse.ok) {
-    throw new Error(`USDA API error: ${usdaResponse.statusText}`);
+  // Build API URLs for different data types
+  const foundationUrl = `${USDA_BASE_URL}/foods/search?query=${encodeURIComponent(query)}&dataType=Foundation&pageSize=25&pageNumber=1&api_key=${USDA_API_KEY}`;
+  const srLegacyUrl = `${USDA_BASE_URL}/foods/search?query=${encodeURIComponent(query)}&dataType=${encodeURIComponent("SR Legacy")}&pageSize=25&pageNumber=1&api_key=${USDA_API_KEY}`;
+  const brandedUrl = `${USDA_BASE_URL}/foods/search?query=${encodeURIComponent(query)}&dataType=Branded&pageSize=50&pageNumber=1&api_key=${USDA_API_KEY}`;
+  
+  console.log(`🔗 Fetching Foundation Foods...`);
+  console.log(`🔗 Fetching SR Legacy Foods...`);
+  console.log(`🔗 Fetching Branded Foods...`);
+
+  // Make parallel API calls for faster response
+  console.log(`🔗 Foundation URL: ${foundationUrl.replace(USDA_API_KEY, "***")}`);
+  
+  const [foundationResponse, srLegacyResponse, brandedResponse] = await Promise.all([
+    fetch(foundationUrl).catch(e => { console.log(`❌ Foundation fetch error: ${e}`); return { ok: false, error: e }; }),
+    fetch(srLegacyUrl).catch(e => { console.log(`❌ SR Legacy fetch error: ${e}`); return { ok: false, error: e }; }),
+    fetch(brandedUrl).catch(e => { console.log(`❌ Branded fetch error: ${e}`); return { ok: false, error: e }; })
+  ]);
+  
+  // Parse responses
+  let foundationFoods: any[] = [];
+  let srLegacyFoods: any[] = [];
+  let brandedFoods: any[] = [];
+  
+  if (foundationResponse.ok) {
+    try {
+      const data = await (foundationResponse as Response).json();
+      foundationFoods = data.foods || [];
+      console.log(`🌿 FOUNDATION FOODS: ${foundationFoods.length} results (totalHits: ${data.totalHits})`);
+      // Log ALL Foundation Foods found
+      foundationFoods.forEach((f: any, i: number) => {
+        console.log(`🌿 Foundation ${i+1}: "${f.description}" (FDC ${f.fdcId}, dataType: ${f.dataType})`);
+      });
+    } catch (e) {
+      console.log(`❌ Foundation JSON parse error: ${e}`);
+    }
+  } else {
+    const status = (foundationResponse as any).status || 'unknown';
+    const text = foundationResponse.text ? await (foundationResponse as Response).text() : '';
+    console.log(`⚠️ Foundation Foods fetch failed - status: ${status}, body: ${text.substring(0, 200)}`);
   }
-
-  const usdaData = await usdaResponse.json();
   
-  console.log(`📊 USDA API returned ${usdaData.foods?.length || 0} results`);
+  if (srLegacyResponse.ok) {
+    try {
+      const data = await (srLegacyResponse as Response).json();
+      srLegacyFoods = data.foods || [];
+      console.log(`📚 SR LEGACY FOODS: ${srLegacyFoods.length} results`);
+      if (srLegacyFoods.length > 0) {
+        console.log(`📚 First SR Legacy: "${srLegacyFoods[0].description}" (FDC ${srLegacyFoods[0].fdcId})`);
+      }
+    } catch (e) {
+      console.log(`❌ SR Legacy JSON parse error: ${e}`);
+    }
+  } else {
+    const status = (srLegacyResponse as any).status || 'unknown';
+    console.log(`⚠️ SR Legacy Foods fetch failed - status: ${status}`);
+  }
+  
+  if (brandedResponse.ok) {
+    try {
+      const data = await (brandedResponse as Response).json();
+      brandedFoods = data.foods || [];
+      console.log(`🏷️ BRANDED FOODS: ${brandedFoods.length} results`);
+    } catch (e) {
+      console.log(`❌ Branded JSON parse error: ${e}`);
+    }
+  } else {
+    const status = (brandedResponse as any).status || 'unknown';
+    console.log(`⚠️ Branded Foods fetch failed - status: ${status}`);
+  }
+  
+  // Combine all foods - Foundation first, then SR Legacy, then Branded
+  // This ensures Foundation Foods are always in the results even if USDA API 
+  // would normally bury them in branded results
+  const allFoods = [...foundationFoods, ...srLegacyFoods, ...brandedFoods];
+  
+  // Deduplicate by fdcId (in case of any overlap)
+  const seenFdcIds = new Set<number>();
+  const usdaFoods = allFoods.filter(food => {
+    if (seenFdcIds.has(food.fdcId)) return false;
+    seenFdcIds.add(food.fdcId);
+    return true;
+  });
+  
+  const usdaData = { 
+    foods: usdaFoods, 
+    totalHits: usdaFoods.length 
+  };
+  
+  console.log(`📊 Combined USDA results: ${usdaData.foods?.length || 0} total (${foundationFoods.length} Foundation, ${srLegacyFoods.length} SR Legacy, ${brandedFoods.length} Branded)`);
 
   // Step 3: Cache the results in our database
   if (usdaData.foods && usdaData.foods.length > 0) {
@@ -157,8 +274,11 @@ async function handleSearch(supabase: any, params: SearchRequest) {
       .select("*")
       .in("id", cachedFoodIds);
 
-    // Apply intelligent ranking on results
+    // Apply intelligent ranking on results (prioritizing Foundation Foods)
     const rankedFoods = rankSearchResults(cachedFoods || [], query);
+    
+    // Transform database rows to API format (camelCase with foodNutrients array)
+    const transformedFoods = rankedFoods.map(transformToApiFormat);
     
     // Cache the search query with ranked IDs
     const rankedIds = rankedFoods.map((f: any) => f.id);
@@ -178,7 +298,7 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     return new Response(
       JSON.stringify({
         source: "usda",
-        foods: rankedFoods,
+        foods: transformedFoods,
         totalHits: usdaData.totalHits,
         query
       }),
@@ -221,14 +341,16 @@ async function handleDetails(supabase: any, params: FoodDetailsRequest) {
 
   if (cachedFood && cachedFood.portions) {
     console.log(`✅ Cache hit for FDC ID ${fdcId}`);
+    // Transform to API format before returning
+    const transformedFood = transformToApiFormat(cachedFood);
     return new Response(
-      JSON.stringify({ source: "cache", food: cachedFood }),
+      JSON.stringify({ source: "cache", food: transformedFood }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  // Fetch from USDA API
-  const usdaUrl = `${USDA_BASE_URL}/food/${fdcId}?api_key=${USDA_API_KEY}`;
+  // Fetch from USDA API with full nutrient data
+  const usdaUrl = `${USDA_BASE_URL}/food/${fdcId}?format=full&api_key=${USDA_API_KEY}`;
   const usdaResponse = await fetch(usdaUrl);
 
   if (!usdaResponse.ok) {
@@ -247,8 +369,10 @@ async function handleDetails(supabase: any, params: FoodDetailsRequest) {
       .eq("id", cachedFoodIds[0])
       .single();
 
+    // Transform to API format before returning
+    const transformedFood = transformToApiFormat(updatedFood);
     return new Response(
-      JSON.stringify({ source: "usda", food: updatedFood }),
+      JSON.stringify({ source: "usda", food: transformedFood }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -281,65 +405,230 @@ async function handleCacheFood(supabase: any, params: any) {
 }
 
 // ============================================================================
-// HELPER: RANK SEARCH RESULTS
+// HELPER: TRANSFORM DATABASE ROW TO API FORMAT
 // ============================================================================
-// Ranks foods to prioritize generic items over branded items
-// Matches competitor app behavior: generic eggs, meats, produce come first
-function rankSearchResults(foods: any[], query: string): any[] {
-  const normalizedQuery = query.toLowerCase().trim();
+// Transforms snake_case database rows to camelCase format expected by iOS app
+// This ensures nutrition data displays correctly (per 100g values)
+function transformToApiFormat(dbRow: any): any {
+  // Build foodNutrients array from flat columns (per 100g)
+  // These values come directly from USDA and are always per 100g
+  const foodNutrients: any[] = [];
   
-  return foods.sort((a, b) => {
-    const scoreA = calculateFoodScore(a, normalizedQuery);
-    const scoreB = calculateFoodScore(b, normalizedQuery);
-    return scoreA - scoreB; // Lower score = better (higher priority)
-  });
+  if (dbRow.calories !== null && dbRow.calories !== undefined) {
+    foodNutrients.push({ nutrientId: 1008, nutrientName: "Energy", nutrientNumber: "208", unitName: "KCAL", value: dbRow.calories });
+  }
+  if (dbRow.protein !== null && dbRow.protein !== undefined) {
+    foodNutrients.push({ nutrientId: 1003, nutrientName: "Protein", nutrientNumber: "203", unitName: "G", value: dbRow.protein });
+  }
+  if (dbRow.carbohydrates !== null && dbRow.carbohydrates !== undefined) {
+    foodNutrients.push({ nutrientId: 1005, nutrientName: "Carbohydrate, by difference", nutrientNumber: "205", unitName: "G", value: dbRow.carbohydrates });
+  }
+  if (dbRow.total_fat !== null && dbRow.total_fat !== undefined) {
+    foodNutrients.push({ nutrientId: 1004, nutrientName: "Total lipid (fat)", nutrientNumber: "204", unitName: "G", value: dbRow.total_fat });
+  }
+  if (dbRow.saturated_fat !== null && dbRow.saturated_fat !== undefined) {
+    foodNutrients.push({ nutrientId: 1258, nutrientName: "Fatty acids, total saturated", nutrientNumber: "606", unitName: "G", value: dbRow.saturated_fat });
+  }
+  if (dbRow.fiber !== null && dbRow.fiber !== undefined) {
+    foodNutrients.push({ nutrientId: 1079, nutrientName: "Fiber, total dietary", nutrientNumber: "291", unitName: "G", value: dbRow.fiber });
+  }
+  if (dbRow.sugar !== null && dbRow.sugar !== undefined) {
+    foodNutrients.push({ nutrientId: 2000, nutrientName: "Sugars, total including NLEA", nutrientNumber: "269", unitName: "G", value: dbRow.sugar });
+  }
+  if (dbRow.sodium !== null && dbRow.sodium !== undefined) {
+    foodNutrients.push({ nutrientId: 1093, nutrientName: "Sodium, Na", nutrientNumber: "307", unitName: "MG", value: dbRow.sodium });
+  }
+  if (dbRow.cholesterol !== null && dbRow.cholesterol !== undefined) {
+    foodNutrients.push({ nutrientId: 1253, nutrientName: "Cholesterol", nutrientNumber: "601", unitName: "MG", value: dbRow.cholesterol });
+  }
+  if (dbRow.calcium !== null && dbRow.calcium !== undefined) {
+    foodNutrients.push({ nutrientId: 1087, nutrientName: "Calcium, Ca", nutrientNumber: "301", unitName: "MG", value: dbRow.calcium });
+  }
+  if (dbRow.iron !== null && dbRow.iron !== undefined) {
+    foodNutrients.push({ nutrientId: 1089, nutrientName: "Iron, Fe", nutrientNumber: "303", unitName: "MG", value: dbRow.iron });
+  }
+  if (dbRow.vitamin_c !== null && dbRow.vitamin_c !== undefined) {
+    foodNutrients.push({ nutrientId: 1162, nutrientName: "Vitamin C, total ascorbic acid", nutrientNumber: "401", unitName: "MG", value: dbRow.vitamin_c });
+  }
+
+  // Transform portions from database format 
+  // Portions include measures like "1 cup", "1 RACC", etc. with gram weights
+  // Format matches what iOS CloudFoodPortion expects
+  const portions = dbRow.portions || [];
+  const foodPortions = portions
+    .filter((p: any) => p && p.gramWeight) // Only include valid portions
+    .map((p: any) => ({
+      id: p.id || 0,
+      amount: p.amount || 1,
+      unit: p.unit || "serving",
+      gramWeight: p.gramWeight || 100,
+      portionDescription: p.description ? `${p.amount || 1} ${p.unit || "serving"} (${p.description})` : `${p.amount || 1} ${p.unit || "serving"}`,
+      description: p.description || null
+    }));
+
+  return {
+    fdcId: dbRow.fdc_id,
+    description: dbRow.description || dbRow.name,
+    dataType: dbRow.data_type,
+    brandName: dbRow.brand_name,
+    brandOwner: dbRow.brand_owner,
+    foodCategory: dbRow.category,
+    // IMPORTANT: servingSize for Foundation/SR Legacy foods is always 100g
+    // The nutrition values are per 100g from USDA
+    servingSize: dbRow.serving_size || 100,
+    servingSizeUnit: dbRow.serving_unit || "g",
+    householdServingFullText: dbRow.household_serving,
+    // Nutrition per 100g
+    foodNutrients: foodNutrients,
+    // Also include direct values for iOS compatibility
+    calories: dbRow.calories,
+    protein: dbRow.protein,
+    carbohydrates: dbRow.carbohydrates,
+    totalFat: dbRow.total_fat,
+    saturatedFat: dbRow.saturated_fat,
+    fiber: dbRow.fiber,
+    sugar: dbRow.sugar,
+    sodium: dbRow.sodium,
+    cholesterol: dbRow.cholesterol,
+    calcium: dbRow.calcium,
+    iron: dbRow.iron,
+    vitaminC: dbRow.vitamin_c,
+    // Portions for serving size options (iOS reads 'portions' field)
+    portions: foodPortions
+  };
 }
 
-function calculateFoodScore(food: any, query: string): number {
+// ============================================================================
+// HELPER: RANK SEARCH RESULTS
+// ============================================================================
+// Ranks foods to prioritize:
+// 1. EXACT MATCHES first
+// 2. Foundation Foods from USDA (most accurate, lab-verified nutrition data)
+// 3. SR Legacy Foods
+// 4. Generic/unbranded foods over branded
+function rankSearchResults(foods: any[], query: string): any[] {
+  const normalizedQuery = normalizeForMatching(query);
+  
+  // Log data types for debugging
+  const dataTypeCounts: { [key: string]: number } = {};
+  foods.forEach(f => {
+    const dt = f.data_type || f.dataType || "Unknown";
+    dataTypeCounts[dt] = (dataTypeCounts[dt] || 0) + 1;
+  });
+  console.log(`📊 Data type distribution: ${JSON.stringify(dataTypeCounts)}`);
+  
+  const sorted = foods.sort((a, b) => {
+    const scoreA = calculateFoodScore(a, normalizedQuery, query);
+    const scoreB = calculateFoodScore(b, normalizedQuery, query);
+    return scoreA - scoreB; // Lower score = better (higher priority)
+  });
+  
+  // Log top 5 results
+  console.log(`🔝 Top 5 results:`);
+  sorted.slice(0, 5).forEach((f, i) => {
+    const name = f.name || f.description;
+    const dt = f.data_type || f.dataType;
+    const score = calculateFoodScore(f, normalizedQuery, query);
+    console.log(`   ${i + 1}. "${name}" (${dt}) score: ${score}`);
+  });
+  
+  return sorted;
+}
+
+// Normalize text for matching (remove punctuation, extra spaces, lowercase)
+function normalizeForMatching(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[,;:'"]/g, " ")  // Replace punctuation with spaces
+    .replace(/\s+/g, " ")      // Collapse multiple spaces
+    .trim();
+}
+
+function calculateFoodScore(food: any, normalizedQuery: string, originalQuery: string): number {
   let score = 0;
-  const name = (food.name || "").toLowerCase();
-  const brandName = (food.brand_name || "").toLowerCase();
-  const brandOwner = (food.brand_owner || "").toLowerCase();
-  const dataType = food.data_type || "";
-  const category = (food.category || "").toLowerCase();
-  
-  // 1. GENERIC vs BRANDED (most important)
+  // Handle both snake_case (database) and camelCase (USDA API) field names
+  const name = (food.name || food.description || "").toLowerCase();
+  const normalizedName = normalizeForMatching(name);
+  const brandName = (food.brand_name || food.brandName || "").toLowerCase();
+  const brandOwner = (food.brand_owner || food.brandOwner || "").toLowerCase();
+  const dataType = food.data_type || food.dataType || "";
+  const category = (food.category || food.foodCategory || "").toLowerCase();
   const isGeneric = !brandName && !brandOwner;
-  if (!isGeneric) {
-    score += 10000; // Heavily penalize branded items
+  
+  // Debug logging for Foundation foods
+  if (dataType === "Foundation") {
+    console.log(`🌿 FOUNDATION FOOD: "${name}" (dataType: ${dataType})`);
   }
   
-  // 2. Data type quality
-  if (dataType === "Foundation" || dataType === "SR Legacy") {
-    score += 0; // Best quality
+  // =========================================================================
+  // TIER 1: EXACT MATCH (most important - appears FIRST regardless of data type)
+  // =========================================================================
+  // Check for exact match (ignoring punctuation differences)
+  if (normalizedName === normalizedQuery) {
+    score -= 1000000; // Absolute highest priority for exact match
+    console.log(`🎯 EXACT MATCH: "${name}" for query "${originalQuery}"`);
+  }
+  // Check if name starts with query (e.g., "Almond butter, creamy" starts with "almond butter")
+  else if (normalizedName.startsWith(normalizedQuery)) {
+    score -= 500000; // Very high priority for starts-with match
+  }
+  // Check if all query words appear in the name
+  else {
+    const queryWords = normalizedQuery.split(" ").filter(w => w.length > 1);
+    const nameWords = normalizedName.split(" ");
+    const allWordsMatch = queryWords.every(qw => 
+      nameWords.some(nw => nw.includes(qw) || qw.includes(nw))
+    );
+    if (allWordsMatch) {
+      score -= 100000; // Good match - all words found
+    }
+  }
+  
+  // =========================================================================
+  // TIER 2: DATA TYPE (Foundation Foods from USDA are most accurate)
+  // =========================================================================
+  if (dataType === "Foundation") {
+    score -= 50000; // Foundation foods = lab-verified, most accurate
+  } else if (dataType === "SR Legacy") {
+    score -= 40000; // SR Legacy = still high quality USDA data
   } else if (dataType === "Survey (FNDDS)") {
-    score += 100;
-  } else {
-    score += 200; // Branded/other
+    score -= 10000; // Survey data = decent quality
+  } else if (dataType === "Branded") {
+    score += 30000; // Branded = lowest priority
   }
   
-  // 3. Exact name match
-  if (name === query) {
-    score -= 5000; // Huge bonus
-  } else if (name.startsWith(query)) {
-    score -= 1000;
-  } else if (name.includes(query)) {
-    score -= 100;
-  }
-  
-  // 4. Category relevance (e.g., searching "egg" should boost "Dairy and Egg Products")
-  if (category.includes(query)) {
-    score -= 500;
-  }
-  
-  // 5. Name complexity (simpler names first)
-  const wordCount = name.split(" ").length;
-  score += wordCount * 10;
-  
-  // 6. Popularity (minor factor for generics)
+  // =========================================================================
+  // TIER 3: GENERIC vs BRANDED preference
+  // =========================================================================
   if (isGeneric) {
-    score -= (food.log_count || 0) * 0.1;
-    score -= (food.search_count || 0) * 0.05;
+    score -= 20000; // Strongly prefer generic foods
+  } else {
+    score += 20000; // Penalize branded foods
+  }
+  
+  // =========================================================================
+  // TIER 4: Name quality signals
+  // =========================================================================
+  // Prefer simpler, shorter names (likely more generic/standard)
+  const wordCount = name.split(/[\s,]+/).length;
+  score += wordCount * 50;
+  
+  // Prefer "raw" versions for whole foods (most accurate base nutrition)
+  if (name.includes(", raw") && isGeneric) {
+    score -= 5000;
+  }
+  
+  // Category relevance boost
+  if (category && normalizedQuery.split(" ").some(w => category.includes(w))) {
+    score -= 2000;
+  }
+  
+  // =========================================================================
+  // TIER 5: Usage/popularity signals
+  // =========================================================================
+  if (isGeneric) {
+    score -= (food.log_count || 0) * 0.5;
+    score -= (food.search_count || 0) * 0.2;
   }
   
   return score;

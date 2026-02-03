@@ -33,29 +33,89 @@ struct HydrationWidget: View {
     }
     
     var body: some View {
-        VStack(spacing: 8) {
-            TabView(selection: $selectedCard) {
-                // Card 1: Today's Progress
-                todayCardStyled
-                    .tag(0)
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row (OUTSIDE the card - matches other sections)
+            HStack {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
                 
-                // Card 2: Hydration Insights
-                weeklyTrendsCardStyled
-                    .tag(1)
+                Text("Hydration")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Button(action: { HapticManager.selectionChanged(); showingDetailView = true }) {
+                    HStack(spacing: 4) {
+                        Text("Details")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.blue)
+                }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 300)
-            .background(Color.clear)
+            .padding(.horizontal, 4)
             
-            // Page indicator dots
+            // Card content - swipeable cards matching other carousels
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                
+                HStack(spacing: spacing) {
+                    // Card 1: Today's Progress
+                    todayCardStyled
+                        .frame(width: cardWidth)
+                        .opacity(selectedCard == 0 ? 1 : 0)
+                    
+                    // Card 2: Hydration Insights
+                    weeklyTrendsCardStyled
+                        .frame(width: cardWidth)
+                        .opacity(selectedCard == 1 ? 1 : 0)
+                }
+                .offset(x: -CGFloat(selectedCard) * (cardWidth + spacing))
+            }
+            .frame(height: 260)
+            .animation(.easeOut(duration: 0.25), value: selectedCard)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let verticalAmount = abs(value.translation.height)
+                        
+                        // Only swipe if horizontal movement is significantly more than vertical
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                            HapticManager.impact(.medium)
+                            if horizontalAmount < 0 && selectedCard < 1 {
+                                selectedCard = 1
+                            } else if horizontalAmount > 0 && selectedCard > 0 {
+                                selectedCard = 0
+                            }
+                        }
+                    }
+            )
+            
+            // Page indicator dots - OUTSIDE the cards, centered
             HStack(spacing: 6) {
                 ForEach(0..<2, id: \.self) { index in
                     Circle()
                         .fill(selectedCard == index ? Color.blue : Color.gray.opacity(0.3))
                         .frame(width: 6, height: 6)
-                        .animation(.easeInOut(duration: 0.2), value: selectedCard)
+                        .scaleEffect(selectedCard == index ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 0.2), value: selectedCard)
+                        .onTapGesture {
+                            HapticManager.selectionChanged()
+                            selectedCard = index
+                        }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
         }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -84,34 +144,33 @@ struct HydrationWidget: View {
     private var todayCardStyled: some View {
         todayCard
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - blue colored
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08))
                         .offset(y: 8)
                         .blur(radius: 4)
                     
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
-                                    ? [Color(white: 0.12), Color(white: 0.18)]
-                                    : [Color.white.opacity(0.95), Color.white],
+                                    ? [Color(white: 0.15), Color(white: 0.10)]
+                                    : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -124,12 +183,12 @@ struct HydrationWidget: View {
                         )
                     
                     // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                    Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                                    Color.cyan.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                    Color.blue.opacity(colorScheme == .dark ? 0.3 : 0.2)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -138,43 +197,39 @@ struct HydrationWidget: View {
                         )
                 }
             )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
     }
     
     // MARK: - Weekly Trends Card (Styled - With Blue Glow)
     private var weeklyTrendsCardStyled: some View {
         weeklyTrendsCard
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - blue colored
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08))
                         .offset(y: 8)
                         .blur(radius: 4)
                     
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
-                                    ? [Color(white: 0.12), Color(white: 0.18)]
-                                    : [Color.white.opacity(0.95), Color.white],
+                                    ? [Color(white: 0.15), Color(white: 0.10)]
+                                    : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -187,12 +242,12 @@ struct HydrationWidget: View {
                         )
                     
                     // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                    Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                                    Color.cyan.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                    Color.blue.opacity(colorScheme == .dark ? 0.3 : 0.2)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -201,37 +256,11 @@ struct HydrationWidget: View {
                         )
                 }
             )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
     }
     
     // MARK: - Today Card Content (Combined with Weekly)
     private var todayCard: some View {
         VStack(spacing: 12) {
-            // Header
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "drop.fill")
-                        .font(.title3)
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .blue], startPoint: .top, endPoint: .bottom)
-                        )
-                    
-                    Text("Water Intake")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                }
-                
-                Spacer()
-                
-                Button(action: { HapticManager.selectionChanged(); showingInfoPopup = true }) {
-                    Image(systemName: "info.circle")
-                        .font(.subheadline)
-                        .foregroundColor(.blue.opacity(0.7))
-                }
-            }
-            
             // Main content - Ring and Stats side by side
             HStack(spacing: 16) {
                 // Water Ring
@@ -357,106 +386,138 @@ struct HydrationWidget: View {
     // MARK: - Hydration Insights Card (Cool Visual)
     private var weeklyTrendsCard: some View {
         VStack(spacing: 12) {
-            // Header
+            // Header with status pill
             HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.title3)
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .blue], startPoint: .top, endPoint: .bottom)
-                        )
-                    
-                    Text("Hydration Insights")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                }
+                Text("Hydration Insights")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
                 
                 Spacer()
+                
+                // Status pill
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(hydrationStatusColor)
+                        .frame(width: 6, height: 6)
+                    Text(hydrationStatus)
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(hydrationStatusColor.opacity(0.15))
+                .cornerRadius(10)
             }
             
-            // Body Hydration Visual
-            HStack(spacing: 16) {
-                // Water Drop Body Visual
+            // Main content row
+            HStack(spacing: 14) {
+                // Water Drop Visual
                 ZStack {
-                    // Background drop
                     Image(systemName: "drop.fill")
-                        .font(.system(size: 80))
+                        .font(.system(size: 55))
                         .foregroundColor(.blue.opacity(0.15))
                     
-                    // Filled level based on today's progress
                     Image(systemName: "drop.fill")
-                        .font(.system(size: 80))
+                        .font(.system(size: 55))
                         .foregroundStyle(
-                            LinearGradient(
-                                colors: [.cyan, .blue],
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
+                            LinearGradient(colors: [.cyan, .blue], startPoint: .bottom, endPoint: .top)
                         )
                         .mask(
                             VStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 80 * (1 - min(progress, 1.0)))
-                                Rectangle()
-                                    .fill(Color.white)
+                                Rectangle().fill(Color.clear)
+                                    .frame(height: 55 * (1 - min(progress, 1.0)))
+                                Rectangle().fill(Color.white)
                             }
                         )
                     
-                    // Percentage
                     Text("\(Int(progress * 100))%")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.3), radius: 2)
-                        .offset(y: 12)
+                        .offset(y: 8)
                 }
-                .frame(width: 90, height: 100)
+                .frame(width: 65, height: 70)
                 
-                // Insights
-                VStack(alignment: .leading, spacing: 10) {
-                    // Hydration Status
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(hydrationStatusColor)
-                            .frame(width: 10, height: 10)
-                        Text(hydrationStatus)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                // Pace tracker - shows if on track for daily goal
+                VStack(alignment: .leading, spacing: 6) {
+                    // Expected vs actual
+                    let expectedProgress = expectedProgressForTimeOfDay
+                    let paceStatus = progress >= expectedProgress ? "On Track" : "Behind"
+                    let paceColor: Color = progress >= expectedProgress ? .green : .orange
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: progress >= expectedProgress ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
+                            .font(.system(size: 11))
+                            .foregroundColor(paceColor)
+                        Text(paceStatus)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(paceColor)
                     }
                     
-                    // Streak
-                    if let streak = hydrationService.streaks?.currentStreak, streak > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "flame.fill")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            Text("\(streak) day streak!")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                    // Mini pace bar
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            // Background
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.gray.opacity(0.2))
+                            
+                            // Expected marker
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: geo.size.width * min(expectedProgress, 1.0))
+                            
+                            // Actual progress
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * min(progress, 1.0))
                         }
                     }
+                    .frame(height: 6)
                     
-                    // Weekly average comparison
+                    // Time info
+                    Text("Expected: \(Int(expectedProgress * 100))% by now")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                // Streak & stats column
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let streak = hydrationService.streaks?.currentStreak, streak > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.orange)
+                            Text("\(streak)")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        Text("day streak")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Image(systemName: "flame")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("No streak")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Avg comparison
                     let avg = calculateWeeklyAverage()
                     if avg > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: totalMl >= avg ? "arrow.up.right" : "arrow.down.right")
-                                .font(.caption)
-                                .foregroundColor(totalMl >= avg ? .green : .orange)
-                            Text(totalMl >= avg ? "Above avg" : "Below avg")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 2) {
+                            Image(systemName: totalMl >= avg ? "arrow.up" : "arrow.down")
+                                .font(.system(size: 8, weight: .bold))
+                            Text("avg")
+                                .font(.system(size: 8))
                         }
+                        .foregroundColor(totalMl >= avg ? .green : .orange)
                     }
                 }
-                
-                Spacer()
             }
             
-            Divider()
-            
-            // Achievement Badges
-            HStack(spacing: 12) {
+            // Achievement row
+            HStack(spacing: 0) {
                 HydrationBadge(
                     icon: "trophy.fill",
                     title: "Best Day",
@@ -479,15 +540,56 @@ struct HydrationWidget: View {
                 )
             }
             
-            // Motivational Message
-            Text(motivationalMessage)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
+            // Motivational tip with icon
+            HStack(spacing: 6) {
+                Text(motivationalEmoji)
+                    .font(.system(size: 12))
+                Text(motivationalText)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(14)
+    }
+    
+    // Expected progress based on time of day (8am-10pm active hours)
+    private var expectedProgressForTimeOfDay: Double {
+        let hour = Calendar.current.component(.hour, from: Date())
+        // Assume drinking hours are 8am to 10pm (14 hours)
+        let startHour = 8
+        let endHour = 22
+        
+        if hour < startHour { return 0 }
+        if hour >= endHour { return 1.0 }
+        
+        let hoursElapsed = Double(hour - startHour)
+        let totalHours = Double(endHour - startHour)
+        return hoursElapsed / totalHours
+    }
+    
+    private var motivationalEmoji: String {
+        if goalMet { return "🎉" }
+        if progress >= 0.75 { return "🔥" }
+        
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 10 { return "☀️" }
+        if hour < 14 { return "🍽️" }
+        if hour < 18 { return "⚡" }
+        return "🌙"
+    }
+    
+    private var motivationalText: String {
+        if goalMet { return "Goal crushed! Your body thanks you." }
+        if progress >= 0.85 { return "Almost there! One more glass!" }
+        if progress >= 0.75 { return "Final stretch – finish strong!" }
+        
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 10 { return "Start your day right – hydrate!" }
+        if hour < 14 { return "Pre-lunch hydration boosts focus." }
+        if hour < 18 { return "Afternoon slump? Water helps!" }
+        return "Evening catch-up time!"
     }
     
     // Hydration status helpers
@@ -898,35 +1000,33 @@ struct WaterIntakeDetailView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Today's Progress Card
-                    todayProgressCard
-                    
-                    // Stats Grid
-                    statsGrid
-                    
-                    // Weekly Chart
-                    weeklyChart
-                    
-                    // Today's Log
-                    todayLogSection
-                    
-                    // Settings
-                    settingsSection
+            ZStack {
+                // Dark background - matches Steps detail
+                Color(red: 0.06, green: 0.07, blue: 0.09)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Today's Progress Card
+                        todayProgressCard
+                            .padding(.horizontal, 20)
+                            .padding(.top, 20)
+                        
+                        // Stats Grid
+                        statsGrid
+                            .padding(.horizontal, 20)
+                        
+                        // Weekly Chart
+                        weeklyChart
+                            .padding(.horizontal, 20)
+                        
+                        // Today's Log
+                        todayLogSection
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 40)
+                    }
                 }
-                .padding()
             }
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color.cyan.opacity(0.1), Color.blue.opacity(0.05)]
-                        : [Color.cyan.opacity(0.15), Color.blue.opacity(0.08)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-            )
             .navigationTitle("Water Intake")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -934,6 +1034,7 @@ struct WaterIntakeDetailView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(.blue)
                 }
             }
         }
@@ -943,9 +1044,12 @@ struct WaterIntakeDetailView: View {
         VStack(spacing: 16) {
             // Large progress ring
             ZStack {
+                // Background circle
                 Circle()
-                    .stroke(Color.blue.opacity(0.2), lineWidth: 20)
+                    .stroke(Color.gray.opacity(0.25), lineWidth: 20)
+                    .frame(width: 220, height: 220)
                 
+                // Progress circle
                 Circle()
                     .trim(from: 0, to: min(hydrationService.todayProgress, 1.0))
                     .stroke(
@@ -956,29 +1060,55 @@ struct WaterIntakeDetailView: View {
                         ),
                         style: StrokeStyle(lineWidth: 20, lineCap: .round)
                     )
+                    .frame(width: 220, height: 220)
                     .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: hydrationService.todayProgress)
                 
-                VStack(spacing: 4) {
+                // Center content
+                VStack(spacing: 8) {
                     Text("\(Int(hydrationService.todayProgress * 100))%")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
                     
                     Text("\(formatMl(hydrationService.todayTotal)) of \(formatMl(hydrationService.settings.dailyGoalMl))")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
+                    
+                    if hydrationService.todayGoalMet {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Goal achieved!")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.top, 4)
+                    }
                 }
             }
-            .frame(width: 200, height: 200)
-            .padding()
+            
+            // Goal display
+            HStack {
+                Image(systemName: "target")
+                    .foregroundColor(.blue)
+                Text("Goal: \(formatMl(hydrationService.settings.dailyGoalMl))")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.blue.opacity(0.15))
+            .cornerRadius(10)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
+        .padding(24)
+        .background(Color(white: 0.12))
         .cornerRadius(20)
     }
     
     private var statsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            HydrationStatBox(
+            DetailStatBox(
                 title: "Current Streak",
                 value: "\(hydrationService.streaks?.currentStreak ?? 0)",
                 unit: "days",
@@ -986,7 +1116,7 @@ struct WaterIntakeDetailView: View {
                 color: .orange
             )
             
-            HydrationStatBox(
+            DetailStatBox(
                 title: "Best Streak",
                 value: "\(hydrationService.streaks?.longestStreak ?? 0)",
                 unit: "days",
@@ -994,7 +1124,7 @@ struct WaterIntakeDetailView: View {
                 color: .yellow
             )
             
-            HydrationStatBox(
+            DetailStatBox(
                 title: "Avg Daily",
                 value: formatMlShort(hydrationService.streaks?.avgDailyIntakeMl ?? 0),
                 unit: "",
@@ -1002,7 +1132,7 @@ struct WaterIntakeDetailView: View {
                 color: .blue
             )
             
-            HydrationStatBox(
+            DetailStatBox(
                 title: "Total",
                 value: String(format: "%.1f", hydrationService.streaks?.totalLitersConsumed ?? 0),
                 unit: "liters",
@@ -1013,10 +1143,11 @@ struct WaterIntakeDetailView: View {
     }
     
     private var weeklyChart: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("This Week")
                 .font(.headline)
                 .fontWeight(.bold)
+                .foregroundColor(.white)
             
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(0..<7) { index in
@@ -1024,7 +1155,7 @@ struct WaterIntakeDetailView: View {
                     VStack(spacing: 4) {
                         Text(formatMlShort(dayData.totalMl))
                             .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                         
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 4)
@@ -1043,98 +1174,67 @@ struct WaterIntakeDetailView: View {
                         
                         Text(dayLabel(for: index))
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                     }
                 }
             }
             .frame(maxWidth: .infinity)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
+        .padding(20)
+        .background(Color(white: 0.12))
+        .cornerRadius(20)
     }
     
     private var todayLogSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Today's Log")
                 .font(.headline)
                 .fontWeight(.bold)
+                .foregroundColor(.white)
             
             if hydrationService.todayLogs.isEmpty {
                 Text("No entries yet today")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
-                    .padding()
+                    .padding(.vertical, 20)
             } else {
-                ForEach(hydrationService.todayLogs) { log in
-                    HStack {
-                        Image(systemName: "drop.fill")
-                            .foregroundColor(.blue)
-                            .frame(width: 30)
-                        
-                        VStack(alignment: .leading) {
-                            Text("Water")
+                VStack(spacing: 12) {
+                    ForEach(hydrationService.todayLogs) { log in
+                        HStack {
+                            Image(systemName: "drop.fill")
+                                .foregroundColor(.blue)
+                                .frame(width: 30)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Water")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white)
+                                Text(formatTime(log.loggedAt))
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            
+                            Spacer()
+                            
+                            Text("+\(log.amountMl)ml")
                                 .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(formatTime(log.loggedAt))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.cyan)
                         }
                         
-                        Spacer()
-                        
-                        Text("+\(log.amountMl)ml")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
+                        if log.id != hydrationService.todayLogs.last?.id {
+                            Divider()
+                                .background(Color.gray.opacity(0.3))
+                        }
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(Color(.tertiarySystemBackground))
-                    .cornerRadius(10)
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
-    }
-    
-    private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Your Goal")
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            VStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "target")
-                        .foregroundColor(.blue)
-                    Text("Daily Goal")
-                    Spacer()
-                    Text(formatMl(hydrationService.settings.dailyGoalMl))
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
-                }
-                .padding()
-                .background(Color(.tertiarySystemBackground))
-                .cornerRadius(10)
-                
-                // Smart recommendation info
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .foregroundColor(.yellow)
-                        .font(.caption)
-                    Text("Personalized based on your weight & goals")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
+        .padding(20)
+        .background(Color(white: 0.12))
+        .cornerRadius(20)
     }
     
     // Helpers
@@ -1187,8 +1287,8 @@ struct WaterIntakeDetailView: View {
     }
 }
 
-// MARK: - Hydration Stat Box
-struct HydrationStatBox: View {
+// MARK: - Hydration Stat Box (for detail view - no background)
+struct DetailStatBox: View {
     let title: String
     let value: String
     let unit: String
@@ -1204,20 +1304,21 @@ struct HydrationStatBox: View {
             Text(value)
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(.white)
             
-            Text(unit.isEmpty ? title : "\(unit)")
+            Text(unit.isEmpty ? title : unit)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(.gray)
             
             if !unit.isEmpty {
                 Text(title)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
             }
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(Color(.tertiarySystemBackground))
+        .background(Color(white: 0.12))
         .cornerRadius(14)
     }
 }
@@ -1370,21 +1471,16 @@ struct HydrationBadge: View {
     
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 36, height: 36)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
-            }
+            // Floating icon - no background
+            Image(systemName: icon)
+                .font(.system(size: 22))
+                .foregroundColor(color)
             
             Text(value)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
             
             Text(title)
-                .font(.system(size: 9))
+                .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)

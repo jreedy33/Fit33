@@ -149,79 +149,93 @@ struct ExerciseDetailView: View {
         .white
     }
     
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Status bar area with dark content style
-                DarkStatusBarArea()
-                    .frame(height: 80)
-                
-                // Video Section (with stable ID to prevent recreation)
-                videoSection
-                
-                // Content Section with dark background
-                VStack(alignment: .leading, spacing: 20) {
-                    // Exercise Name & Badges
-                    headerSection
-                    
-                    // User's Personal Stats (if they have history)
-                    if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
-                        userStatsSection
-                    }
-                    
-                    // Exercise Description
-                    if let description = exerciseDescriptionText {
-                        descriptionSection(description)
-                    }
-                    
-                    // How To Section
-                    if !howToSteps.isEmpty {
-                        howToSection
-                    }
-                    
-                    // Target Muscles
-                    muscleSection
-                    
-                    // Equipment Info
-                    equipmentSection
-                    
-                    // Bottom padding for tab bar
-                    Spacer(minLength: 100)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .background(Color(UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))) // Dark background
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ExerciseDetailScrollOffsetKey.self,
-                            value: geo.frame(in: .named("scroll")).minY
-                        )
-                    }
-                )
-            }
-        }
-        .coordinateSpace(name: "scroll")
-        .scrollIndicators(.hidden)
-        .ignoresSafeArea(edges: .top)
-        .background(
-            VStack(spacing: 0) {
-                // White for top space + video area (80 + 240 = 320)
-                Color.white.frame(height: 320)
-                // Dark for rest of content (explicit dark color)
-                Color(UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))
-            }
-            .ignoresSafeArea()
+    // Gradient background colors
+    private var backgroundGradient: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color(red: 0.06, green: 0.08, blue: 0.12), Color(red: 0.04, green: 0.05, blue: 0.08)]
+                : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white],
+            startPoint: .top,
+            endPoint: .bottom
         )
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.automatic, for: .navigationBar)
-        .toolbarColorScheme(.light, for: .navigationBar) // Light toolbar = dark status bar icons
+    }
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Animated gradient background
+            backgroundGradient
+                .ignoresSafeArea()
+            
+            // Main content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Video Section (with stable ID to prevent recreation)
+                    videoSection
+                    
+                    // Content Section
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Exercise Name & Badges
+                        headerSection
+                        
+                        // User's Personal Stats (if they have history)
+                        if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
+                            userStatsSection
+                        }
+                        
+                        // Exercise Description
+                        if let description = exerciseDescriptionText {
+                            descriptionSection(description)
+                        }
+                        
+                        // How To Section
+                        if !howToSteps.isEmpty {
+                            howToSection
+                        }
+                        
+                        // Target Muscles & Equipment in 2-column grid
+                        HStack(alignment: .top, spacing: 12) {
+                            muscleSection
+                            equipmentSection
+                        }
+                        
+                        // Bottom padding for tab bar
+                        Spacer(minLength: 100)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 20)
+                }
+            }
+            .scrollIndicators(.hidden)
+            
+            // Custom back button in safe area with glass effect
+            Button(action: {
+                HapticManager.tap()
+                dismiss()
+            }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.black)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                            Circle()
+                                .fill(Color.white.opacity(0.9))
+                            Circle()
+                                .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
+                        }
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+            }
+            .padding(.leading, 16)
+            .padding(.top, 8)
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .navigationBarHidden(true)
         .gesture(
-            // Swipe from left edge to go back
             DragGesture(minimumDistance: 30, coordinateSpace: .local)
                 .onEnded { value in
-                    // Trigger dismiss if swiped far enough from left edge
                     if value.startLocation.x < 50 && value.translation.width > 80 {
                         HapticManager.tap()
                         dismiss()
@@ -229,26 +243,14 @@ struct ExerciseDetailView: View {
                 }
         )
         .onAppear {
-            // Force dark status bar icons for white video background
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                windowScene.windows.first?.overrideUserInterfaceStyle = .light
-            }
-            
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,
                 "exercise_id": exercise.id?.uuidString ?? "unknown"
             ])
             loadUserHistory()
             
-            // 🚀 Priority prefetch for this exercise video
             if let name = exercise.name {
                 VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
-            }
-        }
-        .onDisappear {
-            // Restore system appearance when leaving
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                windowScene.windows.first?.overrideUserInterfaceStyle = .unspecified
             }
         }
     }
@@ -256,41 +258,65 @@ struct ExerciseDetailView: View {
     // MARK: - Video Section
     
     private var videoSection: some View {
-        RemoteVideoPlayerView(
-            exerciseName: exercise.name ?? "",
-            categoryColor: categoryColor,
-            videoFilename: exercise.videoFilename
-        )
-        .id(exercise.id) // Stable ID prevents video from being recreated
+        ZStack(alignment: .top) {
+            // Video with white background - contained within frame
+            RemoteVideoPlayerView(
+                exerciseName: exercise.name ?? "",
+                categoryColor: categoryColor,
+                videoFilename: exercise.videoFilename
+            )
+            .id(exercise.id) // Stable ID prevents video from being recreated
+            
+            // Subtle gradient at top for status bar visibility
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.15),
+                    Color.black.opacity(0.05),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 60)
+            .allowsHitTesting(false)
+        }
+        .background(Color.white)
+        .clipped() // Ensure nothing bleeds outside
     }
     
     // MARK: - Header Section
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Exercise Name (shows nickname if user has set one)
+        VStack(alignment: .leading, spacing: 16) {
+            // Exercise Name with gradient text
             Text(exercise.displayName)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.primary, .primary.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 .lineLimit(2)
             
             // Badges Row
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    // Category Badge
-                    categoryBadge
-                    
-                    // Equipment Badge
-                    equipmentBadge
-                    
-                    // Times Performed Badge (if any)
-                    if totalTimesPerformed > 0 {
-                        performedBadge
-                    }
+            HStack(spacing: 10) {
+                // Category Badge with glow
+                categoryBadge
+                
+                // Equipment Badge
+                equipmentBadge
+                
+                // Times Performed Badge (if any)
+                if totalTimesPerformed > 0 {
+                    performedBadge
                 }
+                
+                Spacer()
             }
         }
-        .padding(.top, 20)
+        .padding(.vertical, 4)
     }
     
     private var categoryBadge: some View {
@@ -304,14 +330,25 @@ struct ExerciseDetailView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(
-            LinearGradient(
-                colors: [categoryColor, categoryColor.opacity(0.7)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            ZStack {
+                // Glow layer
+                Capsule()
+                    .fill(categoryColor)
+                    .blur(radius: 8)
+                    .opacity(0.5)
+                
+                // Main gradient
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [categoryColor, categoryColor.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
         )
-        .clipShape(Capsule())
-        .shadow(color: categoryColor.opacity(0.4), radius: 8, x: 0, y: 4)
+        .shadow(color: categoryColor.opacity(0.5), radius: 10, x: 0, y: 4)
     }
     
     private var equipmentBadge: some View {
@@ -357,12 +394,26 @@ struct ExerciseDetailView: View {
     // MARK: - User Stats Section
     
     private var userStatsSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             // Section Header
-            HStack {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(categoryColor)
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [categoryColor, categoryColor.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 32, height: 32)
+                        .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
+                    
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
                 Text("Your Progress")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.primary)
@@ -381,22 +432,31 @@ struct ExerciseDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(Color.cardBackground)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
                             LinearGradient(
-                                colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1), Color.clear],
+                                colors: [categoryColor.opacity(0.35), categoryColor.opacity(0.1), Color.clear],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1
+                            lineWidth: 1.5
                         )
                 )
-                .shadow(color: categoryColor.opacity(0.1), radius: 15, x: 0, y: 8)
+                .shadow(color: categoryColor.opacity(0.2), radius: 20, x: 0, y: 10)
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
         )
     }
     
@@ -515,144 +575,120 @@ struct ExerciseDetailView: View {
     private func descriptionSection(_ description: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "text.alignleft")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(categoryColor)
+                ZStack {
+                    Circle()
+                        .fill(categoryColor.opacity(0.15))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(categoryColor)
+                }
                 Text("About")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.primary)
+                Spacer()
             }
             
             Text(description)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
-                .lineSpacing(5)
+                .lineSpacing(6)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 10, x: 0, y: 5)
-        )
-    }
-    
-    // MARK: - How To Section
-    
-    private var howToSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Section Header
-            HStack(spacing: 8) {
-                Image(systemName: "list.number")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(categoryColor)
-                Text("How To Perform")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.primary)
-            }
-            
-            // Steps List
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(howToSteps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 14) {
-                        // Step Number Circle
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [categoryColor, categoryColor.opacity(0.7)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 28, height: 28)
-                                .shadow(color: categoryColor.opacity(0.3), radius: 4, x: 0, y: 2)
-                            
-                            Text("\(index + 1)")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                        }
-                        
-                        // Step Text
-                        Text(step)
-                            .font(.system(size: 15))
-                            .foregroundColor(.primary.opacity(0.85))
-                            .lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    
-                    // Divider (except for last item)
-                    if index < howToSteps.count - 1 {
-                        Rectangle()
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
-                            .frame(height: 1)
-                            .padding(.leading, 42)
-                    }
-                }
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: 20)
                         .stroke(
                             LinearGradient(
-                                colors: [categoryColor.opacity(0.2), categoryColor.opacity(0.05), Color.clear],
+                                colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1), Color.clear],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
                             lineWidth: 1
                         )
                 )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 10, x: 0, y: 5)
+                .shadow(color: categoryColor.opacity(0.15), radius: 15, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
         )
     }
     
-    // MARK: - Muscle Section
+    // MARK: - How To Section
     
-    private var muscleSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private var howToSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Section Header
             HStack(spacing: 8) {
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(categoryColor)
-                Text("Target Muscles")
+                ZStack {
+                    Circle()
+                        .fill(categoryColor.opacity(0.15))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "list.number")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(categoryColor)
+                }
+                Text("How To Perform")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.primary)
+                Spacer()
             }
             
-            VStack(alignment: .leading, spacing: 12) {
-                // Primary Muscle
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("PRIMARY")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
-                        .tracking(1)
-                    
-                    primaryMuscleTag
-                }
-                
-                // Secondary Muscles
-                if !secondaryMuscles.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("SECONDARY")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .tracking(1)
-                        
-                        FlowLayout(spacing: 8) {
-                            ForEach(secondaryMuscles, id: \.self) { muscle in
-                                secondaryMuscleTag(muscle)
+            // Steps List with gradient connector
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(howToSteps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 14) {
+                        // Step Number with gradient
+                        VStack(spacing: 0) {
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [categoryColor, categoryColor.opacity(0.7)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 30, height: 30)
+                                    .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
+                                
+                                Text("\(index + 1)")
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            // Connector line (except for last item)
+                            if index < howToSteps.count - 1 {
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .frame(width: 2)
+                                    .frame(maxHeight: .infinity)
                             }
                         }
+                        
+                        // Step Text
+                        Text(step)
+                            .font(.system(size: 15))
+                            .foregroundColor(.primary.opacity(0.9))
+                            .lineSpacing(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, index < howToSteps.count - 1 ? 16 : 0)
                     }
                 }
             }
@@ -660,59 +696,82 @@ struct ExerciseDetailView: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 10, x: 0, y: 5)
-        )
-    }
-    
-    private var primaryMuscleTag: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(categoryColor)
-                .frame(width: 10, height: 10)
-                .shadow(color: categoryColor.opacity(0.5), radius: 4, x: 0, y: 0)
-            
-            Text(primaryMuscle)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.white)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            LinearGradient(
-                colors: [categoryColor, categoryColor.opacity(0.8)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        )
-        .clipShape(Capsule())
-        .shadow(color: categoryColor.opacity(0.3), radius: 6, x: 0, y: 3)
-    }
-    
-    private func secondaryMuscleTag(_ muscle: String) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(categoryColor.opacity(0.6))
-                .frame(width: 8, height: 8)
-            
-            Text(muscle)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(categoryColor)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(
-            Capsule()
-                .fill(categoryColor.opacity(0.12))
                 .overlay(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(
+                            LinearGradient(
+                                colors: [categoryColor.opacity(0.25), categoryColor.opacity(0.08), Color.clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: categoryColor.opacity(0.12), radius: 15, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
+        )
+    }
+    
+    // MARK: - Muscle Section
+    
+    private var muscleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(spacing: 6) {
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(categoryColor)
+                Text("Muscles")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            
+            // Primary
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(categoryColor)
+                    .frame(width: 8, height: 8)
+                Text(primaryMuscle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            
+            // Secondary (compact)
+            if !secondaryMuscles.isEmpty {
+                Text(secondaryMuscles.prefix(2).joined(separator: ", "))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
                         .stroke(categoryColor.opacity(0.2), lineWidth: 1)
                 )
+                .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
         )
     }
     
@@ -720,50 +779,52 @@ struct ExerciseDetailView: View {
     
     private var equipmentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+            // Header
+            HStack(spacing: 6) {
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(categoryColor)
                 Text("Equipment")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.primary)
             }
             
-            HStack(spacing: 12) {
-                // Equipment Icon
+            // Icon & Name
+            HStack(spacing: 10) {
                 ZStack {
                     Circle()
                         .fill(categoryColor.opacity(0.15))
-                        .frame(width: 50, height: 50)
+                        .frame(width: 36, height: 36)
                     
                     Image(systemName: equipmentIcon)
-                        .font(.system(size: 22))
+                        .font(.system(size: 16))
                         .foregroundColor(categoryColor)
                 }
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(exercise.equipment ?? "Bodyweight")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
-                    
-                    Text(equipmentDescription)
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
+                Text(exercise.equipment ?? "Bodyweight")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
             }
         }
-        .padding(18)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 10, x: 0, y: 5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(categoryColor.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
         )
     }
     
@@ -1058,6 +1119,61 @@ struct StatusBarStyleSetter: UIViewControllerRepresentable {
 }
 
 // MARK: - Video Mapping Function
+
+// MARK: - Status Bar Styler
+
+struct StatusBarStyler: UIViewControllerRepresentable {
+    let statusBarStyle: UIStatusBarStyle
+    
+    func makeUIViewController(context: Context) -> StatusBarViewController {
+        StatusBarViewController(statusBarStyle: statusBarStyle)
+    }
+    
+    func updateUIViewController(_ uiViewController: StatusBarViewController, context: Context) {
+        uiViewController.statusBarStyle = statusBarStyle
+    }
+}
+
+class StatusBarViewController: UIViewController {
+    var statusBarStyle: UIStatusBarStyle {
+        didSet {
+            print("📊 [STATUS BAR] Style changed to: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+            setNeedsStatusBarAppearanceUpdate()
+        }
+    }
+    
+    init(statusBarStyle: UIStatusBarStyle) {
+        self.statusBarStyle = statusBarStyle
+        super.init(nibName: nil, bundle: nil)
+        print("📊 [STATUS BAR] Controller init with style: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        print("📊 [STATUS BAR] Returning preferredStatusBarStyle: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+        return statusBarStyle
+    }
+    
+    override var prefersStatusBarHidden: Bool {
+        return false
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        print("📊 [STATUS BAR] viewDidLoad - requesting update")
+        setNeedsStatusBarAppearanceUpdate()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        print("📊 [STATUS BAR] viewDidAppear - requesting update")
+        setNeedsStatusBarAppearanceUpdate()
+    }
+}
 
 func createExerciseVideoMapping() -> [String: String] {
     return [

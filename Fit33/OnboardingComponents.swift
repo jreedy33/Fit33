@@ -1,9 +1,156 @@
 import SwiftUI
 
-// MARK: - Unified Onboarding Card Style
-// Matches the auto-gen workout flow exactly
+// MARK: - Unified Card Background Style
+// Matches the exercise library card style with gradient/glow effect for cohesiveness
 
-/// Standard card for onboarding selections - matches auto-gen flow style
+/// Card background that matches exercise library card style - used across all onboarding screens
+struct OnboardingCardBackgroundStyle: ViewModifier {
+    @Environment(\.colorScheme) var colorScheme
+    let accentColor: Color
+    let secondaryAccentColor: Color
+    let isSelected: Bool
+    let cornerRadius: CGFloat
+    
+    init(accentColor: Color, secondaryAccentColor: Color? = nil, isSelected: Bool, cornerRadius: CGFloat = 24) {
+        self.accentColor = accentColor
+        self.secondaryAccentColor = secondaryAccentColor ?? accentColor.opacity(0.7)
+        self.isSelected = isSelected
+        self.cornerRadius = cornerRadius
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    // Bottom shadow layer (deepest) - accent colored glow
+                    RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                        .fill(accentColor.opacity(colorScheme == .dark ? (isSelected ? 0.15 : 0.08) : (isSelected ? 0.10 : 0.04)))
+                        .offset(y: isSelected ? 10 : 8)
+                        .blur(radius: isSelected ? 6 : 4)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: cornerRadius + 2, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark 
+                                    ? [Color(white: 0.15), Color(white: 0.10)]
+                                    : [Color.white, Color.white.opacity(0.95)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark 
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border - always present for depth
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    accentColor.opacity(colorScheme == .dark ? (isSelected ? 0.6 : 0.35) : (isSelected ? 0.5 : 0.25)),
+                                    secondaryAccentColor.opacity(colorScheme == .dark ? (isSelected ? 0.4 : 0.25) : (isSelected ? 0.35 : 0.15))
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                }
+            )
+            // Multi-layer shadow effect matching workout buttons
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? (isSelected ? 0.25 : 0.15) : (isSelected ? 0.15 : 0.08)), radius: isSelected ? 20 : 12, x: 0, y: isSelected ? 10 : 6)
+    }
+}
+
+extension View {
+    /// Applies the standard onboarding card background style matching exercise library cards
+    func onboardingCardStyle(accentColor: Color, secondaryColor: Color? = nil, isSelected: Bool, cornerRadius: CGFloat = 24) -> some View {
+        self.modifier(OnboardingCardBackgroundStyle(
+            accentColor: accentColor,
+            secondaryAccentColor: secondaryColor,
+            isSelected: isSelected,
+            cornerRadius: cornerRadius
+        ))
+    }
+    
+    /// Applies the selected card style with gradient fill
+    func onboardingSelectedStyle(accentColor: Color, secondaryColor: Color? = nil, cornerRadius: CGFloat = 24) -> some View {
+        self.modifier(OnboardingSelectedCardStyle(accentColor: accentColor, secondaryColor: secondaryColor, cornerRadius: cornerRadius))
+    }
+}
+
+/// Selected card background with prominent accent color gradient
+struct OnboardingSelectedCardStyle: ViewModifier {
+    @Environment(\.colorScheme) var colorScheme
+    let accentColor: Color
+    let secondaryColor: Color
+    let cornerRadius: CGFloat
+    
+    init(accentColor: Color, secondaryColor: Color? = nil, cornerRadius: CGFloat = 24) {
+        self.accentColor = accentColor
+        self.secondaryColor = secondaryColor ?? accentColor.opacity(0.7)
+        self.cornerRadius = cornerRadius
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    // Bottom glow layer
+                    RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                        .fill(accentColor.opacity(0.35))
+                        .offset(y: 10)
+                        .blur(radius: 8)
+                    
+                    // Main gradient background
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [accentColor, secondaryColor],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.4), Color.white.opacity(0.1), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                }
+            )
+            // Glow shadow
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.5 : 0.35), radius: 20, x: 0, y: 10)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 12, x: 0, y: 6)
+    }
+}
+
+// MARK: - Unified Onboarding Card Style
+// Matches the exercise library card style exactly
+
+/// Standard card for onboarding selections - matches exercise library card style
 struct OnboardingSelectionCard: View {
     @Environment(\.colorScheme) var colorScheme
     
@@ -45,13 +192,13 @@ struct OnboardingSelectionCard: View {
                         .fill(
                             isSelected
                                 ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color.gray.opacity(0.08), colorScheme == .dark ? Color(white: 0.18) : Color.gray.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(isSelected ? .white : .gray)
+                        .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                 }
                 
                 VStack(spacing: 2) {
@@ -71,35 +218,7 @@ struct OnboardingSelectionCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(
-                ZStack {
-                    // Floating card effect
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.12, blue: 0.14) : Color.white)
-                    
-                    // Inner highlight for depth
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        isSelected ? color.opacity(0.6) : Color.clear,
-                        lineWidth: 2
-                    )
-            )
-            // Floating shadow - glows with color when selected
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+            .onboardingCardStyle(accentColor: color, secondaryColor: color.opacity(0.7), isSelected: isSelected, cornerRadius: 20)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -107,7 +226,7 @@ struct OnboardingSelectionCard: View {
     }
 }
 
-/// Large card with emoji for goals/experience - matches auto-gen style
+/// Large card with emoji for goals/experience - matches exercise library card style
 struct OnboardingLargeCard: View {
     @Environment(\.colorScheme) var colorScheme
     
@@ -130,7 +249,7 @@ struct OnboardingLargeCard: View {
                 ZStack {
                     if isSelected {
                         Circle()
-                            .fill(color.opacity(0.3))
+                            .fill(color.opacity(0.35))
                             .frame(width: 60, height: 60)
                             .blur(radius: 14)
                     }
@@ -153,29 +272,7 @@ struct OnboardingLargeCard: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 130)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                    
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.15), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? color.opacity(0.6) : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.clear), lineWidth: isSelected ? 2 : 1)
-            )
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: isSelected ? 14 : 6, x: 0, y: isSelected ? 8 : 4)
+            .onboardingCardStyle(accentColor: color, secondaryColor: color.opacity(0.7), isSelected: isSelected, cornerRadius: 24)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -183,7 +280,7 @@ struct OnboardingLargeCard: View {
     }
 }
 
-/// Wide horizontal card for single selections
+/// Wide horizontal card for single selections - matches exercise library card style
 struct OnboardingWideCard: View {
     @Environment(\.colorScheme) var colorScheme
     
@@ -215,13 +312,13 @@ struct OnboardingWideCard: View {
                         .fill(
                             isSelected
                                 ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color.gray.opacity(0.08), colorScheme == .dark ? Color(white: 0.18) : Color.gray.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(isSelected ? .white : .gray)
+                        .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -252,29 +349,7 @@ struct OnboardingWideCard: View {
                 }
             }
             .padding(14)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                    
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.15), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? color.opacity(0.5) : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.clear), lineWidth: isSelected ? 2 : 1)
-            )
-            .shadow(color: isSelected ? color.opacity(0.35) : .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+            .onboardingCardStyle(accentColor: color, secondaryColor: color.opacity(0.7), isSelected: isSelected, cornerRadius: 20)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.02 : 1.0)

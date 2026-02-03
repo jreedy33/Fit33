@@ -60,6 +60,33 @@ enum MealType: String, CaseIterable {
         case .snacks: return "Snacks"
         }
     }
+    
+    var icon: String {
+        switch self {
+        case .breakfast: return "sunrise.fill"
+        case .lunch: return "sun.max.fill"
+        case .dinner: return "moon.stars.fill"
+        case .snacks: return "leaf.fill"
+        }
+    }
+    
+    var gradientColors: (Color, Color) {
+        switch self {
+        case .breakfast: return (.orange, .yellow)
+        case .lunch: return (.green, .teal)
+        case .dinner: return (.blue, .cyan)
+        case .snacks: return (.purple, .pink)
+        }
+    }
+    
+    var timeDescription: String {
+        switch self {
+        case .breakfast: return "5 AM - 10 AM"
+        case .lunch: return "12 PM - 2 PM"
+        case .dinner: return "6 PM onwards"
+        case .snacks: return "Anytime"
+        }
+    }
 }
 
 struct FoodEntry {
@@ -380,7 +407,7 @@ struct MainTabView: View {
         TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .white),
         TabItem(icon: "book", selectedIcon: "book.fill", title: "Exercises", color: .blue),
         TabItem(icon: "dumbbell", selectedIcon: "dumbbell.fill", title: "Workout", color: .green),
-        TabItem(icon: "leaf", selectedIcon: "leaf.fill", title: "Meals", color: .mint),
+        TabItem(icon: "leaf", selectedIcon: "leaf.fill", title: "Nutrition", color: .mint),
         TabItem(icon: "chart.line.uptrend.xyaxis", selectedIcon: "chart.line.uptrend.xyaxis", title: "Stats", color: .purple)
     ]
     
@@ -918,6 +945,7 @@ struct SimpleMealPlanView: View {
                                 // Reset selection to dismiss
                                 selectedMeal = nil
                             }
+                            .environmentObject(userManager)
                             .onAppear {
                                 print("🚀 [CONTENTVIEW] FoodSearchView appeared for meal: \(meal.rawValue)")
                             }
@@ -954,10 +982,10 @@ struct SimpleMealPlanView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 100)
+                    .padding(.bottom, 20)
                 }
                 .background(
-                    AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                    AnimatedOrbBackground.home(colorScheme: colorScheme)
                 )
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
@@ -1073,16 +1101,16 @@ struct SimpleMealPlanView: View {
     // MARK: - Custom Header View
     private var customNutritionHeaderView: some View {
         HStack {
-            Text("Meals")
+            Text("Nutrition")
                 .font(.system(size: 42, weight: .bold))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.mint, .mint, .mint, Color(red: 0.4, green: 0.95, blue: 0.8).opacity(0.8)],
+                        colors: [Color.teal, Color.teal, Color.mint.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-                .shadow(color: .mint.opacity(0.4), radius: 6, x: 0, y: 2)
+                .shadow(color: Color.teal.opacity(0.4), radius: 6, x: 0, y: 2)
             
             Spacer()
             
@@ -1289,158 +1317,134 @@ struct SimpleMealPlanView: View {
         }
     }
     
+    // MARK: - Swipeable Meal Carousel (like Challenge/Program widget)
+    @State private var selectedMealPage: Int = -1 // -1 means not initialized
+    @State private var selectedNutritionPage = 1 // Default to macros (center card)
+    @State private var insightsViewMode = 0 // 0 = icons/numbers, 1 = text insights
+    
+    /// Get the current meal time index based on time of day
+    private var currentMealTimeIndex: Int {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<10:  return 0 // Breakfast: 5 AM - 9:59 AM
+        case 10..<12: return 3 // Morning snack: 10 AM - 11:59 AM
+        case 12..<14: return 1 // Lunch: 12 PM - 1:59 PM
+        case 14..<18: return 3 // Afternoon snack: 2 PM - 5:59 PM
+        default:      return 2 // Dinner: 6 PM onward & late night
+        }
+    }
+    
     private var mealSectionsCard: some View {
-        let mealColors = currentMealTimeColors
+        let mealTypes: [MealType] = [.breakfast, .lunch, .dinner, .snacks]
+        let currentIndex = currentMealTimeIndex
         
-        return VStack(spacing: 0) {
-            // Header
+        return VStack(spacing: 8) {
+            // Section header
             HStack {
                 Image(systemName: "fork.knife")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [mealColors.primary, mealColors.secondary],
+                            colors: [mealTypes[max(0, selectedMealPage == -1 ? currentIndex : selectedMealPage)].gradientColors.0,
+                                    mealTypes[max(0, selectedMealPage == -1 ? currentIndex : selectedMealPage)].gradientColors.1],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                 
-                Text("Track Your Meals")
+                Text("Track Your Meal")
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 4)
             
-            Divider()
-                .padding(.horizontal, 16)
-            
-            // Stacked Meal Cards
-            VStack(spacing: 10) {
-                // Breakfast
-                MealRowCard(
-                    mealType: .breakfast,
-                    meals: mealService.todaysMeals.filter { $0.mealType == .breakfast },
-                    isMostRecent: mostRecentMealType == .breakfast,
-                    onAddFood: {
-                        selectedMeal = .breakfast
-                    },
-                    onDelete: { meal in
-                        mealService.removeMealEntry(meal)
-                    }
-                )
+            // Swipeable meal cards
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                let pageIndex = selectedMealPage == -1 ? currentIndex : selectedMealPage
                 
-                // Lunch
-                MealRowCard(
-                    mealType: .lunch,
-                    meals: mealService.todaysMeals.filter { $0.mealType == .lunch },
-                    isMostRecent: mostRecentMealType == .lunch,
-                    onAddFood: {
-                        selectedMeal = .lunch
-                    },
-                    onDelete: { meal in
-                        mealService.removeMealEntry(meal)
-                    }
-                )
-                
-                // Dinner
-                MealRowCard(
-                    mealType: .dinner,
-                    meals: mealService.todaysMeals.filter { $0.mealType == .dinner },
-                    isMostRecent: mostRecentMealType == .dinner,
-                    onAddFood: {
-                        selectedMeal = .dinner
-                    },
-                    onDelete: { meal in
-                        mealService.removeMealEntry(meal)
-                    }
-                )
-                
-                // Snacks
-                MealRowCard(
-                    mealType: .snacks,
-                    meals: mealService.todaysMeals.filter { $0.mealType == .snacks },
-                    isMostRecent: mostRecentMealType == .snacks,
-                    onAddFood: {
-                        selectedMeal = .snacks
-                    },
-                    onDelete: { meal in
-                        mealService.removeMealEntry(meal)
-                    }
-                )
-            }
-            .padding(16)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - meal time colored
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(mealColors.primary.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 22)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                HStack(spacing: spacing) {
+                    ForEach(0..<mealTypes.count, id: \.self) { index in
+                        SwipeableMealCard(
+                            mealType: mealTypes[index],
+                            meals: mealService.todaysMeals.filter { $0.mealType == mealTypes[index] },
+                            isCurrentMealTime: index == currentIndex,
+                            onAddFood: {
+                                selectedMeal = mealTypes[index]
+                            },
+                            onDelete: { meal in
+                                mealService.removeMealEntry(meal)
+                            }
                         )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border - matches current meal time
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                mealColors.primary.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                mealColors.secondary.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                        .frame(width: cardWidth)
+                        .opacity(pageIndex == index ? 1 : 0)
+                    }
+                }
+                .offset(x: -CGFloat(pageIndex) * (cardWidth + spacing))
             }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: mealColors.primary.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+            .frame(height: 180)
+            .animation(.easeOut(duration: 0.25), value: selectedMealPage == -1 ? currentIndex : selectedMealPage)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let verticalAmount = abs(value.translation.height)
+                        let pageIndex = selectedMealPage == -1 ? currentIndex : selectedMealPage
+                        
+                        // Only trigger if movement is primarily horizontal
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                            HapticManager.impact(.medium)
+                            if horizontalAmount < 0 && pageIndex < mealTypes.count - 1 {
+                                // Swipe left - go to next
+                                selectedMealPage = pageIndex + 1
+                            } else if horizontalAmount > 0 && pageIndex > 0 {
+                                // Swipe right - go to previous
+                                selectedMealPage = pageIndex - 1
+                            }
+                        }
+                    }
+            )
+            
+            // Page indicators (tappable)
+            HStack(spacing: 6) {
+                ForEach(0..<mealTypes.count, id: \.self) { index in
+                    let pageIndex = selectedMealPage == -1 ? currentIndex : selectedMealPage
+                    let isSelected = pageIndex == index
+                    let mealColor = mealTypes[index].gradientColors.0
+                    
+                    Circle()
+                        .fill(isSelected ? mealColor : Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(isSelected ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 0.2), value: pageIndex)
+                        .onTapGesture {
+                            HapticManager.impact(.light)
+                            selectedMealPage = index
+                        }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .onAppear {
+            // Initialize to current meal time on first appear
+            if selectedMealPage == -1 {
+                selectedMealPage = currentIndex
+            }
+        }
     }
     
     // MARK: - Main Comprehensive Nutrition View
     private var comprehensiveNutritionView: some View {
-        VStack(spacing: 24) {
-            // 1. Today's Macros + Weekly Progress (combined widget)
-            enhancedNutritionOverviewCard
+        VStack(spacing: 16) {
+            // 1. Today's Macros + Weekly Progress (swipeable cards)
+            nutritionSwipeableCards
             
-            // 2. Track Your Meals (most important - right after macros)
-            mealSectionsCard
+            // 2. Track Your Meals - ALL meals visible at once (old design)
+            allMealSectionsView
             
             // 3. Quick Actions - Meal Plan, Import, Restaurant, Shopping (same style as workout buttons)
             MealsQuickActionsView(
@@ -1460,86 +1464,716 @@ struct SimpleMealPlanView: View {
             // 6. Hydration Tracking
             HydrationWidget()
                 .id("hydration")
-            
-            // 7. Daily Summary
-            dailySummaryMainCard
         }
     }
     
-    // MARK: - Enhanced Nutrition Overview with Integrated Pie Chart
-    private var enhancedNutritionOverviewCard: some View {
-        VStack(spacing: 20) {
-            // MARK: Today's Macros Section
-            VStack(spacing: 14) {
-                // Header with Total Calories
-                HStack(alignment: .top) {
-                    Text("Today's Macros")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
+    // MARK: - All Meals View (shows all meal sections at once)
+    private var allMealSectionsView: some View {
+        VStack(spacing: 12) {
+            // Section header
+            HStack {
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .mint],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                Text("Track Your Meals")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            
+            // All meal sections stacked
+            ForEach(MealType.allCases, id: \.self) { mealType in
+                compactMealSection(for: mealType)
+            }
+        }
+    }
+    
+    // MARK: - Compact Meal Section (for all-meals view)
+    private func compactMealSection(for mealType: MealType) -> some View {
+        let meals = mealService.todaysMeals.filter { $0.mealType == mealType }
+        let isCurrentMealTime = currentMealTimeIndex == MealType.allCases.firstIndex(of: mealType)
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            // Header row
+            HStack {
+                // Meal icon with gradient
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [mealType.gradientColors.0, mealType.gradientColors.1],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 32, height: 32)
                     
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(consumedCalories)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("of \(calorieGoal) cal")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    Image(systemName: mealType.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
                 }
                 
-                // Nutrition Rings with Legend
-                HStack(spacing: 20) {
-                    // Triple Nutrition Ring (shows red + warning if exceeded)
-                    NutritionTripleRing(
-                        caloriesProgress: caloriesProgress,
-                        proteinProgress: proteinProgress,
-                        fatProgress: fatProgress,
-                        size: 100,
-                        caloriesExceeded: caloriesExceeded,
-                        fatExceeded: fatExceeded
-                    )
-                    
-                    VStack(alignment: .leading, spacing: 10) {
-                        MacroLegendRow(name: "Calories", current: consumedCalories, goal: calorieGoal, color: caloriesExceeded ? .red : .green, exceeded: caloriesExceeded)
-                        MacroLegendRow(name: "Protein", current: consumedProtein, goal: proteinGoal, color: .blue)
-                        MacroLegendRow(name: "Fat", current: consumedFat, goal: fatGoal, color: fatExceeded ? .red : .purple, exceeded: fatExceeded)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(mealType.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        if isCurrentMealTime {
+                            Text("NOW")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(mealType.gradientColors.0)
+                                )
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    Text(mealType.timeDescription)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Add button
+                Button {
+                    selectedMeal = mealType
+                } label: {
+                    Text("+ Add Food")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [mealType.gradientColors.0, mealType.gradientColors.1],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
                 }
             }
             
-            // Thin grey divider
-            Rectangle()
-                .fill(Color(.systemGray4))
-                .frame(height: 1)
-            
-            // MARK: Weekly Progress Section
-            VStack(spacing: 14) {
+            // Logged items or empty state
+            if meals.isEmpty {
                 HStack {
-                    Text("Weekly Progress")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                    Text("No food logged yet")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     Spacer()
+                    Text("Tap + to add your \(mealType.displayName.lowercased())")
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.7))
                 }
-                
-                VStack(spacing: 12) {
-                    WeeklyProgressRow(title: "Calorie Target", daysCompleted: weeklyCalorieDaysMet, totalDays: 7, color: .green)
-                    WeeklyProgressRow(title: "Protein Goals Met", daysCompleted: weeklyProteinDaysMet, totalDays: 7, color: .blue)
-                    WeeklyProgressRow(title: "Fat Goals Met", daysCompleted: weeklyFatDaysMet, totalDays: 7, color: .purple)
+                .padding(.leading, 40)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(meals, id: \.id) { meal in
+                        HStack {
+                            Text(meal.foodName)
+                                .font(.caption)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Text("\(meal.calories) cal")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Button {
+                                mealService.removeMealEntry(meal)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary.opacity(0.5))
+                            }
+                        }
+                        .padding(.leading, 40)
+                    }
                 }
             }
         }
-        .padding(20)
+        .padding(12)
         .background(
             ZStack {
-                // Main card background with gradient (matches Stats Today's Activity)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                if isCurrentMealTime {
+                    // Bottom shadow layer (deepest) - color glow for current meal
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(mealType.gradientColors.0.opacity(colorScheme == .dark ? 0.2 : 0.12))
+                        .offset(y: 6)
+                        .blur(radius: 6)
+                    
+                    // Middle shadow layer
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
+                        .offset(y: 3)
+                }
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                
+                if isCurrentMealTime {
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [mealType.gradientColors.0.opacity(colorScheme == .dark ? 0.5 : 0.4), mealType.gradientColors.1.opacity(colorScheme == .dark ? 0.4 : 0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                }
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: isCurrentMealTime ? 12 : 8, x: 0, y: isCurrentMealTime ? 6 : 4)
+        .shadow(color: isCurrentMealTime ? mealType.gradientColors.0.opacity(colorScheme == .dark ? 0.25 : 0.15) : Color.clear, radius: 16, x: 0, y: 8)
+    }
+    
+    // MARK: - Swipeable Nutrition Cards (Insights, Macros & Weekly Progress)
+    private var nutritionSwipeableCards: some View {
+        VStack(spacing: 12) {
+            // Swipeable header (changes with cards)
+            GeometryReader { geometry in
+                let headerWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                
+                HStack(spacing: spacing) {
+                    // Header 0: Daily Insights
+                    HStack {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.teal, .mint],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Text("Daily Insights")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        // Score summary
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("\(insightsScore)")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(insightsScoreColor)
+                            
+                            Text("score")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(width: headerWidth)
+                    .opacity(selectedNutritionPage == 0 ? 1 : 0)
+                    
+                    // Header 1: Today's Macros (center/default)
+                    HStack {
+                        Image(systemName: "chart.pie.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.teal, .mint],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Text("Today's Macros")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        // Calorie summary
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("\(consumedCalories)")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(caloriesExceeded ? .red : .primary)
+                            
+                            Text("of \(calorieGoal) cal")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(width: headerWidth)
+                    .opacity(selectedNutritionPage == 1 ? 1 : 0)
+                    
+                    // Header 2: Weekly Progress
+                    HStack {
+                        Image(systemName: "chart.bar.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.teal, .mint],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        Text("Weekly Progress")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        // Weekly summary
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("\(weeklyCalorieDaysMet)/7")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            
+                            Text("days on target")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(width: headerWidth)
+                    .opacity(selectedNutritionPage == 2 ? 1 : 0)
+                }
+                .offset(x: -CGFloat(selectedNutritionPage) * (headerWidth + spacing))
+            }
+            .frame(height: 28)
+            .padding(.horizontal, 4)
+            .animation(.easeOut(duration: 0.25), value: selectedNutritionPage)
+            
+            // Swipeable cards
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                
+                HStack(spacing: spacing) {
+                    // Card 0: Daily Insights
+                    dailyInsightsCard
+                        .frame(width: cardWidth)
+                        .opacity(selectedNutritionPage == 0 ? 1 : 0)
+                    
+                    // Card 1: Today's Macros (center/default)
+                    todaysMacrosCard
+                        .frame(width: cardWidth)
+                        .opacity(selectedNutritionPage == 1 ? 1 : 0)
+                    
+                    // Card 2: Weekly Progress
+                    weeklyProgressCard
+                        .frame(width: cardWidth)
+                        .opacity(selectedNutritionPage == 2 ? 1 : 0)
+                }
+                .offset(x: -CGFloat(selectedNutritionPage) * (cardWidth + spacing))
+            }
+            .frame(height: 145)
+            .animation(.easeOut(duration: 0.25), value: selectedNutritionPage)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let verticalAmount = abs(value.translation.height)
+                        
+                        // Only trigger if movement is primarily horizontal
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                            HapticManager.impact(.medium)
+                            if horizontalAmount < 0 && selectedNutritionPage < 2 {
+                                // Swipe left - go to next card
+                                selectedNutritionPage += 1
+                            } else if horizontalAmount > 0 && selectedNutritionPage > 0 {
+                                // Swipe right - go to previous card
+                                selectedNutritionPage -= 1
+                            }
+                        }
+                    }
+            )
+            
+            // Page indicators - right below the card
+            HStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(selectedNutritionPage == index ? Color.teal : Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(selectedNutritionPage == index ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 0.2), value: selectedNutritionPage)
+                        .onTapGesture {
+                            HapticManager.impact(.light)
+                            selectedNutritionPage = index
+                        }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Daily Insights Card
+    private var dailyInsightsCard: some View {
+        HStack(spacing: 0) {
+            // Main content area - toggles between icons and text on tap
+            ZStack {
+                // View 0: Floating icons/numbers
+                insightsIconsView
+                    .opacity(insightsViewMode == 0 ? 1 : 0)
+                    .scaleEffect(insightsViewMode == 0 ? 1 : 0.95)
+                
+                // View 1: Text insights
+                insightsTextView
+                    .opacity(insightsViewMode == 1 ? 1 : 0)
+                    .scaleEffect(insightsViewMode == 1 ? 1 : 0.95)
+            }
+            .animation(.easeOut(duration: 0.2), value: insightsViewMode)
+            .frame(maxWidth: .infinity)
+            .padding(.leading, 12)
+            
+            // Vertical page indicators - flush right edge
+            VStack(spacing: 6) {
+                ForEach(0..<2, id: \.self) { index in
+                    Circle()
+                        .fill(insightsViewMode == index ? Color.teal : Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(insightsViewMode == index ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 0.2), value: insightsViewMode)
+                }
+            }
+            .padding(.trailing, 8)
+            .padding(.leading, 4)
+        }
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(insightsCardBackground)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HapticManager.impact(.light)
+            withAnimation(.easeOut(duration: 0.2)) {
+                insightsViewMode = insightsViewMode == 0 ? 1 : 0
+            }
+        }
+    }
+    
+    // Shared card background for insights (teal glow - matches other cards)
+    private var insightsCardBackground: some View {
+        ZStack {
+            // Bottom shadow layer - teal glow
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 6)
+                .blur(radius: 3)
+            
+            // Middle shadow layer
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 3)
+            
+            // Main card background
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.14), Color(white: 0.09)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            // Inner highlight
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
+            
+            // Teal accent border (matches other cards)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+    
+    // MARK: - Insights Icons View (floating icons with values)
+    private var insightsIconsView: some View {
+        VStack {
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                MiniInsightTile(
+                    icon: "drop.fill",
+                    title: "Hydration",
+                    value: hydrationPercentage,
+                    color: .blue
+                )
+                
+                MiniInsightTile(
+                    icon: "leaf.fill",
+                    title: "Protein",
+                    value: proteinPercentage,
+                    color: .green
+                )
+                
+                MiniInsightTile(
+                    icon: "flame.fill",
+                    title: "Calories",
+                    value: caloriePercentage,
+                    color: .orange
+                )
+                
+                MiniInsightTile(
+                    icon: "fork.knife",
+                    title: "Meals",
+                    value: mealsLoggedToday,
+                    color: .purple
+                )
+            }
+            Spacer(minLength: 0)
+        }
+    }
+    
+    // MARK: - Insights Text View (actionable text insights)
+    private var insightsTextView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Generate smart text insights based on current data (limit to 3)
+            // Evenly spaced to fill the card
+            ForEach(Array(generateTextInsights().prefix(3).enumerated()), id: \.element) { index, insight in
+                if index > 0 {
+                    Spacer(minLength: 0)
+                }
+                
+                HStack(spacing: 8) {
+                    Image(systemName: insight.icon)
+                        .font(.system(size: 12))
+                        .foregroundColor(insight.color)
+                        .frame(width: 16)
+                    
+                    Text(insight.text)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                    
+                    Spacer(minLength: 0)
+                }
+                
+                if index < 2 {
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxHeight: .infinity)
+    }
+    
+    // Generate smart text insights (detailed style matching SmartDailySummaryWidget)
+    private func generateTextInsights() -> [InsightItem] {
+        var insights: [InsightItem] = []
+        let hour = Calendar.current.component(.hour, from: Date())
+        
+        // Protein insight with quick fix suggestions
+        let proteinRemaining = max(0, proteinGoal - consumedProtein)
+        let proteinProgress = proteinGoal > 0 ? Double(consumedProtein) / Double(proteinGoal) : 0
+        if proteinProgress < 0.6 && hour >= 14 {
+            let quickFixes = ["Greek yogurt (20g)", "chicken breast (30g)", "protein shake (25g)", "3 eggs (18g)", "cottage cheese (14g)"]
+            insights.append(InsightItem(icon: "arrow.up.circle.fill", text: "Need \(proteinRemaining)g protein still! Quick fix: \(quickFixes.randomElement()!)", color: .blue))
+        } else if proteinRemaining > 0 {
+            insights.append(InsightItem(icon: "arrow.up.circle", text: "Add \(proteinRemaining)g more protein – your muscles are waiting! 💪", color: .blue))
+        } else {
+            insights.append(InsightItem(icon: "checkmark.seal.fill", text: "Protein goal crushed! Your body has the building blocks it needs. 🏗️", color: .green))
+        }
+        
+        // Calorie insight with context
+        let caloriesRemaining = calorieGoal - consumedCalories
+        let calorieProgress = calorieGoal > 0 ? Double(consumedCalories) / Double(calorieGoal) : 0
+        if calorieProgress < 0.5 && hour >= 14 {
+            insights.append(InsightItem(icon: "exclamationmark.triangle.fill", text: "Only \(consumedCalories) cal by afternoon! Under-eating slows metabolism. 🍽️", color: .red))
+        } else if calorieProgress > 1.2 {
+            let over = consumedCalories - calorieGoal
+            insights.append(InsightItem(icon: "chart.bar.xaxis.ascending", text: "\(over) cal over budget. Consider a lighter dinner or evening walk! 🚶", color: .orange))
+        } else if caloriesRemaining > 200 {
+            insights.append(InsightItem(icon: "flame.fill", text: "\(caloriesRemaining) calories remaining – keep fueling your day! ⚡", color: .orange))
+        } else if caloriesRemaining > 0 {
+            insights.append(InsightItem(icon: "target", text: "Almost at calorie goal! Just \(caloriesRemaining) cal to go. 🎯", color: .green))
+        } else {
+            insights.append(InsightItem(icon: "checkmark.circle.fill", text: "Calorie goal reached! Perfect balance today. 🎯", color: .green))
+        }
+        
+        // Hydration insight with urgency
+        let hydrationProgress = HydrationService.shared.todayProgress
+        let waterGoal = HydrationService.shared.settings.dailyGoalMl
+        let waterIntake = HydrationService.shared.todayTotal
+        if hydrationProgress < 0.3 && hour >= 14 {
+            let remainingMl = waterGoal - waterIntake
+            insights.append(InsightItem(icon: "drop.triangle.fill", text: "Dehydration alert! ⚠️ Drink \(remainingMl)ml to catch up – your brain needs it!", color: .red))
+        } else if hydrationProgress < 0.5 {
+            let remainingMl = waterGoal - waterIntake
+            insights.append(InsightItem(icon: "drop", text: "\(remainingMl)ml to go! Keep a water bottle nearby. 💧", color: .cyan))
+        } else if hydrationProgress >= 1.0 {
+            insights.append(InsightItem(icon: "drop.fill", text: "Hydration on point! Your body is thanking you. 💧", color: .cyan))
+        }
+        
+        // Meals insight
+        let mealsLogged = mealService.getMealsForDate(Date()).count
+        if mealsLogged == 0 && hour >= 11 {
+            insights.append(InsightItem(icon: "pencil.and.list.clipboard", text: "No meals logged yet! Even a quick entry helps you stay aware. 📝", color: .gray))
+        } else if mealsLogged == 1 && hour >= 15 {
+            insights.append(InsightItem(icon: "clock.fill", text: "Only 1 meal tracked. Logging helps identify patterns! 📊", color: .gray))
+        }
+        
+        return insights
+    }
+    
+    // Computed properties for insights
+    private var hydrationPercentage: String {
+        // Calculate from hydration service
+        let current = HydrationService.shared.todayTotal
+        let goal = HydrationService.shared.settings.dailyGoalMl
+        let percent = goal > 0 ? Int((Double(current) / Double(goal)) * 100) : 0
+        return "\(percent)%"
+    }
+    
+    private var proteinPercentage: String {
+        let percent = proteinGoal > 0 ? Int((Double(consumedProtein) / Double(proteinGoal)) * 100) : 0
+        return "\(percent)%"
+    }
+    
+    private var caloriePercentage: String {
+        let percent = calorieGoal > 0 ? Int((Double(consumedCalories) / Double(calorieGoal)) * 100) : 0
+        return "\(percent)%"
+    }
+    
+    private var mealsLoggedToday: String {
+        let count = MealService.shared.getMealsForDate(Date()).count
+        return "\(count) logged"
+    }
+    
+    // Score for insights header
+    private var insightsScore: Int {
+        var score = 0
+        
+        // Calorie accuracy (max 30 points)
+        let calorieProgressValue = calorieGoal > 0 ? Double(consumedCalories) / Double(calorieGoal) : 0
+        let calorieDiff = abs(calorieProgressValue - 1.0)
+        if calorieDiff < 0.1 { score += 30 }
+        else if calorieDiff < 0.2 { score += 20 }
+        else if calorieDiff < 0.3 { score += 10 }
+        
+        // Protein goal (max 30 points)
+        let proteinProgressValue = proteinGoal > 0 ? Double(consumedProtein) / Double(proteinGoal) : 0
+        if proteinProgressValue >= 1.0 { score += 30 }
+        else if proteinProgressValue >= 0.8 { score += 20 }
+        else if proteinProgressValue >= 0.6 { score += 10 }
+        
+        // Meals logged (max 20 points)
+        let mealCount = MealService.shared.getMealsForDate(Date()).count
+        if mealCount >= 3 { score += 20 }
+        else if mealCount >= 2 { score += 15 }
+        else if mealCount >= 1 { score += 10 }
+        
+        // Hydration (max 20 points)
+        let hydrationGoal = HydrationService.shared.settings.dailyGoalMl
+        let hydrationPercent = hydrationGoal > 0 
+            ? Double(HydrationService.shared.todayTotal) / Double(hydrationGoal) 
+            : 0
+        if hydrationPercent >= 1.0 { score += 20 }
+        else if hydrationPercent >= 0.7 { score += 15 }
+        else if hydrationPercent >= 0.5 { score += 10 }
+        
+        return score
+    }
+    
+    private var insightsScoreColor: Color {
+        if insightsScore >= 80 { return .green }
+        else if insightsScore >= 60 { return .yellow }
+        else if insightsScore >= 40 { return .orange }
+        else { return .red }
+    }
+    
+    // MARK: - Today's Macros Card
+    private var todaysMacrosCard: some View {
+        // Nutrition Rings with Legend (no header - header is outside)
+        HStack(spacing: 16) {
+            // Triple Nutrition Ring (shows red + warning if exceeded)
+            NutritionTripleRing(
+                caloriesProgress: caloriesProgress,
+                proteinProgress: proteinProgress,
+                fatProgress: fatProgress,
+                size: 95,
+                caloriesExceeded: caloriesExceeded,
+                fatExceeded: fatExceeded
+            )
+            
+            VStack(alignment: .leading, spacing: 10) {
+                MacroLegendRow(name: "Calories", current: consumedCalories, goal: calorieGoal, color: caloriesExceeded ? .red : .teal, exceeded: caloriesExceeded)
+                MacroLegendRow(name: "Protein", current: consumedProtein, goal: proteinGoal, color: .blue)
+                MacroLegendRow(name: "Fat", current: consumedFat, goal: fatGoal, color: fatExceeded ? .red : .purple, exceeded: fatExceeded)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            ZStack {
+                // Bottom shadow layer (deepest) - teal color glow
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 8)
+                    .blur(radius: 4)
+                
+                // Middle shadow layer
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1551,7 +2185,7 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1562,9 +2196,88 @@ struct SimpleMealPlanView: View {
                         ),
                         lineWidth: 1.5
                     )
+                
+                // Colored accent border (teal)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             }
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 12, x: 0, y: 6)
+    }
+    
+    // MARK: - Weekly Progress Card
+    private var weeklyProgressCard: some View {
+        // Content only (no header - header is outside and swipes with card)
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            WeeklyProgressRow(title: "Calorie Target", daysCompleted: weeklyCalorieDaysMet, totalDays: 7, color: .teal)
+            WeeklyProgressRow(title: "Protein Goals Met", daysCompleted: weeklyProteinDaysMet, totalDays: 7, color: .blue)
+            WeeklyProgressRow(title: "Fat Goals Met", daysCompleted: weeklyFatDaysMet, totalDays: 7, color: .purple)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            ZStack {
+                // Bottom shadow layer (deepest) - teal color glow
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 8)
+                    .blur(radius: 4)
+                
+                // Middle shadow layer
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.15), Color(white: 0.10)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                // Colored accent border (teal)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 12, x: 0, y: 6)
     }
     
     // MARK: - Smart Daily Summary Widget
@@ -2329,6 +3042,305 @@ struct SimpleMealSection: View {
             .cornerRadius(12)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Swipeable Meal Card (Large carousel card like Challenge/Program widget)
+struct SwipeableMealCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let mealType: MealType
+    let meals: [MealEntryData]
+    let isCurrentMealTime: Bool
+    let onAddFood: () -> Void
+    let onDelete: (MealEntryData) -> Void
+    
+    @State private var showingMealDetail = false
+    
+    private var totalCalories: Int {
+        meals.reduce(0) { $0 + $1.calories }
+    }
+    
+    private var totalProtein: Int {
+        meals.reduce(0) { $0 + $1.protein }
+    }
+    
+    private var totalCarbs: Int {
+        meals.reduce(0) { $0 + $1.carbs }
+    }
+    
+    private var totalFat: Int {
+        meals.reduce(0) { $0 + $1.fat }
+    }
+    
+    private var gradientColors: [Color] {
+        [mealType.gradientColors.0, mealType.gradientColors.1]
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header - Meal type info
+            HStack(alignment: .center, spacing: 12) {
+                // Meal icon with gradient background
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [gradientColors[0].opacity(0.2), gradientColors[0].opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                    
+                    Image(systemName: mealType.icon)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                // Meal info
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(mealType.displayName)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        if isCurrentMealTime {
+                            Text("NOW")
+                                .font(.caption2)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: gradientColors,
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                )
+                        }
+                    }
+                    
+                    Text(mealType.timeDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Calories badge (if has items)
+                if !meals.isEmpty {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(totalCalories)")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: gradientColors,
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        Text("calories")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+            
+            // Divider with accent
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [gradientColors[0].opacity(0.3), gradientColors[1].opacity(0.1)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1)
+                .padding(.horizontal, 16)
+            
+            // Content area - either items summary or add prompt
+            HStack(spacing: 16) {
+                // Left accent bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(
+                        LinearGradient(
+                            colors: gradientColors,
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 4)
+                    .padding(.vertical, 8)
+                
+                if meals.isEmpty {
+                    // Empty state - prompt to add
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("No food logged yet")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Tap + to add your \(mealType.displayName.lowercased())")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+                    
+                    Spacer()
+                    
+                    // Add button
+                    Button(action: onAddFood) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Add Food")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: gradientColors,
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
+                        .shadow(color: gradientColors[0].opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                } else {
+                    // Has items - show summary
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(meals.count) item\(meals.count == 1 ? "" : "s") logged")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        // Macro summary
+                        HStack(spacing: 12) {
+                            MacroPill(value: totalProtein, label: "P", color: .blue)
+                            MacroPill(value: totalCarbs, label: "C", color: .green)
+                            MacroPill(value: totalFat, label: "F", color: .orange)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Add more button
+                    Button(action: onAddFood) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: gradientColors,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(
+            ZStack {
+                // Bottom shadow layer (deepest) - meal colored
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(gradientColors[0].opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                // Middle shadow layer
+                RoundedRectangle(cornerRadius: 26)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.12 : 0.03))
+                    .offset(y: 3)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.15), Color(white: 0.10)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner highlight (top edge glow)
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                // Accent border
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                gradientColors[0].opacity(colorScheme == .dark ? 0.4 : 0.25),
+                                gradientColors[1].opacity(colorScheme == .dark ? 0.25 : 0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 16, x: 0, y: 8)
+    }
+}
+
+// MARK: - Macro Pill (for meal card summary)
+struct MacroPill: View {
+    let value: Int
+    let label: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("\(value)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.12))
+        )
     }
 }
 
@@ -3801,6 +4813,55 @@ struct MacroProgressRow: View {
             }
             .frame(height: 8)
         }
+    }
+}
+
+// Insight item for text view
+struct InsightItem: Hashable {
+    let icon: String
+    let text: String
+    let color: Color
+    
+    init(icon: String = "circle.fill", text: String, color: Color) {
+        self.icon = icon
+        self.text = text
+        self.color = color
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+    }
+    
+    static func == (lhs: InsightItem, rhs: InsightItem) -> Bool {
+        lhs.text == rhs.text
+    }
+}
+
+// Mini Insight Tile for Daily Insights card - floating style (no background)
+struct MiniInsightTile: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            // Floating icon
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(color)
+            
+            // Value
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+            
+            // Title
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

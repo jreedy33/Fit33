@@ -552,7 +552,7 @@ struct WorkoutProgressView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 100)
+                    .padding(.bottom, 20)
                 }
                 .background(
                     AnimatedOrbBackground.stats(colorScheme: colorScheme)
@@ -1234,11 +1234,12 @@ struct WorkoutProgressView: View {
             .frame(height: 440)
             
             // Page indicator dots
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 ForEach(0..<2, id: \.self) { index in
                     Circle()
                         .fill(calendarCardIndex == index ? Color.purple : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(calendarCardIndex == index ? 1.0 : 0.8)
                         .animation(.easeInOut(duration: 0.2), value: calendarCardIndex)
                 }
             }

@@ -102,11 +102,74 @@ final class HealthDataService: ObservableObject {
             }
         }
         
+        // 🏆 CHALLENGES: Sync all sources to active challenges AFTER data is loaded
+        // This ensures challenges get credit from HealthKit, Strava, Fitbit, etc.
+        await syncAllSourcesToChallenges()
+        
         lastSyncDate = Date()
         isLoading = false
         isSyncing = false
         
         print("✅ [HEALTH] Full health data sync complete")
+    }
+    
+    // MARK: - Challenge Integration
+    
+    /// Sync all health data sources to active challenges
+    private func syncAllSourcesToChallenges() async {
+        let challengeService = ChallengeService.shared
+        
+        // Skip if no active challenges
+        guard !challengeService.activeChallenges.isEmpty else {
+            print("📊 [CHALLENGES] No active challenges to sync")
+            return
+        }
+        
+        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) active challenges...")
+        
+        // HealthKit already syncs via syncHealthKitData -> HealthKitService.syncAllData
+        // But let's ensure comprehensive sync from all sources
+        
+        // Sync Fitbit workouts to challenges (if connected)
+        if FitbitService.shared.isConnected {
+            await syncFitbitToChallenges()
+        }
+        
+        // Strava already syncs to challenges in syncStravaData -> syncActivities
+        // But let's do a final recalculation to ensure accuracy
+        await challengeService.recalculateAllChallengeProgress()
+        
+        print("✅ [CHALLENGES] All health sources synced to challenges")
+    }
+    
+    /// Sync Fitbit activities to challenges
+    private func syncFitbitToChallenges() async {
+        let fitbit = FitbitService.shared
+        guard fitbit.isConnected else { return }
+        
+        // Sync steps from Fitbit
+        if let summary = fitbit.todaySummary {
+            // Steps challenge
+            if summary.steps > 0 {
+                await ChallengeService.shared.logProgressFromSource(
+                    challengeType: "steps",
+                    progressValue: summary.steps,
+                    source: "fitbit"
+                )
+            }
+            
+            // Active minutes challenge
+            let activeMinutes = (summary.fairlyActiveMinutes ?? 0) + (summary.veryActiveMinutes ?? 0)
+            if activeMinutes > 0 {
+                await ChallengeService.shared.logProgressFromSource(
+                    challengeType: "active_minutes",
+                    progressValue: activeMinutes,
+                    source: "fitbit"
+                )
+            }
+        }
+        
+        print("✅ [FITBIT] Synced activity data to challenges")
     }
     
     // MARK: - Fitbit Data Sync
@@ -138,9 +201,12 @@ final class HealthDataService: ObservableObject {
     private func syncStravaData() async {
         guard StravaService.shared.isConnected else { return }
         
-        // Strava activities are already saved to cardio_workouts
-        // We just need to aggregate their calories and duration
+        // 🔄 AUTO-SYNC: Fetch latest activities from Strava API
+        // This pulls any new runs/rides since last sync
+        print("🔄 [STRAVA] Auto-syncing activities from Strava...")
+        await StravaService.shared.syncActivities(daysBack: 7) // Last 7 days for efficiency
         
+        // Now aggregate the synced activities for daily summary
         let calendar = Calendar.current
         let today = Date()
         
@@ -161,6 +227,8 @@ final class HealthDataService: ObservableObject {
                 distance: totalDistance,
                 activeMinutes: totalActiveMinutes
             )
+            
+            print("✅ [STRAVA] Synced \(todayActivities.count) activities from today")
         }
     }
     
@@ -938,8 +1006,47 @@ struct AnyEncodable: Encodable {
         }
     }
     
+    /// Initialize with Any value - handles dictionaries, arrays, and primitives
+    init(_ value: Any?) {
+        if let value = value {
+            switch value {
+            case let str as String:
+                _encode = { try str.encode(to: $0) }
+            case let int as Int:
+                _encode = { try int.encode(to: $0) }
+            case let double as Double:
+                _encode = { try double.encode(to: $0) }
+            case let bool as Bool:
+                _encode = { try bool.encode(to: $0) }
+            case let dict as [String: Any]:
+                let wrapped = dict.mapValues { AnyEncodable($0) }
+                _encode = { try wrapped.encode(to: $0) }
+            case let array as [Any]:
+                let wrapped = array.map { AnyEncodable($0) }
+                _encode = { try wrapped.encode(to: $0) }
+            default:
+                _encode = { encoder in
+                    var container = encoder.singleValueContainer()
+                    try container.encode(String(describing: value))
+                }
+            }
+        } else {
+            _encode = { encoder in
+                var container = encoder.singleValueContainer()
+                try container.encodeNil()
+            }
+        }
+    }
+    
     func encode(to encoder: Encoder) throws {
         try _encode(encoder)
+    }
+}
+
+// Helper extension to convert [String: Any] to Encodable for RPC calls
+extension Dictionary where Key == String, Value == Any {
+    func toEncodable() -> [String: AnyEncodable] {
+        return self.mapValues { AnyEncodable($0) }
     }
 }
 

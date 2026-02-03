@@ -140,7 +140,7 @@ struct StepTrackerCard: View {
                         }
                         .padding(.vertical, 8)
                         
-                        // Goal info
+                        // Goal info - floating stats
                         HStack(spacing: 16) {
                             // Remaining steps
                             VStack(spacing: 4) {
@@ -160,9 +160,6 @@ struct StepTrackerCard: View {
                                     .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.08))
-                            .cornerRadius(8)
                             
                             // Progress percentage
                             VStack(spacing: 4) {
@@ -182,9 +179,6 @@ struct StepTrackerCard: View {
                                     .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.green.opacity(0.08))
-                            .cornerRadius(8)
                         }
                         .padding(.horizontal, 16)
                     }

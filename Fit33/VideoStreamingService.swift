@@ -848,6 +848,17 @@ struct RemoteVideoPlayerView: View {
         .onDisappear {
             playerManager.pause()
         }
+        .task {
+            // Periodic check to ensure looping stays active while view is visible
+            // Only check every 10 seconds to avoid spam
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000) // Every 10 seconds
+                // Only check if player exists and video should be playing
+                if playerManager.player?.timeControlStatus == .paused {
+                    playerManager.ensureLooping()
+                }
+            }
+        }
     }
 }
 
@@ -863,22 +874,26 @@ class RemoteVideoPlayerManager: ObservableObject {
     
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
+        hasRetriedLooper = false  // Reset retry flag for new video
         
         // 👤 ALWAYS check GenderFilterService FIRST to respect user's gender preference
         // Only fall back to provided videoFilename if gender service has no match
         let genderAwareFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) ?? videoFilename
         
         // 🚀 Use high-performance VideoPlaybackEngine (instant if cached)
-        if let enginePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: genderAwareFilename) {
+        // CRITICAL: Get both player AND looper to ensure looping works
+        if let playerWithLooper = VideoPlaybackEngine.shared.getPlayerWithLooper(for: exerciseName, videoFilename: genderAwareFilename) {
             DispatchQueue.main.async { [weak self] in
-                self?.queuePlayer = enginePlayer
-                self?.player = enginePlayer
+                self?.queuePlayer = playerWithLooper.player
+                self?.player = playerWithLooper.player
+                self?.playerLooper = playerWithLooper.looper  // ⚡️ STORE LOOPER REFERENCE!
+                self?.hasRetriedLooper = false  // Reset on successful load
                 self?.isLoading = false
                 
                 #if DEBUG
                 let cacheStatus = VideoPlaybackEngine.shared.isReadyForInstantPlay(exerciseName: exerciseName) ? "cached" : "new"
                 let genderMatch = GenderFilterService.shared.hasPreferredGenderVideo(for: exerciseName) ? "preferred" : "fallback"
-                print("🎬 Video ready (\(cacheStatus), \(genderMatch) gender): \(exerciseName)")
+                print("🎬 Video ready (\(cacheStatus), \(genderMatch) gender, looper: ✅): \(exerciseName)")
                 #endif
             }
             return
@@ -955,7 +970,36 @@ class RemoteVideoPlayerManager: ObservableObject {
     }
     
     func play() {
+        // Ensure player plays and looper is still active
+        if let looper = playerLooper, looper.status != .ready {
+            print("⚠️ [VIDEO] Looper not ready, recreating...")
+            // Looper might have failed, recreate it
+            if let qp = queuePlayer, let currentItem = qp.currentItem {
+                self.playerLooper = AVPlayerLooper(player: qp, templateItem: currentItem)
+            }
+        }
         player?.play()
+    }
+    
+    private var hasRetriedLooper = false
+    
+    func ensureLooping() {
+        // Simple check: if video is paused and has content, restart it
+        guard let qp = queuePlayer,
+              qp.currentItem != nil,
+              qp.timeControlStatus == .paused else { return }
+        
+        // If no looper and we haven't tried yet, create one
+        if playerLooper == nil && !hasRetriedLooper {
+            print("🔄 [VIDEO] Creating looper for continuous playback")
+            if let currentItem = qp.currentItem {
+                self.playerLooper = AVPlayerLooper(player: qp, templateItem: currentItem)
+                hasRetriedLooper = true
+            }
+        }
+        
+        // Always try to play if paused
+        qp.play()
     }
     
     deinit {

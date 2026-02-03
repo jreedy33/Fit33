@@ -56,6 +56,75 @@ struct USDANutrient: Codable {
     let rank: Int?
     let indentLevel: Int?
     let foodNutrientId: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case nutrientId
+        case nutrientName
+        case nutrientNumber
+        case unitName
+        case value
+        case rank
+        case indentLevel
+        case foodNutrientId
+        // Alternative keys from different API formats
+        case number  // Alternative for nutrientNumber
+        case name    // Alternative for nutrientName
+        case amount  // Alternative for value
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // nutrientId: required with fallback to 0
+        nutrientId = (try? container.decode(Int.self, forKey: .nutrientId)) ?? 0
+        
+        // nutrientName: try nutrientName then name
+        if let name = try? container.decode(String.self, forKey: .nutrientName) {
+            nutrientName = name
+        } else if let name = try? container.decode(String.self, forKey: .name) {
+            nutrientName = name
+        } else {
+            nutrientName = "Unknown"
+        }
+        
+        // nutrientNumber: try nutrientNumber then number
+        if let num = try? container.decode(String.self, forKey: .nutrientNumber) {
+            nutrientNumber = num
+        } else if let num = try? container.decode(String.self, forKey: .number) {
+            nutrientNumber = num
+        } else {
+            nutrientNumber = "0"
+        }
+        
+        // unitName: with fallback
+        unitName = (try? container.decode(String.self, forKey: .unitName)) ?? "g"
+        
+        // value: try value then amount
+        if let val = try? container.decode(Double.self, forKey: .value) {
+            value = val
+        } else if let val = try? container.decode(Double.self, forKey: .amount) {
+            value = val
+        } else {
+            value = 0
+        }
+        
+        // Optional fields
+        rank = try? container.decode(Int.self, forKey: .rank)
+        indentLevel = try? container.decode(Int.self, forKey: .indentLevel)
+        foodNutrientId = try? container.decode(Int.self, forKey: .foodNutrientId)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(nutrientId, forKey: .nutrientId)
+        try container.encode(nutrientName, forKey: .nutrientName)
+        try container.encode(nutrientNumber, forKey: .nutrientNumber)
+        try container.encode(unitName, forKey: .unitName)
+        try container.encode(value, forKey: .value)
+        try container.encodeIfPresent(rank, forKey: .rank)
+        try container.encodeIfPresent(indentLevel, forKey: .indentLevel)
+        try container.encodeIfPresent(foodNutrientId, forKey: .foodNutrientId)
+    }
 }
 
 struct USDAFoodDetailsResponse: Codable {
@@ -129,6 +198,7 @@ struct ProcessedFoodItem: Identifiable {
     let servingUnit: String
     let nutrition: NutritionInfo
     let portions: [FoodPortion]
+    let dataType: String?  // "Foundation", "SR Legacy", "Branded", etc.
     
     var displayName: String {
         if let brandName = brandName, !brandName.isEmpty {
@@ -664,7 +734,8 @@ class USDAFoodService: ObservableObject {
                 iron: iron ?? estimated.iron,
                 vitaminC: vitC ?? estimated.vitC
             ),
-            portions: []
+            portions: [],
+            dataType: "Local"  // Local hardcoded foods
         )
     }
     
@@ -964,7 +1035,8 @@ class USDAFoodService: ObservableObject {
         print("✅ [RANK] Sort complete! Top 5:")
         for (i, food) in sorted.prefix(5).enumerated() {
             let isGeneric = food.brandName?.isEmpty ?? true
-            print("  \(i+1). \(food.name) - Generic: \(isGeneric)")
+            let score = calculateRelevanceScore(food: food, query: normalizedQuery)
+            print("  \(i+1). \(food.name) - Generic: \(isGeneric), dataType: \(food.dataType ?? "?"), score: \(score)")
         }
         
         return sorted
@@ -974,21 +1046,72 @@ class USDAFoodService: ObservableObject {
     private func calculateRelevanceScore(food: ProcessedFoodItem, query: String) -> Int {
         let nameText = food.name.lowercased()
         let category = (food.category ?? "").lowercased()
+        let dataType = food.dataType ?? ""
         var score = 0
+        
+        // Normalize query for comparison (remove commas, extra spaces)
+        let normalizedName = nameText.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
+        let normalizedQuery = query.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
+        
+        // Check if all query words appear in name
+        let queryWords = normalizedQuery.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let nameWords = normalizedName.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let allQueryWordsMatch = queryWords.allSatisfy { queryWord in
+            nameWords.contains { $0.contains(queryWord) || queryWord.contains($0) }
+        }
         
         // PRIORITY 0: FAVORITED FOODS - Highest priority (always show first)
         if isFavorite(foodItemId: food.id) {
-            score -= 200000  // Favorited items ALWAYS rank at the very top
+            score -= 500000  // Favorited items ALWAYS rank at the very top
         }
         
-        // PRIORITY 1: Generic foods first (HUGE bonus)
+        // PRIORITY 1: EXACT QUERY MATCH - Most important for search relevance!
+        // "almond butter creamy" should match "almond butter, creamy" exactly
+        if normalizedName == normalizedQuery {
+            score -= 400000  // EXACT match is king - beats everything else
+        } else if allQueryWordsMatch && queryWords.count >= 2 {
+            // All search words found in name - very strong match
+            score -= 300000
+        }
+        
+        // PRIORITY 2: FOUNDATION FOODS from USDA (lab-verified, most accurate)
+        if dataType == "Foundation" {
+            score -= 200000  // Foundation Foods are most accurate
+        } else if dataType == "SR Legacy" {
+            score -= 150000  // SR Legacy is also high quality USDA data
+        }
+        
+        // PRIORITY 3: Generic foods over branded
         if food.brandName?.isEmpty ?? true {
-            score -= 100000  // Generic items always rank highest
+            score -= 100000  // Generic items rank highest
         } else {
-            score += 100000  // Branded items always rank lowest
+            score += 100000  // Branded items rank lowest
         }
         
-        // PRIORITY 2: Detect non-food items (beverages, supplements, baby food, etc.)
+        // PRIORITY 4: Starts with query (e.g., "almond butter" for query "almond")
+        if normalizedName.hasPrefix(normalizedQuery) || nameText.hasPrefix(query) {
+            score -= 80000
+        }
+        
+        // PRIORITY 5: WHOLE/RAW PRODUCE & MEAT
+        let wholeFoodCategories = ["fruits", "vegetables", "poultry", "beef", "pork", "lamb", "fish",
+                                   "seafood", "eggs", "nuts", "seeds", "grains", "legumes"]
+        
+        let isWholeFoodCategory = wholeFoodCategories.contains(where: { category.contains($0) })
+        
+        let meatCuts = ["breast", "thigh", "drumstick", "wing", "leg", "tenderloin", "loin",
+                       "chop", "steak", "roast", "ribs", "ground", "filet", "fillet"]
+        
+        let isMeatCut = meatCuts.contains(where: { nameText.contains($0) })
+        
+        let wholeRawKeywords = ["raw", "whole", "fresh", "plain", "uncooked", "natural"]
+        let hasWholeRawIndicator = wholeRawKeywords.contains(where: { nameText.contains($0) })
+        
+        if isWholeFoodCategory || isMeatCut || hasWholeRawIndicator {
+            score -= 50000  // Bonus for whole foods
+        }
+        
+        // PRIORITY 6: Detect non-food items (beverages, supplements, etc.)
         let nonWholeFoodTypes = ["beverage", "drink", "juice", "soda", "tea", "coffee", "smoothie",
                                  "shake", "supplement", "baby food", "infant formula", "meal replacement",
                                  "protein powder", "energy drink", "sports drink"]
@@ -997,7 +1120,7 @@ class USDAFoodService: ObservableObject {
             score += 80000  // Non-food items rank very low
         }
         
-        // PRIORITY 3: Detect "pre-packaged" or processed indicators
+        // PRIORITY 7: Detect "pre-packaged" or processed indicators
         let prePackagedKeywords = ["pre-packaged", "prepackaged", "pre-prepared", "preprepared",
                                    "pre-cooked", "precooked", "frozen", "canned", "jarred",
                                    "packaged", "mix", "instant", "ready-to-eat", "ready to eat"]
@@ -1006,34 +1129,12 @@ class USDAFoodService: ObservableObject {
             score += 70000  // Pre-packaged items rank very low
         }
         
-        // PRIORITY 4: WHOLE/RAW PRODUCE & MEAT - Highest priority
-        let wholeFoodCategories = ["fruits", "vegetables", "poultry", "beef", "pork", "lamb", "fish",
-                                   "seafood", "eggs", "dairy", "nuts", "seeds", "grains", "legumes"]
-        
-        let isWholeFoodCategory = wholeFoodCategories.contains(where: { category.contains($0) })
-        
-        // Meat cuts (always whole foods)
-        let meatCuts = ["breast", "thigh", "drumstick", "wing", "leg", "tenderloin", "loin",
-                       "chop", "steak", "roast", "ribs", "ground", "filet", "fillet"]
-        
-        let isMeatCut = meatCuts.contains(where: { nameText.contains($0) })
-        
-        // Explicit whole/raw indicators
-        let wholeRawKeywords = ["raw", "whole", "fresh", "plain", "uncooked", "natural"]
-        let hasWholeRawIndicator = wholeRawKeywords.contains(where: { nameText.contains($0) })
-        
-        // Combined whole food detection
-        if isWholeFoodCategory || isMeatCut || hasWholeRawIndicator {
-            score -= 90000  // MASSIVE bonus for whole foods
-        }
-        
-        // PRIORITY 5: Prepared/cooked foods (rank below whole foods)
+        // PRIORITY 8: Prepared/cooked foods (rank below whole foods)
         let preparedKeywords = ["benedict", "burrito", "sandwich", "salad", "casserole", "scrambled", 
                                 "fried", "deviled", "creamed", "omelet", "omelette", "frittata", 
                                 "quiche", "souffle", "foo young", "stir fry", "stir-fry", "soup",
                                 "stew", "curry", "pasta", "pizza", "taco", "enchilada", "lasagna",
-                                "prepared", "cooked", "baked", "roasted", "grilled", "sauteed",
-                                "breaded", "stuffed", "marinated", "glazed"]
+                                "prepared", "breaded", "stuffed", "marinated", "glazed"]
         
         let isPreparedFood = preparedKeywords.contains { nameText.contains($0) }
         
@@ -1048,25 +1149,14 @@ class USDAFoodService: ObservableObject {
             score -= 5000
         }
         
-        // PRIORITY 6: Name relevance
-        // Exact match bonus
-        if nameText == query {
-            score -= 1000
-        }
-        
-        // Starts with query bonus
-        if nameText.hasPrefix(query) {
-            score -= 500
-        }
-        
-        // Contains query bonus
+        // PRIORITY 9: Contains query bonus
         if nameText.contains(query) {
-            score -= 100
+            score -= 10000
         }
         
-        // PRIORITY 7: Simplicity (fewer words = simpler = better)
+        // PRIORITY 10: Simplicity (fewer words = simpler = better)
         let wordCount = nameText.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.count
-        score += wordCount * 5
+        score += wordCount * 100
         
         return score
     }
@@ -1314,7 +1404,8 @@ class USDAFoodService: ObservableObject {
                 servingSize: servingSize,
                 servingUnit: servingUnit,
                 nutrition: nutrition,
-                portions: []
+                portions: [],
+                dataType: food.dataType
             )
         }
         
@@ -1345,7 +1436,8 @@ class USDAFoodService: ObservableObject {
             servingSize: servingSize,
             servingUnit: servingUnit,
             nutrition: nutrition,
-            portions: portions
+            portions: portions,
+            dataType: food.dataType
         )
     }
     

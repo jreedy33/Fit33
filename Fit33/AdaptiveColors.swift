@@ -247,24 +247,24 @@ struct AnimatedOrbBackground: View {
     static func workout(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
             baseGradient: AdaptiveGradient.workout(for: colorScheme),
-            primaryOrbColor: .green,
-            secondaryOrbColor: .blue
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
         )
     }
     
     static func meals(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
             baseGradient: AdaptiveGradient.meals(for: colorScheme),
-            primaryOrbColor: .mint,
-            secondaryOrbColor: .green
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
         )
     }
     
     static func stats(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
             baseGradient: AdaptiveGradient.stats(for: colorScheme),
-            primaryOrbColor: .purple,
-            secondaryOrbColor: .blue
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
         )
     }
     

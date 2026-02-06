@@ -80,8 +80,8 @@ struct ExerciseSubstitutionView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // Background
-                AdaptiveGradient.exercises(for: colorScheme)
+                // Animated blue/cyan orb background
+                AnimatedOrbBackground.exercises(colorScheme: colorScheme)
                     .ignoresSafeArea()
                 
                 VStack(spacing: 0) {

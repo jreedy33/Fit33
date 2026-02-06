@@ -28,6 +28,8 @@ struct ChallengeSetupView: View {
     // UI State
     @State private var isCreating = false
     @State private var showingSuccess = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
     
     // Local template state (loaded once, not observed)
     @State private var templates: [ChallengeTemplate] = []
@@ -90,8 +92,36 @@ struct ChallengeSetupView: View {
             .alert("Challenge Sent! 🎯", isPresented: $showingSuccess) {
                 Button("Done") { dismiss() }
             } message: {
-                Text("\(friend.friendName?.components(separatedBy: " ").first ?? "Your friend") will receive a notification to accept your challenge.")
+                Text("Challenge will start when \(friend.friendName?.components(separatedBy: " ").first ?? "your friend") accepts! You can track pending challenges on your home screen.")
             }
+            .alert("Failed to Send Challenge", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage.isEmpty ? "Something went wrong. Please try again." : errorMessage)
+            }
+        }
+    }
+    
+    // Deduplicated templates (by title to avoid showing duplicates)
+    private var uniqueTemplates: [ChallengeTemplate] {
+        var seen = Set<String>()
+        return templates.filter { template in
+            let key = template.title.lowercased()
+            if seen.contains(key) {
+                return false
+            }
+            seen.insert(key)
+            return true
+        }
+    }
+    
+    private var uniqueFeaturedTemplates: [ChallengeTemplate] {
+        uniqueTemplates.filter { $0.isFeatured }
+    }
+    
+    private var uniqueGroupedTemplates: [ChallengeType: [ChallengeTemplate]] {
+        Dictionary(grouping: uniqueTemplates) { template in
+            ChallengeType(rawValue: template.challengeType) ?? .steps
         }
     }
     
@@ -102,6 +132,9 @@ struct ChallengeSetupView: View {
             VStack(spacing: 24) {
                 // Header with friend info
                 challengeHeader
+                
+                // 🎯 PRIMARY: Create Custom Challenge (at the top)
+                customChallengeCard
                 
                 // Loading state
                 if isLoadingTemplates && templates.isEmpty {
@@ -116,8 +149,8 @@ struct ChallengeSetupView: View {
                     .padding(.vertical, 60)
                 }
                 
-                // Featured Challenges
-                if !featuredTemplates.isEmpty {
+                // Popular/Featured Challenges (deduplicated)
+                if !uniqueFeaturedTemplates.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Image(systemName: "star.fill")
@@ -129,7 +162,7 @@ struct ChallengeSetupView: View {
                         .padding(.horizontal, 4)
                         
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                            ForEach(featuredTemplates) { template in
+                            ForEach(uniqueFeaturedTemplates, id: \.id) { template in
                                 TemplateCard(
                                     template: template,
                                     isSelected: selectedTemplate?.id == template.id,
@@ -140,9 +173,10 @@ struct ChallengeSetupView: View {
                     }
                 }
                 
-                // All challenge types
+                // All challenge types (non-featured, deduplicated)
                 ForEach(ChallengeType.allCases) { type in
-                    if let templates = groupedTemplates[type], !templates.isEmpty {
+                    let typeTemplates = uniqueGroupedTemplates[type]?.filter { !$0.isFeatured } ?? []
+                    if !typeTemplates.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
                                 Image(systemName: type.icon)
@@ -154,7 +188,7 @@ struct ChallengeSetupView: View {
                             .padding(.horizontal, 4)
                             
                             VStack(spacing: 8) {
-                                ForEach(templates.filter { !$0.isFeatured }) { template in
+                                ForEach(typeTemplates, id: \.id) { template in
                                     TemplateRow(
                                         template: template,
                                         isSelected: selectedTemplate?.id == template.id,
@@ -165,96 +199,10 @@ struct ChallengeSetupView: View {
                         }
                     }
                 }
-                
-                // Custom Challenge Option
-                Button(action: { showingCustomSetup = true }) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [.purple, .pink]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 44, height: 44)
-                                .shadow(color: .purple.opacity(0.4), radius: 6, x: 0, y: 3)
-                            
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Create Custom Challenge")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                            
-                            Text("Set your own goals and duration")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.purple, .pink],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                    }
-                    .padding(16)
-                    .background(
-                        ZStack {
-                            // Main card background with gradient
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: cardBackgroundGradient,
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                            
-                            // Inner highlight (top edge glow)
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark
-                                            ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
-                                            : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ),
-                                    lineWidth: 1
-                                )
-                            
-                            // Purple/pink accent border
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        }
-                    )
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
-                    .shadow(color: .purple.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
-                }
-                .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .padding(.top, 16)
-            .padding(.bottom, 100)
+            .padding(.bottom, 100) // Space for button overlay
         }
         .overlay(alignment: .bottom) {
             if selectedTemplate != nil {
@@ -263,26 +211,133 @@ struct ChallengeSetupView: View {
         }
     }
     
+    // MARK: - Custom Challenge Card (Primary CTA)
+    
+    private var customChallengeCard: some View {
+        Button(action: { showingCustomSetup = true }) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.purple, .pink]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .shadow(color: .purple.opacity(0.5), radius: 8, x: 0, y: 4)
+                    
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create Your Own Challenge")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    Text("Steps, workouts, calories & more • Custom goals")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .padding(18)
+            .background(
+                ZStack {
+                    // Main card background with gradient
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBackgroundGradient,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight (top edge glow)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Purple/pink accent border (more prominent)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(colorScheme == .dark ? 0.6 : 0.4), Color.pink.opacity(colorScheme == .dark ? 0.5 : 0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                }
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
     // MARK: - Challenge Header
     
     private var challengeHeader: some View {
         HStack(spacing: 16) {
             // VS style display
             HStack(spacing: 12) {
-                // Current user avatar placeholder
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                // Current user avatar with actual profile photo
+                if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                    Image(uiImage: cachedImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 50, height: 50)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.blue, .purple],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 3
+                                )
                         )
-                    )
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.white)
-                    )
+                } else {
+                    // Fallback gradient circle
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue, .purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                        )
+                }
                 
                 Text("VS")
                     .font(.headline)
@@ -751,10 +806,14 @@ struct ChallengeSetupView: View {
             isCreating = false
             
             if challengeId != nil {
+                // Refresh pending sent challenges so it appears on home screen
+                await ChallengeService.shared.fetchPendingSentChallenges()
                 HapticManager.notification(.success)
                 showingSuccess = true
             } else {
                 HapticManager.notification(.error)
+                errorMessage = "Could not send challenge. Please try again."
+                showingError = true
             }
         }
     }
@@ -779,10 +838,14 @@ struct ChallengeSetupView: View {
             isCreating = false
             
             if challengeId != nil {
+                // Refresh pending sent challenges so it appears on home screen
+                await ChallengeService.shared.fetchPendingSentChallenges()
                 HapticManager.notification(.success)
                 showingSuccess = true
             } else {
                 HapticManager.notification(.error)
+                errorMessage = "Could not send challenge. Please try again."
+                showingError = true
             }
         }
     }

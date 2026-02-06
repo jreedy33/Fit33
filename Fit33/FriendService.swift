@@ -223,23 +223,40 @@ class FriendService: ObservableObject {
     }
     
     func sendFriendRequest(toUserId: UUID, message: String? = nil) async -> Bool {
+        print("📤 [FRIEND REQUEST] Sending request to user: \(toUserId)")
+        
+        // Verify we're authenticated
+        guard SupabaseManager.shared.isAuthenticated else {
+            print("❌ [FRIEND REQUEST] Not authenticated - cannot send request")
+            return false
+        }
+        
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
+            print("❌ [FRIEND REQUEST] No current user ID - cannot send request")
+            return false
+        }
+        
+        print("📤 [FRIEND REQUEST] Current user: \(currentUserId), Target: \(toUserId)")
+        
         do {
             var params: [String: String] = ["target_user_id": toUserId.uuidString]
             if let msg = message {
                 params["request_message"] = msg
             }
             
-            let _: UUID = try await SupabaseManager.shared.supabaseClient
+            print("📤 [FRIEND REQUEST] Calling send_friend_request RPC...")
+            let requestId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("send_friend_request", params: params)
                 .execute()
                 .value
             
-            print("✅ Friend request sent")
+            print("✅ [FRIEND REQUEST] Request sent successfully! ID: \(requestId)")
             await fetchUnreadCount()
             await fetchSentRequests()  // Refresh sent requests list
             return true
         } catch {
-            print("❌ Error sending friend request: \(error)")
+            print("❌ [FRIEND REQUEST] Error sending friend request: \(error)")
+            print("❌ [FRIEND REQUEST] Error details: \(String(describing: error))")
             return false
         }
     }

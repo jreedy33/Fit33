@@ -89,6 +89,27 @@ struct NewOnboardingView: View {
     @State private var showTermsSheet = false
     @State private var passwordResetSent = false
     
+    // Phone number (for 2FA / account security)
+    @State private var phoneNumber = ""
+    @State private var phoneNumberError = ""
+    @State private var selectedCountryCode: CountryCode = .us  // Default to US
+    @State private var verificationCode = ""
+    @State private var isVerificationCodeSent = false
+    @State private var isPhoneVerified = false
+    @State private var verificationError = ""
+    @State private var isVerifyingCode = false
+    @State private var canResendCode = false
+    @State private var resendCountdown = 0
+    @State private var sendCodeCountdown = 0  // Countdown before user can send again
+    @State private var sendCodeTimer: Timer? = nil
+    @State private var phoneVerificationAttempts = 0  // Track send code attempts
+    @State private var hasSkippedPhoneVerification = false  // Track if user skipped after max attempts
+    @StateObject private var phoneVerificationService = PhoneVerificationService.shared
+    
+    // Constants for phone verification limits
+    private let maxPhoneVerificationAttempts = 2
+    private let phoneVerificationLockoutKey = "phoneVerificationLockoutTime"
+    
     // Username fields
     @State private var username = ""
     @State private var isCheckingUsername = false
@@ -166,6 +187,8 @@ struct NewOnboardingView: View {
     // Add friends from contacts (onboarding step)
     @State private var friendSearchText = ""
     @State private var sentFriendRequests: Set<UUID> = []  // Track requests sent during onboarding
+    @State private var loadingFriendRequests: Set<UUID> = []  // Track which buttons are currently loading
+    @State private var failedFriendRequests: Set<UUID> = []  // Track failed requests for retry UI
     @State private var isLoadingFriends = false
     
     // Unit preferences - default based on user's locale
@@ -184,7 +207,7 @@ struct NewOnboardingView: View {
     
     // Focus states for keeping keyboard up
     enum FocusedField: Hashable {
-        case email, password, confirmPassword, name, username, birthday, height, weight
+        case email, password, confirmPassword, name, phoneNumber, verificationCode, username, birthday, height, weight
     }
     @FocusState private var focusedField: FocusedField?
     
@@ -231,6 +254,7 @@ struct NewOnboardingView: View {
     private var stepDescription: String {
         switch currentStep {
         case .auth: return "Account"
+        case .phoneNumber: return "Security"
         case .username: return "Username"
         case .basics: return "About You"
         case .body: return "Measurements"
@@ -261,21 +285,22 @@ struct NewOnboardingView: View {
     
     enum OnboardingStep: Int, CaseIterable {
         case auth = 0
-        case username = 1    // NEW: Choose username (sign up only)
-        case basics = 2      // Birthday + Gender
-        case body = 3        // Height + Weight
-        case goal = 4
-        case experience = 5
-        case strengthAssessment = 6  // How heavy can you lift?
-        case workoutLocation = 7     // Where do you workout?
-        case equipment = 8
-        case limitations = 9  // Injuries/limitations
-        case schedule = 10
-        case profilePhoto = 11  // Optional profile photo upload
-        case contacts = 12   // Contacts permission for friend features
-        case addFriends = 13 // Add friends from contacts who have accounts
-        case confirmation = 14  // Review all selections before creating account
-        case complete = 15
+        case phoneNumber = 1  // Phone number for 2FA/account security (sign up only)
+        case username = 2    // Choose username (sign up only)
+        case basics = 3      // Birthday + Gender
+        case body = 4        // Height + Weight
+        case goal = 5
+        case experience = 6
+        case strengthAssessment = 7  // How heavy can you lift?
+        case workoutLocation = 8     // Where do you workout?
+        case equipment = 9
+        case limitations = 10  // Injuries/limitations
+        case schedule = 11
+        case profilePhoto = 12  // Optional profile photo upload
+        case contacts = 13   // Contacts permission for friend features
+        case addFriends = 14 // Add friends from contacts who have accounts
+        case confirmation = 15  // Review all selections before creating account
+        case complete = 16
     }
     
     // Validation for auth step
@@ -348,11 +373,14 @@ struct NewOnboardingView: View {
         
     // Navigate to step and set appropriate focus
     private func navigateTo(_ step: OnboardingStep, animated: Bool = true) {
+        print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
+        print("   └─ Previous step: \(currentStep)")
         let previousStep = currentStep
         
         // Map onboarding step to screen ID
         let screenMap: [OnboardingStep: SessionLogManager.Screen] = [
             .auth: .authScreen,
+            .phoneNumber: .authScreen, // Use auth screen for logging
             .username: .authScreen, // Use auth screen for logging
             .basics: .onboardingBasics,
             .body: .onboardingBody,
@@ -460,6 +488,10 @@ struct NewOnboardingView: View {
                         
                         // Content
                         ZStack {
+                            if currentStep == .phoneNumber {
+                                let _ = print("🎯 [ZSTACK] Rendering phoneNumberStepContent for currentStep: \(currentStep)")
+                                phoneNumberStepContent
+                            }
                             if currentStep == .username { usernameStepContent.transition(slideTransition) }
                             if currentStep == .basics { basicsStepContent.transition(slideTransition) }
                             if currentStep == .body { bodyStepContent.transition(slideTransition) }
@@ -639,6 +671,8 @@ struct NewOnboardingView: View {
             switch newStep {
             case .auth:
                 break
+            case .phoneNumber:
+                focusedField = .phoneNumber
             case .username:
                 // Check if there's a pending social username to pre-fill (from Facebook/Instagram)
                 if let socialUsername = UserDefaults.standard.string(forKey: "pending_social_username"), username.isEmpty {
@@ -758,9 +792,9 @@ struct NewOnboardingView: View {
         print("🔐 [OAUTH] Final values - name: '\(name)', email: '\(email)'")
         print("🔐 [OAUTH] needsNameInput will be: \(needsNameInput)")
         
-        // Navigate to username selection (same flow as Apple Sign-In)
-        print("🔐 [OAUTH] Navigating to username step...")
-        navigateTo(.username)
+        // Navigate to phone number step for 2FA security (same flow as Apple Sign-In)
+        print("🔐 [OAUTH] Navigating to phone number step...")
+        navigateTo(.phoneNumber)
     }
     
     // MARK: - Shared Header (Simple, fixed layout)
@@ -801,6 +835,7 @@ struct NewOnboardingView: View {
     private var onboardingStepTitle: String {
         switch currentStep {
         case .auth: return "Create Account"
+        case .phoneNumber: return "Secure Your Account"
         case .username: return needsNameInput ? "Your Profile" : "Choose Username"
         case .basics: return "About You"
         case .body: return "Your Measurements"
@@ -822,6 +857,7 @@ struct NewOnboardingView: View {
     private var onboardingStepSubtitle: String {
         switch currentStep {
         case .auth: return "Start your fitness journey"
+        case .phoneNumber: return "Set up two-factor authentication"
         case .username: return needsNameInput ? "Tell us a bit about yourself" : "How friends will find you"
         case .basics: return "Help us personalize your experience"
         case .body: return "For accurate recommendations"
@@ -843,6 +879,7 @@ struct NewOnboardingView: View {
     private var onboardingStepExplanation: String {
         switch currentStep {
         case .auth: return ""
+        case .phoneNumber: return "Your phone number is private and will never be displayed publicly or shared with others"
         case .username: return "Friends can find and add you using your unique username"
         case .basics: return "We use your age to calculate calorie needs and tailor workout intensity"
         case .body: return "Height and weight help us recommend appropriate exercise loads"
@@ -911,6 +948,7 @@ struct NewOnboardingView: View {
     private var isCurrentStepValid: Bool {
         switch currentStep {
         case .auth: return isAuthFormValid
+        case .phoneNumber: return isPhoneVerified  // Only allow continue after phone is verified
         case .username: 
             // If name needs input, require it to be filled
             let nameValid = !needsNameInput || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -930,6 +968,18 @@ struct NewOnboardingView: View {
         case .confirmation: return true
         case .complete: return true
         }
+    }
+    
+    // Phone number validation - at least 10 digits for US numbers
+    private var isPhoneNumberValid: Bool {
+        let digits = phoneNumber.filter { $0.isNumber }
+        return digits.count >= selectedCountryCode.minDigits && digits.count <= selectedCountryCode.maxDigits
+    }
+    
+    // Get full E.164 formatted phone number for sending to Twilio
+    private var fullPhoneNumber: String {
+        let digits = phoneNumber.filter { $0.isNumber }
+        return "\(selectedCountryCode.rawValue)\(digits)"
     }
     
     // MARK: - Navigation Helpers
@@ -965,6 +1015,33 @@ struct NewOnboardingView: View {
             return
         }
         
+        // Special case: if on phone step with code sent, go back to phone input (not previous step)
+        // Start 30s countdown so user can't spam send code
+        if currentStep == .phoneNumber && isVerificationCodeSent {
+            // Check if user has exceeded max attempts (2 sends + going back)
+            if phoneVerificationAttempts >= maxPhoneVerificationAttempts {
+                // Lock them out for 12 hours and skip to username
+                let lockoutTime = Date().addingTimeInterval(12 * 60 * 60)  // 12 hours
+                UserDefaults.standard.set(lockoutTime, forKey: phoneVerificationLockoutKey)
+                hasSkippedPhoneVerification = true
+                
+                // Skip directly to username screen
+                navigateTo(.username)
+                return
+            }
+            
+            isVerificationCodeSent = false
+            verificationCode = ""
+            verificationError = ""
+            
+            // Start 30s cooldown before they can send again
+            sendCodeCountdown = 30
+            startSendCodeCountdownTimer()
+            
+            focusedField = .phoneNumber
+            return
+        }
+        
         // Special case: if on confirmation and contacts weren't granted, skip addFriends when going back
         if currentStep == .confirmation && !contactsPermissionGranted {
             navigateTo(.contacts)
@@ -978,6 +1055,583 @@ struct NewOnboardingView: View {
     // MARK: - Content-Only Step Views (for sliding)
     // These are simplified versions that just show the content portion
     // The existing full step views (basicsStep, bodyStep, etc.) are kept for reference
+    
+    // Check if user is locked out from phone verification
+    private var isPhoneVerificationLockedOut: Bool {
+        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
+            return Date() < lockoutTime
+        }
+        return false
+    }
+    
+    // Get remaining lockout time
+    private var lockoutTimeRemaining: String {
+        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
+            let remaining = lockoutTime.timeIntervalSince(Date())
+            if remaining > 0 {
+                let hours = Int(remaining) / 3600
+                let minutes = (Int(remaining) % 3600) / 60
+                if hours > 0 {
+                    return "\(hours)h \(minutes)m"
+                } else {
+                    return "\(minutes) minutes"
+                }
+            }
+        }
+        return ""
+    }
+    
+    // MARK: - Phone Verification Sub-Views
+    
+    private var phoneLockedOutView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "clock.badge.exclamationmark.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
+            
+            Text("Try Again Later")
+                .font(.title2.weight(.bold))
+                .foregroundColor(.primary)
+            
+            Text("You can set up 2FA in \(lockoutTimeRemaining)")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Text("You can complete this step later in your profile settings.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            
+            Button(action: { navigateTo(.username) }) {
+                HStack(spacing: 8) {
+                    Text("Continue Without 2FA")
+                        .font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    Capsule()
+                        .fill(Color.orange)
+                )
+            }
+        }
+        .padding(.vertical, 20)
+    }
+    
+    private var phoneInputView: some View {
+        let _ = print("📱 [PHONE INPUT] Rendering phoneInputView - selectedCountryCode: \(selectedCountryCode.rawValue)")
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Phone Number")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 12) {
+                // Country code picker - using Picker instead of Menu to avoid SwiftUI rendering issues
+                countryCodePicker
+                
+                // Phone number input
+                phoneNumberTextField
+            }
+        }
+        .id("phoneInputView-\(selectedCountryCode.rawValue)")
+    }
+    
+    // Extracted country code picker to simplify view hierarchy
+    private var countryCodePicker: some View {
+        let _ = print("🌍 [COUNTRY PICKER] Rendering - current: \(selectedCountryCode.name)")
+        
+        return Menu {
+            ForEach(CountryCode.allCases) { country in
+                Button {
+                    print("🌍 [COUNTRY PICKER] Selected: \(country.name)")
+                    selectedCountryCode = country
+                    phoneNumber = ""
+                } label: {
+                    // Dropdown shows: Flag + Country Name
+                    Text("\(country.flag) \(country.name)")
+                }
+            }
+        } label: {
+            // Selected state shows: Flag + Country Code
+            HStack(spacing: 6) {
+                Text(selectedCountryCode.flag)
+                    .font(.system(size: 18))
+                Text(selectedCountryCode.rawValue)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.primary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
+            )
+        }
+        .id("countryPicker-\(selectedCountryCode.rawValue)")
+    }
+    
+    // Extracted phone number text field
+    private var phoneNumberTextField: some View {
+        let _ = print("📞 [PHONE FIELD] Rendering - phoneNumber: \(phoneNumber)")
+        
+        return HStack(spacing: 12) {
+            TextField(selectedCountryCode.placeholder, text: $phoneNumber)
+                .keyboardType(.phonePad)
+                .textContentType(.telephoneNumber)
+                .focused($focusedField, equals: .phoneNumber)
+                .onChange(of: phoneNumber) { _, newValue in
+                    let formatted = formatPhoneNumberForCountry(newValue)
+                    if formatted != phoneNumber {
+                        print("📞 [PHONE FIELD] Formatting: '\(newValue)' -> '\(formatted)'")
+                        phoneNumber = formatted
+                    }
+                }
+            
+            if isPhoneNumberValid {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.blue)
+            }
+        }
+        .font(.system(size: 16, weight: .medium))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isPhoneNumberValid ? Color.blue.opacity(0.4) : Color.clear, lineWidth: 1.5)
+        )
+        .id("phoneTextField-\(selectedCountryCode.rawValue)")
+    }
+    
+    // MARK: - Phone Number Step Content (2FA / Account Security)
+    private var phoneNumberStepContent: some View {
+        let _ = print("📱 [PHONE STEP] Rendering phoneNumberStepContent")
+        let _ = print("   └─ isPhoneVerificationLockedOut: \(isPhoneVerificationLockedOut)")
+        let _ = print("   └─ isVerificationCodeSent: \(isVerificationCodeSent)")
+        let _ = print("   └─ isPhoneVerified: \(isPhoneVerified)")
+        let _ = print("   └─ phoneNumber: '\(phoneNumber)'")
+        let _ = print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
+        
+        return VStack(spacing: 20) {
+            // STATE 0: LOCKED OUT - User exceeded attempts
+            if isPhoneVerificationLockedOut {
+                let _ = print("📱 [PHONE STEP] Showing STATE 0: Locked out")
+                phoneLockedOutView
+            }
+            // STATE 1: PHONE NUMBER INPUT (before code sent)
+            else if !isVerificationCodeSent && !isPhoneVerified {
+                let _ = print("📱 [PHONE STEP] Showing STATE 1: Phone input")
+                phoneInputView
+                
+                // SEND CODE BUTTON (with cooldown)
+                if isPhoneNumberValid {
+                    let canSend = sendCodeCountdown == 0
+                    
+                    Button(action: sendVerificationCode) {
+                        HStack(spacing: 10) {
+                            if sendCodeCountdown > 0 {
+                                Image(systemName: "clock.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Retry in \(sendCodeCountdown)s")
+                                    .font(.system(size: 15, weight: .semibold))
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Send Verification Code")
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                        }
+                        .foregroundColor(canSend ? .white : .gray)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            Capsule()
+                                .fill(canSend ? Color.blue : Color.gray.opacity(0.3))
+                        )
+                    }
+                    .disabled(!canSend)
+                }
+                
+                // Privacy message
+                HStack(spacing: 10) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.blue.opacity(0.8))
+                    
+                    Text("Your number is private and will never be shared.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.blue.opacity(0.08))
+                )
+            }
+            
+            // STATE 2: VERIFICATION CODE INPUT (after code sent)
+            if isVerificationCodeSent && !isPhoneVerified {
+                let _ = print("📱 [PHONE STEP] Showing STATE 2: Verification code input")
+                VStack(spacing: 20) {
+                    // Show which number code was sent to
+                    HStack(spacing: 8) {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.blue)
+                        Text("Code sent to \(formatInternationalNumber())")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.blue.opacity(0.1))
+                    )
+                    
+                    // Warning if this is the last attempt
+                    if phoneVerificationAttempts >= maxPhoneVerificationAttempts {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                            Text("Last attempt - going back will skip this step")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.orange.opacity(0.1))
+                        )
+                    }
+                    
+                    // 6-digit code input with individual tiles
+                    ZStack {
+                        // Hidden text field for iOS auto-fill support
+                        TextField("", text: $verificationCode)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .focused($focusedField, equals: .verificationCode)
+                            .opacity(0)
+                            .onChange(of: verificationCode) { _, newValue in
+                                let digits = newValue.filter { $0.isNumber }
+                                if digits != verificationCode {
+                                    verificationCode = String(digits.prefix(6))
+                                }
+                                if verificationCode.count == 6 {
+                                    verifyCode()
+                                }
+                            }
+                        
+                        // Visual digit tiles
+                        HStack(spacing: 10) {
+                            ForEach(0..<6, id: \.self) { index in
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
+                                    
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(
+                                            index == verificationCode.count ? Color.blue : Color.clear,
+                                            lineWidth: 2
+                                        )
+                                    
+                                    Text(getDigit(at: index))
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                }
+                                .frame(width: 50, height: 60)
+                            }
+                        }
+                        .onTapGesture {
+                            focusedField = .verificationCode
+                        }
+                    }
+                    
+                    // Hint for auto-fill
+                    Text("Tap the code above the keyboard to auto-fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.7))
+                    
+                    // Error message
+                    if !verificationError.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 12))
+                            Text(verificationError)
+                                .font(.caption)
+                        }
+                        .foregroundColor(.red)
+                    }
+                    
+                    // Loading state
+                    if isVerifyingCode {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Verifying...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    // Resend option
+                    if resendCountdown > 0 {
+                        Text("Resend code in \(resendCountdown)s")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Button("Resend Code") {
+                            resendVerificationCode()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.blue)
+                    }
+                }
+                .onAppear {
+                    // Focus the code field to enable iOS auto-fill
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        focusedField = .verificationCode
+                    }
+                }
+            }
+            
+            // STATE 3: VERIFIED SUCCESS
+            if isPhoneVerified {
+                let _ = print("📱 [PHONE STEP] Showing STATE 3: Verified success")
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 50))
+                        .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    
+                    Text("Phone Verified!")
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.blue)
+                    
+                    Text(formatInternationalNumber())
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    
+                    Text("Two-factor authentication is now enabled.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    // Privacy reminder
+                    HStack(spacing: 8) {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue.opacity(0.7))
+                        Text("Your number is private and will never be displayed or shared.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.blue.opacity(0.08))
+                    )
+                    .padding(.top, 8)
+                }
+                .padding(.vertical, 20)
+                .transition(.scale.combined(with: .opacity))
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .id("phoneNumberStepContent-\(selectedCountryCode.rawValue)-\(isVerificationCodeSent)-\(isPhoneVerified)")
+    }
+    
+    // Helper to get digit at index for verification code display
+    private func getDigit(at index: Int) -> String {
+        guard index < verificationCode.count else { return "" }
+        let idx = verificationCode.index(verificationCode.startIndex, offsetBy: index)
+        return String(verificationCode[idx])
+    }
+    
+    // Send verification code
+    private func sendVerificationCode() {
+        print("📤 [SEND CODE] Starting sendVerificationCode()")
+        print("   └─ phoneNumber: '\(phoneNumber)'")
+        print("   └─ fullPhoneNumber: '\(fullPhoneNumber)'")
+        print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
+        print("   └─ phoneVerificationAttempts: \(phoneVerificationAttempts)")
+        
+        verificationError = ""
+        
+        // Increment attempt counter
+        phoneVerificationAttempts += 1
+        print("📤 [SEND CODE] Incremented attempts to: \(phoneVerificationAttempts)")
+        
+        // Immediately advance to code input screen (don't wait for send)
+        print("📤 [SEND CODE] Setting isVerificationCodeSent = true with animation")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isVerificationCodeSent = true
+        }
+        print("📤 [SEND CODE] isVerificationCodeSent is now: \(isVerificationCodeSent)")
+        
+        startResendCountdown()
+        
+        // Focus the code field after a brief delay for view to build
+        print("📤 [SEND CODE] Scheduling focus change in 0.3s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            print("📤 [SEND CODE] Setting focusedField to .verificationCode")
+            self.focusedField = .verificationCode
+        }
+        
+        // Send the code in background - by the time user sees the screen, SMS arrives
+        print("📤 [SEND CODE] Starting async task to send SMS")
+        Task {
+            print("📤 [SEND CODE] Calling phoneVerificationService.sendVerificationCode")
+            let success = await phoneVerificationService.sendVerificationCode(to: fullPhoneNumber)
+            print("📤 [SEND CODE] SMS send result: \(success)")
+            
+            if !success {
+                await MainActor.run {
+                    let errorMsg = phoneVerificationService.error ?? "Failed to send code. Tap resend to try again."
+                    print("📤 [SEND CODE] ERROR: \(errorMsg)")
+                    verificationError = errorMsg
+                }
+            }
+        }
+        print("📤 [SEND CODE] Function complete (async task running in background)")
+    }
+    
+    // Verify the entered code
+    private func verifyCode() {
+        guard verificationCode.count == 6 else { return }
+        
+        isVerifyingCode = true
+        verificationError = ""
+        
+        Task {
+            let success = await phoneVerificationService.verifyCode(verificationCode, for: fullPhoneNumber)
+            
+            await MainActor.run {
+                isVerifyingCode = false
+                if success {
+                    isPhoneVerified = true
+                    selectionFeedback.selectionChanged()
+                } else {
+                    verificationError = phoneVerificationService.error ?? "Invalid code"
+                    verificationCode = ""
+                }
+            }
+        }
+    }
+    
+    // Resend verification code
+    private func resendVerificationCode() {
+        verificationCode = ""
+        verificationError = ""
+        sendVerificationCode()
+    }
+    
+    // Start countdown for resend
+    private func startResendCountdown() {
+        resendCountdown = 30
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            if resendCountdown > 0 {
+                resendCountdown -= 1
+            } else {
+                timer.invalidate()
+            }
+        }
+    }
+    
+    // Start countdown timer for send code button (when user goes back from code entry)
+    private func startSendCodeCountdownTimer() {
+        sendCodeTimer?.invalidate()
+        sendCodeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] timer in
+            if sendCodeCountdown > 0 {
+                sendCodeCountdown -= 1
+            } else {
+                timer.invalidate()
+                sendCodeTimer = nil
+            }
+        }
+    }
+    
+    // Format phone number with parentheses and dashes
+    // Format phone number for US display (used in code sent message)
+    private func formatPhoneNumber(_ input: String) -> String {
+        let digits = input.filter { $0.isNumber }
+        let limited = String(digits.prefix(10))
+        
+        var result = ""
+        for (index, char) in limited.enumerated() {
+            if index == 0 {
+                result += "("
+            }
+            if index == 3 {
+                result += ") "
+            }
+            if index == 6 {
+                result += "-"
+            }
+            result += String(char)
+        }
+        return result
+    }
+    
+    // Format phone number based on selected country
+    private func formatPhoneNumberForCountry(_ input: String) -> String {
+        let digits = input.filter { $0.isNumber }
+        let limited = String(digits.prefix(selectedCountryCode.maxDigits))
+        
+        // For US, use (XXX) XXX-XXXX format
+        if selectedCountryCode == .us {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 0 { result += "(" }
+                if index == 3 { result += ") " }
+                if index == 6 { result += "-" }
+                result += String(char)
+            }
+            return result
+        }
+        
+        // For UK, use XXXX XXXXXX format
+        if selectedCountryCode == .uk {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 4 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+        
+        // For other countries, just space every 3 digits
+        var result = ""
+        for (index, char) in limited.enumerated() {
+            if index > 0 && index % 3 == 0 { result += " " }
+            result += String(char)
+        }
+        return result
+    }
+    
+    // Format full international number for display
+    private func formatInternationalNumber() -> String {
+        let digits = phoneNumber.filter { $0.isNumber }
+        return "\(selectedCountryCode.rawValue) \(digits)"
+    }
     
     // MARK: - Username Step Content
     private var usernameStepContent: some View {
@@ -2056,12 +2710,15 @@ struct NewOnboardingView: View {
                 VStack(spacing: 6) {
                     Button(action: {
                         HapticManager.impact(.medium)
-                        print("📇 [ONBOARDING] Allow Contacts button tapped")
-                        print("📇 [ONBOARDING] Current status: \(contactsService.authorizationStatus.rawValue)")
+                        print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
+                        print("📇 [CONTACTS FLOW] 👆 Allow Contacts button tapped")
+                        print("📇 [CONTACTS FLOW] Current authorization: \(contactsService.authorizationStatus.rawValue)")
+                        print("📇 [CONTACTS FLOW] User's verified phone: \(phoneNumber.isEmpty ? "(none)" : fullPhoneNumber)")
+                        print("📇 [CONTACTS FLOW] isPhoneVerified: \(isPhoneVerified)")
                         
                         // Check if already denied - need to go to settings
                         if contactsService.permissionDenied {
-                            print("📇 [ONBOARDING] Permission previously denied, opening settings")
+                            print("📇 [CONTACTS FLOW] ⚠️ Permission previously denied, opening Settings...")
                             if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(settingsUrl)
                             }
@@ -2070,13 +2727,44 @@ struct NewOnboardingView: View {
                         
                         Task {
                             contactsPermissionRequested = true
-                            print("📇 [ONBOARDING] Requesting access...")
+                            print("📇 [CONTACTS FLOW] 🔄 Requesting contact access from iOS...")
+                            
                             let granted = await contactsService.requestAccess()
-                            print("📇 [ONBOARDING] Access result: \(granted)")
+                            // Note: requestAccess() already calls fetchContactsAndFindFriends() if granted
+                            
+                            print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
+                            print("📇 [CONTACTS FLOW] Permission result: \(granted ? "✅ GRANTED" : "❌ DENIED")")
+                            
+                            if granted {
+                                print("📇 [CONTACTS FLOW] 📊 Contact scan results:")
+                                print("   └─ Phone numbers found: \(contactsService.contactPhoneNumbers.count)")
+                                print("   └─ Emails found: \(contactsService.contactEmails.count)")
+                                print("   └─ Fit33 users matched: \(contactsService.suggestedFriends.count)")
+                                
+                                if !contactsService.suggestedFriends.isEmpty {
+                                    print("📇 [CONTACTS FLOW] 🎉 Friends found on Fit33:")
+                                    for (i, friend) in contactsService.suggestedFriends.prefix(5).enumerated() {
+                                        print("   \(i + 1). \(friend.name ?? "Unknown") (@\(friend.username ?? "no-username"))")
+                                    }
+                                    if contactsService.suggestedFriends.count > 5 {
+                                        print("   ... and \(contactsService.suggestedFriends.count - 5) more")
+                                    }
+                                } else {
+                                    print("📇 [CONTACTS FLOW] 📭 No contacts found on Fit33 yet")
+                                }
+                            }
+                            print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
+                            
                             await MainActor.run {
                                 contactsPermissionGranted = granted
                                 if granted {
-                                    print("📇 [ONBOARDING] Permission granted, advancing to addFriends")
+                                    print("📇 [CONTACTS FLOW] ➡️ Auto-navigating to Add Friends step...")
+                                    HapticManager.notification(.success)
+                                    
+                                    // Small delay for UI feedback, then navigate
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                        navigateTo(.addFriends)
+                                    }
                                 }
                             }
                         }
@@ -2250,12 +2938,28 @@ struct NewOnboardingView: View {
             }
         }
         .onAppear {
-            // Ensure we have the latest suggested friends
-            if contactsPermissionGranted && contactsService.suggestedFriends.isEmpty {
-                Task {
-                    isLoadingFriends = true
-                    await contactsService.fetchContactsAndFindFriends()
-                    isLoadingFriends = false
+            print("👥 [ADD FRIENDS] Step appeared")
+            print("   └─ contactsPermissionGranted: \(contactsPermissionGranted)")
+            print("   └─ contactsService.canAccessContacts: \(contactsService.canAccessContacts)")
+            print("   └─ contactsService.isLoading: \(contactsService.isLoading)")
+            print("   └─ contactsService.hasCheckedContacts: \(contactsService.hasCheckedContacts)")
+            print("   └─ suggestedFriends.count: \(contactsService.suggestedFriends.count)")
+            print("   └─ contactEmails.count: \(contactsService.contactEmails.count)")
+            print("   └─ contactPhoneNumbers.count: \(contactsService.contactPhoneNumbers.count)")
+            
+            // Refresh contacts and find friends if we have permission but haven't checked yet
+            // or if the suggested friends list is empty (might need refresh)
+            if contactsService.canAccessContacts {
+                if !contactsService.hasCheckedContacts || contactsService.suggestedFriends.isEmpty {
+                    print("👥 [ADD FRIENDS] Fetching/refreshing contacts and friends...")
+                    Task {
+                        isLoadingFriends = true
+                        await contactsService.fetchContactsAndFindFriends()
+                        isLoadingFriends = false
+                        print("👥 [ADD FRIENDS] Fetch complete - found \(contactsService.suggestedFriends.count) friends")
+                    }
+                } else {
+                    print("👥 [ADD FRIENDS] Already have \(contactsService.suggestedFriends.count) suggested friends - no refresh needed")
                 }
             }
         }
@@ -2283,6 +2987,8 @@ struct NewOnboardingView: View {
     
     private func onboardingFriendRow(friend: SuggestedFriend) -> some View {
         let isRequestSent = sentFriendRequests.contains(friend.userId) || friend.hasOutgoingRequest
+        let isLoading = loadingFriendRequests.contains(friend.userId)
+        let hasFailed = failedFriendRequests.contains(friend.userId)
         
         return HStack(spacing: 14) {
             // Avatar
@@ -2319,31 +3025,59 @@ struct NewOnboardingView: View {
             
             Spacer()
             
-            // Add button
+            // Add button with loading and error states
             Button(action: {
-                guard !isRequestSent else { return }
+                guard !isRequestSent && !isLoading else { return }
+                
+                // Clear any previous failure
+                failedFriendRequests.remove(friend.userId)
+                
+                // Set loading state
+                loadingFriendRequests.insert(friend.userId)
                 HapticManager.impact(.medium)
+                
+                print("👆 [ADD FRIEND] Tapped Add for \(friend.name ?? "Unknown") (ID: \(friend.userId))")
+                
                 Task {
                     let success = await FriendService.shared.sendFriendRequest(toUserId: friend.userId)
-                    if success {
-                        sentFriendRequests.insert(friend.userId)
+                    
+                    await MainActor.run {
+                        loadingFriendRequests.remove(friend.userId)
+                        
+                        if success {
+                            print("✅ [ADD FRIEND] Request sent successfully to \(friend.name ?? "Unknown")")
+                            sentFriendRequests.insert(friend.userId)
+                            HapticManager.notification(.success)
+                        } else {
+                            print("❌ [ADD FRIEND] Failed to send request to \(friend.name ?? "Unknown")")
+                            failedFriendRequests.insert(friend.userId)
+                            HapticManager.notification(.error)
+                        }
                     }
                 }
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: isRequestSent ? "checkmark" : "plus")
-                        .font(.system(size: 12, weight: .bold))
-                    Text(isRequestSent ? "Sent" : "Add")
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: isRequestSent ? "checkmark" : (hasFailed ? "exclamationmark.triangle" : "plus"))
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    Text(isRequestSent ? "Sent" : (hasFailed ? "Retry" : (isLoading ? "" : "Add")))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(isRequestSent ? .green : .white)
+                .foregroundColor(isRequestSent ? .green : (hasFailed ? .orange : .white))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(
                     Group {
                         if isRequestSent {
                             Color.green.opacity(0.15)
+                        } else if hasFailed {
+                            Color.orange.opacity(0.15)
                         } else {
                             LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                         }
@@ -2351,7 +3085,7 @@ struct NewOnboardingView: View {
                 )
                 .cornerRadius(20)
             }
-            .disabled(isRequestSent)
+            .disabled(isRequestSent || isLoading)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
@@ -2929,8 +3663,9 @@ struct NewOnboardingView: View {
                         .padding(.top, 4)
                     }
                     
-                    // MARK: - Primary Sign In Button (when keyboard is down)
-                    if keyboardObserver.keyboardHeight == 0 {
+                    // MARK: - Primary Sign In/Continue Button (only shows when user starts filling form)
+                    // Hidden by default - appears when user has entered email and password
+                    if keyboardObserver.keyboardHeight == 0 && !email.isEmpty && !password.isEmpty {
                         Button(action: {
                             if isEditingFromConfirmation {
                                 returnToConfirmation()
@@ -3056,6 +3791,15 @@ struct NewOnboardingView: View {
     private var calculatedAge: Int {
         guard let date = birthdayDate else { return 0 }
         return Calendar.current.dateComponents([.year], from: date, to: Date()).year ?? 0
+    }
+    
+    /// Birthday in ISO format (YYYY-MM-DD) for database storage
+    /// Converts from locale-specific format (MM/DD/YYYY or DD/MM/YYYY) to ISO
+    private var birthdayISO: String? {
+        guard let date = birthdayDate else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
     
     private var basicsStep: some View {
@@ -4609,14 +5353,26 @@ struct NewOnboardingView: View {
     }
     
     private func handleAuth() {
+        print("🔐 [AUTH] handleAuth() called")
+        print("   └─ isSignUp: \(isSignUp)")
+        print("   └─ email: '\(email)'")
+        print("   └─ password length: \(password.count)")
+        
         showError = false
         errorMessage = ""
         showAuthProviderHint = false
         
         if isSignUp {
-            // For sign up: Just validate and proceed to username step
+            // For sign up: Just validate and proceed to phone number step (2FA security)
             // Account will be created on the confirmation screen
-            navigateTo(.username)
+            print("🔐 [AUTH] Sign up mode - navigating to phone number step")
+            print("   └─ Current state before navigation:")
+            print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
+            print("   └─ phoneNumber: '\(phoneNumber)'")
+            print("   └─ isVerificationCodeSent: \(isVerificationCodeSent)")
+            print("   └─ isPhoneVerified: \(isPhoneVerified)")
+            navigateTo(.phoneNumber)
+            print("🔐 [AUTH] Navigation call complete")
         } else {
             // For sign in: First check if email is linked to Apple/Google
             Task {
@@ -4638,8 +5394,24 @@ struct NewOnboardingView: View {
                 do {
                     try await supabaseManager.signIn(email: email, password: password)
                     
+                    // After sign-in, syncAllDataFromCloud() runs which updates hasCompletedOnboarding
+                    // Give it a moment to complete, then check if user already completed onboarding
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms for sync to complete
+                    
                     await MainActor.run {
-                        navigateTo(.basics)
+                        // Reload to get latest onboarding status from cloud sync
+                        userManager.reloadCurrentUser()
+                        
+                        if userManager.hasCompletedOnboarding {
+                            // Returning user - ContentView will show main app automatically
+                            // because it observes userManager.hasCompletedOnboarding
+                            print("✅ [EMAIL AUTH] Returning user signed in - onboarding complete, switching to main app")
+                            // Don't navigate - ContentView will handle it
+                        } else {
+                            // New user or incomplete onboarding - continue onboarding flow
+                            print("👤 [EMAIL AUTH] User needs onboarding - continuing to basics")
+                            navigateTo(.basics)
+                        }
                     }
                 } catch {
                     await MainActor.run {
@@ -4811,6 +5583,7 @@ struct NewOnboardingView: View {
                     await supabaseManager.logOnboardingField(fieldName: "name", stage: "sent_to_db", value: name)
                     await supabaseManager.logOnboardingField(fieldName: "email", stage: "sent_to_db", value: emailToSend)
                     await supabaseManager.logOnboardingField(fieldName: "username", stage: "sent_to_db", value: username.isEmpty ? nil : username)
+                    await supabaseManager.logOnboardingField(fieldName: "birthday", stage: "sent_to_db", value: birthdayISO, rawInput: birthday, convertedValue: birthdayISO)
                     await supabaseManager.logOnboardingField(fieldName: "age", stage: "sent_to_db", value: ageValue)
                     await supabaseManager.logOnboardingField(fieldName: "gender", stage: "sent_to_db", value: selectedGender)
                     await supabaseManager.logOnboardingField(fieldName: "height_cm", stage: "sent_to_db", value: heightToSend)
@@ -4821,11 +5594,16 @@ struct NewOnboardingView: View {
                     await supabaseManager.logOnboardingField(fieldName: "available_days", stage: "sent_to_db", value: daysToSend)
                     await supabaseManager.logOnboardingField(fieldName: "workout_environment", stage: "sent_to_db", value: selectedWorkoutLocation.rawValue)
                     
+                    // Use full international phone number (with country code) if verified
+                    let phoneForOAuth = isPhoneVerified ? fullPhoneNumber : nil
+                    
                     print("🔐 [ONBOARDING] Creating profile for OAuth user...")
+                    print("🔐 [ONBOARDING] Birthday: display='\(birthday)' -> ISO='\(birthdayISO ?? "nil")'")
                     try await supabaseManager.createProfileForOAuthUser(
                         name: name,
                         email: emailToSend,
                         username: username.isEmpty ? nil : username,
+                        birthday: birthdayISO,  // Birthday in ISO format (YYYY-MM-DD) for database
                         age: ageValue,
                         gender: selectedGender,
                         heightCm: heightToSend,
@@ -4834,7 +5612,8 @@ struct NewOnboardingView: View {
                         experienceLevel: experienceToSend,
                         equipment: equipmentToSend,
                         availableDays: daysToSend,
-                        workoutEnvironment: selectedWorkoutLocation.rawValue
+                        workoutEnvironment: selectedWorkoutLocation.rawValue,
+                        phoneNumber: phoneForOAuth  // 2FA phone number with country code (private)
                     )
                     print("✅ [ONBOARDING] OAuth user profile created successfully!")
                     
@@ -4939,6 +5718,9 @@ struct NewOnboardingView: View {
             weightLbs = (Double(weight) ?? 0) * 2.20462
         }
         
+        // Use full international phone number (with country code) if verified
+        let phoneForUser = isPhoneVerified ? fullPhoneNumber : nil
+        
         userManager.createUser(
             name: name,
             age: ageInt,
@@ -4954,7 +5736,8 @@ struct NewOnboardingView: View {
             workoutEnvironment: selectedWorkoutLocation.rawValue,
             birthday: birthday.isEmpty ? nil : birthday,
             weightLbs: weightLbs,
-            heightInches: heightInches
+            heightInches: heightInches,
+            phoneNumber: phoneForUser  // 2FA phone number with country code (private)
         )
         
         // Save user limitations to cloud
@@ -5124,9 +5907,9 @@ struct NewOnboardingView: View {
                             print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
                             
                             if isNewUser {
-                                // New user - go to username selection first
-                                print("👤 [SOCIAL AUTH] New Apple user - directing to username selection")
-                                navigateTo(.username)
+                                // New user - go to phone number for 2FA security first
+                                print("👤 [SOCIAL AUTH] New Apple user - directing to phone number step")
+                                navigateTo(.phoneNumber)
                             } else {
                                 // Returning user - force reload from Core Data to get latest onboarding status
                                 userManager.reloadCurrentUser()
@@ -5137,9 +5920,9 @@ struct NewOnboardingView: View {
                                     // because it observes userManager.hasCompletedOnboarding
                                     print("✅ [SOCIAL AUTH] Returning Apple user signed in - onboarding complete, switching to main app")
                                 } else {
-                                    // They started but didn't finish onboarding - continue from username
+                                    // They started but didn't finish onboarding - continue from phone number
                                     print("👤 [SOCIAL AUTH] Returning Apple user - continuing onboarding")
-                                    navigateTo(.username)
+                                    navigateTo(.phoneNumber)
                                 }
                             }
                         }
@@ -5471,6 +6254,41 @@ struct PasswordTextField<F: Hashable>: View {
                 )
         )
         .animation(.easeInOut(duration: 0.3), value: isValid)
+    }
+}
+
+// MARK: - Verification Code Box
+struct VerificationCodeBox: View {
+    let digit: String
+    let isFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                .shadow(
+                    color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
+                    radius: isFocused ? 8 : 4,
+                    x: 0,
+                    y: isFocused ? 4 : 2
+                )
+            
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    isFocused
+                        ? LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(colors: [Color.gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: isFocused ? 2 : 1
+                )
+            
+            Text(digit)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundColor(.primary)
+        }
+        .frame(width: 48, height: 56)
+        .animation(.easeInOut(duration: 0.15), value: isFocused)
+        .animation(.easeInOut(duration: 0.1), value: digit)
     }
 }
 
@@ -7209,6 +8027,138 @@ struct OnboardingCameraPicker: UIViewControllerRepresentable {
         
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.dismiss()
+        }
+    }
+}
+
+// MARK: - Country Code for Phone Verification
+enum CountryCode: String, CaseIterable, Identifiable {
+    case us = "+1"
+    case uk = "+44"
+    case ireland = "+353"
+    case france = "+33"
+    case germany = "+49"
+    case spain = "+34"
+    case italy = "+39"
+    case netherlands = "+31"
+    case belgium = "+32"
+    case portugal = "+351"
+    case austria = "+43"
+    case switzerland = "+41"
+    case sweden = "+46"
+    case norway = "+47"
+    case denmark = "+45"
+    case poland = "+48"
+    
+    var id: String { rawValue }
+    
+    var flag: String {
+        switch self {
+        case .us: return "🇺🇸"
+        case .uk: return "🇬🇧"
+        case .ireland: return "🇮🇪"
+        case .france: return "🇫🇷"
+        case .germany: return "🇩🇪"
+        case .spain: return "🇪🇸"
+        case .italy: return "🇮🇹"
+        case .netherlands: return "🇳🇱"
+        case .belgium: return "🇧🇪"
+        case .portugal: return "🇵🇹"
+        case .austria: return "🇦🇹"
+        case .switzerland: return "🇨🇭"
+        case .sweden: return "🇸🇪"
+        case .norway: return "🇳🇴"
+        case .denmark: return "🇩🇰"
+        case .poland: return "🇵🇱"
+        }
+    }
+    
+    var name: String {
+        switch self {
+        case .us: return "United States"
+        case .uk: return "United Kingdom"
+        case .ireland: return "Ireland"
+        case .france: return "France"
+        case .germany: return "Germany"
+        case .spain: return "Spain"
+        case .italy: return "Italy"
+        case .netherlands: return "Netherlands"
+        case .belgium: return "Belgium"
+        case .portugal: return "Portugal"
+        case .austria: return "Austria"
+        case .switzerland: return "Switzerland"
+        case .sweden: return "Sweden"
+        case .norway: return "Norway"
+        case .denmark: return "Denmark"
+        case .poland: return "Poland"
+        }
+    }
+    
+    var displayText: String {
+        "\(flag) \(rawValue)"
+    }
+    
+    // Minimum digits for phone number (without country code)
+    var minDigits: Int {
+        switch self {
+        case .us: return 10
+        case .uk: return 10
+        case .ireland: return 9
+        case .france: return 9
+        case .germany: return 10
+        case .spain: return 9
+        case .italy: return 9
+        case .netherlands: return 9
+        case .belgium: return 9
+        case .portugal: return 9
+        case .austria: return 10
+        case .switzerland: return 9
+        case .sweden: return 9
+        case .norway: return 8
+        case .denmark: return 8
+        case .poland: return 9
+        }
+    }
+    
+    var maxDigits: Int {
+        switch self {
+        case .us: return 10
+        case .uk: return 10
+        case .ireland: return 9
+        case .france: return 9
+        case .germany: return 11
+        case .spain: return 9
+        case .italy: return 10
+        case .netherlands: return 9
+        case .belgium: return 9
+        case .portugal: return 9
+        case .austria: return 10
+        case .switzerland: return 9
+        case .sweden: return 9
+        case .norway: return 8
+        case .denmark: return 8
+        case .poland: return 9
+        }
+    }
+    
+    var placeholder: String {
+        switch self {
+        case .us: return "(555) 123-4567"
+        case .uk: return "7911 123456"
+        case .ireland: return "85 123 4567"
+        case .france: return "6 12 34 56 78"
+        case .germany: return "151 12345678"
+        case .spain: return "612 345 678"
+        case .italy: return "312 345 6789"
+        case .netherlands: return "6 12345678"
+        case .belgium: return "470 12 34 56"
+        case .portugal: return "912 345 678"
+        case .austria: return "664 1234567"
+        case .switzerland: return "78 123 45 67"
+        case .sweden: return "70 123 45 67"
+        case .norway: return "412 34 567"
+        case .denmark: return "20 12 34 56"
+        case .poland: return "512 345 678"
         }
     }
 }

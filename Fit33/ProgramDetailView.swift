@@ -12,6 +12,8 @@ struct SmartProgramOverviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     
+    @State private var showingCancelAlert = false
+    
     private var completedDays: Int {
         program.completedDays.count
     }
@@ -75,7 +77,38 @@ struct SmartProgramOverviewView: View {
                     .font(.headline)
                     .foregroundColor(.primary)
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showingCancelAlert = true
+                    } label: {
+                        Label("Cancel Program", systemImage: "xmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .foregroundColor(programColor)
+                }
+            }
         }
+        .alert("Cancel Program", isPresented: $showingCancelAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("End Program", role: .destructive) {
+                cancelProgram()
+            }
+        } message: {
+            Text("Are you sure you want to cancel this program? Your progress will be lost.")
+        }
+    }
+    
+    private func cancelProgram() {
+        // Remove the program from SmartProgramEngine
+        SmartProgramEngine.shared.userPrograms.removeAll { $0.id == program.id }
+        // Save the updated list (triggers local + cloud sync)
+        if let data = try? JSONEncoder().encode(SmartProgramEngine.shared.userPrograms) {
+            UserDefaults.standard.set(data, forKey: "smart_user_programs")
+        }
+        dismiss()
     }
     
     // MARK: - Compact Header

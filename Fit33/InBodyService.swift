@@ -92,6 +92,9 @@ class InBodyService: ObservableObject {
                 self.connectionError = nil
             }
             
+            // Update integration status in database
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "inbody", isConnected: true)
+            
             print("✅ [INBODY] Successfully connected and synced")
             
         } catch {
@@ -438,6 +441,9 @@ class InBodyService: ObservableObject {
                 self.latestScan = nil
                 self.scanHistory = []
             }
+            
+            // Update integration status in database
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "inbody", isConnected: false)
             
             print("✅ [INBODY] Disconnected")
         }

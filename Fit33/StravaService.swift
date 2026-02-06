@@ -150,6 +150,11 @@ final class StravaService: ObservableObject {
         
         print("✅ [STRAVA] Connected as \(tokenResponse.athlete?.firstname ?? "Unknown") \(tokenResponse.athlete?.lastname ?? "")")
         
+        // Update integration status in database
+        Task {
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: true)
+        }
+        
         // Sync activities after connecting
         await syncActivities()
     }
@@ -467,6 +472,11 @@ final class StravaService: ObservableObject {
         
         UserDefaults.standard.removeObject(forKey: "strava_athlete")
         UserDefaults.standard.removeObject(forKey: "strava_last_sync")
+        
+        // Update integration status in database
+        Task {
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: false)
+        }
         
         print("🔌 [STRAVA] Disconnected")
     }

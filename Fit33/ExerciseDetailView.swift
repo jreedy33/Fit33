@@ -8,12 +8,16 @@ struct ExerciseDetailView: View {
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var workoutManager = WorkoutManager.shared
     
     // User history data
     @State private var personalRecord: (weight: Double, reps: Int, date: Date)?
     @State private var lastPerformance: (weight: Double, reps: Int, sets: Int, date: Date)?
     @State private var totalTimesPerformed: Int = 0
     @State private var hasLoadedHistory = false
+    
+    // Favorite state
+    @State private var isFavorite: Bool = false
     
     // Extract primary and secondary muscles from exercise data
     private var primaryMuscle: String {
@@ -161,9 +165,9 @@ struct ExerciseDetailView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Animated gradient background
-            backgroundGradient
+        ZStack(alignment: .top) {
+            // Animated blue/cyan orb background (consistent with other tabs)
+            AnimatedOrbBackground.exercises(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             // Main content
@@ -198,6 +202,9 @@ struct ExerciseDetailView: View {
                             equipmentSection
                         }
                         
+                        // Add to Workout button
+                        addToWorkoutButton
+                        
                         // Bottom padding for tab bar
                         Spacer(minLength: 100)
                     }
@@ -207,28 +214,52 @@ struct ExerciseDetailView: View {
             }
             .scrollIndicators(.hidden)
             
-            // Custom back button in safe area with glass effect
-            Button(action: {
-                HapticManager.tap()
-                dismiss()
-            }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.black)
-                    .frame(width: 40, height: 40)
-                    .background(
-                        ZStack {
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                            Circle()
-                                .fill(Color.white.opacity(0.9))
-                            Circle()
-                                .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
-                        }
-                    )
-                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+            // Navigation buttons row (back + favorite)
+            HStack {
+                // Custom back button in safe area with glass effect
+                Button(action: {
+                    HapticManager.tap()
+                    dismiss()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.black)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                Circle()
+                                    .fill(Color.white.opacity(0.9))
+                                Circle()
+                                    .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
+                            }
+                        )
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                }
+                
+                Spacer()
+                
+                // Favorite star button
+                Button(action: toggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(isFavorite ? .yellow : .black)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                Circle()
+                                    .fill(Color.white.opacity(0.9))
+                                Circle()
+                                    .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
+                            }
+                        )
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                }
             }
-            .padding(.leading, 16)
+            .padding(.horizontal, 16)
             .padding(.top, 8)
         }
         .ignoresSafeArea(edges: .bottom)
@@ -249,10 +280,143 @@ struct ExerciseDetailView: View {
             ])
             loadUserHistory()
             
+            // Initialize favorite state
+            isFavorite = exercise.isFavorite
+            
             if let name = exercise.name {
                 VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
             }
         }
+    }
+    
+    // MARK: - Toggle Favorite
+    
+    private func toggleFavorite() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            isFavorite.toggle()
+            HapticManager.impact(.medium)
+            
+            // Update Core Data
+            let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+            if let exerciseId = exercise.id {
+                fetchRequest.predicate = NSPredicate(format: "id == %@", exerciseId as CVarArg)
+            } else if let exerciseName = exercise.name {
+                fetchRequest.predicate = NSPredicate(format: "name == %@", exerciseName)
+            }
+            fetchRequest.fetchLimit = 1
+            
+            do {
+                if let freshExercise = try viewContext.fetch(fetchRequest).first {
+                    freshExercise.isFavorite = isFavorite
+                    try viewContext.save()
+                    print("⭐ Exercise '\(freshExercise.name ?? "")' favorite status: \(isFavorite)")
+                    
+                    // Record favorite for variant rotation
+                    let exerciseFamily = freshExercise.value(forKey: "exerciseFamily") as? String ?? ""
+                    Task { @MainActor in
+                        if isFavorite {
+                            SmartVariantRotationEngine.shared.recordFavorite(
+                                exerciseName: freshExercise.name ?? "",
+                                family: exerciseFamily
+                            )
+                            VideoPlaybackEngine.shared.addToFavorites(freshExercise.name ?? "")
+                            ProgressiveExerciseUnlockService.shared.recordFavorite(exerciseName: freshExercise.name ?? "")
+                        } else {
+                            SmartVariantRotationEngine.shared.recordUnfavorite(
+                                exerciseName: freshExercise.name ?? "",
+                                family: exerciseFamily
+                            )
+                            VideoPlaybackEngine.shared.removeFromFavorites(freshExercise.name ?? "")
+                        }
+                    }
+                    
+                    // Sync to cloud if authenticated
+                    if SupabaseManager.shared.isAuthenticated {
+                        Task {
+                            do {
+                                try await SupabaseManager.shared.toggleFavorite(
+                                    exerciseId: freshExercise.id?.uuidString ?? "",
+                                    exerciseType: "default",
+                                    exerciseName: freshExercise.name
+                                )
+                            } catch {
+                                print("❌ Error syncing favorite to cloud: \(error)")
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Error toggling favorite: \(error)")
+                // Revert on error
+                isFavorite.toggle()
+            }
+        }
+    }
+    
+    // MARK: - Add to Workout Button
+    
+    private var addToWorkoutButton: some View {
+        Button(action: addToWorkout) {
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                
+                Text("Add to Workout")
+                    .font(.system(size: 17, weight: .semibold))
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                ZStack {
+                    // Gradient background
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [categoryColor, categoryColor.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    // Subtle shine overlay
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.2), Color.clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+            )
+            .shadow(color: categoryColor.opacity(0.4), radius: 12, x: 0, y: 6)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .padding(.top, 8)
+    }
+    
+    private func addToWorkout() {
+        HapticManager.impact(.medium)
+        
+        // Set the exercise to be pre-selected in the custom workout builder
+        workoutManager.exerciseToAddToCustomWorkout = exercise
+        
+        // Dismiss this view and navigate to custom workout builder
+        // Small delay to ensure smooth transition
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            dismiss()
+            // Trigger navigation to custom workout builder via WorkoutManager
+            workoutManager.shouldNavigateToCustomWorkoutBuilder = true
+        }
+        
+        print("➕ Adding exercise to custom workout: \(exercise.name ?? "Unknown")")
     }
     
     // MARK: - Video Section

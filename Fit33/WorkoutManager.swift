@@ -28,6 +28,8 @@ class WorkoutManager: ObservableObject {
     @Published var shouldShowWorkoutGenerator: Bool = false
     @Published var shouldNavigateToAutoGen: Bool = false  // 🔧 Redirect Home→Workout auto-gen flow
     @Published var shouldNavigateToPrograms: Bool = false  // 🔧 Redirect Home→Workout programs
+    @Published var shouldNavigateToFindFriends: Bool = false  // 🔧 Redirect Home→Workout friends (for challenges)
+    @Published var shouldNavigateToProfileFriends: Bool = false  // 🔧 Redirect Home→Profile friends (Challenge a Friend)
     @Published var autoGenCameFromHomeTab: Bool = false   // 🔧 Track if auto-gen was started from Home tab
     @Published var shouldNavigateToHomeTabInstant: Bool = false  // 🔧 Instant tab switch (no animation)
     
@@ -53,6 +55,8 @@ class WorkoutManager: ObservableObject {
     @Published var isOnCustomWorkoutBuilder: Bool = false
     @Published var selectedCustomWorkoutExercises: [Exercise] = []
     @Published var shouldStartCustomWorkout: Bool = false
+    @Published var exerciseToAddToCustomWorkout: Exercise? = nil  // Pre-select exercise when opening builder
+    @Published var shouldNavigateToCustomWorkoutBuilder: Bool = false  // Trigger navigation to builder
     
     // Active program tracking (persisted to UserDefaults)
     @Published var activeProgram: WorkoutProgram? = nil {

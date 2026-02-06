@@ -88,6 +88,9 @@ class HealthKitManager: ObservableObject {
             }
             print("✅ HealthKit authorized for steps + workout writing")
             
+            // Update integration status in database
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "apple_health", isConnected: true)
+            
             // Start observing steps after authorization
             startObservingSteps()
             

@@ -1669,9 +1669,9 @@ struct ExerciseSwapView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient - adapts to dark mode
-            AdaptiveGradient.exercises(for: colorScheme)
-            .ignoresSafeArea()
+            // Animated blue/cyan orb background
+            AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+                .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header

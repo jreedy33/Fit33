@@ -46,6 +46,12 @@ struct ProfileView: View {
     @State private var showingDeleteAccountConfirmation = false
     @State private var isDeleting = false
     
+    // 2FA / Phone Verification
+    @State private var showPhoneVerificationSheet = false
+    @State private var isPhoneVerified = false
+    @State private var userPhoneNumber: String = ""
+    private let phoneVerificationLockoutKey = "phoneVerificationLockoutTime"
+    
     // Friend system
     @State private var hasLoadedFriendData = false
     @ObservedObject private var friendService = FriendService.shared
@@ -101,9 +107,9 @@ struct ProfileView: View {
     
     var body: some View {
         ZStack {
-            // Adaptive gradient background
-            AdaptiveGradient.stats(for: colorScheme)
-            .ignoresSafeArea(.all, edges: .all)
+            // Animated blue/cyan orb background
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
@@ -148,6 +154,13 @@ struct ProfileView: View {
                                         username: username,
                                         isLoading: isLoadingUsername,
                                         onTap: { showUsernameSheet = true }
+                                    )
+                                    Divider().padding(.leading, 50)
+                                    // Phone row - shows verify option if not verified
+                                    PhoneProfileRow(
+                                        phoneNumber: userPhoneNumber,
+                                        isVerified: isPhoneVerified,
+                                        onTap: { showPhoneVerificationSheet = true }
                                     )
                                     Divider().padding(.leading, 50)
                                     ProfileInfoRow(icon: "envelope.fill", label: "Email", value: email.isEmpty ? "Not set" : email)
@@ -217,7 +230,7 @@ struct ProfileView: View {
                         ProfileEditableSection(
                             title: "AVAILABLE EQUIPMENT",
                             icon: "dumbbell.fill",
-                            iconColor: .purple,
+                            iconColor: .blue,
                             isEditing: $isEditingEquipment,
                             onSave: saveProfile
                         ) {
@@ -297,11 +310,66 @@ struct ProfileView: View {
                             .buttonStyle(PlainButtonStyle())
                         }
                         
+                        // Security / 2FA Section
+                        ProfileSection(
+                            title: "SECURITY",
+                            icon: "lock.shield.fill",
+                            iconColor: .blue
+                        ) {
+                            Button(action: { 
+                                HapticManager.impact(.light)
+                                showPhoneVerificationSheet = true 
+                            }) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: isPhoneVerified ? "checkmark.shield.fill" : "shield.fill")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.blue)
+                                        .frame(width: 28)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Two-Factor Authentication")
+                                            .font(.subheadline)
+                                            .foregroundColor(.primary)
+                                        
+                                        if isPhoneVerified, !userPhoneNumber.isEmpty {
+                                            Text("Enabled • \(formatPhoneForDisplay(userPhoneNumber))")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                        } else if isPhoneVerificationLockedOut {
+                                            Text("Try again in \(lockoutTimeRemaining)")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        } else {
+                                            Text("Secure your account with SMS verification")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    if isPhoneVerified {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.blue)
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(isPhoneVerified)
+                        }
+                        
                         // Share & Invite Section
                         ProfileSection(
                             title: "SHARE & INVITE",
                             icon: "square.and.arrow.up.fill",
-                            iconColor: .purple
+                            iconColor: .blue
                         ) {
                             VStack(spacing: 0) {
                                 // Share App via Messages
@@ -686,6 +754,35 @@ struct ProfileView: View {
                 }
             )
         }
+        .sheet(isPresented: $showPhoneVerificationSheet) {
+            PhoneVerificationSheet(
+                isVerified: $isPhoneVerified,
+                phoneNumber: $userPhoneNumber,
+                onComplete: { [self] phone in
+                    userPhoneNumber = phone
+                    isPhoneVerified = true
+                    showPhoneVerificationSheet = false
+                    
+                    // Save to user profile (Core Data + Cloud)
+                    if let user = userManager.currentUser {
+                        user.phoneNumber = phone
+                        try? viewContext.save()
+                    }
+                    
+                    // Save phone number to cloud
+                    Task {
+                        do {
+                            try await SupabaseManager.shared.updatePhoneNumber(phone)
+                            // Also mark as verified in AppStorage for Dashboard check
+                            UserDefaults.standard.set(true, forKey: "userHasVerifiedPhone")
+                            print("📱 [PROFILE] Phone saved to cloud: \(phone)")
+                        } catch {
+                            print("❌ [PROFILE] Failed to save phone to cloud: \(error)")
+                        }
+                    }
+                }
+            )
+        }
         .alert("Sign Out?", isPresented: $showingSignOutConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -718,7 +815,7 @@ struct ProfileView: View {
                     Circle()
                         .stroke(
                             LinearGradient(
-                                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.2)],
+                                colors: [Color.blue.opacity(0.3), Color.cyan.opacity(0.2)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -901,7 +998,7 @@ struct ProfileView: View {
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [.blue, .purple.opacity(0.8)],
+                                        colors: [.blue, .cyan.opacity(0.8)],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
@@ -988,7 +1085,7 @@ struct ProfileView: View {
             Circle()
                 .fill(
                     LinearGradient(
-                        gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.8)]),
+                        gradient: Gradient(colors: [Color.blue, Color.cyan.opacity(0.8)]),
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1061,29 +1158,65 @@ struct ProfileView: View {
         gender = user.gender ?? "Prefer not to say"
         
         // Convert stored height (in cm) to feet and inches
-        let heightInCm = Int(user.height)
-        if heightInCm > 0 {
-            let totalInches = Double(heightInCm) / 2.54
-            heightFeet = String(Int(totalInches / 12))
-            heightInches = String(Int(totalInches.truncatingRemainder(dividingBy: 12)))
+        // Use the stored heightInches if available (preserves original input)
+        let storedHeightInches = Int(user.heightInches)
+        if storedHeightInches > 0 {
+            // Use the original inches value (more accurate)
+            heightFeet = String(storedHeightInches / 12)
+            heightInches = String(storedHeightInches % 12)
         } else {
-            heightFeet = ""
-            heightInches = ""
+            // Fallback: convert from cm with proper rounding
+            let heightInCm = Double(user.height)
+            if heightInCm > 0 {
+                let totalInches = round(heightInCm / 2.54)  // Round to nearest inch
+                heightFeet = String(Int(totalInches) / 12)
+                heightInches = String(Int(totalInches) % 12)
+            } else {
+                heightFeet = ""
+                heightInches = ""
+            }
         }
         
         // Convert stored weight (in kg) to lbs
-        let weightInKg = Int(user.weight)
-        if weightInKg > 0 {
-            let weightInLbs = Double(weightInKg) * 2.20462
-            weight = String(Int(weightInLbs))
+        // Use stored weightLbs if available (preserves original input)
+        let storedWeightLbs = user.weightLbs
+        if storedWeightLbs > 0 {
+            // Use the original lbs value (more accurate)
+            weight = String(Int(round(storedWeightLbs)))
         } else {
-            weight = ""
+            // Fallback: convert from kg with proper rounding
+            let weightInKg = Double(user.weight)
+            if weightInKg > 0 {
+                let weightInLbs = round(weightInKg * 2.20462)  // Round to nearest lb
+                weight = String(Int(weightInLbs))
+            } else {
+                weight = ""
+            }
         }
         
         fitnessGoal = user.fitnessGoal ?? "General Fitness"
         experienceLevel = user.experienceLevel ?? "Beginner"
         availableDays = Int(user.availableDays)
         selectedEquipment = Set((user.equipment as? [String]) ?? [])
+        
+        // Load phone verification status from Core Data
+        userPhoneNumber = user.phoneNumber ?? ""
+        isPhoneVerified = !userPhoneNumber.isEmpty
+        
+        // Also check Supabase if Core Data doesn't have it
+        if userPhoneNumber.isEmpty {
+            Task {
+                if let cloudPhone = await SupabaseManager.shared.getUserPhoneNumber(), !cloudPhone.isEmpty {
+                    await MainActor.run {
+                        userPhoneNumber = cloudPhone
+                        isPhoneVerified = true
+                        // Update Core Data
+                        user.phoneNumber = cloudPhone
+                        try? viewContext.save()
+                    }
+                }
+            }
+        }
     }
     
     private func loadUsername() async {
@@ -1107,6 +1240,38 @@ struct ProfileView: View {
                 isLoadingUsername = false
             }
         }
+    }
+    
+    // MARK: - Phone Verification Helpers
+    
+    private var isPhoneVerificationLockedOut: Bool {
+        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
+            return Date() < lockoutTime
+        }
+        return false
+    }
+    
+    private var lockoutTimeRemaining: String {
+        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
+            let remaining = lockoutTime.timeIntervalSince(Date())
+            if remaining > 0 {
+                let hours = Int(remaining) / 3600
+                let minutes = (Int(remaining) % 3600) / 60
+                if hours > 0 {
+                    return "\(hours)h \(minutes)m"
+                } else {
+                    return "\(minutes) minutes"
+                }
+            }
+        }
+        return ""
+    }
+    
+    private func formatPhoneForDisplay(_ phone: String) -> String {
+        let digits = phone.filter { $0.isNumber }
+        guard digits.count >= 10 else { return phone }
+        let last2 = String(digits.suffix(2))
+        return "•••-•••-••\(last2)"
     }
     
     // MARK: - Profile Photo Functions
@@ -1545,7 +1710,7 @@ struct ProfileInfoRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1583,7 +1748,7 @@ struct UsernameProfileRow: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Color.blue, Color.purple.opacity(0.8)],
+                            colors: [Color.blue, Color.cyan.opacity(0.8)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -1627,6 +1792,75 @@ struct UsernameProfileRow: View {
     }
 }
 
+// MARK: - Phone Profile Row
+
+struct PhoneProfileRow: View {
+    let phoneNumber: String
+    let isVerified: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.blue, Color.cyan.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 28)
+                
+                Text("Phone")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if isVerified && !phoneNumber.isEmpty {
+                    HStack(spacing: 4) {
+                        Text(formatDisplayPhone(phoneNumber))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Text("Verify Phone")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.blue.opacity(0.7))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func formatDisplayPhone(_ phone: String) -> String {
+        // Format like +1 (•••) ••• - ••90 for privacy (only last 2 digits)
+        let digits = phone.filter { $0.isNumber }
+        if digits.count >= 10 {
+            let lastTwo = String(digits.suffix(2))
+            let areaCode = digits.count > 10 ? String(digits.prefix(digits.count - 10)) : ""
+            if !areaCode.isEmpty {
+                return "+\(areaCode) (•••) ••• - ••\(lastTwo)"
+            }
+            return "(•••) ••• - ••\(lastTwo)"
+        }
+        return phone
+    }
+}
+
 // MARK: - Username Setup Sheet
 
 struct UsernameSetupSheet: View {
@@ -1663,7 +1897,7 @@ struct UsernameSetupSheet: View {
                             .font(.system(size: 50))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [.blue, .purple],
+                                    colors: [.blue, .cyan],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -1881,7 +2115,7 @@ struct EditableProfileRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1920,7 +2154,7 @@ struct PickerProfileRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1971,7 +2205,7 @@ struct StepperProfileRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -2033,7 +2267,7 @@ struct HeightEditRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -2144,7 +2378,7 @@ struct EquipmentTag: View {
             Capsule()
                 .stroke(
                     LinearGradient(
-                        colors: [Color.blue, Color.purple.opacity(0.8)],
+                        colors: [Color.blue, Color.cyan.opacity(0.8)],
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
@@ -2180,7 +2414,7 @@ struct EquipmentSelectableTag: View {
                     .stroke(
                         isSelected ?
                         LinearGradient(
-                            colors: [Color.blue, Color.purple.opacity(0.8)],
+                            colors: [Color.blue, Color.cyan.opacity(0.8)],
                             startPoint: .leading,
                             endPoint: .trailing
                         ) :

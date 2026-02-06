@@ -85,6 +85,13 @@ struct WorkoutTabView: View {
                 workoutManager.shouldShowWorkoutGenerator = false
             }
         }
+        .onChange(of: workoutManager.shouldNavigateToCustomWorkoutBuilder) { _, shouldNavigate in
+            if shouldNavigate {
+                navigationPath.append("CustomWorkout")
+                workoutManager.shouldNavigateToCustomWorkoutBuilder = false
+                print("➕ Navigating to Custom Workout Builder with pre-selected exercise")
+            }
+        }
         .onReceive(deepLinkManager.$pendingDestination) { destination in
             // Handle deep links from Live Activity and Notifications
             guard let destination = destination else { return }
@@ -164,6 +171,13 @@ struct WorkoutTabView: View {
             if shouldShow {
                 navigationPath.append("PersonalizedPrograms")
                 workoutManager.shouldNavigateToPrograms = false
+            }
+        }
+        .onChange(of: workoutManager.shouldNavigateToFindFriends) { _, shouldShow in
+            // 🔧 Handle find friends redirect from Home tab (for challenges)
+            if shouldShow {
+                navigationPath.append("FriendsSearch")
+                workoutManager.shouldNavigateToFindFriends = false
             }
         }
         .onChange(of: workoutManager.shouldClearWorkoutTabNav) { _, shouldClear in
@@ -248,6 +262,8 @@ struct WorkoutTabView: View {
             FriendsListView()
         case "FriendRequests":
             FriendsListView(initialTab: 1)  // Navigate directly to Requests tab
+        case "FriendsSearch":
+            FriendsListView(initialTab: 2)  // Navigate directly to Search tab (for adding friends)
         default:
             if destination.hasPrefix("ProgramDetail:") {
                 let programId = String(destination.dropFirst("ProgramDetail:".count))

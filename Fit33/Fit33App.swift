@@ -83,6 +83,7 @@ struct Fit33App: App {
     @StateObject private var shakeManager = ShakeDetectionManager.shared
     @StateObject private var sessionLogManager = SessionLogManager.shared
     @StateObject private var pushNotificationService = PushNotificationService.shared
+    @StateObject private var realtimeService = RealtimeService.shared
     
     @Environment(\.scenePhase) private var scenePhase
     
@@ -387,6 +388,19 @@ struct Fit33App: App {
                         
                         // Register for push notifications (after auth so we can save token)
                         await pushNotificationService.registerForPushNotifications()
+                        
+                        // 🔄 Connect to Supabase Realtime for instant social updates
+                        // This enables instant notifications for: friend requests, shared workouts, challenges
+                        realtimeService.setupDefaultCallbacks()
+                        await realtimeService.connect()
+                        
+                        // Track activity: Update last login timestamp
+                        await supabaseManager.updateLastLogin()
+                        
+                        // Track activity: Sync integration connection statuses
+                        Task.detached(priority: .background) {
+                            await SupabaseManager.shared.syncAllIntegrationStatuses()
+                        }
                     }
                     
                     // Check notification authorization and schedule if authorized
@@ -559,6 +573,14 @@ struct Fit33App: App {
                         // ⚡️ PERSISTENCE: Check if workout expired while app was closed
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         
+                        // 🔄 Reconnect to Realtime when app becomes active
+                        Task {
+                            if supabaseManager.isAuthenticated && !realtimeService.isConnected {
+                                await realtimeService.connect()
+                                realtimeService.setupDefaultCallbacks()
+                            }
+                        }
+                        
                         // 📬 Check for new shared workouts from friends
                         Task {
                             await FriendService.shared.checkForNewWorkouts()
@@ -582,6 +604,11 @@ struct Fit33App: App {
                         Task {
                             await HealthDataService.shared.syncAllHealthData()
                         }
+                        
+                        // 🌙 DAILY RESET: Check if new day and perform daily archival/reset
+                        Task {
+                            await DailyResetService.shared.checkAndPerformDailyResetIfNeeded()
+                        }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")
                         // 🔧 DEV: Persist logs on inactive (in case of crash)
@@ -599,6 +626,11 @@ struct Fit33App: App {
                         #endif
                         // End session when app goes to background (logs cleared unless bug report pending)
                         SessionLogManager.shared.endSession()
+                        
+                        // 🔌 Disconnect from Realtime to save battery (will reconnect on .active)
+                        Task {
+                            await realtimeService.disconnect()
+                        }
                         
                         // ⚡️ PERSISTENCE: Ensure workout state is saved before background
                         WorkoutManager.shared.saveWorkoutStateOnBackground()

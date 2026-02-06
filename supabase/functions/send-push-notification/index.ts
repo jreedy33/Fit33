@@ -1,5 +1,11 @@
 // Supabase Edge Function: Send Push Notifications via APNs
 // Deploy with: supabase functions deploy send-push-notification
+// 
+// IMPROVEMENTS (2026-02-03):
+// - Added retry logic with exponential backoff
+// - Better handling of batch vs single notification requests
+// - Improved error categorization (transient vs permanent)
+// - Token refresh handling
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -12,22 +18,37 @@ const APNS_TEAM_ID = Deno.env.get('APNS_TEAM_ID') || ''
 const APNS_BUNDLE_ID = Deno.env.get('APNS_BUNDLE_ID') || ''
 const APNS_PRIVATE_KEY = (Deno.env.get('APNS_PRIVATE_KEY') || '').replace(/\\n/g, '\n')
 
-// APNs environment - defaults to sandbox for safety
-const APNS_ENVIRONMENT = Deno.env.get('APNS_ENVIRONMENT') || 'development'
-const APNS_HOST = APNS_ENVIRONMENT === 'production' 
-  ? 'api.push.apple.com' 
-  : 'api.sandbox.push.apple.com'
+// APNs hosts - we now route per-token based on apns_environment column
+const APNS_HOST_PRODUCTION = 'api.push.apple.com'
+const APNS_HOST_SANDBOX = 'api.sandbox.push.apple.com'
+
+// Helper to get the right APNs host for a token's environment
+function getAPNsHost(apnsEnvironment: string | null): string {
+  return apnsEnvironment === 'development' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION
+}
+
+// Configuration
+const MAX_RETRIES = 3
+const BATCH_SIZE = 100
 
 serve(async (req) => {
   try {
+    // Parse request body for optional specific queue_id
+    let requestBody: { queue_id?: string; batch?: boolean } = {}
+    try {
+      requestBody = await req.json()
+    } catch {
+      // No body or invalid JSON - process batch
+    }
+
     // Create Supabase client with service role for full access
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get pending notifications with device tokens
-    const { data: pendingNotifications, error: fetchError } = await supabase
+    // Build query based on whether this is a single notification or batch
+    let query = supabase
       .from('push_notification_queue')
       .select(`
         id,
@@ -36,11 +57,23 @@ serve(async (req) => {
         title,
         body,
         data,
-        created_at
+        created_at,
+        retry_count
       `)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(100)
+    
+    if (requestBody.queue_id) {
+      // Process a specific notification (triggered immediately)
+      query = query.eq('id', requestBody.queue_id)
+    } else {
+      // Batch processing - get pending notifications respecting retry backoff
+      query = query
+        .eq('status', 'pending')
+        .or('next_retry_at.is.null,next_retry_at.lte.' + new Date().toISOString())
+        .order('created_at', { ascending: true })
+        .limit(BATCH_SIZE)
+    }
+
+    const { data: pendingNotifications, error: fetchError } = await query
 
     if (fetchError) {
       console.error('Error fetching notifications:', fetchError)
@@ -71,10 +104,10 @@ serve(async (req) => {
     // Process each notification
     for (const notification of pendingNotifications) {
       try {
-        // Get device token for this user
+        // Get device token and APNs environment for this user
         const { data: tokenData, error: tokenError } = await supabase
           .from('user_push_tokens')
-          .select('device_token')
+          .select('device_token, apns_environment, is_valid')
           .eq('user_id', notification.recipient_user_id)
           .single()
 
@@ -85,6 +118,18 @@ serve(async (req) => {
           continue
         }
 
+        // Skip if token is marked invalid (user needs to re-register)
+        if (tokenData.is_valid === false) {
+          console.log(`Token marked invalid for user ${notification.recipient_user_id} - waiting for re-registration`)
+          await markNotificationFailed(supabase, notification.id, 'Device token marked invalid - user needs to re-open app')
+          failCount++
+          continue
+        }
+
+        // Determine which APNs host to use based on token's environment
+        const apnsHost = getAPNsHost(tokenData.apns_environment)
+        console.log(`Using APNs host: ${apnsHost} for user ${notification.recipient_user_id}`)
+
         // Send to APNs
         const apnsResponse = await sendToAPNs(
           tokenData.device_token,
@@ -93,7 +138,8 @@ serve(async (req) => {
             body: notification.body,
             data: notification.data || {}
           },
-          apnsToken
+          apnsToken,
+          apnsHost
         )
 
         if (apnsResponse.success) {
@@ -101,14 +147,16 @@ serve(async (req) => {
           successCount++
           console.log(`✅ Notification sent to user ${notification.recipient_user_id}`)
         } else {
-          await markNotificationFailed(supabase, notification.id, apnsResponse.error || 'APNs error')
+          const retryCount = notification.retry_count || 0
+          await markNotificationFailed(supabase, notification.id, apnsResponse.error || 'APNs error', retryCount)
           failCount++
           console.log(`❌ Failed for user ${notification.recipient_user_id}: ${apnsResponse.error}`)
         }
 
       } catch (error) {
         console.error(`Error processing notification ${notification.id}:`, error)
-        await markNotificationFailed(supabase, notification.id, String(error))
+        const retryCount = notification.retry_count || 0
+        await markNotificationFailed(supabase, notification.id, String(error), retryCount)
         failCount++
       }
     }
@@ -152,7 +200,8 @@ async function generateAPNsToken(): Promise<string> {
 async function sendToAPNs(
   deviceToken: string, 
   payload: { title: string; body: string; data: Record<string, unknown> },
-  apnsToken: string
+  apnsToken: string,
+  apnsHost: string = APNS_HOST_PRODUCTION
 ): Promise<{ success: boolean; error?: string }> {
   
   const apnsPayload = {
@@ -171,7 +220,7 @@ async function sendToAPNs(
 
   try {
     const response = await fetch(
-      `https://${APNS_HOST}/3/device/${deviceToken}`,
+      `https://${apnsHost}/3/device/${deviceToken}`,
       {
         method: 'POST',
         headers: {
@@ -213,12 +262,69 @@ async function markNotificationSent(supabase: ReturnType<typeof createClient>, i
     .eq('id', id)
 }
 
-async function markNotificationFailed(supabase: ReturnType<typeof createClient>, id: string, errorMessage: string) {
-  await supabase
-    .from('push_notification_queue')
-    .update({ 
-      status: 'failed', 
-      error_message: errorMessage 
-    })
-    .eq('id', id)
+async function markNotificationFailed(
+  supabase: ReturnType<typeof createClient>, 
+  id: string, 
+  errorMessage: string,
+  retryCount: number = 0
+) {
+  // Check if this is a permanent failure (invalid token, etc.)
+  const isPermanentFailure = 
+    errorMessage.includes('BadDeviceToken') ||
+    errorMessage.includes('Unregistered') ||
+    errorMessage.includes('TopicDisallowed') ||
+    errorMessage.includes('DeviceTokenNotForTopic')
+
+  if (isPermanentFailure || retryCount >= MAX_RETRIES) {
+    // Permanent failure - mark as failed
+    await supabase
+      .from('push_notification_queue')
+      .update({ 
+        status: 'failed', 
+        error_message: errorMessage,
+        last_attempt_at: new Date().toISOString()
+      })
+      .eq('id', id)
+    
+    // If it's a bad device token, also invalidate the token in user_push_tokens
+    if (errorMessage.includes('BadDeviceToken') || errorMessage.includes('Unregistered')) {
+      const { data: notification } = await supabase
+        .from('push_notification_queue')
+        .select('recipient_user_id')
+        .eq('id', id)
+        .single()
+      
+      if (notification?.recipient_user_id) {
+        await supabase
+          .from('user_push_tokens')
+          .update({ is_valid: false })
+          .eq('user_id', notification.recipient_user_id)
+        
+        console.log(`Marked device token as invalid for user ${notification.recipient_user_id}`)
+      }
+    }
+  } else {
+    // Transient failure - schedule retry with exponential backoff
+    const nextRetryAt = new Date(Date.now() + Math.pow(2, retryCount + 1) * 60 * 1000)
+    
+    await supabase
+      .from('push_notification_queue')
+      .update({ 
+        status: 'pending',
+        retry_count: retryCount + 1,
+        error_message: errorMessage,
+        last_attempt_at: new Date().toISOString(),
+        next_retry_at: nextRetryAt.toISOString()
+      })
+      .eq('id', id)
+    
+    console.log(`Scheduled retry ${retryCount + 1} for notification ${id} at ${nextRetryAt.toISOString()}`)
+  }
+}
+
+// Helper to check if APNs error is retriable
+function isRetriableAPNsError(status: number): boolean {
+  // 5xx errors are retriable server errors
+  // 429 is rate limiting - retriable
+  return status >= 500 || status === 429
 }

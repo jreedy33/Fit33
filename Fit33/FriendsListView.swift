@@ -6,9 +6,11 @@ import SwiftUI
 struct FriendsListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     // Use ObservedObject for singletons to observe without owning lifecycle
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var contactsService = ContactsService.shared
+    @ObservedObject private var rankingService = FriendRankingService.shared
     
     // Initial tab can be set via deep link (0: Friends, 1: Requests, 2: Search)
     var initialTab: Int = 0
@@ -20,6 +22,12 @@ struct FriendsListView: View {
     @State private var showingReceivedWorkouts = false
     @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
     @State private var isRefreshingRequests = false // For pull-to-refresh on requests tab
+    @State private var wasInBackground = false // Track if user went to Settings
+    @State private var showRankedView = true // Toggle between ranked/alphabetical
+    @State private var showingQRScanner = false // QR code scanner sheet
+    @State private var showingMyQRCode = false // My QR code sheet
+    @State private var topFriendsPage = 0 // 0: Most engaged, 1: Newest added
+    @State private var friendSwipeDragOffset: CGFloat = 0
     
     // Adaptive colors
     private var cardBackground: Color {
@@ -28,8 +36,8 @@ struct FriendsListView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient
-            AdaptiveGradient.stats(for: colorScheme)
+            // Animated blue/cyan orb background
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
@@ -40,22 +48,40 @@ struct FriendsListView: View {
                     .padding(.bottom, 16)
                 
                 // Content based on selected tab
-                TabView(selection: $selectedTab) {
-                    friendsListContent
-                        .tag(0)
-                    
-                    requestsContent
-                        .tag(1)
-                    
-                    searchContent
-                        .tag(2)
+                Group {
+                    switch selectedTab {
+                    case 0:
+                        friendsListContent
+                    case 1:
+                        requestsContent
+                    case 2:
+                        searchContent
+                    default:
+                        friendsListContent
+                    }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .animation(.easeOut(duration: 0.2), value: selectedTab)
             }
         }
         .navigationTitle("Friends")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                // QR Code Menu
+                Menu {
+                    Button(action: { showingMyQRCode = true }) {
+                        Label("My QR Code", systemImage: "qrcode")
+                    }
+                    Button(action: { showingQRScanner = true }) {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
+                } label: {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 18))
+                        .foregroundColor(.blue)
+                }
+            }
+            
             ToolbarItem(placement: .navigationBarTrailing) {
                 // Received Workouts Badge Button
                 Button(action: { showingReceivedWorkouts = true }) {
@@ -86,6 +112,12 @@ struct FriendsListView: View {
                 ReceivedWorkoutsView()
             }
         }
+        .sheet(isPresented: $showingMyQRCode) {
+            MyQRCodeView()
+        }
+        .fullScreenCover(isPresented: $showingQRScanner) {
+            QRCodeScannerView()
+        }
         .onAppear {
             // Set initial tab from deep link if specified
             if initialTab != 0 {
@@ -107,25 +139,68 @@ struct FriendsListView: View {
             guard !hasLoadedInitialData else { return }
             hasLoadedInitialData = true
             
-            Task {
-                await friendService.loadAllData()
-                // Preload friend photos for fast display
+            // ⚡️ INSTANT LOAD: Use already-cached friends data (loaded at app startup)
+            // Only do background refresh if data is empty or stale
+            if !friendService.friends.isEmpty {
+                print("👥 [FRIENDS] Using cached friends data (\(friendService.friends.count) friends) - instant display!")
+                // Preload photos in background for fast display
                 preloadFriendPhotos()
+                
+                // Background refresh for freshness (non-blocking, low priority)
+                Task(priority: .low) {
+                    await rankingService.fetchRankedFriends()
+                    await rankingService.fetchFriendsFromContacts()
+                }
+            } else {
+                // No cached data - need to fetch
+                print("👥 [FRIENDS] No cached data, fetching from server...")
+                Task {
+                    await friendService.loadAllData()
+                    await rankingService.fetchRankedFriends()
+                    await rankingService.fetchFriendsFromContacts()
+                    preloadFriendPhotos()
+                }
             }
         }
         .onChange(of: selectedTab) { _, newTab in
             // Refresh friends when switching to Friends tab (tab 0)
             // This ensures new friends appear immediately after accepting a request
             if newTab == 0 {
-                Task {
+                // ⚡️ Background refresh - don't block the UI
+                preloadFriendPhotos()
+                Task(priority: .low) {
                     await friendService.fetchFriends()
-                    preloadFriendPhotos()
+                    await rankingService.fetchRankedFriends()
+                    await rankingService.fetchFriendsFromContacts()
                 }
             }
             // Load contact suggestions when switching to Search tab (tab 2)
             if newTab == 2 && contactsService.canAccessContacts && !contactsService.hasCheckedContacts {
                 Task {
                     await contactsService.fetchContactsAndFindFriends()
+                }
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // Track when user goes to background (likely to Settings)
+            if newPhase == .background {
+                wasInBackground = true
+            }
+            
+            // When returning from background, check if contacts were enabled
+            if newPhase == .active && wasInBackground {
+                wasInBackground = false
+                
+                // Re-check authorization status
+                contactsService.checkAuthorizationStatus()
+                
+                // If contacts are now accessible and we're on Search tab, fetch immediately
+                if contactsService.canAccessContacts && selectedTab == 2 {
+                    print("✅ [CONTACTS] User returned from Settings - contacts now enabled!")
+                    HapticManager.notification(.success)
+                    Task {
+                        await contactsService.fetchContactsAndFindFriends()
+                    }
                 }
             }
         }
@@ -141,6 +216,7 @@ struct FriendsListView: View {
                 let badgeCount = index == 1 ? friendService.pendingRequests.count : 0
                 
                 Button(action: {
+                    print("🔴 [TAB] Tapped \(tab) tab (index: \(index))")
                     HapticManager.selectionChanged()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         selectedTab = index
@@ -169,7 +245,10 @@ struct FriendsListView: View {
                             .frame(height: 3)
                             .cornerRadius(1.5)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -185,22 +264,255 @@ struct FriendsListView: View {
     private var friendsListContent: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if friendService.isLoading {
+                if friendService.isLoading || rankingService.isLoading {
                     ProgressView("Loading friends...")
                         .padding(.top, 50)
                 } else if friendService.friends.isEmpty {
                     emptyFriendsState
                         .padding(.top, 50)
                 } else {
-                    ForEach(friendService.friends) { friend in
-                        FriendCard(friend: friend) {
-                            showingFriendProfile = friend
+                    // View toggle (Ranked vs Alphabetical)
+                    friendsViewToggle
+                        .padding(.bottom, 8)
+                    
+                    // From Your Contacts section (if any friends are from contacts)
+                    if !rankingService.friendsFromContacts.isEmpty {
+                        fromContactsSection
+                    }
+                    
+                    // Main friends list
+                    if showRankedView && !rankingService.rankedFriends.isEmpty {
+                        // Ranked friends view
+                        rankedFriendsSection
+                    } else {
+                        // Original alphabetical view
+                        ForEach(friendService.friends) { friend in
+                            FriendCard(friend: friend) {
+                                showingFriendProfile = friend
+                            }
                         }
                     }
                 }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 100)
+        }
+        .refreshable {
+            // Pull to refresh rankings
+            await rankingService.fetchRankedFriends(forceRefresh: true)
+            await rankingService.fetchFriendsFromContacts()
+            await friendService.fetchFriends()
+            preloadFriendPhotos()
+        }
+    }
+    
+    // MARK: - Friends Count Header
+    
+    private var friendsViewToggle: some View {
+        HStack {
+            Text("\(friendService.friends.count) Friends")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+    }
+    
+    // MARK: - From Your Contacts Section
+    
+    private var fromContactsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section header
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.rectangle.stack.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .teal],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                Text("FROM YOUR CONTACTS")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("\(rankingService.friendsFromContacts.count)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.green.opacity(0.15))
+                    )
+            }
+            .padding(.leading, 4)
+            
+            // Horizontal scroll of contact friends
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(rankingService.friendsFromContacts) { contactFriend in
+                        ContactFriendChip(
+                            friend: contactFriend,
+                            onTap: {
+                                // Find the matching Friend object to show profile
+                                if let friend = friendService.friends.first(where: { $0.friendId == contactFriend.friendId }) {
+                                    showingFriendProfile = friend
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .padding(.bottom, 16)
+    }
+    
+    // MARK: - Ranked Friends Section
+    
+    private var rankedFriendsSection: some View {
+        let showFloatingHeads = rankingService.rankedFriends.count >= 3
+        let mostEngaged = Array(rankingService.rankedFriends.prefix(3))
+        let mostEngagedIds = Set(mostEngaged.map(\.friendId))
+        
+        // Newest added — skip anyone already on page 0, backfill from remaining
+        let newestAdded: [Friend] = {
+            let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
+            return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
+        }()
+        
+        // Collect all IDs shown in floating heads (both pages)
+        let floatingHeadIds: Set<UUID> = showFloatingHeads
+            ? Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
+            : []
+        
+        // Filter out friends already shown in floating heads
+        let remainingFriends = rankingService.rankedFriends.filter { !floatingHeadIds.contains($0.friendId) }
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            // Top Friends (ranked 1-3)
+            if showFloatingHeads {
+                topFriendsHighlight
+                    .padding(.bottom, 8)
+            }
+            
+            // Remaining friends (excluding floating heads)
+            ForEach(remainingFriends) { rankedFriend in
+                if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
+                    RankedFriendCard(
+                        friend: friend,
+                        rankedFriend: rankedFriend,
+                        isFromContacts: rankingService.isFromContacts(friendId: friend.friendId)
+                    ) {
+                        showingFriendProfile = friend
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Top Friends (Top 3)
+    
+    private var topFriendsHighlight: some View {
+        let mostEngaged = Array(rankingService.rankedFriends.prefix(3))
+        let mostEngagedIds = Set(mostEngaged.map(\.friendId))
+        let newestAdded: [Friend] = {
+            let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
+            return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
+        }()
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            // Swipeable top 3 friends
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                
+                HStack(spacing: 0) {
+                    // Page 0: Most Engaged
+                    HStack(spacing: 12) {
+                        ForEach(mostEngaged) { rankedFriend in
+                            if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
+                                TopFriendCard(
+                                    friend: friend,
+                                    rankedFriend: rankedFriend
+                                ) {
+                                    showingFriendProfile = friend
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: cardWidth)
+                    
+                    // Page 1: Newest Added
+                    HStack(spacing: 12) {
+                        ForEach(Array(newestAdded.enumerated()), id: \.element.id) { index, friend in
+                            TopFriendCard(
+                                friend: friend,
+                                rankedFriend: RankedFriend(
+                                    friendId: friend.friendId,
+                                    friendName: friend.friendName,
+                                    friendUsername: friend.friendUsername,
+                                    profilePhotoUrl: friend.profilePhotoUrl,
+                                    fitnessGoal: friend.fitnessGoal,
+                                    relationshipScore: 0,
+                                    interactionCount: 0,
+                                    workoutsShared: 0,
+                                    workoutsCompleted: 0,
+                                    challengesTogether: 0,
+                                    lastInteraction: nil,
+                                    friendshipStarted: friend.friendsSince,
+                                    rank: index + 1
+                                )
+                            ) {
+                                showingFriendProfile = friend
+                            }
+                        }
+                    }
+                    .frame(width: cardWidth)
+                }
+                .offset(x: -CGFloat(topFriendsPage) * cardWidth + friendSwipeDragOffset)
+                .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: topFriendsPage)
+            }
+            .frame(height: 90)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        friendSwipeDragOffset = value.translation.width
+                    }
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let velocity = value.predictedEndTranslation.width - value.translation.width
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)) {
+                            friendSwipeDragOffset = 0
+                            if (horizontalAmount < -30 || velocity < -100) && topFriendsPage == 0 {
+                                topFriendsPage = 1
+                            } else if (horizontalAmount > 30 || velocity > 100) && topFriendsPage == 1 {
+                                topFriendsPage = 0
+                            }
+                        }
+                        HapticManager.impact(.light)
+                    }
+            )
+            
+            // Page indicator
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(topFriendsPage == 0 ? Color.blue : Color.gray.opacity(0.3))
+                    .frame(width: 6, height: 6)
+                Circle()
+                    .fill(topFriendsPage == 1 ? Color.blue : Color.gray.opacity(0.3))
+                    .frame(width: 6, height: 6)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
     
@@ -350,6 +662,52 @@ struct FriendsListView: View {
     
     private var searchContent: some View {
         VStack(spacing: 16) {
+            // Quick Add Section - QR Code Buttons
+            HStack(spacing: 12) {
+                // Scan QR Code Button
+                Button(action: { showingQRScanner = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "qrcode.viewfinder")
+                            .font(.system(size: 16))
+                        Text("Scan QR")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(12)
+                }
+                
+                // My QR Code Button
+                Button(action: { showingMyQRCode = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "qrcode")
+                            .font(.system(size: 16))
+                        Text("My Code")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.blue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+                    .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 20)
+            
             // Search bar
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
@@ -479,7 +837,7 @@ struct FriendsListView: View {
                         .font(.system(size: 40))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.blue, .purple.opacity(0.8)],
+                                colors: [.blue, .cyan.opacity(0.8)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -657,42 +1015,120 @@ struct FriendsListView: View {
         }
     }
     
+    // MARK: - Sync Contacts Button (Permission Denied State)
+    /// Prominent button shown when user previously denied contacts - allows re-enabling
+    
     private var contactPermissionDeniedView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            // Divider
             HStack {
                 Rectangle()
                     .fill(Color.secondary.opacity(0.2))
                     .frame(height: 1)
-                Text("or")
+                Text("Find Friends Faster")
                     .font(.caption)
+                    .fontWeight(.medium)
                     .foregroundColor(.secondary)
                 Rectangle()
                     .fill(Color.secondary.opacity(0.2))
                     .frame(height: 1)
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 20)
             
-            VStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.badge.xmark")
-                    .font(.system(size: 30))
-                    .foregroundColor(.secondary.opacity(0.5))
+            // Sync Contacts Card
+            VStack(spacing: 14) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.green.opacity(0.15), .teal.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: "person.crop.rectangle.stack.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.green, .teal],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
                 
-                Text("Contact Access Disabled")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                VStack(spacing: 4) {
+                    Text("Sync Contacts")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    Text("Find friends already on Fit33")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
                 
+                // Enable Contacts Button
                 Button(action: {
+                    HapticManager.impact(.medium)
+                    // Open Settings to Fit33's contact permissions
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
                 }) {
-                    Text("Open Settings")
-                        .font(.caption)
-                        .foregroundColor(.blue)
+                    HStack(spacing: 8) {
+                        Image(systemName: "gear.badge")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Enable in Settings")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            colors: [.green, .teal],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(12)
                 }
+                .padding(.horizontal, 16)
+                
+                // Privacy note
+                HStack(spacing: 4) {
+                    Image(systemName: "lock.shield")
+                        .font(.caption2)
+                    Text("Your contacts are never shared")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary.opacity(0.7))
             }
-            .padding(.top, 10)
+            .padding(.vertical, 20)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(cardBackground)
+                    .shadow(color: .green.opacity(0.1), radius: 12, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.green.opacity(0.3), .teal.opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .padding(.horizontal, 16)
         }
+        .padding(.top, 10)
     }
 }
 
@@ -735,7 +1171,7 @@ struct SuggestedFriendCard: View {
                     Text("In your contacts")
                         .font(.caption2)
                 }
-                .foregroundColor(.green)
+                .foregroundColor(.blue)
             }
             
             Spacer()
@@ -744,9 +1180,9 @@ struct SuggestedFriendCard: View {
             actionButton
         }
         .padding(16)
-        .background(PremiumCardBackground(accentColor: .green))
+        .background(PremiumCardBackground(accentColor: .blue))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
-        .shadow(color: .green.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
+        .shadow(color: .blue.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
     }
     
     private var avatarView: some View {
@@ -778,7 +1214,7 @@ struct SuggestedFriendCard: View {
             Circle()
                 .fill(
                     LinearGradient(
-                        colors: [Color.green, Color.teal],
+                        colors: [Color.blue, Color.cyan],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -827,15 +1263,14 @@ struct SuggestedFriendCard: View {
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(LinearGradient(
-                            colors: [Color.green, Color.teal],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ))
+                        .fill(Color.blue)
                 )
             }
         } else {
-            Button(action: { sendRequest() }) {
+            Button(action: { 
+                print("🔴 [ADD BUTTON] Tapped! Sending request to \(friend.displayName)")
+                sendRequest()
+            }) {
                 HStack(spacing: 4) {
                     if isProcessing {
                         ProgressView()
@@ -852,15 +1287,14 @@ struct SuggestedFriendCard: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                .frame(minWidth: 60, minHeight: 32)
                 .background(
                     Capsule()
-                        .fill(LinearGradient(
-                            colors: [Color.blue, Color.purple.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ))
+                        .fill(Color.blue)
                 )
+                .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
             .disabled(isProcessing)
         }
     }
@@ -1020,7 +1454,7 @@ struct FriendRequestCard: View {
                 name: request.fromUserName ?? request.fromUserUsername ?? "User",
                 size: 50,
                 showGradientRing: false,
-                gradientColors: [.green, .cyan]
+                gradientColors: [.blue, .cyan]
             )
             
             VStack(alignment: .leading, spacing: 4) {
@@ -1077,7 +1511,7 @@ struct FriendRequestCard: View {
             Circle()
                 .fill(
                     LinearGradient(
-                        colors: [Color.green, Color.cyan],
+                        colors: [Color.blue, Color.cyan],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1353,26 +1787,38 @@ struct UserSearchResultCard: View {
             }
         } else {
             // No relationship - can add as friend
-            Button(action: { sendRequest() }) {
+            Button(action: { 
+                print("🔴 [ADD BUTTON] Tapped! Sending request to \(user.username ?? "unknown")")
+                sendRequest()
+            }) {
                 HStack(spacing: 4) {
-                    Image(systemName: "person.badge.plus")
-                        .font(.system(size: 12))
-                    Text("Add")
-                        .font(.caption)
-                        .fontWeight(.semibold)
+                    if isProcessing {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 12))
+                        Text("Add")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                .frame(minWidth: 60, minHeight: 32)
                 .background(
                     Capsule()
                         .fill(LinearGradient(
-                            colors: [Color.blue, Color.purple.opacity(0.8)],
+                            colors: isProcessing ? [Color.gray.opacity(0.5), Color.gray] : [Color.blue, Color.purple.opacity(0.8)],
                             startPoint: .leading,
                             endPoint: .trailing
                         ))
                 )
+                .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
             .disabled(isProcessing)
         }
     }
@@ -1395,6 +1841,184 @@ struct UserSearchResultCard: View {
                 isProcessing = false
             }
         }
+    }
+}
+
+// MARK: - Contact Friend Chip (Horizontal scroll item)
+
+struct ContactFriendChip: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let friend: ContactFriend
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                // Avatar
+                ZStack {
+                    if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 56, height: 56)
+                                    .clipShape(Circle())
+                            default:
+                                defaultContactAvatar
+                            }
+                        }
+                    } else {
+                        defaultContactAvatar
+                    }
+                    
+                    // Contact badge
+                    Image(systemName: "person.crop.rectangle.stack.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(Circle().fill(Color.green))
+                        .offset(x: 20, y: 20)
+                }
+                .frame(width: 56, height: 56)
+                
+                // Name
+                Text(friend.displayName.components(separatedBy: " ").first ?? friend.displayName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+            .frame(width: 70)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var defaultContactAvatar: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [.green, .teal],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 56, height: 56)
+            
+            Text(friend.initials)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+        }
+    }
+}
+
+// MARK: - Ranked Friend Card (Main list item with interaction stats)
+
+struct RankedFriendCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let friend: Friend
+    let rankedFriend: RankedFriend
+    let isFromContacts: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                // Avatar with cached profile photo
+                ZStack(alignment: .bottomTrailing) {
+                    CachedFriendPhoto(
+                        friendId: friend.friendId.uuidString,
+                        photoUrl: friend.profilePhotoUrl,
+                        name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                        size: 50,
+                        showGradientRing: rankedFriend.rank <= 3,
+                        gradientColors: rankGradientColors
+                    )
+                    
+                    // Contact badge if from contacts
+                    if isFromContacts {
+                        Image(systemName: "person.crop.rectangle.stack.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(3)
+                            .background(Circle().fill(Color.green))
+                            .offset(x: 2, y: 2)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    // Username (primary)
+                    if let username = friend.friendUsername, !username.isEmpty {
+                        Text("@\(username)")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    // Name (secondary)
+                    if let name = friend.friendName, !name.isEmpty {
+                        Text(name)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .padding(16)
+            .background(PremiumCardBackground(accentColor: rankedFriend.relationshipTier.color))
+        }
+        .buttonStyle(PlainButtonStyle())
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
+        .shadow(color: rankedFriend.relationshipTier.color.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
+    }
+    
+    private var rankGradientColors: [Color] {
+        [.blue, .cyan]
+    }
+}
+
+// MARK: - Top Friend Card
+
+struct TopFriendCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let friend: Friend
+    let rankedFriend: RankedFriend
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 10) {
+                // Avatar
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 60,
+                    showGradientRing: true,
+                    gradientColors: [.blue, .cyan]
+                )
+                
+                // Name
+                Text(firstName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var firstName: String {
+        let name = friend.friendName ?? friend.friendUsername ?? "Friend"
+        return name.components(separatedBy: " ").first ?? name
     }
 }
 

@@ -52,8 +52,8 @@ struct CloudProgramLibraryView: View {
         }
         .searchable(text: $searchText, prompt: "Search programs...")
         .background(
-            AdaptiveGradient.exercises(for: colorScheme)
-            .ignoresSafeArea(.all, edges: .all)
+            AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
         )
         .navigationTitle("Programs")
         .navigationBarTitleDisplayMode(.large)

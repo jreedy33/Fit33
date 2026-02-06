@@ -3,6 +3,11 @@ import SwiftUI
 import Combine
 import CoreData
 
+// MARK: - Notification for Weight Updates
+extension Notification.Name {
+    static let weightDidUpdate = Notification.Name("weightDidUpdate")
+}
+
 // MARK: - Weight Log Model
 
 struct WeightLog: Codable, Identifiable {
@@ -499,6 +504,9 @@ class WeightTrackingService: ObservableObject {
         hasLoggedToday = true
         recentLogs.insert(newLog, at: 0)
         calculateTrends()
+        
+        // Post notification so all weight widgets refresh (home screen + nutrition tab)
+        NotificationCenter.default.post(name: .weightDidUpdate, object: nil)
         
         print("✅ [Weight] UI updated - todayLog.id=\(newLog.id), hasLoggedToday=\(hasLoggedToday)")
         print("✅ [Weight] didSet should have triggered cacheTodayWeight()")

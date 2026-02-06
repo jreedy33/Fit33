@@ -38,7 +38,7 @@ struct TrainingHubView: View {
             .padding(.bottom, 40)
         }
         .background(
-            AdaptiveGradient.home(for: colorScheme)
+            AnimatedOrbBackground.home(colorScheme: colorScheme)
                 .ignoresSafeArea()
         )
         .navigationTitle("Training Hub")

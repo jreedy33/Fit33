@@ -15,6 +15,7 @@ struct FriendProfileView: View {
     
     @State private var showingCreateWorkout = false
     @State private var showingCreateChallenge = false
+    @State private var showingChallengeFlow = false
     @State private var showingUnfriendConfirmation = false
     @State private var isUnfriending = false
     @State private var friendChallenges: [FriendChallenge] = []
@@ -107,6 +108,12 @@ struct FriendProfileView: View {
                     print("⚠️ [CHALLENGE SHEET] Sheet dismissed unexpectedly!")
                 }
             }
+            .fullScreenCover(isPresented: $showingChallengeFlow) {
+                NavigationView {
+                    ChallengeCreationFlow(friend: friend)
+                }
+                .navigationViewStyle(.stack)  // Force single-column layout on iPad
+            }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
                     NavigationView {
@@ -148,9 +155,15 @@ struct FriendProfileView: View {
         // Load sent workouts to this friend
         sentWorkoutsToFriend = FriendService.shared.sentWorkouts.filter { $0.toUserId == friend.friendId }
         
-        // Load challenge history
+        // Load challenge history and log profile view interaction
         Task {
             friendChallenges = await ChallengeService.shared.getChallengesWithFriend(friendId: friend.friendId)
+            
+            // Log profile view interaction for friend ranking
+            await FriendRankingService.shared.logInteraction(
+                withFriendId: friend.friendId,
+                type: .profileViewed
+            )
         }
         
         print("📱 [FRIEND PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts")
@@ -411,8 +424,7 @@ struct FriendProfileView: View {
             } else {
                 // Show create challenge button
                 Button(action: {
-                    print("🔔 [CHALLENGE BUTTON] Tapped! Setting showingCreateChallenge = true")
-                    showingCreateChallenge = true
+                    showingChallengeFlow = true
                 }) {
                     createChallengeButtonContent
                 }
@@ -508,27 +520,15 @@ struct FriendProfileView: View {
     // MARK: - Active Challenge Card (shows when challenge already exists with friend)
     
     private func activeChallengeCard(challenge: ActiveChallenge) -> some View {
-        Button(action: {
+        let challengeType = challenge.type ?? .steps
+        
+        return Button(action: {
             selectedChallenge = challenge
             showingChallengeDetail = true
         }) {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [.blue, .cyan]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 50, height: 50)
-                        .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
-                    
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(.white)
-                }
+                Text(challengeType.emoji)
+                    .font(.system(size: 32))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Active Challenge")

@@ -15,6 +15,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case friendRequest = "friend_request"
     case contactJoined = "contact_joined"
     case challengeInvite = "challenge_invite"
+    case groupChallengeInvite = "group_challenge_invite"
     case challengeUpdate = "challenge_update"
     case challengeProgress = "challenge_progress"
     case challengeCancelled = "challenge_cancelled"
@@ -30,6 +31,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case proteinGoal = "protein_goal"
     case stepsGoal = "steps_goal"
     case waterReminder = "water_reminder"
+    case weightReminder = "weight_reminder"
     
     // Motivation
     case morningMotivation = "morning_motivation"
@@ -47,6 +49,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .friendRequest: return "Friend Requests"
         case .contactJoined: return "Contact Joined"
         case .challengeInvite: return "Challenge Invites"
+        case .groupChallengeInvite: return "Group Challenge Invites"
         case .challengeUpdate: return "Challenge Updates"
         case .challengeProgress: return "Challenge Progress"
         case .challengeCancelled: return "Challenge Cancelled"
@@ -58,6 +61,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .proteinGoal: return "Protein Target Alerts"
         case .stepsGoal: return "Steps Goal Updates"
         case .waterReminder: return "Hydration Reminders"
+        case .weightReminder: return "Weight Tracking Reminders"
         case .morningMotivation: return "Morning Motivation"
         case .weeklyProgress: return "Weekly Summary"
         }
@@ -73,6 +77,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .friendRequest: return "Notify when you receive friend requests"
         case .contactJoined: return "Notify when your contacts join Fit33"
         case .challengeInvite: return "Notify when friends challenge you"
+        case .groupChallengeInvite: return "Notify when friends invite you to group challenges"
         case .challengeUpdate: return "Updates on your active challenges"
         case .challengeProgress: return "Notify when opponent completes their daily goal"
         case .challengeCancelled: return "Notify when a challenge is cancelled"
@@ -84,6 +89,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .proteinGoal: return "Alert when protein is running low"
         case .stepsGoal: return "Update on daily steps progress"
         case .waterReminder: return "Remind you to stay hydrated"
+        case .weightReminder: return "Remind you to log today's weight"
         case .morningMotivation: return "Start your day with motivation"
         case .weeklyProgress: return "Weekly fitness summary"
         }
@@ -99,6 +105,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .friendRequest: return "person.badge.plus"
         case .contactJoined: return "person.crop.circle.badge.checkmark"
         case .challengeInvite: return "trophy.fill"
+        case .groupChallengeInvite: return "trophy.fill"
         case .challengeUpdate: return "chart.line.uptrend.xyaxis"
         case .challengeProgress: return "flame.fill"
         case .challengeCancelled: return "xmark.circle.fill"
@@ -110,6 +117,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .proteinGoal: return "leaf.fill"
         case .stepsGoal: return "figure.walk"
         case .waterReminder: return "drop.fill"
+        case .weightReminder: return "scalemass.fill"
         case .morningMotivation: return "sun.max.fill"
         case .weeklyProgress: return "chart.bar.fill"
         }
@@ -125,6 +133,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .friendRequest: return .green
         case .contactJoined: return .purple
         case .challengeInvite: return .orange
+        case .groupChallengeInvite: return .orange
         case .challengeUpdate: return .purple
         case .challengeProgress: return .blue
         case .challengeCancelled: return .red
@@ -136,6 +145,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .proteinGoal: return .red
         case .stepsGoal: return .green
         case .waterReminder: return .cyan
+        case .weightReminder: return .purple
         case .morningMotivation: return .yellow
         case .weeklyProgress: return .indigo
         }
@@ -152,6 +162,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .friendRequest,           // Social engagement - new friends
              .contactJoined,           // Social engagement - contacts joining app
              .challengeInvite,         // Social engagement - friend challenges
+             .groupChallengeInvite,    // Social engagement - group challenge invites
              .challengeUpdate,         // Keep users engaged with active challenges
              .challengeProgress,       // Notify when opponent completes daily goal
              .challengeCancelled,      // Important to know when challenge ends
@@ -166,7 +177,8 @@ enum NotificationType: String, CaseIterable, Identifiable {
         // OPTIONAL NOTIFICATIONS - Default OFF to avoid notification fatigue
         case .proteinGoal,             // Can feel nagging
              .stepsGoal,               // Better handled by Apple Health
-             .waterReminder:           // Very frequent, opt-in only
+             .waterReminder,           // Very frequent, opt-in only
+             .weightReminder:          // Daily weight check, opt-in
             return false
         }
     }
@@ -207,11 +219,11 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         case .workout:
             return [.dailyWorkoutReminder, .streakProtection, .workoutComplete, .comebackReminder]
         case .social:
-            return [.sharedWorkout, .friendRequest, .challengeInvite, .challengeUpdate]
+            return [.sharedWorkout, .friendRequest, .challengeInvite, .groupChallengeInvite, .challengeUpdate]
         case .achievements:
             return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
         case .health:
-            return [.nutritionReminder, .proteinGoal, .stepsGoal, .waterReminder]
+            return [.nutritionReminder, .proteinGoal, .stepsGoal, .waterReminder, .weightReminder]
         case .motivation:
             return [.morningMotivation, .weeklyProgress]
         }
@@ -1029,6 +1041,71 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+        
+        // Process notification even when in foreground to refresh data
+        Task { @MainActor in
+            if let notificationType = userInfo["type"] as? String {
+                print("🔔 [NOTIFICATIONS] Received \(notificationType) while app in foreground - refreshing data")
+                
+                switch notificationType {
+                case "challenge_accepted", "challenge_declined", "challenge_cancelled":
+                    print("🔄 [SENDER FLOW] Step 1: Received \(notificationType) - starting refresh")
+                    await ChallengeService.shared.fetchPendingSentChallenges()
+                    await ChallengeService.shared.fetchPendingInvites()
+                    await ChallengeService.shared.fetchActiveGroupChallenges()
+                    
+                    // Fetch active immediately to show the challenge widget (even with 0 progress)
+                    print("🔄 [SENDER FLOW] Step 2: Initial fetch of active challenges...")
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    let initialChallenge = ChallengeService.shared.activeChallenges.first
+                    print("📊 [SENDER FLOW] Step 2 result: myToday=\(initialChallenge?.myTodayProgress ?? -1), oppToday=\(initialChallenge?.opponentTodayProgress ?? -1)")
+                    
+                    // Sync OUR HealthKit data to any newly active challenges FIRST
+                    print("🔄 [SENDER FLOW] Step 3: Syncing OUR HealthKit data...")
+                    await ChallengeService.shared.syncHealthKitDataToChallenges()
+                    
+                    // Wait for accepter's progress sync to finish writing to DB
+                    print("⏳ [SENDER FLOW] Step 4: Waiting 2s for accepter's sync to complete...")
+                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                    
+                    // Final fetch - should now have BOTH users' progress
+                    print("🔄 [SENDER FLOW] Step 5: Final fetch with both users' progress...")
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    let finalChallenge = ChallengeService.shared.activeChallenges.first
+                    print("📊 [SENDER FLOW] Step 5 result: myToday=\(finalChallenge?.myTodayProgress ?? -1), oppToday=\(finalChallenge?.opponentTodayProgress ?? -1)")
+                    print("✅ [SENDER FLOW] Complete - widget should show real-time progress")
+                    
+                case "challenge_invite":
+                    await ChallengeService.shared.fetchPendingInvites()
+                    
+                case "group_challenge_invite":
+                    print("🔄 [NOTIFICATIONS] Group challenge invite received - refreshing group challenges")
+                    await ChallengeService.shared.fetchActiveGroupChallenges()
+                    
+                case "group_challenge_started":
+                    print("🔄 [NOTIFICATIONS] Group challenge started - refreshing and syncing progress")
+                    await ChallengeService.shared.fetchActiveGroupChallenges()
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    // Sync existing health data to the newly started challenge
+                    await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
+                    print("✅ [NOTIFICATIONS] Group challenges refreshed + progress synced")
+                    
+                case "friend_request", "friend_request_received":
+                    await FriendService.shared.fetchPendingRequests()
+                    
+                case "friend_request_accepted", "friend_accepted":
+                    await FriendService.shared.fetchFriends()
+                    
+                case "shared_workout":
+                    await FriendService.shared.loadReceivedWorkouts()
+                    
+                default:
+                    break
+                }
+            }
+        }
+        
         // Show notification even when app is in foreground
         completionHandler([.banner, .sound, .badge])
     }
@@ -1114,21 +1191,52 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .dashboard
             print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget")
             
+        case "group_challenge_invite":
+            // Direct to home screen so user sees the group challenge widget
+            Task { await ChallengeService.shared.fetchActiveGroupChallenges() }
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            print("🏆 [NOTIFICATIONS] Opening home screen for group challenge invite")
+            
+        case "group_challenge_started":
+            // Group challenge is now active — refresh, sync progress, and go to dashboard
+            Task {
+                await ChallengeService.shared.fetchActiveGroupChallenges()
+                await ChallengeService.shared.fetchActiveChallenges()
+                await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
+            }
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
+            
         case "challenge_accepted", "challenge_progress", "challenge_completed":
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                Task { await ChallengeService.shared.fetchActiveChallenges() }
+                Task {
+                    print("🔄 [NOTIFICATIONS] Refreshing challenges after \(type) notification")
+                    await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from pending sent
+                    await ChallengeService.shared.fetchActiveChallenges()  // Add to active
+                    await ChallengeService.shared.fetchPendingInvites()  // Clean up any pending invites
+                    print("✅ [NOTIFICATIONS] Challenges refreshed - pending sent should now be active")
+                }
                 print("🏆 [NOTIFICATIONS] Opening challenge detail: \(challengeId)")
             } else {
                 DeepLinkManager.shared.pendingDestination = .challenges
+                Task {
+                    await ChallengeService.shared.fetchPendingSentChallenges()
+                    await ChallengeService.shared.fetchActiveChallenges()
+                }
                 print("🏆 [NOTIFICATIONS] Opening challenges list")
             }
             
         case "challenge_cancelled":
-            // Refresh challenges to remove the cancelled one
-            Task { await ChallengeService.shared.fetchActiveChallenges() }
-            DeepLinkManager.shared.pendingDestination = .challenges
-            print("🏆 [NOTIFICATIONS] Challenge was cancelled, refreshing challenges")
+            // Refresh ALL challenges to remove the cancelled one from every list
+            Task {
+                await ChallengeService.shared.fetchActiveChallenges()
+                await ChallengeService.shared.fetchPendingInvites()
+                await ChallengeService.shared.fetchPendingSentChallenges()
+                await ChallengeService.shared.fetchActiveGroupChallenges()
+            }
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            print("🏆 [NOTIFICATIONS] Challenge was cancelled, refreshing all challenges")
             
         // Achievement notifications
         case "personal_record":

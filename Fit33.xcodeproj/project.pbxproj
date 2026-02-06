@@ -58,6 +58,22 @@
 		7C47F9E12EE33B7100BEC4D7 /* SmartWorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9E02EE33B7100BEC4D7 /* SmartWorkoutPreviewView.swift */; };
 		7C47F9E32EE3BF8600BEC4D7 /* StretchModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C47F9E22EE3BF8600BEC4D7 /* StretchModeView.swift */; };
 		7C4F15062ED3785A00439932 /* CoreDataExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4F15052ED3785A00439932 /* CoreDataExtensions.swift */; };
+		7C53E1DE2F31B27500C2F7EC /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1DD2F31B27500C2F7EC /* RealtimeService.swift */; };
+		7C53E1E02F32496600C2F7EC /* PhoneVerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1DF2F32496600C2F7EC /* PhoneVerificationService.swift */; };
+		7C53E1E22F32535F00C2F7EC /* PhoneVerificationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E12F32535F00C2F7EC /* PhoneVerificationSheet.swift */; };
+		7C53E1E42F32756A00C2F7EC /* ExistingUserPhonePrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E32F32756A00C2F7EC /* ExistingUserPhonePrompt.swift */; };
+		7C53E1E62F327B4A00C2F7EC /* FriendRankingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */; };
+		7C53E1E82F328FF800C2F7EC /* DailyResetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */; };
+		7C53E1EC2F3294A200C2F7EC /* PersonalizedInsightsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */; };
+		7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */; };
+		7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */; };
+		7C53E2222F33FD7500C2F7EC /* MyQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */; };
+		7C53E2242F353B7700C2F7EC /* ChallengeCreationFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */; };
+		7C53E2262F353B7C00C2F7EC /* ChallengeSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2252F353B7C00C2F7EC /* ChallengeSetupView.swift */; };
+		7C53E2282F353FE200C2F7EC /* FriendSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */; };
+		7C53E22E2F35522100C2F7EC /* ChallengeFlowStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */; };
+		7C53E2302F357EA000C2F7EC /* ChallengeFlowStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E22F2F357EA000C2F7EC /* ChallengeFlowStartView.swift */; };
+		7C53E2322F357EB600C2F7EC /* GroupChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */; };
 		7C54AC0F2ED4C097004DD918 /* FoodDatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C54AC0E2ED4C097004DD918 /* FoodDatabaseService.swift */; };
 		7C558B0E2ED4D37B00A01E1F /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C558B0D2ED4D37B00A01E1F /* HealthKitManager.swift */; };
 		7C558B122ED4D39100A01E1F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C558B112ED4D39100A01E1F /* DashboardView.swift */; };
@@ -304,6 +320,22 @@
 		7C47F9E22EE3BF8600BEC4D7 /* StretchModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StretchModeView.swift; sourceTree = "<group>"; };
 		7C47F9E42EE3BF9000BEC4D7 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 		7C4F15052ED3785A00439932 /* CoreDataExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataExtensions.swift; sourceTree = "<group>"; };
+		7C53E1DD2F31B27500C2F7EC /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
+		7C53E1DF2F32496600C2F7EC /* PhoneVerificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneVerificationService.swift; sourceTree = "<group>"; };
+		7C53E1E12F32535F00C2F7EC /* PhoneVerificationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneVerificationSheet.swift; sourceTree = "<group>"; };
+		7C53E1E32F32756A00C2F7EC /* ExistingUserPhonePrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExistingUserPhonePrompt.swift; sourceTree = "<group>"; };
+		7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendRankingService.swift; sourceTree = "<group>"; };
+		7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyResetService.swift; sourceTree = "<group>"; };
+		7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizedInsightsService.swift; sourceTree = "<group>"; };
+		7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQRCodeView.swift; sourceTree = "<group>"; };
+		7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
+		7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeService.swift; sourceTree = "<group>"; };
+		7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationFlow.swift; sourceTree = "<group>"; };
+		7C53E2252F353B7C00C2F7EC /* ChallengeSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeSetupView.swift; sourceTree = "<group>"; };
+		7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendSelectionSheet.swift; sourceTree = "<group>"; };
+		7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeFlowStartView.swift; sourceTree = "<group>"; };
+		7C53E22F2F357EA000C2F7EC /* ChallengeFlowStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeFlowStartView.swift; sourceTree = "<group>"; };
+		7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChallengeDetailView.swift; sourceTree = "<group>"; };
 		7C54AC0E2ED4C097004DD918 /* FoodDatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodDatabaseService.swift; sourceTree = "<group>"; };
 		7C558AEF2ED4D33400A01E1F /* StepTrackerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTrackerView.swift; sourceTree = "<group>"; };
 		7C558B0D2ED4D37B00A01E1F /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
@@ -570,8 +602,11 @@
 				7C3DF1CE2F2D262D00A9CDA7 /* InBodySettingsView.swift */,
 				7C792B012F2C2F7B0048A97E /* PulsingRedDot.swift */,
 				7C3DF1CB2F2CF7FF00A9CDA7 /* ImportedRecipeDetailView.swift */,
+				7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */,
+				7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */,
 				7C792AFB2F2C23AC0048A97E /* ReceivedWorkoutPreviewWidget.swift */,
 				7C792AC92F2AB51C0048A97E /* RecipePreferenceService.swift */,
+				7C53E22F2F357EA000C2F7EC /* ChallengeFlowStartView.swift */,
 				7C792AF92F2B9F5A0048A97E /* ShoppingListView.swift */,
 				7C3DF1FD2F2D773700A9CDA7 /* AppPerformanceSystem.swift */,
 				7C792AFD2F2C292A0048A97E /* FriendPhotoCache.swift */,
@@ -666,9 +701,16 @@
 				7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */,
 				7C0C41E92F09A37F00F02E84 /* GenderFilterService.swift */,
 				7C47F9DE2EE336FB00BEC4D7 /* GeneratedProgramService.swift */,
+				7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */,
+				7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */,
+				7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */,
 				7C558B172ED4D63500A01E1F /* GoFit.entitlements */,
 				7C558B0D2ED4D37B00A01E1F /* HealthKitManager.swift */,
+				7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */,
 				7CACB5742F2E8C78003A7C91 /* ContactsService.swift */,
+				7C53E2252F353B7C00C2F7EC /* ChallengeSetupView.swift */,
+				7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */,
+				7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */,
 				7CAFD5592EDF780500920F0D /* HydrationService.swift */,
 				7CACB5762F2E9712003A7C91 /* ChallengeService.swift */,
 				7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */,
@@ -676,9 +718,15 @@
 				7CAFD55B2EDF780B00920F0D /* HydrationWidget.swift */,
 				7CACB5782F2E9717003A7C91 /* ChallengeSetupView.swift */,
 				7CB08C7B2ED81D0700236ECB /* Info.plist */,
+				7C53E1E12F32535F00C2F7EC /* PhoneVerificationSheet.swift */,
+				7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */,
+				7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */,
+				7C53E1DF2F32496600C2F7EC /* PhoneVerificationService.swift */,
+				7C53E1DD2F31B27500C2F7EC /* RealtimeService.swift */,
 				7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */,
 				7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */,
 				7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */,
+				7C53E1E32F32756A00C2F7EC /* ExistingUserPhonePrompt.swift */,
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
@@ -940,6 +988,7 @@
 				A12345678901234567890162 /* UserManager.swift in Sources */,
 				7C8405C82EE685400009ED0F /* AdvancedIntelligenceService.swift in Sources */,
 				7CAFD5662EE1F50C00920F0D /* ExerciseSubstitutionView.swift in Sources */,
+				7C53E1E42F32756A00C2F7EC /* ExistingUserPhonePrompt.swift in Sources */,
 				7C0C428A2F1897E400F02E84 /* ShareWorkoutSheet.swift in Sources */,
 				7CB08C9B2EDBC32900236ECB /* MealService.swift in Sources */,
 				7CAFD5582EDF3A8B00920F0D /* ExerciseHistoryService.swift in Sources */,
@@ -950,10 +999,15 @@
 				7C792AF82F2B9F4D0048A97E /* RecipeImportView.swift in Sources */,
 				7C0C42BE2F194EB700F02E84 /* NativeAdView.swift in Sources */,
 				7C8405E82EE935D00009ED0F /* ExerciseFilterService.swift in Sources */,
+				7C53E2242F353B7700C2F7EC /* ChallengeCreationFlow.swift in Sources */,
 				7C0C41CE2F00A63D00F02E84 /* LimitationFilterEngine.swift in Sources */,
 				7C47F9E32EE3BF8600BEC4D7 /* StretchModeView.swift in Sources */,
 				7CACB57D2F2E9722003A7C91 /* ChallengePreviewWidget.swift in Sources */,
 				7CB08C9F2EDE246D00236ECB /* ProgramCustomizationService.swift in Sources */,
+				7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */,
+				7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */,
+				7C53E2222F33FD7500C2F7EC /* MyQRCodeView.swift in Sources */,
+				7C53E1E62F327B4A00C2F7EC /* FriendRankingService.swift in Sources */,
 				7C8405DC2EE8B02F0009ED0F /* SmartExerciseSelectionEngine.swift in Sources */,
 				7CEAFD122EF9CB2E00874B57 /* TermsConditionsView.swift in Sources */,
 				7CEAFD132EF9CB2E00874B57 /* PrivacyPolicyView.swift in Sources */,
@@ -1002,6 +1056,7 @@
 				A12345678901234567890186 /* CustomWorkoutBuilderView.swift in Sources */,
 				7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */,
 				A12345678901234567890210 /* ExerciseDetailView.swift in Sources */,
+				7C53E2322F357EB600C2F7EC /* GroupChallengeDetailView.swift in Sources */,
 				7CAFD55C2EDF780B00920F0D /* HydrationWidget.swift in Sources */,
 				7C3DF1CF2F2D262D00A9CDA7 /* InBodySettingsView.swift in Sources */,
 				7C3DF1D02F2D262D00A9CDA7 /* InBodyService.swift in Sources */,
@@ -1027,7 +1082,10 @@
 				7C3DF1CA2F2CF7E700A9CDA7 /* SavedMealsService.swift in Sources */,
 				7C0C42802F1833DA00F02E84 /* FriendsListView.swift in Sources */,
 				7C558B212ED63BFC00A01E1F /* FoodSearchView.swift in Sources */,
+				7C53E1DE2F31B27500C2F7EC /* RealtimeService.swift in Sources */,
+				7C53E1E02F32496600C2F7EC /* PhoneVerificationService.swift in Sources */,
 				7C558B0E2ED4D37B00A01E1F /* HealthKitManager.swift in Sources */,
+				7C53E1E22F32535F00C2F7EC /* PhoneVerificationSheet.swift in Sources */,
 				7CEAFD0E2EF9C86C00874B57 /* UnitSettingsManager.swift in Sources */,
 				7CEAFD0F2EF9C86C00874B57 /* UnitSettingsView.swift in Sources */,
 				A12345678901234567890250 /* WorkoutTabView.swift in Sources */,
@@ -1039,6 +1097,7 @@
 				7C81611C2EF86925007556A7 /* RunningWorkoutView.swift in Sources */,
 				7C0C427A2F182C6500F02E84 /* AppPerformanceSystem.swift in Sources */,
 				7C0C41EA2F09A37F00F02E84 /* GenderFilterService.swift in Sources */,
+				7C53E22E2F35522100C2F7EC /* ChallengeFlowStartView.swift in Sources */,
 				7C0C426C2F16E23000F02E84 /* CoreDataExtensions.swift in Sources */,
 				A12345678901234567890260 /* WorkoutCompletionView.swift in Sources */,
 				7C0C41F82F09D76A00F02E84 /* CardioWorkoutDetailView.swift in Sources */,
@@ -1046,6 +1105,7 @@
 				7CB08C6B2ED73A6F00236ECB /* CloudProgramService.swift in Sources */,
 				7CB08CA32EDE395600236ECB /* BugReportService.swift in Sources */,
 				7CAFD5642EE1138800920F0D /* ExerciseMappingService.swift in Sources */,
+				7C53E2282F353FE200C2F7EC /* FriendSelectionSheet.swift in Sources */,
 				7CACB5722F2E8431003A7C91 /* HealthKitSettingsView.swift in Sources */,
 				7CACB5732F2E8431003A7C91 /* HealthKitService.swift in Sources */,
 				7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */,
@@ -1059,6 +1119,7 @@
 				7C87B63B2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift in Sources */,
 				7CB08C8E2EDAB01300236ECB /* NotificationManager.swift in Sources */,
 				7CB08C8F2EDAB01300236ECB /* NotificationSettingsView.swift in Sources */,
+				7C53E1EC2F3294A200C2F7EC /* PersonalizedInsightsService.swift in Sources */,
 				7C8405CE2EE7C0EC0009ED0F /* AlternativeExerciseEngine.swift in Sources */,
 				7CB08C6C2ED73A6F00236ECB /* CloudProgramLibraryView.swift in Sources */,
 				7C792AF42F2B9F300048A97E /* SpoonacularAdvancedService.swift in Sources */,
@@ -1114,7 +1175,9 @@
 				7CB08CA02EDCF00100236ECB /* ProgramLibraryService.swift in Sources */,
 				7C8405C42EE650B60009ED0F /* ProgressiveWorkoutIntelligence.swift in Sources */,
 				7CB08CA52EDCF00400236ECB /* ProgramScheduleFullView.swift in Sources */,
+				7C53E1E82F328FF800C2F7EC /* DailyResetService.swift in Sources */,
 				33333861626261352D313262652D343338302D623465642D /* StringArrayValueTransformer.swift in Sources */,
+				7C53E2302F357EA000C2F7EC /* ChallengeFlowStartView.swift in Sources */,
 				A12345678901234567890200 /* ComprehensiveExerciseDatabase.swift in Sources */,
 				7C590B8B2ED2C1DB002BD2B0 /* ProfileView.swift in Sources */,
 				7C81613F2EF8722A007556A7 /* DeepLinkManager.swift in Sources */,
@@ -1123,6 +1186,7 @@
 				7C8405E22EE8BEE80009ED0F /* LimitationsService.swift in Sources */,
 				7C3DF1D42F2D62C300A9CDA7 /* WelcomeTutorialView.swift in Sources */,
 				7C590B982ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift in Sources */,
+				7C53E2262F353B7C00C2F7EC /* ChallengeSetupView.swift in Sources */,
 				7C8405C22EE64C420009ED0F /* StrengthProfileRecommendationEngine.swift in Sources */,
 				7C0C41E22F09795F00F02E84 /* WorkoutSharingService.swift in Sources */,
 				7C792B002F2C2CE70048A97E /* FriendRequestPreviewWidget.swift in Sources */,
@@ -1146,7 +1210,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1157,7 +1221,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14.2;
+				MARKETING_VERSION = 1.15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1176,7 +1240,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1187,7 +1251,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14.2;
+				MARKETING_VERSION = 1.15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1330,7 +1394,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1351,7 +1415,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.14.2;
+				MARKETING_VERSION = 1.15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1367,7 +1431,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1388,7 +1452,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.14.2;
+				MARKETING_VERSION = 1.15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

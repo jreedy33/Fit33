@@ -153,12 +153,12 @@ struct HydrationWidget: View {
                         .blur(radius: 4)
                     
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -170,7 +170,7 @@ struct HydrationWidget: View {
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -183,7 +183,7 @@ struct HydrationWidget: View {
                         )
                     
                     // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [
@@ -206,18 +206,18 @@ struct HydrationWidget: View {
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - blue colored
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
                         .fill(Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08))
                         .offset(y: 8)
                         .blur(radius: 4)
                     
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -229,7 +229,7 @@ struct HydrationWidget: View {
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -242,7 +242,7 @@ struct HydrationWidget: View {
                         )
                     
                     // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [

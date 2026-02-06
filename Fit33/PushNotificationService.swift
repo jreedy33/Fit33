@@ -95,16 +95,24 @@ class PushNotificationService: ObservableObject {
                 let device_token: String
                 let platform: String
                 let app_version: String
+                let is_valid: Bool
+                let apns_environment: String
                 let updated_at: String
             }
             
             let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+            
+            // Detect APNs environment: TestFlight/App Store = production, Xcode = development
+            let apnsEnvironment = Self.detectAPNsEnvironment()
+            print("📱 [PUSH] Detected APNs environment: \(apnsEnvironment)")
             
             let record = DeviceTokenRecord(
                 user_id: userId.uuidString,
                 device_token: token,
                 platform: "ios",
                 app_version: appVersion,
+                is_valid: true,  // Reset to valid when user opens app with fresh token
+                apns_environment: apnsEnvironment,
                 updated_at: ISO8601DateFormatter().string(from: Date())
             )
             
@@ -113,14 +121,43 @@ class PushNotificationService: ObservableObject {
                 .upsert(record, onConflict: "user_id")
                 .execute()
             
-            print("✅ [PUSH] Device token saved to Supabase")
+            print("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))")
             
             // Store locally for reference
             UserDefaults.standard.set(token, forKey: "apns_device_token")
+            UserDefaults.standard.set(apnsEnvironment, forKey: "apns_environment")
             
         } catch {
             print("❌ [PUSH] Failed to save token: \(error)")
         }
+    }
+    
+    // MARK: - APNs Environment Detection
+    
+    /// Detect whether app is running with sandbox (development) or production APNs
+    /// - TestFlight and App Store builds use production APNs
+    /// - Xcode/Debug builds use sandbox APNs
+    private static func detectAPNsEnvironment() -> String {
+        #if DEBUG
+        // Debug builds always use sandbox
+        return "development"
+        #else
+        // Release builds: check if it's TestFlight or App Store
+        // TestFlight receipts are in a different location than App Store
+        if let receiptURL = Bundle.main.appStoreReceiptURL {
+            // TestFlight receipts contain "sandboxReceipt" in the path
+            // But both TestFlight and App Store use PRODUCTION APNs
+            if receiptURL.lastPathComponent == "sandboxReceipt" {
+                // This is TestFlight - uses PRODUCTION APNs (not sandbox!)
+                return "production"
+            } else {
+                // App Store
+                return "production"
+            }
+        }
+        // Fallback to production for release builds
+        return "production"
+        #endif
     }
     
     /// Remove device token from Supabase (call on logout)

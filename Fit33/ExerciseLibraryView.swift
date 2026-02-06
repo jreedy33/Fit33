@@ -7,9 +7,12 @@ struct ExerciseLibraryView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var exercises: [Exercise] = []
     @State private var searchText = ""
-    @State private var selectedCategory = "All"
-    @State private var selectedEquipment = "All"
-    @State private var selectedMuscleGroup = "All"
+    
+    // Multi-select filter sets
+    @State private var selectedCategories: Set<String> = []
+    @State private var selectedEquipmentItems: Set<String> = []
+    @State private var selectedMuscleGroups: Set<String> = []
+    
     @State private var selectedExercise: Exercise?
     @State private var forceRenderID = UUID()
     @State private var exerciseFilter: ExerciseFilterType = .recommended
@@ -380,7 +383,19 @@ struct ExerciseLibraryView: View {
     
     // Smart muscle groups based on selected category (uses centralized service)
     private var muscleGroups: [String] {
-        ExerciseFilterService.muscleGroupsForCategory(selectedCategory)
+        if selectedCategories.isEmpty {
+            return ["All"]
+        } else if selectedCategories.count == 1 {
+            return ExerciseFilterService.muscleGroupsForCategory(selectedCategories.first!)
+        } else {
+            // Combine muscle groups from all selected categories
+            var allMuscles = Set<String>()
+            for category in selectedCategories {
+                let muscles = ExerciseFilterService.muscleGroupsForCategory(category)
+                allMuscles.formUnion(muscles.filter { $0 != "All" })
+            }
+            return ["All"] + Array(allMuscles).sorted()
+        }
     }
     
     // Comprehensive muscle group matching with ALL nicknames/shortnames/aliases
@@ -652,16 +667,19 @@ struct ExerciseLibraryView: View {
         
         let startTime = CFAbsoluteTimeGetCurrent()
         
-        // Build filter key for caching
-        let filterKey = "\(exerciseFilter.rawValue)|\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)"
+        // Build filter key for caching (using sorted sets for consistent hashing)
+        let categoryKey = selectedCategories.isEmpty ? "All" : selectedCategories.sorted().joined(separator: ",")
+        let equipmentKey = selectedEquipmentItems.isEmpty ? "All" : selectedEquipmentItems.sorted().joined(separator: ",")
+        let muscleKey = selectedMuscleGroups.isEmpty ? "All" : selectedMuscleGroups.sorted().joined(separator: ",")
+        let filterKey = "\(exerciseFilter.rawValue)|\(categoryKey)|\(equipmentKey)|\(muscleKey)"
         
         // If filters changed, rebuild pre-filtered cache
         if filterKey != lastFilterKey {
             lastFilterKey = filterKey
             searchResultsCache.removeAll() // Invalidate search cache
             
-            // ⚡️ OPTIMIZED: Use fast filter for default "Recommended" + "All" selections
-            if selectedCategory == "All" && selectedEquipment == "All" && selectedMuscleGroup == "All" && exerciseFilter == .recommended {
+            // ⚡️ OPTIMIZED: Use fast filter for default "Recommended" + no selections
+            if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended {
                 // Use optimized recommended filter with precomputed name set
                 preFilteredExercises = applyOptimizedRecommendedFilter(to: exercises)
                 #if DEBUG
@@ -1035,26 +1053,32 @@ struct ExerciseLibraryView: View {
             break
         }
         
-        // Filter by category
-        if selectedCategory != "All" {
-            let categoryLower = selectedCategory.lowercased()
+        // Filter by category (multi-select - show exercises matching ANY selected category)
+        if !selectedCategories.isEmpty {
+            let selectedLower = Set(selectedCategories.map { $0.lowercased() })
             filtered = filtered.filter { exercise in
                 let exerciseCategory = (exercise.category ?? "").lowercased().replacingOccurrences(of: "_", with: " ")
-                return exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
+                return selectedLower.contains { categoryLower in
+                    exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
+                }
             }
         }
         
-        // Filter by equipment
-        if selectedEquipment != "All" {
+        // Filter by equipment (multi-select - show exercises matching ANY selected equipment)
+        if !selectedEquipmentItems.isEmpty {
             filtered = filtered.filter { exercise in
-                exerciseMatchesEquipmentLib(exercise, selectedEquipment: selectedEquipment)
+                selectedEquipmentItems.contains { equipmentItem in
+                    exerciseMatchesEquipmentLib(exercise, selectedEquipment: equipmentItem)
+                }
             }
         }
         
-        // Filter by muscle group
-        if selectedMuscleGroup != "All" {
+        // Filter by muscle group (multi-select - show exercises matching ANY selected muscle)
+        if !selectedMuscleGroups.isEmpty {
             filtered = filtered.filter { exercise in
-                isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
+                selectedMuscleGroups.contains { muscleGroup in
+                    isExerciseForMuscleGroup(exercise, muscleGroup: muscleGroup)
+                }
             }
         }
         
@@ -1219,11 +1243,17 @@ struct ExerciseLibraryView: View {
                 // ⚡️ PERFORMANCE: Restore state from ViewStateCache for instant tab switch
                 let cachedState = ViewStateCache.shared.exerciseLibraryState
                 if !cachedState.searchText.isEmpty || cachedState.selectedCategory != "All" {
-                    // Restore previous state
+                    // Restore previous state (convert single to set for backwards compatibility)
                     searchText = cachedState.searchText
-                    selectedCategory = cachedState.selectedCategory
-                    selectedEquipment = cachedState.selectedEquipment
-                    selectedMuscleGroup = cachedState.selectedMuscleGroup
+                    if cachedState.selectedCategory != "All" {
+                        selectedCategories = [cachedState.selectedCategory]
+                    }
+                    if cachedState.selectedEquipment != "All" {
+                        selectedEquipmentItems = [cachedState.selectedEquipment]
+                    }
+                    if cachedState.selectedMuscleGroup != "All" {
+                        selectedMuscleGroups = [cachedState.selectedMuscleGroup]
+                    }
                 }
                 
                 // Load exercises from cache first
@@ -1257,23 +1287,20 @@ struct ExerciseLibraryView: View {
             // ⚡️ HIGH-PERFORMANCE: Instant filter updates with state caching
             .onChange(of: searchText) { _, newValue in
                 updateFilteredExercises()
-                // Save to ViewStateCache for tab persistence
                 ViewStateCache.shared.exerciseLibraryState.searchText = newValue
             }
-            .onChange(of: selectedCategory) { _, newValue in 
+            .onChange(of: selectedCategories) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
+                selectedMuscleGroups = [] // Reset muscles when categories change
                 updateFilteredExercises()
-                ViewStateCache.shared.exerciseLibraryState.selectedCategory = newValue
             }
-            .onChange(of: selectedEquipment) { _, newValue in 
+            .onChange(of: selectedEquipmentItems) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
                 updateFilteredExercises()
-                ViewStateCache.shared.exerciseLibraryState.selectedEquipment = newValue
             }
-            .onChange(of: selectedMuscleGroup) { _, newValue in 
+            .onChange(of: selectedMuscleGroups) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
                 updateFilteredExercises()
-                ViewStateCache.shared.exerciseLibraryState.selectedMuscleGroup = newValue
             }
             .onChange(of: exerciseFilter) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
@@ -1438,7 +1465,7 @@ struct ExerciseLibraryView: View {
                 )
             }
             
-            // Compact filter categories
+            // Compact filter categories with expandable multi-select dropdowns
             VStack(alignment: .leading, spacing: 8) {
                 // Categories row
                 HStack(spacing: 8) {
@@ -1451,15 +1478,13 @@ struct ExerciseLibraryView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(categories, id: \.self) { category in
-                                CompactFilterChip(
+                                MultiSelectFilterChip(
                                     text: category,
-                                    isSelected: selectedCategory == category,
+                                    isSelected: category == "All" ? selectedCategories.isEmpty : selectedCategories.contains(category),
                                     color: .blue,
                                     secondaryColor: .cyan,
-                                    onTap: { 
-                                        selectedCategory = category
-                                        selectedMuscleGroup = "All"
-                                    }
+                                    allOptions: categories,
+                                    selectedItems: $selectedCategories
                                 )
                             }
                         }
@@ -1468,7 +1493,7 @@ struct ExerciseLibraryView: View {
                 }
                 
                 // Muscle Groups row (only if category selected)
-                if selectedCategory != "All" && muscleGroups.count > 1 {
+                if !selectedCategories.isEmpty && muscleGroups.count > 1 {
                     HStack(spacing: 8) {
                         Text("Muscles")
                             .font(.caption)
@@ -1479,12 +1504,13 @@ struct ExerciseLibraryView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
                                 ForEach(muscleGroups, id: \.self) { muscle in
-                                    CompactFilterChip(
+                                    MultiSelectFilterChip(
                                         text: muscle,
-                                        isSelected: selectedMuscleGroup == muscle,
+                                        isSelected: muscle == "All" ? selectedMuscleGroups.isEmpty : selectedMuscleGroups.contains(muscle),
                                         color: .green,
                                         secondaryColor: .teal,
-                                        onTap: { selectedMuscleGroup = muscle }
+                                        allOptions: muscleGroups,
+                                        selectedItems: $selectedMuscleGroups
                                     )
                                 }
                             }
@@ -1504,12 +1530,13 @@ struct ExerciseLibraryView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(equipmentTypes, id: \.self) { equipment in
-                                CompactFilterChip(
+                                MultiSelectFilterChip(
                                     text: equipment,
-                                    isSelected: selectedEquipment == equipment,
-                                    color: .blue,
-                                    secondaryColor: .cyan,
-                                    onTap: { selectedEquipment = equipment }
+                                    isSelected: equipment == "All" ? selectedEquipmentItems.isEmpty : selectedEquipmentItems.contains(equipment),
+                                    color: .orange,
+                                    secondaryColor: .red.opacity(0.7),
+                                    allOptions: equipmentTypes,
+                                    selectedItems: $selectedEquipmentItems
                                 )
                             }
                         }
@@ -2026,6 +2053,127 @@ struct TagView: View {
     }
 }
 
+// MARK: - Multi-Select Filter Chip (Shows persistent dropdown for multi-select)
+struct MultiSelectFilterChip: View {
+    let text: String
+    let isSelected: Bool
+    var color: Color = .blue
+    var secondaryColor: Color? = nil
+    let allOptions: [String]
+    @Binding var selectedItems: Set<String>
+    
+    @State private var showingDropdown = false
+    
+    private var gradientColors: [Color] {
+        [color, secondaryColor ?? color.opacity(0.7)]
+    }
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.selectionChanged()
+            showingDropdown = true
+        }) {
+            Text(text)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(
+                            isSelected
+                                ? AnyShapeStyle(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                                : AnyShapeStyle(Color(.systemGray6))
+                        )
+                )
+                .foregroundColor(isSelected ? .white : .primary.opacity(0.7))
+                .shadow(color: isSelected ? color.opacity(0.2) : .clear, radius: 3, x: 0, y: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .popover(isPresented: $showingDropdown, arrowEdge: .top) {
+            MultiSelectDropdownContent(
+                allOptions: allOptions,
+                selectedItems: $selectedItems,
+                accentColor: color
+            )
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+// MARK: - Multi-Select Dropdown Content (Stays open for multiple selections)
+struct MultiSelectDropdownContent: View {
+    let allOptions: [String]
+    @Binding var selectedItems: Set<String>
+    let accentColor: Color
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // "All" option (clears selection)
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    selectedItems = []
+                }) {
+                    HStack(spacing: 12) {
+                        Text("All")
+                            .font(.body)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        if selectedItems.isEmpty {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(accentColor)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(selectedItems.isEmpty ? accentColor.opacity(0.1) : Color.clear)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Divider()
+                    .padding(.horizontal, 12)
+                
+                // All other options
+                ForEach(allOptions.filter { $0 != "All" }, id: \.self) { option in
+                    Button(action: {
+                        HapticManager.selectionChanged()
+                        if selectedItems.contains(option) {
+                            selectedItems.remove(option)
+                        } else {
+                            selectedItems.insert(option)
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Text(option)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                            
+                            if selectedItems.contains(option) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(accentColor)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(selectedItems.contains(option) ? accentColor.opacity(0.1) : Color.clear)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+        }
+        .frame(minWidth: 200, maxHeight: 350)
+        .background(colorScheme == .dark ? Color(white: 0.15) : Color.white)
+    }
+}
 
 #Preview {
     ExerciseLibraryView()

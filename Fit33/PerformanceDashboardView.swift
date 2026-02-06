@@ -15,8 +15,8 @@ struct PerformanceDashboardView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // Background
-                AdaptiveGradient.stats(for: colorScheme)
+                // Animated blue/cyan orb background
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
                     .ignoresSafeArea()
                 
                 ScrollView {

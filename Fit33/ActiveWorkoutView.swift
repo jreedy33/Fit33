@@ -3981,9 +3981,9 @@ struct AddExerciseDuringWorkoutView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                // Adaptive gradient background
-                AdaptiveGradient.workout(for: colorScheme)
-                .ignoresSafeArea(.all, edges: .all)
+                // Animated blue/cyan orb background
+                AnimatedOrbBackground.workout(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 VStack(spacing: 0) {
                     // Search & Filter Card

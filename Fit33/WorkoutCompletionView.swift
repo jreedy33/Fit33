@@ -372,7 +372,7 @@ struct WorkoutCompletionView: View {
                 .padding(.top, 10)
             }
             .background(
-                AdaptiveGradient.workout(for: colorScheme)
+                AnimatedOrbBackground.workout(colorScheme: colorScheme)
                     .ignoresSafeArea(.all, edges: .all)
             )
             .navigationTitle("Summary")

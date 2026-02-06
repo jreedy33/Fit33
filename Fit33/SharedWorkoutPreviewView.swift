@@ -24,7 +24,7 @@ struct SharedWorkoutPreviewView: View {
     
     var body: some View {
         ZStack {
-            AdaptiveGradient.stats(for: colorScheme)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             ScrollView {

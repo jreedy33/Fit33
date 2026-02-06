@@ -27,11 +27,21 @@ struct DashboardView: View {
     @State private var pendingWorkoutType: PendingWorkoutType? = nil
     @State private var navigateToTodaysWorkout = false
     @State private var programWidgetRotation: Double = 0
+    @State private var challengeGlowPhase: CGFloat = 0
     
-    // Swipeable widget state (challenges + programs)
+    // Phone verification prompt for existing users (v1.14.3+)
+    @State private var showPhoneVerificationPrompt = false
+    @AppStorage("hasSeenPhonePrompt_v1143") private var hasSeenPhonePrompt = false
+    @AppStorage("userHasVerifiedPhone") private var userHasVerifiedPhone = false
+    
+    // Swipeable widget state (challenges only now)
     @State private var selectedWidgetPage: Int = 0
     @State private var widgetSwipeInProgress: Bool = false
+    
+    // Swipeable workout carousel (workout buttons + active program)
+    @State private var selectedWorkoutPage: Int = 0
     @ObservedObject private var challengeService = ChallengeService.shared
+    @ObservedObject private var friendService = FriendService.shared
     @State private var navigateToCustomWorkout = false
     @State private var navigateToAutoWorkout = false
     @State private var navigateToGeneratedPrograms = false
@@ -42,11 +52,17 @@ struct DashboardView: View {
     @State private var isLoadingRecommendation = false
     @State private var currentMotivationalMessage: String = ""
     
+    // Personalized insights service for smart rotating messages
+    @StateObject private var insightsService = PersonalizedInsightsService.shared
+    
     // Cardio workouts from Supabase
     @State private var recentCardioWorkouts: [CardioWorkoutDTO] = []
     
     // Profile photo for home icon
     @State private var profilePhotoURL: String? = nil
+    
+    // Track last challenge refresh date for midnight auto-sync
+    @State private var lastChallengeRefreshDate: Date = Date()
     
     // Combined workout item for unified display
     enum RecentWorkoutItem: Identifiable {
@@ -128,11 +144,19 @@ struct DashboardView: View {
     // Streak info popup
     @State private var showStreakInfo = false
     
+    // Challenge widget navigation - goes to Profile's FriendsListView
+    @State private var showFriendsListForChallenge = false
+    
+    // Challenge creation flow states
+    @State private var navigateToChallengeFlow = false
+    
     // Widget settings
     @State private var showingWidgetSettings = false
     @AppStorage("showWeightTrackerWidget") private var showWeightTrackerWidget = true  // Default ON
     @AppStorage("showHydrationWidget") private var showHydrationWidget = false
     @AppStorage("showMacrosWidget") private var showMacrosWidget = false  // Nutrition macros quick-access
+    @AppStorage("showChallengeWidget") private var showChallengeWidget = true  // Challenge a Friend widget (premium can hide)
+    @AppStorage("showRecommendedWidget") private var showRecommendedWidget = true  // Recommended For You widget (premium can hide)
     
     // Nutrition data for macros widget
     @ObservedObject private var mealService = MealService.shared
@@ -203,6 +227,13 @@ struct DashboardView: View {
                     ChallengePreviewContainer()
                         .padding(.bottom, 16)
                     
+                    // Group Challenge Invite Widgets (invites I haven't accepted yet)
+                    ForEach(challengeService.activeGroupChallenges.filter(\.isMyInvitePending)) { group in
+                        GroupChallengeInviteWidget(challenge: group)
+                            .environmentObject(userManager)
+                            .padding(.bottom, 16)
+                    }
+                    
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
                         .font(.title3)
@@ -211,25 +242,24 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.bottom, 12)
                     
-                    // Swipeable Program & Challenge Widget
-                    swipeableProgramChallengeWidget
+                    // Challenge Cards (1v1 active, group active, pending sent, get started)
+                    challengeCardsSection
                         .padding(.bottom, 16)
                     
-                    // Quick Macros Widget - Position based on other widgets
-                    // If weight OR hydration is ON: show ABOVE workout buttons
-                    if showMacrosWidget && (showWeightTrackerWidget || showHydrationWidget) {
-                        dashboardMacrosWidget
+                    // Swipeable Workout Carousel: [Custom+Auto Buttons] <-> [Active Program]
+                    swipeableWorkoutCarousel
+                        .padding(.bottom, 16)
+                    
+                    // Weight/Hydration Widget Row (below challenge widget)
+                    if showWeightTrackerWidget || showHydrationWidget {
+                        dashboardWidgetsRow
                             .padding(.bottom, 16)
                     }
                     
-                    // Main workout creation buttons
-                    startWorkoutButton
-                        .padding(.bottom, 20)
-                    
-                    // Quick Macros Widget - If no weight/hydration: show BELOW workout buttons
-                    if showMacrosWidget && !showWeightTrackerWidget && !showHydrationWidget {
+                    // Quick Macros Widget
+                    if showMacrosWidget {
                         dashboardMacrosWidget
-                            .padding(.bottom, 20)
+                            .padding(.bottom, 16)
                     }
                     
                     // Step Tracker Card
@@ -311,14 +341,24 @@ struct DashboardView: View {
                 StreakInfoSheet()
                     .environmentObject(userManager)
             }
-            .sheet(isPresented: $showingWidgetSettings) {
+            .background(
+                NavigationLink(
+                    destination: ChallengeFlowStartView(),
+                    isActive: $navigateToChallengeFlow
+                ) { EmptyView() }
+            )
+            .fullScreenCover(isPresented: $showingWidgetSettings) {
                 WidgetSettingsSheet(
                     showWeightTracker: $showWeightTrackerWidget,
                     showHydration: $showHydrationWidget,
-                    showMacros: $showMacrosWidget
+                    showMacros: $showMacrosWidget,
+                    showChallenge: $showChallengeWidget,
+                    showRecommended: $showRecommendedWidget
                 )
-                .presentationDetents([.height(480)])
                 .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showPhoneVerificationPrompt) {
+                phoneVerificationPromptSheet
             }
             .background(
                 Group {
@@ -341,6 +381,12 @@ struct DashboardView: View {
                             .environmentObject(generatedProgramService),
                         isActive: $navigateToGeneratedPrograms
                     ) { EmptyView() }
+                    
+                    // Challenge widget -> Friends list (from Profile)
+                    NavigationLink(
+                        destination: FriendsListView(initialTab: 0),
+                        isActive: $showFriendsListForChallenge
+                    ) { EmptyView() }
                 }
                 .hidden()
             )
@@ -348,6 +394,7 @@ struct DashboardView: View {
                 programConflictAlert
             )
         }
+        .navigationViewStyle(.stack)  // Force single-column layout on iPad (no split view)
         .id(navigationViewId)  // Forces NavigationView to reset when ID changes
         .onChange(of: workoutManager.shouldPopToRootHome) { _, shouldPop in
             if shouldPop {
@@ -386,6 +433,15 @@ struct DashboardView: View {
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
             
+            // 🎯 SMART CAROUSEL DEFAULT: Active Program (page 1) if user has one, otherwise Custom/Auto (page 0)
+            if activeSmartProgramForWidget != nil {
+                selectedWorkoutPage = 1 // Show active program
+                print("📱 [CAROUSEL] Defaulting to Active Program (page 1)")
+            } else {
+                selectedWorkoutPage = 0 // Show Custom/Auto buttons
+                print("📱 [CAROUSEL] Defaulting to Custom/Auto (page 0)")
+            }
+            
             // Mark user as welcomed after first visit (delayed slightly to show "Welcome to Fit33" first)
             if let userId = userManager.currentUser?.id {
                 let welcomeKey = "has_been_welcomed_\(userId.uuidString)"
@@ -394,6 +450,33 @@ struct DashboardView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         UserDefaults.standard.set(true, forKey: welcomeKey)
                         print("👋 [WELCOME] User marked as welcomed - will show 'Welcome back' next time")
+                    }
+                }
+            }
+            
+            // 📱 PHONE VERIFICATION PROMPT (v1.14.3+)
+            // Show one-time phone verification prompt for existing users who haven't verified
+            if !hasSeenPhonePrompt && !userHasVerifiedPhone && userManager.hasCompletedOnboarding {
+                // Delay slightly to let the home screen render first
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    // Double-check they still haven't seen it (in case of race conditions)
+                    if !hasSeenPhonePrompt && !userHasVerifiedPhone {
+                        // Check if user already has a phone number from previous onboarding
+                        Task {
+                            let existingPhone = await SupabaseManager.shared.getUserPhoneNumber()
+                            await MainActor.run {
+                                if existingPhone != nil && !existingPhone!.isEmpty {
+                                    // User already has phone verified, mark as seen
+                                    userHasVerifiedPhone = true
+                                    hasSeenPhonePrompt = true
+                                    print("📱 [PHONE PROMPT] User already has phone verified, skipping prompt")
+                                } else {
+                                    // Show the prompt
+                                    showPhoneVerificationPrompt = true
+                                    print("📱 [PHONE PROMPT] Showing phone verification prompt to existing user")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -410,6 +493,12 @@ struct DashboardView: View {
             
             // Generate fresh motivational message each time app opens
             currentMotivationalMessage = generateMotivationalMessage()
+            
+            // 🧠 Fetch personalized insights for smart rotating messages
+            Task {
+                await insightsService.fetchActiveInsights()
+                await insightsService.fetchStreaks()
+            }
             
             // Load personalized recommendation (use cached if available)
             await loadPersonalizedRecommendation()
@@ -441,12 +530,33 @@ struct DashboardView: View {
             // This prevents refresh from interfering with navigation
             if oldPhase == .background && newPhase == .active {
                 Task {
+                    // 🌙 MIDNIGHT AUTO-SYNC: Check if the day has changed
+                    let calendar = Calendar.current
+                    let lastRefreshDay = calendar.startOfDay(for: lastChallengeRefreshDate)
+                    let today = calendar.startOfDay(for: Date())
+                    let dayChanged = lastRefreshDay < today
+                    
+                    if dayChanged {
+                        print("🌙 [CHALLENGES] Day changed! Auto-refreshing for new day...")
+                    }
+                    
                     // Sync HealthKit first (includes challenge sync)
                     await HealthKitService.shared.syncAllData(force: true)
                     
                     // Fetch updated challenges from database
+                    // Force refresh if day changed to get fresh today_progress (starts at 0)
+                    print("🔄 [DASHBOARD] Refreshing all challenge lists on foreground...")
                     await ChallengeService.shared.fetchActiveChallenges()
                     await ChallengeService.shared.fetchPendingInvites()
+                    await ChallengeService.shared.fetchPendingSentChallenges()  // Also refresh sent challenges
+                    print("✅ [DASHBOARD] Challenge lists refreshed")
+                    
+                    // Update last refresh date
+                    lastChallengeRefreshDate = Date()
+                    
+                    if dayChanged {
+                        print("🌙 [CHALLENGES] Midnight sync complete - today's progress reset to 0")
+                    }
                     
                     // Refresh friend data
                     await FriendService.shared.refreshHomeScreenData()
@@ -1363,11 +1473,6 @@ struct DashboardView: View {
                 .buttonStyle(PlainButtonStyle())
             
             }
-            
-            // Optional Widget Row
-            if showWeightTrackerWidget || showHydrationWidget {
-                dashboardWidgetsRow
-            }
         }
     }
     
@@ -1491,13 +1596,12 @@ struct DashboardView: View {
                     }
             )
             
-            // Page indicators
-            HStack(spacing: 8) {
+            // Page indicators (dash and dot style)
+            HStack(spacing: 6) {
                 ForEach(0..<2, id: \.self) { index in
-                    Circle()
+                    Capsule()
                         .fill(selectedMacrosPage == index ? Color.teal : Color.gray.opacity(0.3))
-                        .frame(width: 6, height: 6)
-                        .scaleEffect(selectedMacrosPage == index ? 1.0 : 0.8)
+                        .frame(width: selectedMacrosPage == index ? 20 : 8, height: 6)
                         .animation(.easeOut(duration: 0.2), value: selectedMacrosPage)
                         .onTapGesture {
                             HapticManager.impact(.light)
@@ -2055,6 +2159,41 @@ struct DashboardView: View {
             "Rest days build muscle too! Listen to your body. 🛏️"
         ])
         
+        // 🧠 SMART INSIGHTS: Prioritize personalized insights from analysis
+        // Show database-driven insights 40% of the time when available
+        if !insightsService.activeInsights.isEmpty && Int.random(in: 0...9) < 4 {
+            if let insight = insightsService.activeInsights.randomElement() {
+                return insight.message
+            }
+        }
+        
+        // 🔥 STREAK INSIGHTS: Add streak-specific insights from tracking
+        if !insightsService.streaks.isEmpty {
+            // Protein streak insight
+            if let proteinStreak = insightsService.streaks.first(where: { $0.streakType == "protein_goal" }),
+               proteinStreak.currentStreak >= 3 {
+                messages.append("\(proteinStreak.currentStreak)-day protein streak! Keep feeding those muscles! 🍗")
+            }
+            
+            // Hydration streak insight
+            if let hydrationStreak = insightsService.streaks.first(where: { $0.streakType == "hydration" }),
+               hydrationStreak.currentStreak >= 3 {
+                messages.append("\(hydrationStreak.currentStreak) days hydrated! Your body is thanking you! 💧")
+            }
+            
+            // Weight logging streak
+            if let weightStreak = insightsService.streaks.first(where: { $0.streakType == "weight_log" }),
+               weightStreak.currentStreak >= 5 {
+                messages.append("\(weightStreak.currentStreak)-day weight logging streak! Data = results! ⚖️")
+            }
+            
+            // Logging consistency
+            if let loggingStreak = insightsService.streaks.first(where: { $0.streakType == "logging" }),
+               loggingStreak.currentStreak >= 7 {
+                messages.append("\(loggingStreak.currentStreak) days tracking! Consistency is your superpower! 📊")
+            }
+        }
+        
         return messages.randomElement() ?? "Let's make today count! 💪"
     }
     
@@ -2282,6 +2421,521 @@ struct DashboardView: View {
     // MARK: - Swipeable Program & Challenge Widget
     
     /// Build array of widgets to display (up to 3 challenges + 1 program = max 4, but we allow 3 challenges max)
+    // MARK: - Swipeable Workout Carousel
+    // Page 0: Custom + Auto workout buttons
+    // Page 1: Active Program widget (if available)
+    
+    private var swipeableWorkoutCarousel: some View {
+        let hasActiveProgram = activeSmartProgramForWidget != nil
+        let hasRecommendedProgram = topRecommendedSmartProgram != nil || isFirstTimeUser
+        let showSecondPage = hasActiveProgram || hasRecommendedProgram
+        let pageCount = showSecondPage ? 2 : 1
+        
+        return VStack(spacing: 4) {
+            GeometryReader { geometry in
+                let cardWidth = geometry.size.width
+                let spacing: CGFloat = 16
+                
+                HStack(spacing: spacing) {
+                    // Page 0: Workout Buttons
+                    startWorkoutButton
+                        .frame(width: cardWidth)
+                    
+                    // Page 1: Active Program (if available)
+                    if showSecondPage {
+                        unifiedProgramWidgetWithGlow(isVisible: selectedWorkoutPage == 1)
+                            .frame(width: cardWidth)
+                    }
+                }
+                .offset(x: -CGFloat(selectedWorkoutPage) * (cardWidth + spacing))
+            }
+            .frame(height: 160)
+            .animation(.easeOut(duration: 0.25), value: selectedWorkoutPage)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 15)
+                    .onEnded { value in
+                        let horizontalAmount = value.translation.width
+                        let verticalAmount = abs(value.translation.height)
+                        
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 30 {
+                            HapticManager.impact(.medium)
+                            if horizontalAmount < 0 && selectedWorkoutPage < pageCount - 1 {
+                                selectedWorkoutPage += 1
+                            } else if horizontalAmount > 0 && selectedWorkoutPage > 0 {
+                                selectedWorkoutPage -= 1
+                            }
+                        }
+                    }
+            )
+            
+            // Page indicators (only if multiple pages)
+            if pageCount > 1 {
+                HStack(spacing: 8) {
+                    ForEach(0..<pageCount, id: \.self) { index in
+                        Capsule()
+                            .fill(selectedWorkoutPage == index ? Color.blue : Color.gray.opacity(0.3))
+                            .frame(width: selectedWorkoutPage == index ? 20 : 8, height: 6)
+                            .animation(.easeOut(duration: 0.2), value: selectedWorkoutPage)
+                            .onTapGesture {
+                                HapticManager.impact(.light)
+                                selectedWorkoutPage = index
+                            }
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+        .onAppear {
+            // Default to Active Program page if user has one, otherwise Custom/Auto
+            if activeSmartProgramForWidget != nil {
+                selectedWorkoutPage = 1
+            } else {
+                selectedWorkoutPage = 0
+            }
+        }
+    }
+    
+    // MARK: - Challenge Cards Section (kept together)
+    
+    private var challengeCardsSection: some View {
+        // PRIORITY ORDER:
+        // 1. Active challenges ALWAYS show first (up to 3)
+        // 2. Pending sent challenges fill remaining slots (up to 3 total cards max)
+        // 3. If only pending (no active), also show "Challenge a Friend" as swipeable option
+        // 4. If no active AND no pending → show default "Challenge a Friend" widget only
+        
+        // Get active challenges (deduplicated by ID)
+        let activeIds = Set(challengeService.activeChallenges.map { $0.id })
+        let activeChallenges = Array(challengeService.activeChallenges.prefix(3))
+        let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
+        let activeCount = activeChallenges.count + groupChallenges.count
+        
+        // Only show pending if we have room (max 3 total cards)
+        // CRITICAL: Filter out any pending that also appears in active (duplicate IDs)
+        // Also filter invalid data and deduplicate
+        let remainingSlots = max(0, 3 - activeCount)
+        var seenPendingIds = Set<UUID>()
+        let pendingSent = challengeService.pendingSentChallenges
+            .filter { pending in
+                // Must have valid data
+                guard !pending.title.isEmpty && pending.durationDays > 0 else { return false }
+                // Must not be a duplicate of an active challenge
+                guard !activeIds.contains(pending.challengeId) else { return false }
+                // Must not be a duplicate within pending list
+                guard !seenPendingIds.contains(pending.challengeId) else { return false }
+                seenPendingIds.insert(pending.challengeId)
+                return true
+            }
+            .prefix(remainingSlots)
+        let pendingArray = Array(pendingSent)
+        let pendingCount = pendingArray.count
+        
+        // If we only have pending (no active), add the default widget as an option
+        let showDefaultInCarousel = activeCount == 0 && pendingCount > 0 && pendingCount < 3
+        let totalWidgetCount = activeCount + pendingCount + (showDefaultInCarousel ? 1 : 0)
+        
+        // Clamp the page to valid range - this ensures we always show SOMETHING
+        let safePageIndex = totalWidgetCount > 0 ? min(max(0, selectedWidgetPage), totalWidgetCount - 1) : 0
+        
+        return Group {
+            if totalWidgetCount > 0 {
+                VStack(spacing: 4) {
+                    if totalWidgetCount > 1 {
+                        // Multiple cards - swipeable (max 3 cards)
+                        GeometryReader { geometry in
+                            let cardWidth = geometry.size.width
+                            let spacing: CGFloat = 16
+                            
+                            HStack(spacing: spacing) {
+                                // Active 1v1 challenges FIRST
+                                ForEach(Array(activeChallenges.enumerated()), id: \.element.id) { index, challenge in
+                                    activeChallengeDetailWidget(challenge: challenge)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == index ? 1 : 0)
+                                }
+                                // Group challenges
+                                ForEach(Array(groupChallenges.enumerated()), id: \.element.id) { index, group in
+                                    groupChallengeWidget(challenge: group)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeChallenges.count + index) ? 1 : 0)
+                                }
+                                // Then pending sent challenges
+                                ForEach(Array(pendingArray.enumerated()), id: \.offset) { index, pending in
+                                    pendingSentChallengeWidget(challenge: pending)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeCount + index) ? 1 : 0)
+                                }
+                                // Then "Challenge a Friend" widget (if only pending, no active)
+                                if showDefaultInCarousel {
+                                    getStartedChallengeWidget
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeCount + pendingCount) ? 1 : 0)
+                                }
+                            }
+                            .offset(x: -CGFloat(safePageIndex) * (cardWidth + spacing))
+                        }
+                        .frame(height: 156)
+                        .animation(.easeOut(duration: 0.2), value: safePageIndex)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+                                    // Use the same calculation logic as above (including group challenges)
+                                    let activeIdsNow = Set(challengeService.activeChallenges.map { $0.id })
+                                    let currentActiveCount = min(3, challengeService.activeChallenges.count) + challengeService.activeGroupChallenges.count
+                                    var seenNow = Set<UUID>()
+                                    let currentPendingCount = challengeService.pendingSentChallenges
+                                        .filter { p in
+                                            guard !p.title.isEmpty && p.durationDays > 0 else { return false }
+                                            guard !activeIdsNow.contains(p.challengeId) else { return false }
+                                            guard !seenNow.contains(p.challengeId) else { return false }
+                                            seenNow.insert(p.challengeId)
+                                            return true
+                                        }
+                                        .prefix(max(0, 3 - currentActiveCount))
+                                        .count
+                                    let hasDefaultWidget = currentActiveCount == 0 && currentPendingCount > 0 && currentPendingCount < 3
+                                    let currentTotal = currentActiveCount + currentPendingCount + (hasDefaultWidget ? 1 : 0)
+                                    
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 && currentTotal > 0 {
+                                        HapticManager.impact(.medium)
+                                        if horizontalAmount < 0 && selectedWidgetPage < currentTotal - 1 {
+                                            selectedWidgetPage += 1
+                                        } else if horizontalAmount > 0 && selectedWidgetPage > 0 {
+                                            selectedWidgetPage -= 1
+                                        }
+                                    }
+                                }
+                        )
+                        
+                        // Page indicators (dash and dot style)
+                        HStack(spacing: 6) {
+                            ForEach(0..<totalWidgetCount, id: \.self) { index in
+                                Capsule()
+                                    .fill(safePageIndex == index ? Color.blue : Color.gray.opacity(0.3))
+                                    .frame(width: safePageIndex == index ? 20 : 8, height: 6)
+                                    .animation(.easeOut(duration: 0.2), value: safePageIndex)
+                                    .onTapGesture {
+                                        HapticManager.impact(.light)
+                                        selectedWidgetPage = index
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } else if let activeChallenge = activeChallenges.first {
+                        // Single active 1v1 challenge (no swiping needed)
+                        activeChallengeDetailWidget(challenge: activeChallenge)
+                    } else if let groupChallenge = groupChallenges.first {
+                        // Single group challenge (pending or active)
+                        groupChallengeWidget(challenge: groupChallenge)
+                    } else if let firstPending = pendingArray.first {
+                        // Single pending (show with default widget as carousel)
+                        // When single pending exists, show it + default widget
+                        let singlePendingCount = 2 // pending + default
+                        let singleSafeIndex = min(max(0, selectedWidgetPage), singlePendingCount - 1)
+                        
+                        GeometryReader { geometry in
+                            let cardWidth = geometry.size.width
+                            let spacing: CGFloat = 16
+                            
+                            HStack(spacing: spacing) {
+                                pendingSentChallengeWidget(challenge: firstPending)
+                                    .frame(width: cardWidth)
+                                    .opacity(singleSafeIndex == 0 ? 1 : 0)
+                                
+                                getStartedChallengeWidget
+                                    .frame(width: cardWidth)
+                                    .opacity(singleSafeIndex == 1 ? 1 : 0)
+                            }
+                            .offset(x: -CGFloat(singleSafeIndex) * (cardWidth + spacing))
+                        }
+                        .frame(height: 156)
+                        .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+                                    
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                                        HapticManager.impact(.medium)
+                                        if horizontalAmount < 0 && selectedWidgetPage < 1 {
+                                            selectedWidgetPage = 1
+                                        } else if horizontalAmount > 0 && selectedWidgetPage > 0 {
+                                            selectedWidgetPage = 0
+                                        }
+                                    }
+                                }
+                        )
+                        
+                        // Page indicators for single pending
+                        HStack(spacing: 6) {
+                            ForEach(0..<2, id: \.self) { index in
+                                Circle()
+                                    .fill(singleSafeIndex == index ? Color.orange : Color.gray.opacity(0.3))
+                                    .frame(width: 6, height: 6)
+                                    .scaleEffect(singleSafeIndex == index ? 1.0 : 0.8)
+                                    .animation(.easeOut(duration: 0.2), value: singleSafeIndex)
+                                    .onTapGesture {
+                                        HapticManager.impact(.light)
+                                        selectedWidgetPage = index
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                // Reset to first page when data changes
+                .onChange(of: challengeService.activeChallenges.count) { _, _ in
+                    selectedWidgetPage = 0
+                }
+                .onChange(of: challengeService.pendingSentChallenges.count) { _, _ in
+                    // Reset page when pending count changes to avoid out of bounds
+                    selectedWidgetPage = 0
+                }
+                .onAppear {
+                    // Default to page 0 when section appears
+                    selectedWidgetPage = 0
+                }
+            } else {
+                // NO active challenges AND NO pending sent → show default widget only
+                if !PremiumManager.shared.isPremiumUser || showChallengeWidget {
+                    getStartedChallengeWidget
+                }
+            }
+        }
+    }
+    
+    // MARK: - Pending Sent Challenge Widget
+    
+    // State for cancel confirmation - UUID identifies which challenge is being canceled
+    @State private var challengeToCancel: UUID?
+    
+    private func pendingSentChallengeWidget(challenge: PendingSentChallenge) -> some View {
+        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
+        let challengeType = challenge.type ?? .steps
+        let isShowingCancelForThis = Binding(
+            get: { challengeToCancel == challenge.challengeId },
+            set: { if !$0 { challengeToCancel = nil } }
+        )
+        
+        return VStack(spacing: 0) {
+            // Header - Same structure as group challenge widget
+            HStack(alignment: .center, spacing: 10) {
+                // Challenge type emoji (main icon only)
+                Text(challengeType.emoji)
+                    .font(.system(size: 28))
+                
+                // Challenge info
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(challenge.displayTitle)
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        // Pending badge (muted teal)
+                        Text("PENDING")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.teal.opacity(0.7))
+                            )
+                    }
+                    
+                    HStack(spacing: 6) {
+                        Text("Waiting for \(challenge.opponentName?.components(separatedBy: " ").first ?? "friend")")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(challenge.durationDays) days")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(challengeColor)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            
+            // Inner card section - Left accent bar style (matching active challenge)
+            HStack(spacing: 0) {
+                // Left accent bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(challengeColor)
+                    .frame(width: 4)
+                    .padding(.vertical, 4)
+                
+                HStack(spacing: 8) {
+                    // You vs Opponent photos
+                    HStack(spacing: 6) {
+                        // Your photo
+                        challengeAvatar(
+                            isUser: true,
+                            photoUrl: nil,
+                            name: userManager.currentUser?.name,
+                            done: false,
+                            gradientColors: [.blue, .cyan]
+                        )
+                        
+                        Text("vs")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        
+                        // Opponent photo
+                        challengeAvatar(
+                            isUser: false,
+                            photoUrl: challenge.opponentPhotoUrl,
+                            name: challenge.opponentName,
+                            done: false,
+                            gradientColors: [.orange, .red]
+                        )
+                    }
+                    
+                    // Challenge details
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sent to \(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        let target = challenge.dailyTarget ?? 0
+                        let formatted = target >= 1000 ? "\(target / 1000)K" : "\(target)"
+                        Text("\(formatted) \(challenge.targetUnit)/day")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer(minLength: 4)
+                    
+                    // Cancel button
+                    Button(action: {
+                        print("🗑️ [DASHBOARD] Cancel button tapped for challenge: \(challenge.title)")
+                        HapticManager.impact(.medium)
+                        challengeToCancel = challenge.challengeId
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Cancel")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(Color.red.opacity(0.85))
+                        )
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark 
+                        ? Color.white.opacity(0.04) 
+                        : Color.black.opacity(0.03))
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background(
+            ZStack {
+                // Animated glowing border (matches group widget)
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.5),
+                                challengeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                challengeColor.opacity(0.2),
+                                Color.mint.opacity(0.4),
+                                challengeColor.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Inner border
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .confirmationDialog(
+            "Cancel Challenge?",
+            isPresented: isShowingCancelForThis,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Challenge", role: .destructive) {
+                Task {
+                    print("🗑️ [DASHBOARD] Cancel challenge button tapped in confirmation dialog")
+                    let success = await ChallengeService.shared.cancelPendingChallenge(challengeId: challenge.challengeId)
+                    if success {
+                        print("✅ [DASHBOARD] Challenge cancelled successfully")
+                        HapticManager.notification(.success)
+                    } else {
+                        print("❌ [DASHBOARD] Cancel failed - refreshing to check if challenge is now active")
+                        // Challenge might have just been accepted - refresh all lists
+                        await ChallengeService.shared.fetchPendingSentChallenges()
+                        await ChallengeService.shared.fetchActiveChallenges()
+                        HapticManager.notification(.error)
+                    }
+                    challengeToCancel = nil
+                }
+            }
+            Button("Keep Challenge", role: .cancel) {
+                challengeToCancel = nil
+            }
+        } message: {
+            Text("This will cancel the challenge request. \(challenge.opponentName?.components(separatedBy: " ").first ?? "Your friend") will be notified.")
+        }
+    }
+    
+    // Legacy - kept for compatibility
     private var widgetsToDisplay: [AnyView] {
         var widgets: [AnyView] = []
         
@@ -2388,45 +3042,28 @@ struct DashboardView: View {
     }
     
     private func activeChallengeDetailWidget(challenge: ActiveChallenge) -> some View {
-        let challengeColor = Color.blue // All active challenges use blue
+        let isAccountability = challenge.mode == .accountability
+        let challengeColor: Color = isAccountability ? .cyan : .blue
+        let challengeGradient: [Color] = isAccountability ? [.blue, .cyan] : [.blue, .cyan]
+        let challengeType = challenge.type ?? .steps
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
         
         return VStack(spacing: 0) {
-            // Header - Challenge info
+            // Header — shared shape, mode-aware content
             NavigationLink(destination: ChallengeDetailView(challenge: challenge)) {
                 HStack(alignment: .center, spacing: 10) {
-                    // VS indicator with trophy
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [challengeColor.opacity(0.2), challengeColor.opacity(0.05)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-                        
-                        Image(systemName: "trophy.fill")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [challengeColor, challengeColor.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
+                    Text(challengeType.emoji)
+                        .font(.system(size: 28))
                     
-                    // Challenge info
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(challenge.title)
+                        Text(challenge.displayTitle)
                             .font(.subheadline)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         
                         HStack(spacing: 6) {
-                            Text("vs \(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")")
+                            Text(isAccountability ? "with \(opponentFirst)" : "vs \(opponentFirst)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             
@@ -2434,7 +3071,7 @@ struct DashboardView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             
-                            Text("\(challenge.daysRemaining) days left")
+                            Text("\(challenge.daysRemaining)d left")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                                 .foregroundColor(challengeColor)
@@ -2442,6 +3079,10 @@ struct DashboardView: View {
                     }
                     
                     Spacer()
+                    
+                    // Mode badge
+                    Text(isAccountability ? "🤝" : "⚔️")
+                        .font(.system(size: 16))
                     
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
@@ -2452,161 +3093,27 @@ struct DashboardView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
-            // Progress comparison section
+            // Bottom section — different layout per mode
             HStack(spacing: 0) {
-                // Left accent bar (matching program widget style)
+                // Left accent bar
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(challengeColor)
+                    .fill(LinearGradient(colors: challengeGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
                     .padding(.vertical, 4)
                 
-                HStack(spacing: 8) {
-                    // Your progress (with photo)
-                    HStack(spacing: 8) {
-                        // User photo
-                        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
-                            Image(uiImage: cachedImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 36, height: 36)
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(challenge.amWinning ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
-                                )
-                        } else {
-                            Circle()
-                                .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .frame(width: 36, height: 36)
-                                .overlay(
-                                    Text(userManager.currentUser?.name?.prefix(1).uppercased() ?? "Y")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(challenge.amWinning ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
-                                )
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 3) {
-                                Text("You")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                if challenge.amWinning {
-                                    Image(systemName: "crown.fill")
-                                        .font(.system(size: 8))
-                                        .foregroundColor(.yellow)
-                                }
-                            }
-                            
-                            Text(formatChallengeProgress(challenge.myTotalProgress, unit: challenge.targetUnit))
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(challenge.amWinning ? .green : .primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                        .frame(maxWidth: 85, alignment: .leading)
-                    }
-                    
-                    Spacer(minLength: 4)
-                    
-                    // VS divider
-                    VStack(spacing: 2) {
-                        Text("vs")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [challengeColor, challengeColor.opacity(0.7)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                        
-                        if challenge.myTotalProgress != challenge.opponentTotalProgress {
-                            let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
-                            Text(challenge.amWinning ? "+\(formatChallengeProgress(diff, unit: challenge.targetUnit))" : "-\(formatChallengeProgress(diff, unit: challenge.targetUnit))")
-                                .font(.system(size: 8, weight: .bold, design: .rounded))
-                                .foregroundColor(challenge.amWinning ? .green : .red)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                    }
-                    .frame(minWidth: 30)
-                    
-                    Spacer(minLength: 4)
-                    
-                    // Opponent progress (with photo)
-                    HStack(spacing: 8) {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            HStack(spacing: 3) {
-                                if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
-                                    Image(systemName: "crown.fill")
-                                        .font(.system(size: 8))
-                                        .foregroundColor(.yellow)
-                                }
-                                Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                            
-                            Text(formatChallengeProgress(challenge.opponentTotalProgress, unit: challenge.targetUnit))
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? .green : .primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                        .frame(maxWidth: 85, alignment: .trailing)
-                        
-                        // Opponent photo
-                        if let photoUrl = challenge.opponentPhotoUrl, !photoUrl.isEmpty {
-                            AsyncImage(url: URL(string: photoUrl)) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Circle()
-                                    .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .overlay(
-                                        Text(challenge.opponentName?.prefix(1).uppercased() ?? "F")
-                                            .font(.system(size: 14, weight: .bold))
-                                            .foregroundColor(.white)
-                                    )
-                            }
-                            .frame(width: 36, height: 36)
-                            .clipShape(Circle())
-                            .overlay(
-                                Circle()
-                                    .stroke(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
-                            )
-                        } else {
-                            Circle()
-                                .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .frame(width: 36, height: 36)
-                                .overlay(
-                                    Text(challenge.opponentName?.prefix(1).uppercased() ?? "F")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(!challenge.amWinning && challenge.opponentTotalProgress > 0 ? Color.green : Color.gray.opacity(0.3), lineWidth: 2)
-                                )
-                        }
-                    }
+                if isAccountability {
+                    // ACCOUNTABILITY: Buddy check-in layout
+                    accountabilityProgressSection(challenge: challenge, challengeColor: challengeColor)
+                } else {
+                    // COMPETITION: Head-to-head battle layout
+                    competitionProgressSection(challenge: challenge, challengeColor: challengeColor)
                 }
-                .padding(.leading, 12)
-                .padding(.trailing, 14)
             }
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark 
-                        ? Color.white.opacity(0.04) 
+                    .fill(colorScheme == .dark
+                        ? Color.white.opacity(0.04)
                         : Color.black.opacity(0.03))
             )
             .padding(.horizontal, 12)
@@ -2614,34 +3121,31 @@ struct DashboardView: View {
         }
         .background(
             ZStack {
-                // Even glow layer - uniform around all edges
-                RoundedRectangle(cornerRadius: 26)
-                    .stroke(challengeColor.opacity(0.5), lineWidth: 3)
-                    .blur(radius: 8)
-                
-                // Rotating accent glow (subtle shimmer effect)
-                RoundedRectangle(cornerRadius: 25)
+                // Animated glowing border (matches group widget)
+                RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         AngularGradient(
-                            colors: [
-                                challengeColor.opacity(0.6),
+                            gradient: Gradient(colors: [
+                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.5),
+                                challengeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
                                 challengeColor.opacity(0.2),
-                                challengeColor.opacity(0.6),
-                                challengeColor.opacity(0.2)
-                            ],
+                                Color.mint.opacity(0.4),
+                                challengeColor.opacity(0.6)
+                            ]),
                             center: .center,
-                            startAngle: .degrees(activeWidgetGlowRotation),
-                            endAngle: .degrees(activeWidgetGlowRotation + 360)
+                            angle: .degrees(challengeGlowPhase)
                         ),
                         lineWidth: 2
                     )
-                    .blur(radius: 4)
+                    .blur(radius: 2)
                 
-                // Main card background with gradient
                 RoundedRectangle(cornerRadius: 24)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
+                            colors: colorScheme == .dark
                                 ? [Color(white: 0.16), Color(white: 0.10)]
                                 : [Color.white, Color(white: 0.98)],
                             startPoint: .top,
@@ -2649,20 +3153,556 @@ struct DashboardView: View {
                         )
                     )
                 
-                // Accent border
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(0.3), challengeColor.opacity(0.1), Color.clear],
+                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.5
+                        lineWidth: 1
                     )
             }
         )
-        .shadow(color: challengeColor.opacity(colorScheme == .dark ? 0.4 : 0.3), radius: 20, x: 0, y: 0) // Even glow
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
+        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+    }
+    
+    // MARK: - Accountability Progress (buddy check-in)
+    
+    private func accountabilityProgressSection(challenge: ActiveChallenge, challengeColor: Color) -> some View {
+        let myProgress = (challenge.myTodayProgress ?? 0) > 0 ? (challenge.myTodayProgress ?? 0) : challenge.myTotalProgress
+        let oppProgress = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
+        let myDone = challenge.dailyTarget.map { myProgress >= $0 } ?? false
+        let oppDone = challenge.dailyTarget.map { oppProgress >= $0 } ?? false
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Buddy"
+        
+        return HStack(spacing: 12) {
+            // Both avatars together with status
+            HStack(spacing: -8) {
+                // Your avatar
+                challengeAvatar(
+                    isUser: true,
+                    photoUrl: nil,
+                    name: userManager.currentUser?.name,
+                    done: myDone,
+                    gradientColors: [.blue, .cyan]
+                )
+                
+                // Buddy avatar
+                challengeAvatar(
+                    isUser: false,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName,
+                    done: oppDone,
+                    gradientColors: [.blue, .cyan]
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Today's check-in status
+                HStack(spacing: 4) {
+                    Text(myDone ? "✅" : "⬜")
+                        .font(.system(size: 12))
+                    Text("You")
+                        .font(.caption2)
+                        .foregroundColor(myDone ? .green : .secondary)
+                    
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text(oppDone ? "✅" : "⬜")
+                        .font(.system(size: 12))
+                    Text(opponentFirst)
+                        .font(.caption2)
+                        .foregroundColor(oppDone ? .green : .secondary)
+                        .lineLimit(1)
+                }
+                
+                // Shared streak
+                HStack(spacing: 4) {
+                    if challenge.myCurrentStreak > 0 {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text("\(challenge.myCurrentStreak)-day streak together")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing))
+                    } else {
+                        Text("Start your streak today!")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Spacer(minLength: 4)
+            
+            // Daily progress ring (combined)
+            ZStack {
+                Circle()
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                    .frame(width: 36, height: 36)
+                Circle()
+                    .trim(from: 0, to: challenge.progressPercentage)
+                    .stroke(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 36, height: 36)
+                    .rotationEffect(.degrees(-90))
+                
+                if myDone && oppDone {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.green)
+                } else {
+                    Text("\(Int(challenge.progressPercentage * 100))%")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+    }
+    
+    // MARK: - Competition Progress (head-to-head battle)
+    
+    private func competitionProgressSection(challenge: ActiveChallenge, challengeColor: Color) -> some View {
+        // Use todayProgress if available, otherwise fall back to totalProgress
+        let myToday = (challenge.myTodayProgress ?? 0) > 0 ? (challenge.myTodayProgress ?? 0) : challenge.myTotalProgress
+        let oppToday = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
+        let amWinningNow = challenge.amWinningToday ?? challenge.amWinning
+        
+        return HStack(spacing: 8) {
+            // Your side
+            HStack(spacing: 8) {
+                challengeAvatar(
+                    isUser: true,
+                    photoUrl: nil,
+                    name: userManager.currentUser?.name,
+                    done: challenge.amWinning,
+                    gradientColors: [.blue, .cyan]
+                )
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 3) {
+                        Text("You")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        if challenge.amWinning {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.yellow)
+                        }
+                    }
+                    
+                    Text(formatChallengeProgress(myToday, unit: challenge.targetUnit))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(amWinningNow ? .green : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: 85, alignment: .leading)
+            }
+            
+            Spacer(minLength: 4)
+            
+            // VS divider with score diff
+            VStack(spacing: 2) {
+                Text("⚔️")
+                    .font(.system(size: 14))
+                
+                if myToday != oppToday {
+                    let diff = abs(myToday - oppToday)
+                    Text(amWinningNow ? "+\(formatChallengeProgress(diff, unit: challenge.targetUnit))" : "-\(formatChallengeProgress(diff, unit: challenge.targetUnit))")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(amWinningNow ? .green : .red)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(minWidth: 30)
+            
+            Spacer(minLength: 4)
+            
+            // Opponent side
+            HStack(spacing: 8) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 3) {
+                        if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.yellow)
+                        }
+                        Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Text(formatChallengeProgress(oppToday, unit: challenge.targetUnit))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(!amWinningNow && oppToday > 0 ? .green : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: 85, alignment: .trailing)
+                
+                challengeAvatar(
+                    isUser: false,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName,
+                    done: !challenge.amWinning && challenge.opponentTotalProgress > 0,
+                    gradientColors: [.orange, .red]
+                )
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+    }
+    
+    // MARK: - Challenge Avatar Helper
+    
+    private func challengeAvatar(isUser: Bool, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color]) -> some View {
+        Group {
+            if isUser {
+                if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                    Image(uiImage: cachedImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 36, height: 36)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Text(name?.prefix(1).uppercased() ?? "Y")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                }
+            } else {
+                if let photoUrl = photoUrl, !photoUrl.isEmpty {
+                    AsyncImage(url: URL(string: photoUrl)) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Circle()
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .overlay(
+                                Text(name?.prefix(1).uppercased() ?? "F")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Text(name?.prefix(1).uppercased() ?? "F")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                }
+            }
+        }
+    }
+    
+    // MARK: - Group Member Avatar Helper
+    
+    @ViewBuilder
+    private func groupMemberAvatar(member: GroupChallengeMember, currentUserId: UUID?, size: CGFloat, accentGradient: [Color]) -> some View {
+        if member.userId == currentUserId, let cachedImage = ProfilePhotoCache.shared.cachedImage {
+            Image(uiImage: cachedImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            CachedFriendPhoto(
+                friendId: member.userId.uuidString,
+                photoUrl: member.profilePhotoUrl,
+                name: member.name ?? member.username ?? "?",
+                size: size,
+                showGradientRing: false,
+                gradientColors: accentGradient
+            )
+        }
+    }
+    
+    // MARK: - Group Challenge Widget (3-person)
+    
+    private func groupChallengeWidget(challenge: ActiveGroupChallenge) -> some View {
+        let isAccountability = challenge.challengeMode == .accountability
+        let accentColor: Color = isAccountability ? .cyan : .orange
+        let accentGradient: [Color] = isAccountability ? [.blue, .cyan] : [.orange, .red]
+        let allMembers = challenge.members ?? []
+        let acceptedMembers = challenge.acceptedMembers
+        let pendingMembers = challenge.pendingMembers
+        let isPending = challenge.isPending
+        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal (matches 1v1 pending)
+        
+        return VStack(spacing: 0) {
+            // Header
+            NavigationLink(destination: GroupChallengeDetailView(challenge: challenge).environmentObject(userManager)) {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(challenge.type?.emoji ?? "🏆")
+                        .font(.system(size: 28))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(challenge.displayTitle)
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            
+                            if isPending {
+                                Text("PENDING")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.teal.opacity(0.7)))
+                            }
+                        }
+                        
+                        HStack(spacing: 6) {
+                            Text("\(allMembers.count) buddies")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            if isPending {
+                                let pendingNames = pendingMembers.map { $0.firstName }.prefix(2)
+                                Text("• Waiting for \(pendingNames.joined(separator: " & "))")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                    .lineLimit(1)
+                            } else {
+                                if pendingMembers.count > 0 {
+                                    Text("• \(pendingMembers.count) pending")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                }
+                                
+                                Text("• \(challenge.daysRemaining)d left")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(accentColor)
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Text(isAccountability ? "🤝" : "⚔️")
+                        .font(.system(size: 16))
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Head-to-head battle row — User1 vs User2 vs User3
+            HStack(spacing: 0) {
+                // Left accent bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(colors: isPending ? [challengeColor, .teal] : accentGradient, startPoint: .top, endPoint: .bottom))
+                    .frame(width: 4)
+                    .padding(.vertical, 4)
+                
+                if isPending {
+                    // PENDING: Show acceptance status + nudge buttons with "vs" between
+                    HStack(spacing: 0) {
+                        let currentUserId = SupabaseManager.shared.currentUser?.id
+                        let membersArray = Array(allMembers.prefix(4))
+                        ForEach(Array(membersArray.enumerated()), id: \.element.id) { index, member in
+                            if index > 0 {
+                                Text("vs")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .frame(minWidth: 20)
+                            }
+                            VStack(spacing: 4) {
+                                groupMemberAvatar(member: member, currentUserId: currentUserId, size: 28, accentGradient: [challengeColor, .teal])
+                                    .opacity(member.isPending ? 0.5 : 1)
+                                
+                                if member.isAccepted {
+                                    Text("✅")
+                                        .font(.system(size: 12))
+                                } else if member.isPending && member.userId != currentUserId {
+                                    // Nudge button for pending members (not yourself)
+                                    let nudgeKey = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
+                                    if UserDefaults.standard.bool(forKey: nudgeKey) {
+                                        Text("⏳")
+                                            .font(.system(size: 12))
+                                    } else {
+                                        Button {
+                                            nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
+                                        } label: {
+                                            Text("Nudge")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Capsule().fill(Color.teal.opacity(0.7)))
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                } else {
+                                    Text("⏳")
+                                        .font(.system(size: 12))
+                                }
+                                
+                                Text(member.userId == currentUserId ? "You" : String(member.firstName.prefix(6)))
+                                    .font(.system(size: 8))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                } else {
+                    // ACTIVE: Head-to-head battle layout
+                    let currentUserId = SupabaseManager.shared.currentUser?.id
+                    let sorted = acceptedMembers.sorted { $0.totalProgress > $1.totalProgress }
+                    let leaderId = sorted.first?.userId
+                    
+                    HStack(spacing: 0) {
+                        ForEach(Array(sorted.prefix(4).enumerated()), id: \.element.id) { index, member in
+                            if index > 0 {
+                                // VS divider
+                                Text("⚔️")
+                                    .font(.system(size: 11))
+                                    .frame(minWidth: 20)
+                            }
+                            
+                            let isMe = member.userId == currentUserId
+                            let isLeader = member.userId == leaderId
+                            let done = challenge.dailyTarget.map { member.todayProgress >= $0 } ?? false
+                            
+                            HStack(spacing: 6) {
+                                groupMemberAvatar(member: member, currentUserId: currentUserId, size: 32, accentGradient: accentGradient)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(done ? Color.green : (isLeader ? Color.yellow.opacity(0.6) : Color.gray.opacity(0.3)), lineWidth: 2)
+                                    )
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 3) {
+                                        Text(isMe ? "You" : String(member.firstName.prefix(6)))
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                        if isLeader {
+                                            Image(systemName: "crown.fill")
+                                                .font(.system(size: 7))
+                                                .foregroundColor(.yellow)
+                                        }
+                                    }
+                                    
+                                    Text(formatChallengeProgress(member.todayProgress, unit: challenge.targetUnit))
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .foregroundColor(isLeader ? .green : .primary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                }
+            }
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background(
+            ZStack {
+                // Animated glowing border (always on — teal glow for consistency)
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.5),
+                                challengeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                challengeColor.opacity(0.2),
+                                Color.mint.opacity(0.4),
+                                challengeColor.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+    }
+    
+    private func nudgePendingMember(challengeId: UUID, memberId: UUID) {
+        HapticManager.impact(.medium)
+        let nudgeKey = "nudge_\(challengeId.uuidString)_\(memberId.uuidString)"
+        
+        Task {
+            let sent = await ChallengeService.shared.nudgeGroupChallengeMember(
+                challengeId: challengeId,
+                recipientId: memberId
+            )
+            if sent {
+                UserDefaults.standard.set(true, forKey: nudgeKey)
+                HapticManager.notification(.success)
+                // Force UI refresh
+                await ChallengeService.shared.fetchActiveGroupChallenges()
+            }
+        }
     }
     
     private func formatChallengeProgress(_ value: Int, unit: String) -> String {
@@ -2711,15 +3751,22 @@ struct DashboardView: View {
     
     @ViewBuilder
     private var unifiedProgramWidget: some View {
+        unifiedProgramWidgetWithGlow(isVisible: true)
+    }
+    
+    @ViewBuilder
+    private func unifiedProgramWidgetWithGlow(isVisible: Bool) -> some View {
         if !userManager.hasCompletedOnboarding {
             EmptyView()
         } else if let activeProgram = activeSmartProgramForWidget {
-            activeSmartProgramDetailWidget(program: activeProgram)
+            activeSmartProgramDetailWidget(program: activeProgram, isVisible: isVisible)
                 .id(activeProgramWidgetId)
-        } else if isFirstTimeUser {
-            getStartedSmartWidget
-        } else if let recommended = topRecommendedSmartProgram {
+        } else if let recommended = topRecommendedSmartProgram, showRecommendedWidget {
+            // Show recommended program widget (even for first-time users)
             recommendedSmartProgramWidget(program: recommended)
+        } else if !showRecommendedWidget {
+            // If recommended is hidden, show browse programs instead
+            browseProgramsWidget
         } else {
             browseProgramsWidget
         }
@@ -2896,124 +3943,163 @@ struct DashboardView: View {
         .shadow(color: accentColor.opacity(0.15), radius: 20, x: 0, y: 8)
     }
     
-    // MARK: - Recommended For You Widget (Returning Users) - Uses SmartProgramEngine
+    // MARK: - Phone Verification Prompt Sheet
     
-    private func recommendedSmartProgramWidget(program: PersonalizedProgram) -> some View {
-        let template = program.template
-        let programColor = Color.green
-        let totalWeeks = (template.totalDays + 6) / 7
-        
-        return VStack(spacing: 0) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Recommended for You")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(programColor)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                    
-                    Text(program.personalizedName)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                // Match percentage badge
-                VStack(spacing: 2) {
-                    Text("\(program.matchPercentage)%")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(programColor)
-                    Text("match")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.trailing, 8)
-                
-                // Program icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [programColor, programColor.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 52, height: 52)
-                        .shadow(color: programColor.opacity(0.3), radius: 8, x: 0, y: 4)
-                    
-                    Image(systemName: template.category.icon)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                }
+    @ViewBuilder
+    private var phoneVerificationPromptSheet: some View {
+        ExistingUserPhonePrompt(
+            onComplete: { [self] phoneNumber in
+                handlePhoneVerificationComplete(phoneNumber)
+            },
+            onSkip: { [self] in
+                handlePhoneVerificationSkip()
             }
-            .padding(.bottom, 12)
-            
-            // Program details
-            HStack(spacing: 16) {
-                programDetailPill(icon: "calendar", value: "\(totalWeeks)", label: "weeks")
-                programDetailPill(icon: "flame.fill", value: "\(template.daysPerWeek)", label: "days/wk")
-                programDetailPill(icon: "clock.fill", value: "\(template.estimatedMinutesPerDay)", label: "min")
-            }
-            .padding(.bottom, 16)
-            
-            // Description
-            Text(program.personalizedDescription)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 16)
-            
-            // Start button
-            Button(action: {
+        )
+        .interactiveDismissDisabled()
+    }
+    
+    private func handlePhoneVerificationComplete(_ phoneNumber: String) {
+        Task {
+            do {
+                try await SupabaseManager.shared.updatePhoneNumber(phoneNumber)
+                await MainActor.run {
+                    userHasVerifiedPhone = true
+                    hasSeenPhonePrompt = true
+                }
                 if let user = userManager.currentUser {
-                    if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user) {
-                        // Navigate to the first day of the program
-                        if let firstDay = startedProgram.generatedDays.first {
-                            workoutManager.navigateProgramData = startedProgram
-                            workoutManager.navigateProgramDay = firstDay
-                            workoutManager.shouldNavigateToProgramDay = true
-                        }
-                    }
+                    user.phoneNumber = phoneNumber
+                    try? viewContext.save()
                 }
-            }) {
-                HStack {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("Start Program")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [programColor, programColor.opacity(0.85)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .cornerRadius(14)
-                .shadow(color: programColor.opacity(0.3), radius: 8, x: 0, y: 4)
-            }
-            
-            // View all programs link
-            NavigationLink(destination: PersonalizedProgramsView().environmentObject(userManager)) {
-                Text("View All 10 Programs")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 12)
+                print("📱 [PHONE PROMPT] Phone saved successfully: \(phoneNumber)")
+            } catch {
+                print("❌ [PHONE PROMPT] Failed to save phone: \(error)")
             }
         }
-        .padding(20)
+    }
+    
+    private func handlePhoneVerificationSkip() {
+        hasSeenPhonePrompt = true
+        print("📱 [PHONE PROMPT] User skipped phone verification")
+    }
+    
+    // MARK: - Get Started Challenge Widget (First Time Users) - Highlights Friend Challenges
+    
+    private var getStartedChallengeWidget: some View {
+        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
+        let hasFriends = !friendService.friends.isEmpty
+        
+        return VStack(spacing: 0) {
+            // Header - NavigationLink (matching autogen style)
+            NavigationLink(destination: ChallengeFlowStartView()) {
+                HStack(alignment: .center, spacing: 10) {
+                    // Trophy icon in hollow circle (matching progress ring style)
+                    ZStack {
+                        Circle()
+                            .stroke(challengeColor.opacity(0.3), lineWidth: 4)
+                            .frame(width: 44, height: 44)
+                        
+                        Text("🏆")
+                            .font(.system(size: 20))
+                    }
+                    
+                    // Challenge info
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Challenge a Friend!")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        Text("Compete head-to-head on fitness goals")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            // Inner challenge card - NavigationLink (matching autogen style)
+            NavigationLink(destination: ChallengeFlowStartView()) {
+                HStack(spacing: 0) {
+                    // Left accent bar
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(challengeColor)
+                        .frame(width: 4)
+                        .padding(.vertical, 4)
+                    
+                    HStack(spacing: 10) {
+                        // Challenge info - compact layout
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Steps, Workouts & More")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            HStack(spacing: 4) {
+                                Text("7-30 days")
+                                Text("•")
+                                Text("Daily goals")
+                                    .foregroundColor(challengeColor)
+                            }
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        }
+                        .padding(.leading, 10)
+                        
+                        Spacer(minLength: 8)
+                        
+                        // Button text changes based on friend status
+                        HStack(spacing: 4) {
+                            Image(systemName: hasFriends ? "bolt.fill" : "person.2.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(hasFriends ? "Challenge" : "Find Friends")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [challengeColor, Color(red: 0.0, green: 0.8, blue: 0.85)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(challengeColor.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
         .background(
             ZStack {
+                // Main card background with gradient
                 RoundedRectangle(cornerRadius: 24)
                     .fill(
                         LinearGradient(
@@ -3025,48 +4111,246 @@ struct DashboardView: View {
                         )
                     )
                 
-                // Accent glow
+                // Animated glowing border (teal — consistent with all challenge widgets)
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.5),
+                                challengeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                challengeColor.opacity(0.2),
+                                Color.mint.opacity(0.4),
+                                challengeColor.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                // Inner border for definition
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         LinearGradient(
-                            colors: [programColor.opacity(0.4), programColor.opacity(0.1), Color.clear],
+                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.5
+                        lineWidth: 1
                     )
             }
         )
-        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.35 : 0.25), radius: 20, x: 0, y: 0) // Even glow
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
+        // Subtle soft glow (reduced intensity)
+        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .onAppear {
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                challengeGlowPhase = 360
+            }
+        }
     }
     
-    private func programDetailPill(icon: String, value: String, label: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+    // MARK: - Recommended For You Widget (Returning Users) - Uses SmartProgramEngine
+    
+    private func recommendedSmartProgramWidget(program: PersonalizedProgram) -> some View {
+        let template = program.template
+        let programColor = Color.green
+        let totalWeeks = (template.totalDays + 6) / 7
+        
+        return VStack(spacing: 0) {
+            // Header - Tap to view all programs (matching active program header style)
+            Button {
+                workoutManager.shouldNavigateToPrograms = true
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    // Match percentage ring (like progress ring)
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 4)
+                            .frame(width: 44, height: 44)
+                        
+                        Circle()
+                            .trim(from: 0, to: Double(program.matchPercentage) / 100)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [programColor, programColor.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                            )
+                            .frame(width: 44, height: 44)
+                            .rotationEffect(.degrees(-90))
+                        
+                        Text("\(program.matchPercentage)%")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(programColor)
+                    }
+                    
+                    // Program info
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template.baseName)
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 6) {
+                            Text("\(totalWeeks) weeks")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(template.daysPerWeek) days/wk")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(programColor)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Inner card - Program preview with Start button (matching workout card style)
+            Button {
+                if let user = userManager.currentUser {
+                    if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user) {
+                        if let firstDay = startedProgram.generatedDays.first {
+                            workoutManager.navigateProgramData = startedProgram
+                            workoutManager.navigateProgramDay = firstDay
+                            workoutManager.shouldNavigateToProgramDay = true
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 0) {
+                    // Left accent bar
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(programColor)
+                        .frame(width: 4)
+                        .padding(.vertical, 4)
+                    
+                    HStack(spacing: 12) {
+                        // Program details
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text("Recommended")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.primary)
+                                
+                                Image(systemName: template.category.icon)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(
+                                        Circle()
+                                            .fill(programColor)
+                                    )
+                            }
+                            
+                            HStack(spacing: 4) {
+                                Text("\(template.estimatedMinutesPerDay) min")
+                                Text("•")
+                                    .font(.caption2)
+                                Text(template.category.rawValue)
+                                    .lineLimit(1)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        }
+                        .padding(.leading, 10)
+                        
+                        Spacer()
+                        
+                        // Start button
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Start")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [programColor, programColor.opacity(0.8)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(programColor.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            .buttonStyle(PlainButtonStyle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
         .background(
-            Capsule()
-                .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.95))
+            ZStack {
+                // Main card background
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Subtle accent border
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [programColor.opacity(0.25), programColor.opacity(0.1), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
+        // Subtle shadows matching active program widget
+        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
     }
     
     // MARK: - Active Smart Program Widget (With Today/Tomorrow Preview)
     
     @State private var activeWidgetGlowRotation: Double = 0
     
-    private func activeSmartProgramDetailWidget(program: SmartActiveProgram) -> some View {
+    private func activeSmartProgramDetailWidget(program: SmartActiveProgram, isVisible: Bool = true) -> some View {
         let programColor = Color.green
         let template = personalizedPrograms.first { $0.template.id == program.templateId }?.template
         let completedDays = program.completedDays.count
@@ -3238,18 +4522,20 @@ struct DashboardView: View {
                                         )
                                 }
                                 
-                                HStack(spacing: 4) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text("\(day.exercises.count) exercises")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
                                     let muscleTargets = getMuscleTargets(for: day.exercises)
                                     if !muscleTargets.isEmpty {
-                                        Text("•")
-                                            .font(.caption2)
                                         Text(muscleTargets)
-                                            .lineLimit(1)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary.opacity(0.8))
+                                            .lineLimit(2)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                             }
                             
                             Spacer()
@@ -3266,13 +4552,15 @@ struct DashboardView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(
-                                LinearGradient(
-                                    colors: [programColor, programColor.opacity(0.85)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [programColor.opacity(0.9), programColor.opacity(0.7)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
                             )
-                            .clipShape(Capsule())
                         }
                         .padding(.leading, 12)
                         .padding(.trailing, 14)
@@ -3309,32 +4597,14 @@ struct DashboardView: View {
         }
         .background(
             ZStack {
-                // Rotating glow when workout not complete
-                if !isTodayCompleted {
-                    // Even glow layer - uniform around all edges
+                // Soft glow when visible and workout not complete
+                if isVisible && !isTodayCompleted {
                     RoundedRectangle(cornerRadius: 26)
-                        .stroke(programColor.opacity(0.5), lineWidth: 3)
-                        .blur(radius: 8)
-                    
-                    // Rotating accent glow (subtle shimmer effect)
-                    RoundedRectangle(cornerRadius: 25)
-                        .stroke(
-                            AngularGradient(
-                                colors: [
-                                    programColor.opacity(0.6),
-                                    programColor.opacity(0.2),
-                                    programColor.opacity(0.6),
-                                    programColor.opacity(0.2)
-                                ],
-                                center: .center,
-                                startAngle: .degrees(activeWidgetGlowRotation),
-                                endAngle: .degrees(activeWidgetGlowRotation + 360)
-                            ),
-                            lineWidth: 2
-                        )
-                        .blur(radius: 4)
+                        .stroke(programColor.opacity(0.3), lineWidth: 2)
+                        .blur(radius: 6)
                 }
                 
+                // Main card background with gradient
                 RoundedRectangle(cornerRadius: 24)
                     .fill(
                         LinearGradient(
@@ -3346,22 +4616,24 @@ struct DashboardView: View {
                         )
                     )
                 
-                // Accent border - muted when completed
+                // Subtle accent border - enhanced when visible
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         LinearGradient(
                             colors: isTodayCompleted 
                                 ? [Color.gray.opacity(0.15), Color.gray.opacity(0.05), Color.clear]
-                                : [programColor.opacity(0.3), programColor.opacity(0.1), Color.clear],
+                                : [programColor.opacity(isVisible ? 0.35 : 0.2), programColor.opacity(isVisible ? 0.15 : 0.08), Color.clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.5
+                        lineWidth: isVisible ? 1.5 : 1
                     )
             }
         )
-        .shadow(color: !isTodayCompleted ? programColor.opacity(colorScheme == .dark ? 0.4 : 0.3) : Color.black.opacity(colorScheme == .dark ? 0.15 : 0.06), radius: !isTodayCompleted ? 20 : 12, x: 0, y: 0) // Even glow
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 10, x: 0, y: 4) // Subtle depth
+        // Enhanced shadows when visible, subtle when off-screen
+        .shadow(color: programColor.opacity(isVisible ? (colorScheme == .dark ? 0.25 : 0.18) : (colorScheme == .dark ? 0.1 : 0.06)), radius: isVisible ? 16 : 8, x: 0, y: isVisible ? 4 : 3)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
+        .animation(.easeInOut(duration: 0.3), value: isVisible)
     }
     
     // MARK: - Browse Programs Widget (Fallback)
@@ -4054,6 +5326,7 @@ struct DashboardView: View {
         case .powerbuilding: return .yellow
         }
     }
+    
 }
 
 // MARK: - Smart Program Mini Card
@@ -4487,13 +5760,15 @@ struct RecentWorkoutCard: View {
             }
             .padding(16)
             .background(
-                // Premium layered background for ALL workout cards (consistent styling)
+                // Premium layered background for workout cards
                 ZStack {
-                    // Bottom shadow layer (deepest) - color glow
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
-                        .offset(y: 6)
-                        .blur(radius: 4)
+                    // Bottom shadow layer (deepest) - color glow ONLY for most recent
+                    if isMostRecent {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                            .offset(y: 6)
+                            .blur(radius: 4)
+                    }
                     
                     // Middle shadow layer
                     RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -4525,11 +5800,13 @@ struct RecentWorkoutCard: View {
                             lineWidth: 1.5
                         )
                     
-                    // Colored accent border for ALL cards
+                    // Colored accent border - stronger for most recent, subtle for others
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: [workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                colors: isMostRecent
+                                    ? [workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)]
+                                    : [Color.gray.opacity(colorScheme == .dark ? 0.2 : 0.1), Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -4537,9 +5814,9 @@ struct RecentWorkoutCard: View {
                         )
                 }
             )
-            // Shadow effects for all workout cards
+            // Shadow effects - color glow only for most recent
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-            .shadow(color: workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+            .shadow(color: isMostRecent ? workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12) : Color.clear, radius: 20, x: 0, y: 10)
         }
         .buttonStyle(PlainButtonStyle())
         .onAppear {
@@ -4958,13 +6235,15 @@ struct RecentCardioWorkoutCard: View {
                 }
                 .padding(16)
                 .background(
-                    // Premium layered background for ALL cardio workout cards (consistent styling)
+                    // Premium layered background for cardio workout cards
                     ZStack {
-                        // Bottom shadow layer (deepest) - color glow
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(activityInfo.color.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                            .offset(y: 6)
-                            .blur(radius: 4)
+                        // Bottom shadow layer (deepest) - color glow ONLY for most recent
+                        if isMostRecent {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(activityInfo.color.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                                .offset(y: 6)
+                                .blur(radius: 4)
+                        }
                         
                         // Middle shadow layer
                         RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -4996,11 +6275,13 @@ struct RecentCardioWorkoutCard: View {
                                 lineWidth: 1.5
                             )
                         
-                        // Colored accent border for ALL cards
+                        // Colored accent border - stronger for most recent, subtle for others
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .stroke(
                                 LinearGradient(
-                                    colors: [activityInfo.color.opacity(colorScheme == .dark ? 0.4 : 0.3), activityInfo.color.opacity(colorScheme == .dark ? 0.25 : 0.15)],
+                                    colors: isMostRecent
+                                        ? [activityInfo.color.opacity(colorScheme == .dark ? 0.4 : 0.3), activityInfo.color.opacity(colorScheme == .dark ? 0.25 : 0.15)]
+                                        : [Color.gray.opacity(colorScheme == .dark ? 0.2 : 0.1), Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
@@ -5008,9 +6289,9 @@ struct RecentCardioWorkoutCard: View {
                             )
                     }
                 )
-                // Shadow effects for all cardio workout cards
+                // Shadow effects - color glow only for most recent
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-                .shadow(color: activityInfo.color.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+                .shadow(color: isMostRecent ? activityInfo.color.opacity(colorScheme == .dark ? 0.2 : 0.12) : Color.clear, radius: 20, x: 0, y: 10)
             }
             .buttonStyle(PlainButtonStyle())
     }
@@ -6003,6 +7284,22 @@ struct DashboardWeightWidget: View {
                 await weightService.loadAllData()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .weightDidUpdate)) { _ in
+            // Weight was updated elsewhere (e.g., nutrition tab) - force reload to stay in sync
+            Task {
+                await weightService.loadAllData()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dailyResetCompleted)) { _ in
+            // 🌙 Daily reset completed - refresh all dashboard data
+            print("🌙 [DASHBOARD] Daily reset notification received - refreshing data")
+            Task {
+                await ChallengeService.shared.fetchActiveChallenges()
+                await HydrationService.shared.loadTodayData()
+                await weightService.loadAllData()
+                MealService.shared.loadTodaysMeals()
+            }
+        }
     }
     
     @ViewBuilder
@@ -6815,113 +8112,122 @@ struct WidgetSettingsSheet: View {
     @Binding var showWeightTracker: Bool
     @Binding var showHydration: Bool
     @Binding var showMacros: Bool
+    @Binding var showChallenge: Bool
+    @Binding var showRecommended: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
     @State private var showingPremiumUpgrade = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Add Widgets")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 28)
-            .padding(.bottom, 12)
-            
-            // Subtitle
-            if premiumManager.isPremiumUser {
-                Text("Customize your dashboard with quick-access widgets")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 32)
-                    .lineLimit(2)
-            } else {
-                VStack(spacing: 8) {
-                    Text("Customize your dashboard with quick-access widgets")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Subtitle
+                    if premiumManager.isPremiumUser {
+                        Text("Customize your dashboard with quick-access widgets")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 24)
+                            .lineLimit(2)
+                    } else {
+                        VStack(spacing: 8) {
+                            Text("Customize your dashboard with quick-access widgets")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            
+                            HStack(spacing: 4) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.yellow)
+                                Text("Premium Required")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 24)
+                    }
                     
-                    HStack(spacing: 4) {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.yellow)
-                        Text("Premium Required")
-                            .font(.caption)
+                    // Widget options
+                    VStack(spacing: 12) {
+                        widgetOptionRow(
+                            icon: "chart.pie.fill",
+                            title: "Quick Macros",
+                            subtitle: "Today's nutrition at a glance",
+                            gradientColors: [Color.teal, Color.mint],
+                            isSelected: $showMacros
+                        )
+                        
+                        widgetOptionRow(
+                            icon: "scalemass.fill",
+                            title: "Weight Tracker",
+                            subtitle: "Track your weight progress",
+                            gradientColors: [Color.orange, Color.yellow],
+                            isSelected: $showWeightTracker
+                        )
+                        
+                        widgetOptionRow(
+                            icon: "drop.fill",
+                            title: "Hydration Tracker",
+                            subtitle: "Track your daily water intake",
+                            gradientColors: [Color.cyan, Color.blue],
+                            isSelected: $showHydration
+                        )
+                        
+                        // Challenge widget - show for all users, but locked for free users
+                        challengeWidgetOptionRow(
+                            isSelected: $showChallenge
+                        )
+                        
+                        // Recommended For You widget - premium can hide, free users see it locked
+                        recommendedWidgetOptionRow(
+                            isSelected: $showRecommended
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                    
+                    // Done button
+                    Button(action: {
+                        HapticManager.tap()
+                        dismiss()
+                    }) {
+                        Text("Done")
+                            .font(.headline)
                             .fontWeight(.semibold)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [.blue, .cyan],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(14)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+                .padding(.top, 16)
+            }
+            .navigationTitle("Add Widgets")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.secondary)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 32)
             }
-            
-            // Widget options
-            VStack(spacing: 16) {
-                widgetOptionRow(
-                    icon: "chart.pie.fill",
-                    title: "Quick Macros",
-                    subtitle: "Today's nutrition at a glance",
-                    gradientColors: [Color.teal, Color.mint],
-                    isSelected: $showMacros
-                )
-                
-                widgetOptionRow(
-                    icon: "scalemass.fill",
-                    title: "Weight Tracker",
-                    subtitle: "Track your weight progress",
-                    gradientColors: [Color.orange, Color.yellow],
-                    isSelected: $showWeightTracker
-                )
-                
-                widgetOptionRow(
-                    icon: "drop.fill",
-                    title: "Hydration Tracker",
-                    subtitle: "Track your daily water intake",
-                    gradientColors: [Color.cyan, Color.blue],
-                    isSelected: $showHydration
-                )
-            }
-            .padding(.horizontal, 24)
-            
-            Spacer(minLength: 24)
-            
-            // Done button
-            Button(action: {
-                HapticManager.tap()
-                dismiss()
-            }) {
-                Text("Done")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        LinearGradient(
-                            colors: [.blue, .cyan],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(14)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
         }
         .sheet(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .homescreenWidgets)
@@ -7046,6 +8352,252 @@ struct WidgetSettingsSheet: View {
         .buttonStyle(PlainButtonStyle())
         .opacity(!premiumManager.isPremiumUser ? 0.8 : 1.0)
     }
+    
+    // Challenge widget option - shown to all users, locked for free users
+    @ViewBuilder
+    private func challengeWidgetOptionRow(isSelected: Binding<Bool>) -> some View {
+        Button(action: {
+            if premiumManager.isPremiumUser {
+                HapticManager.selectionChanged()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSelected.wrappedValue.toggle()
+                }
+            } else {
+                // Show premium upgrade for free users
+                HapticManager.tap()
+                showingPremiumUpgrade = true
+            }
+        }) {
+            HStack(spacing: 14) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.orange, Color.red],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                    
+                    Text("🏆")
+                        .font(.system(size: 20))
+                    
+                    // Lock overlay for free users
+                    if !premiumManager.isPremiumUser {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.white)
+                            .background(
+                                Circle()
+                                    .fill(Color.black.opacity(0.5))
+                                    .frame(width: 44, height: 44)
+                            )
+                    }
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Challenge a Friend")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        // Premium badge for free users
+                        if !premiumManager.isPremiumUser {
+                            HStack(spacing: 3) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.yellow)
+                                Text("PRO")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(0.15))
+                            )
+                        }
+                    }
+                    
+                    Text(premiumManager.isPremiumUser ? "Hide this widget" : "Unlock to hide this widget")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Toggle indicator or lock
+                if premiumManager.isPremiumUser {
+                    ZStack {
+                        Circle()
+                            .fill(isSelected.wrappedValue ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                } else {
+                    // Always ON indicator for free users (can't toggle)
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.5))
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        !premiumManager.isPremiumUser
+                            ? LinearGradient(colors: [Color.orange.opacity(0.3), Color.red.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            : (isSelected.wrappedValue
+                                ? LinearGradient(colors: [Color.orange, Color.red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)),
+                        lineWidth: 2
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(!premiumManager.isPremiumUser ? 0.85 : 1.0)
+    }
+    
+    // MARK: - Recommended For You Widget Option Row
+    private func recommendedWidgetOptionRow(isSelected: Binding<Bool>) -> some View {
+        Button(action: {
+            if premiumManager.isPremiumUser {
+                HapticManager.selectionChanged()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSelected.wrappedValue.toggle()
+                }
+            } else {
+                // Show premium upgrade for free users
+                HapticManager.tap()
+                showingPremiumUpgrade = true
+            }
+        }) {
+            HStack(spacing: 14) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.green, Color.teal],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                    
+                    // Lock overlay for free users
+                    if !premiumManager.isPremiumUser {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.white)
+                            .background(
+                                Circle()
+                                    .fill(Color.black.opacity(0.5))
+                                    .frame(width: 44, height: 44)
+                            )
+                    }
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Recommended For You")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        // Premium badge for free users
+                        if !premiumManager.isPremiumUser {
+                            HStack(spacing: 3) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.yellow)
+                                Text("PRO")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.green.opacity(0.15))
+                            )
+                        }
+                    }
+                    
+                    Text(premiumManager.isPremiumUser ? "Hide this widget" : "Unlock to hide this widget")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Toggle indicator or lock
+                if premiumManager.isPremiumUser {
+                    ZStack {
+                        Circle()
+                            .fill(isSelected.wrappedValue ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                } else {
+                    // Always ON indicator for free users (can't toggle)
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.5))
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        !premiumManager.isPremiumUser
+                            ? LinearGradient(colors: [Color.green.opacity(0.3), Color.teal.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            : (isSelected.wrappedValue
+                                ? LinearGradient(colors: [Color.green, Color.teal], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)),
+                        lineWidth: 2
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(!premiumManager.isPremiumUser ? 0.85 : 1.0)
+    }
 }
 
 // MARK: - Friend Notification Badge (Isolated to prevent parent re-renders)
@@ -7072,3 +8624,4 @@ struct FriendNotificationBadge: View {
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(UserManager())
 }
+

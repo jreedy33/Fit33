@@ -50,12 +50,15 @@ class ChallengeService: ObservableObject {
     
     private let activeChallengesCacheKey = "fit33_cached_active_challenges"
     private let pendingInvitesCacheKey = "fit33_cached_pending_invites"
+    private let pendingSentCacheKey = "fit33_cached_pending_sent_challenges"
     private let cacheDateKey = "fit33_challenges_cache_date"
     
     // MARK: - Published Properties
     
-    @Published var pendingInvites: [ChallengeInvite] = []
+    @Published var pendingInvites: [ChallengeInvite] = []           // Incoming challenges (sent TO me)
+    @Published var pendingSentChallenges: [PendingSentChallenge] = [] // Outgoing challenges (sent BY me)
     @Published var activeChallenges: [ActiveChallenge] = []
+    @Published var activeGroupChallenges: [ActiveGroupChallenge] = [] // Group challenges (3+ people)
     @Published var challengeTemplates: [ChallengeTemplate] = []
     @Published var isLoading = false
     
@@ -142,16 +145,30 @@ class ChallengeService: ObservableObject {
         } else {
             print("ℹ️ [CHALLENGES] No cached pending invites found")
         }
+        
+        // Load cached pending sent challenges (outgoing)
+        if let data = UserDefaults.standard.data(forKey: pendingSentCacheKey) {
+            do {
+                let cached = try JSONDecoder().decode([PendingSentChallenge].self, from: data)
+                self.pendingSentChallenges = cached
+                print("✅ [CHALLENGES] Loaded \(cached.count) cached pending sent challenges instantly")
+            } catch {
+                print("⚠️ [CHALLENGES] Failed to decode cached pending sent: \(error)")
+                UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
+            }
+        }
     }
     
     /// Clear all challenge caches (call on logout)
     func clearCache() {
         UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
         UserDefaults.standard.removeObject(forKey: pendingInvitesCacheKey)
+        UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
         UserDefaults.standard.removeObject(forKey: cacheDateKey)
         UserDefaults.standard.synchronize()
         activeChallenges = []
         pendingInvites = []
+        pendingSentChallenges = []
         print("🗑️ [CHALLENGES] Cleared all challenge caches")
     }
     
@@ -165,10 +182,12 @@ class ChallengeService: ObservableObject {
         defer { isLoading = false }
         
         async let invitesTask: () = fetchPendingInvites()
+        async let sentTask: () = fetchPendingSentChallenges()
         async let activesTask: () = fetchActiveChallenges()
+        async let groupTask: () = fetchActiveGroupChallenges()
         async let templatesTask: () = fetchTemplates()
         
-        _ = await (invitesTask, activesTask, templatesTask)
+        _ = await (invitesTask, sentTask, activesTask, groupTask, templatesTask)
     }
     
     // MARK: - Fetch Pending Invites
@@ -218,17 +237,112 @@ class ChallengeService: ObservableObject {
         }
     }
     
+    // MARK: - Fetch Pending Sent Challenges (Outgoing)
+    
+    /// Fetch challenges I sent that are waiting for opponent to accept
+    func fetchPendingSentChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            print("⚠️ [CHALLENGES] Not authenticated, skipping pending sent fetch")
+            return
+        }
+        
+        do {
+            let result: [PendingSentChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_pending_sent_challenges")
+                .execute()
+                .value
+            
+            // Update on main thread
+            await MainActor.run {
+                // Clear old cache if server returns different data
+                if result.count != self.pendingSentChallenges.count {
+                    print("🔄 [CHALLENGES] Pending sent count changed: \(self.pendingSentChallenges.count) → \(result.count)")
+                }
+                self.pendingSentChallenges = result
+            }
+            cachePendingSentChallenges()
+            print("💾 [CHALLENGES] Cached \(result.count) pending sent challenges")
+            print("✅ [CHALLENGES] Fetched \(result.count) pending sent challenges")
+        } catch {
+            print("❌ [CHALLENGES] Error fetching pending sent challenges: \(error)")
+        }
+    }
+    
+    /// Cache pending sent challenges
+    private func cachePendingSentChallenges() {
+        guard !pendingSentChallenges.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
+            return
+        }
+        
+        do {
+            let data = try JSONEncoder().encode(pendingSentChallenges)
+            UserDefaults.standard.set(data, forKey: pendingSentCacheKey)
+            print("💾 [CHALLENGES] Cached \(pendingSentChallenges.count) pending sent challenges")
+        } catch {
+            print("❌ [CHALLENGES] Failed to cache pending sent: \(error)")
+        }
+    }
+    
+    /// Cancel a pending challenge I sent
+    func cancelPendingChallenge(challengeId: UUID) async -> Bool {
+        print("🗑️ [CHALLENGES] cancelPendingChallenge called for: \(challengeId)")
+        do {
+            struct CancelParams: Encodable {
+                let p_challenge_id: String
+            }
+            
+            print("📤 [CHALLENGES] Calling cancel_challenge RPC...")
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("cancel_challenge", params: CancelParams(p_challenge_id: challengeId.uuidString))
+                .execute()
+                .value
+            print("✅ [CHALLENGES] cancel_challenge RPC successful")
+            
+            // Remove from local list on main thread
+            await MainActor.run {
+                pendingSentChallenges.removeAll { $0.challengeId == challengeId }
+                print("🗑️ [CHALLENGES] Removed from local pendingSentChallenges")
+            }
+            cachePendingSentChallenges()
+            
+            // Also refresh from server to ensure consistency
+            print("🔄 [CHALLENGES] Refreshing pending sent challenges from server...")
+            await fetchPendingSentChallenges()
+            
+            print("✅ [CHALLENGES] Cancelled pending challenge: \(challengeId)")
+            print("   Remaining pending sent: \(pendingSentChallenges.count)")
+            return true
+        } catch {
+            print("❌ [CHALLENGES] Error cancelling challenge: \(error)")
+            print("❌ [CHALLENGES] Error details: \(String(describing: error))")
+            return false
+        }
+    }
+    
     // MARK: - Fetch Active Challenges
     
     func fetchActiveChallenges() async {
         do {
+            struct TimezoneParams: Encodable {
+                let p_timezone: String
+            }
+            
             let result: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_active_challenges")
+                .rpc("get_active_challenges", params: TimezoneParams(
+                    p_timezone: TimeZone.current.identifier
+                ))
                 .execute()
                 .value
             
             self.activeChallenges = result
             cacheActiveChallenges() // Cache for instant display on next app launch
+            
+            // Advanced logging: show exactly what progress values the widget will display
+            for c in result {
+                print("📊 [WIDGET DATA] '\(c.displayTitle)' → myTotal: \(c.myTotalProgress), myToday: \(c.myTodayProgress ?? -1), oppTotal: \(c.opponentTotalProgress), oppToday: \(c.opponentTodayProgress ?? -1), amWinning: \(c.amWinning), amWinningToday: \(c.amWinningToday ?? false)")
+            }
+            
             print("✅ [CHALLENGES] Fetched \(result.count) active challenges")
         } catch {
             print("❌ [CHALLENGES] Error fetching active challenges: \(error)")
@@ -346,8 +460,16 @@ class ChallengeService: ObservableObject {
             
             print("✅ [CHALLENGES] Created challenge: \(challengeId)")
             
-            // Refresh active challenges
-            await fetchActiveChallenges()
+            // Log interaction for friend ranking
+            await FriendRankingService.shared.logInteraction(
+                withFriendId: opponentId,
+                type: .challengeCreated,
+                referenceId: challengeId,
+                referenceType: "challenge"
+            )
+            
+            // Refresh PENDING sent challenges (NOT active - challenge is pending until opponent accepts)
+            await fetchPendingSentChallenges()
             
             // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier
             // This ensures creators get credit for progress made before creating the challenge
@@ -369,6 +491,299 @@ class ChallengeService: ObservableObject {
             print("❌ [CHALLENGES] Error creating challenge: \(error)")
             return nil
         }
+    }
+    
+    // MARK: - Create Group Challenge
+    
+    func createGroupChallenge(
+        memberIds: [UUID],
+        type: ChallengeType,
+        title: String,
+        description: String? = nil,
+        mode: String = "competition",
+        dailyTarget: Int? = nil,
+        totalTarget: Int? = nil,
+        targetUnit: String = "count",
+        startDate: Date = Date(),
+        durationDays: Int = 7
+    ) async -> UUID? {
+        do {
+            struct CreateGroupParams: Encodable {
+                let p_member_ids: [String]
+                let p_challenge_type: String
+                let p_title: String
+                let p_description: String?
+                let p_mode: String
+                let p_daily_target: Int?
+                let p_total_target: Int?
+                let p_target_unit: String
+                let p_start_date: String
+                let p_duration_days: Int
+            }
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            
+            let params = CreateGroupParams(
+                p_member_ids: memberIds.map { $0.uuidString },
+                p_challenge_type: type.rawValue,
+                p_title: title,
+                p_description: description,
+                p_mode: mode,
+                p_daily_target: dailyTarget,
+                p_total_target: totalTarget,
+                p_target_unit: targetUnit,
+                p_start_date: dateFormatter.string(from: startDate),
+                p_duration_days: durationDays
+            )
+            
+            let groupId: UUID = try await SupabaseManager.shared.supabaseClient
+                .rpc("create_group_challenge", params: params)
+                .execute()
+                .value
+            
+            print("✅ [CHALLENGES] Created group challenge: \(groupId)")
+            
+            // Log interactions for all members
+            for memberId in memberIds {
+                await FriendRankingService.shared.logInteraction(
+                    withFriendId: memberId,
+                    type: .challengeCreated,
+                    referenceId: groupId,
+                    referenceType: "group_challenge"
+                )
+            }
+            
+            // Refresh group challenges
+            await fetchActiveGroupChallenges()
+            
+            return groupId
+        } catch {
+            print("❌ [CHALLENGES] Error creating group challenge: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Fetch Active Group Challenges
+    
+    func fetchActiveGroupChallenges() async {
+        do {
+            let result: [ActiveGroupChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_active_group_challenges")
+                .execute()
+                .value
+            
+            activeGroupChallenges = result
+            print("✅ [CHALLENGES] Fetched \(result.count) active group challenges")
+        } catch {
+            print("❌ [CHALLENGES] Error fetching group challenges: \(error)")
+        }
+    }
+    
+    // MARK: - Accept/Decline Group Challenge
+    
+    func acceptGroupChallenge(challengeId: UUID) async -> Bool {
+        do {
+            struct AcceptParams: Encodable { let p_challenge_id: String }
+            let allAccepted: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("accept_group_challenge", params: AcceptParams(p_challenge_id: challengeId.uuidString))
+                .execute()
+                .value
+            
+            print("✅ [CHALLENGES] Accepted group challenge: \(challengeId), all accepted: \(allAccepted)")
+            await fetchActiveGroupChallenges()
+            
+            // IMPORTANT: Sync existing health data immediately after accepting
+            // User may already have progress for today (e.g., 4K steps before accepting a 3K step challenge)
+            await syncExistingProgressToGroupChallenge(challengeId: challengeId)
+            
+            // Refresh again to show updated progress
+            await fetchActiveGroupChallenges()
+            
+            return allAccepted
+        } catch {
+            print("❌ [CHALLENGES] Error accepting group challenge: \(error)")
+            return false
+        }
+    }
+    
+    func declineGroupChallenge(challengeId: UUID) async {
+        do {
+            struct DeclineParams: Encodable { let p_challenge_id: String }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("decline_group_challenge", params: DeclineParams(p_challenge_id: challengeId.uuidString))
+                .execute()
+            
+            print("✅ [CHALLENGES] Declined group challenge: \(challengeId)")
+            
+            // Remove from local list immediately
+            activeGroupChallenges.removeAll { $0.challengeId == challengeId }
+            
+            // Refresh both — decline may convert to 1v1 for remaining members
+            await fetchActiveGroupChallenges()
+            await fetchActiveChallenges()
+        } catch {
+            print("❌ [CHALLENGES] Error declining group challenge: \(error)")
+        }
+    }
+    
+    // MARK: - Leave Group Challenge
+    
+    /// Leave a group challenge. Returns the result: "left", "converted" (to 1v1), or "cancelled"
+    func leaveGroupChallenge(challengeId: UUID) async -> String? {
+        do {
+            struct LeaveParams: Encodable { let p_challenge_id: String }
+            let result: String = try await SupabaseManager.shared.supabaseClient
+                .rpc("leave_group_challenge", params: LeaveParams(p_challenge_id: challengeId.uuidString))
+                .execute()
+                .value
+            
+            print("✅ [CHALLENGES] Left group challenge: \(challengeId), result: \(result)")
+            
+            // Remove from local group challenges
+            activeGroupChallenges.removeAll { $0.challengeId == challengeId }
+            
+            // If converted to 1v1, refresh active challenges so it shows up
+            if result == "converted" {
+                await fetchActiveChallenges()
+            }
+            
+            // Refresh group challenges
+            await fetchActiveGroupChallenges()
+            
+            return result
+        } catch {
+            print("❌ [CHALLENGES] Error leaving group challenge: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Cancel Group Challenge
+    
+    /// Cancel an entire group challenge — removes everyone
+    func cancelGroupChallenge(challengeId: UUID) async -> Bool {
+        do {
+            struct CancelParams: Encodable { let p_challenge_id: String }
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("cancel_group_challenge", params: CancelParams(p_challenge_id: challengeId.uuidString))
+                .execute()
+                .value
+            
+            // Remove from local list
+            activeGroupChallenges.removeAll { $0.challengeId == challengeId }
+            
+            print("✅ [CHALLENGES] Cancelled group challenge: \(challengeId)")
+            return true
+        } catch {
+            print("❌ [CHALLENGES] Error cancelling group challenge: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Nudge Group Challenge Member
+    
+    /// Send a one-time nudge to a pending group challenge member. Returns true if sent, false if already nudged.
+    func nudgeGroupChallengeMember(challengeId: UUID, recipientId: UUID) async -> Bool {
+        do {
+            struct NudgeParams: Encodable {
+                let p_challenge_id: String
+                let p_recipient_id: String
+            }
+            let sent: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("nudge_group_challenge_member", params: NudgeParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_recipient_id: recipientId.uuidString
+                ))
+                .execute()
+                .value
+            
+            print("✅ [CHALLENGES] Nudged member \(recipientId) for challenge \(challengeId): \(sent ? "sent" : "already nudged")")
+            return sent
+        } catch {
+            print("❌ [CHALLENGES] Error nudging member: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Group Challenge Progress
+    
+    /// Log progress for a group challenge
+    func logGroupProgress(challengeId: UUID, progressValue: Int) async -> Bool {
+        do {
+            struct LogParams: Encodable {
+                let p_challenge_id: String
+                let p_progress: Int
+            }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("log_group_challenge_progress", params: LogParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_progress: progressValue
+                ))
+                .execute()
+            
+            print("✅ [CHALLENGES] Logged group progress: \(progressValue) for \(challengeId)")
+            return true
+        } catch {
+            print("❌ [CHALLENGES] Error logging group progress: \(error)")
+            return false
+        }
+    }
+    
+    /// Sync existing health data immediately after accepting a group challenge
+    private func syncExistingProgressToGroupChallenge(challengeId: UUID) async {
+        print("🔄 [CHALLENGES] Syncing existing progress for group challenge \(challengeId)...")
+        
+        // Refresh HealthKit data first
+        await HealthKitService.shared.syncAllData(force: true)
+        
+        // Find this group challenge
+        guard let challenge = activeGroupChallenges.first(where: { $0.challengeId == challengeId }) else {
+            print("⚠️ [CHALLENGES] Could not find group challenge in active list")
+            return
+        }
+        
+        // Calculate progress from all health data sources
+        let progressValue = await calculateTotalProgressFromAllSources(
+            challengeType: challenge.challengeType,
+            targetUnit: challenge.targetUnit
+        )
+        
+        if progressValue > 0 {
+            print("📊 [CHALLENGES] Found existing progress: \(progressValue) \(challenge.targetUnit)")
+            let success = await logGroupProgress(challengeId: challengeId, progressValue: progressValue)
+            if success {
+                print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to group challenge")
+            }
+        } else {
+            print("ℹ️ [CHALLENGES] No existing progress to sync for group challenge")
+        }
+    }
+    
+    /// Sync HealthKit data to ALL active group challenges (called alongside 1v1 sync)
+    func syncHealthKitDataToGroupChallenges() async {
+        guard !activeGroupChallenges.isEmpty else { return }
+        
+        print("🔄 [CHALLENGES] Syncing HealthKit data to \(activeGroupChallenges.count) active group challenges...")
+        
+        for challenge in activeGroupChallenges {
+            guard challenge.isActive, challenge.iHaveAccepted else { continue }
+            
+            let progressValue = await calculateProgressFromHealthKit(
+                challengeType: challenge.challengeType,
+                targetUnit: challenge.targetUnit
+            )
+            
+            if progressValue > 0 {
+                let success = await logGroupProgress(challengeId: challenge.challengeId, progressValue: progressValue)
+                if success {
+                    print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to group '\(challenge.displayTitle)'")
+                }
+            }
+        }
+        
+        // Refresh to show updated progress
+        await fetchActiveGroupChallenges()
+        print("✅ [CHALLENGES] Group challenge HealthKit sync complete")
     }
     
     /// Sync creator's existing health data when they create a challenge that starts today
@@ -406,15 +821,18 @@ class ChallengeService: ObservableObject {
     // MARK: - Respond to Challenge
     
     func respondToChallenge(challengeId: UUID, accept: Bool) async -> Bool {
+        print("🔄 [CHALLENGES] respondToChallenge called - challengeId: \(challengeId), accept: \(accept)")
         do {
             // Get challenge details BEFORE accepting (need type/unit for progress sync)
             let inviteDetails = pendingInvites.first { $0.challengeId == challengeId }
+            print("📋 [CHALLENGES] Invite details: \(inviteDetails?.title ?? "not found")")
             
             struct RespondParams: Encodable {
                 let p_challenge_id: String
                 let p_accept: Bool
             }
             
+            print("📤 [CHALLENGES] Calling respond_to_challenge RPC...")
             let _: Bool = try await SupabaseManager.shared.supabaseClient
                 .rpc("respond_to_challenge", params: RespondParams(
                     p_challenge_id: challengeId.uuidString,
@@ -422,26 +840,44 @@ class ChallengeService: ObservableObject {
                 ))
                 .execute()
                 .value
+            print("✅ [CHALLENGES] RPC call successful")
             
-            // Remove from pending invites and update cache
-            pendingInvites.removeAll { $0.challengeId == challengeId }
-            cachePendingInvites()
+            // Force refresh from server to ensure UI updates properly
+            await MainActor.run {
+                // Clear locally first
+                pendingInvites.removeAll { $0.challengeId == challengeId }
+                print("🗑️ [CHALLENGES] Removed challenge from pending invites locally")
+            }
             
             if accept {
-                // Refresh active challenges (this also caches)
+                print("✅ [ACCEPT FLOW] Step 1: RPC successful - starting data refresh")
+                
+                // Fetch fresh data from server
+                await fetchPendingInvites()
                 await fetchActiveChallenges()
-                print("✅ [CHALLENGES] Accepted challenge")
+                await fetchPendingSentChallenges()
+                
+                print("📊 [ACCEPT FLOW] Step 2: After initial fetch - Active: \(activeChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
                 
                 // IMPORTANT: Sync existing progress from today
-                // User may have already completed their daily goal before accepting
+                print("🔄 [ACCEPT FLOW] Step 3: Syncing existing HealthKit progress...")
                 await syncExistingProgressOnAccept(challengeId: challengeId, inviteDetails: inviteDetails)
+                
+                // Fetch AGAIN after syncing our progress so the widget shows updated numbers
+                print("🔄 [ACCEPT FLOW] Step 4: Fetching active challenges AGAIN after progress sync...")
+                await fetchActiveChallenges()
+                
+                print("📊 [ACCEPT FLOW] Step 5: Final state - Active: \(activeChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
+                print("✅ [ACCEPT FLOW] Complete - widget should now show correct progress")
             } else {
-                print("✅ [CHALLENGES] Declined challenge")
+                print("✅ [CHALLENGES] Declined challenge - refreshing pending invites")
+                await fetchPendingInvites()  // Refresh to remove the declined one
             }
             
             return true
         } catch {
             print("❌ [CHALLENGES] Error responding to challenge: \(error)")
+            print("❌ [CHALLENGES] Error details: \(String(describing: error))")
             return false
         }
     }
@@ -667,10 +1103,15 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Logged progress: \(progressValue)")
+            print("✅ [PROGRESS LOG] Logged \(progressValue) (source: \(source)) for challenge \(challengeId.uuidString.prefix(8))")
             
             // Refresh active challenges to show updated progress
             await fetchActiveChallenges()
+            
+            // Log what the widget will now show
+            if let updated = activeChallenges.first(where: { $0.challengeId == challengeId }) {
+                print("📊 [PROGRESS LOG] After refresh → myToday: \(updated.myTodayProgress ?? -1), oppToday: \(updated.opponentTodayProgress ?? -1), myTotal: \(updated.myTotalProgress), oppTotal: \(updated.opponentTotalProgress)")
+            }
             
             return true
         } catch {
@@ -728,7 +1169,10 @@ class ChallengeService: ObservableObject {
             }
         }
         
-        print("✅ [CHALLENGES] HealthKit sync complete for all challenges")
+        print("✅ [CHALLENGES] HealthKit sync complete for all 1v1 challenges")
+        
+        // Also sync group challenges
+        await syncHealthKitDataToGroupChallenges()
     }
     
     /// Calculate progress value from HealthKit based on challenge type
@@ -925,6 +1369,7 @@ class ChallengeService: ObservableObject {
     func logProgressFromSource(challengeType: String, progressValue: Int, source: String) async {
         guard progressValue > 0 else { return }
         
+        // 1v1 challenges
         for challenge in activeChallenges {
             guard challenge.status == "active" || challenge.status == "pending" else { continue }
             guard challenge.challengeType == challengeType else { continue }
@@ -937,6 +1382,21 @@ class ChallengeService: ObservableObject {
             
             if success {
                 print("✅ [CHALLENGES] Logged \(source) \(challengeType): \(progressValue) to '\(challenge.title)'")
+            }
+        }
+        
+        // Group challenges
+        for challenge in activeGroupChallenges {
+            guard challenge.isActive, challenge.iHaveAccepted else { continue }
+            guard challenge.challengeType == challengeType else { continue }
+            
+            let success = await logGroupProgress(
+                challengeId: challenge.challengeId,
+                progressValue: progressValue
+            )
+            
+            if success {
+                print("✅ [CHALLENGES] Logged \(source) \(challengeType): \(progressValue) to group '\(challenge.displayTitle)'")
             }
         }
     }
@@ -959,10 +1419,11 @@ class ChallengeService: ObservableObject {
             
             if totalProgress > 0 {
                 // Log the max progress (this handles deduplication via the database)
+                // Source must be one of: manual, healthkit, strava, fitbit, aggregated
                 let _ = await logProgress(
                     challengeId: challenge.challengeId,
                     progressValue: totalProgress,
-                    source: "aggregated"
+                    source: "healthkit"
                 )
             }
         }
@@ -1106,6 +1567,17 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         }
     }
     
+    var emoji: String {
+        switch self {
+        case .steps: return "👟"
+        case .walk: return "🚶"
+        case .run: return "🏃"
+        case .lift: return "🏋️"
+        case .workoutStreak: return "🔥"
+        case .activeMinutes: return "⏱️"
+        }
+    }
+    
     var color: Color {
         switch self {
         case .steps: return .green
@@ -1160,6 +1632,21 @@ struct ChallengeInvite: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Display title without emojis, with K formatting
+    var displayTitle: String {
+        var t = title
+        if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        if t.hasPrefix("⚔️ ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        while let first = t.unicodeScalars.first, first.properties.isEmoji && first.value > 0x238C {
+            t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            if let next = t.unicodeScalars.first, next.value == 0xFE0F {
+                t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        t = t.replacingOccurrences(of: "\\b(\\d{1,})(000)\\b", with: "$1K", options: .regularExpression)
+        return t
     }
     
     // Convenience initializer for previews and testing
@@ -1223,6 +1710,73 @@ struct ChallengeInvite: Codable, Identifiable {
     }
 }
 
+/// Challenge I sent that is waiting for the opponent to accept
+struct PendingSentChallenge: Codable, Identifiable {
+    let challengeId: UUID
+    let challengeType: String
+    let title: String
+    let description: String?
+    let emoji: String?
+    let dailyTarget: Int?
+    let totalTarget: Int?
+    let targetUnit: String
+    private let startDateString: String
+    private let endDateString: String
+    let durationDays: Int
+    let opponentId: UUID
+    let opponentName: String?
+    let opponentUsername: String?
+    let opponentPhotoUrl: String?
+    let sentAt: Date
+    
+    var id: UUID { challengeId }
+    
+    var startDate: Date { parseFlexibleDate(startDateString) }
+    var endDate: Date { parseFlexibleDate(endDateString) }
+    
+    var displayEmoji: String {
+        emoji ?? "🏆"
+    }
+    
+    var type: ChallengeType? {
+        ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Display title without emojis, with K formatting
+    var displayTitle: String {
+        var t = title
+        if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        if t.hasPrefix("⚔️ ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        while let first = t.unicodeScalars.first, first.properties.isEmoji && first.value > 0x238C {
+            t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            if let next = t.unicodeScalars.first, next.value == 0xFE0F {
+                t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        t = t.replacingOccurrences(of: "\\b(\\d{1,})(000)\\b", with: "$1K", options: .regularExpression)
+        return t
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case challengeType = "challenge_type"
+        case title
+        case description
+        case emoji
+        case dailyTarget = "daily_target"
+        case totalTarget = "total_target"
+        case targetUnit = "target_unit"
+        case startDateString = "start_date"
+        case endDateString = "end_date"
+        case durationDays = "duration_days"
+        case opponentId = "opponent_id"
+        case opponentName = "opponent_name"
+        case opponentUsername = "opponent_username"
+        case opponentPhotoUrl = "opponent_photo_url"
+        case sentAt = "sent_at"
+    }
+}
+
 struct ActiveChallenge: Codable, Identifiable {
     let challengeId: UUID
     let challengeType: String
@@ -1240,13 +1794,16 @@ struct ActiveChallenge: Codable, Identifiable {
     let myTotalProgress: Int
     let myDaysCompleted: Int
     let myCurrentStreak: Int
+    let myTodayProgress: Int?         // NEW: Today's progress specifically
     let opponentId: UUID
     let opponentName: String?
     let opponentUsername: String?
     let opponentPhotoUrl: String?
     let opponentTotalProgress: Int
     let opponentDaysCompleted: Int
+    let opponentTodayProgress: Int?   // NEW: Opponent's today progress
     let amWinning: Bool
+    let amWinningToday: Bool?         // NEW: Am I winning today specifically
     
     var id: UUID { challengeId }
     
@@ -1269,6 +1826,7 @@ struct ActiveChallenge: Codable, Identifiable {
         daysRemaining: Int,
         status: String,
         myTotalProgress: Int,
+        myTodayProgress: Int? = nil,
         myDaysCompleted: Int,
         myCurrentStreak: Int,
         opponentId: UUID,
@@ -1276,8 +1834,10 @@ struct ActiveChallenge: Codable, Identifiable {
         opponentUsername: String?,
         opponentPhotoUrl: String?,
         opponentTotalProgress: Int,
+        opponentTodayProgress: Int? = nil,
         opponentDaysCompleted: Int,
-        amWinning: Bool
+        amWinning: Bool,
+        amWinningToday: Bool? = nil
     ) {
         self.challengeId = challengeId
         self.challengeType = challengeType
@@ -1297,6 +1857,7 @@ struct ActiveChallenge: Codable, Identifiable {
         self.daysRemaining = daysRemaining
         self.status = status
         self.myTotalProgress = myTotalProgress
+        self.myTodayProgress = myTodayProgress
         self.myDaysCompleted = myDaysCompleted
         self.myCurrentStreak = myCurrentStreak
         self.opponentId = opponentId
@@ -1304,23 +1865,62 @@ struct ActiveChallenge: Codable, Identifiable {
         self.opponentUsername = opponentUsername
         self.opponentPhotoUrl = opponentPhotoUrl
         self.opponentTotalProgress = opponentTotalProgress
+        self.opponentTodayProgress = opponentTodayProgress
         self.opponentDaysCompleted = opponentDaysCompleted
         self.amWinning = amWinning
+        self.amWinningToday = amWinningToday
     }
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
     }
     
+    /// Detect challenge mode from the title prefix (🤝 = accountability, ⚔️ = competition)
+    var mode: ChallengeMode {
+        ChallengeMode.from(title: title)
+    }
+    
+    /// Whether both participants completed their daily target today
+    var bothCompletedToday: Bool {
+        guard let target = dailyTarget, target > 0 else { return false }
+        let myDone = (myTodayProgress ?? 0) >= target
+        let oppDone = (opponentTodayProgress ?? 0) >= target
+        return myDone && oppDone
+    }
+    
+    /// Display title without the mode prefix emoji or activity emoji, with K formatting
+    var displayTitle: String {
+        var t = title
+        // Strip mode prefix
+        if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        if t.hasPrefix("⚔️ ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        // Strip any leading emoji (activity emoji like 🚶, 🏃, etc.)
+        while let first = t.unicodeScalars.first,
+              first.properties.isEmoji && first.value > 0x238C {
+            t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            // Also handle emoji with variation selectors (multi-scalar)
+            if let next = t.unicodeScalars.first, next.value == 0xFE0F {
+                t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        // Format thousands as K (e.g. "10000 steps" → "10K steps")
+        t = t.replacingOccurrences(of: "\\b(\\d{1,})(000)\\b", with: "$1K", options: .regularExpression)
+        return t
+    }
+    
+    /// Progress percentage for today (0.0 to 1.0)
     var progressPercentage: Double {
         guard let target = dailyTarget, target > 0 else { return 0 }
-        let todayProgress = Double(myTotalProgress) / Double(max(1, daysElapsed))
+        // Use today's progress, not cumulative total
+        let todayProgress = Double(myTodayProgress ?? 0)
         return min(1.0, todayProgress / Double(target))
     }
     
+    /// Opponent's progress percentage for today (0.0 to 1.0)
     var opponentProgressPercentage: Double {
         guard let target = dailyTarget, target > 0 else { return 0 }
-        let todayProgress = Double(opponentTotalProgress) / Double(max(1, daysElapsed))
+        // Use today's progress, not cumulative total
+        let todayProgress = Double(opponentTodayProgress ?? 0)
         return min(1.0, todayProgress / Double(target))
     }
     
@@ -1339,6 +1939,7 @@ struct ActiveChallenge: Codable, Identifiable {
         case daysRemaining = "days_remaining"
         case status
         case myTotalProgress = "my_total_progress"
+        case myTodayProgress = "my_today_progress"
         case myDaysCompleted = "my_days_completed"
         case myCurrentStreak = "my_current_streak"
         case opponentId = "opponent_id"
@@ -1346,8 +1947,10 @@ struct ActiveChallenge: Codable, Identifiable {
         case opponentUsername = "opponent_username"
         case opponentPhotoUrl = "opponent_photo_url"
         case opponentTotalProgress = "opponent_total_progress"
+        case opponentTodayProgress = "opponent_today_progress"
         case opponentDaysCompleted = "opponent_days_completed"
         case amWinning = "am_winning"
+        case amWinningToday = "am_winning_today"
     }
 }
 
@@ -1380,6 +1983,155 @@ struct ChallengeTemplate: Codable, Identifiable {
         case defaultDurationDays = "default_duration_days"
         case targetUnit = "target_unit"
         case isFeatured = "is_featured"
+    }
+}
+
+// MARK: - Group Challenge Models
+
+struct GroupChallengeMember: Codable, Identifiable {
+    let userId: UUID
+    let status: String
+    let totalProgress: Int
+    let todayProgress: Int
+    let daysCompleted: Int
+    let currentStreak: Int
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    
+    var id: UUID { userId }
+    
+    var displayName: String {
+        if let username = username, !username.isEmpty { return "@\(username)" }
+        return name ?? "Unknown"
+    }
+    
+    var firstName: String {
+        name?.components(separatedBy: " ").first ?? username ?? "Friend"
+    }
+    
+    var isAccepted: Bool { status == "accepted" }
+    var isPending: Bool { status == "pending" }
+    
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case status
+        case totalProgress = "total_progress"
+        case todayProgress = "today_progress"
+        case daysCompleted = "days_completed"
+        case currentStreak = "current_streak"
+        case name
+        case username
+        case profilePhotoUrl = "profile_photo_url"
+    }
+}
+
+struct ActiveGroupChallenge: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let challengeType: String
+    let mode: String
+    let dailyTarget: Int?
+    let totalTarget: Int?
+    let targetUnit: String
+    private let startDateString: String
+    private let endDateString: String
+    let durationDays: Int
+    let daysElapsed: Int
+    let daysRemaining: Int
+    let status: String
+    let createdBy: UUID
+    let memberCount: Int
+    let members: [GroupChallengeMember]?
+    
+    var id: UUID { challengeId }
+    var startDate: Date { parseFlexibleDate(startDateString) }
+    var endDate: Date { parseFlexibleDate(endDateString) }
+    
+    var type: ChallengeType? {
+        ChallengeType(rawValue: challengeType)
+    }
+    
+    var challengeMode: ChallengeMode {
+        ChallengeMode.from(title: title)
+    }
+    
+    /// Display title without the mode prefix emoji or activity emoji, with K formatting
+    var displayTitle: String {
+        var t = title
+        // Strip mode prefix
+        if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        if t.hasPrefix("⚔️ ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        // Strip any leading emoji (activity emoji like 🚶, 🏃, etc.)
+        while let first = t.unicodeScalars.first,
+              first.properties.isEmoji && first.value > 0x238C {
+            t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            if let next = t.unicodeScalars.first, next.value == 0xFE0F {
+                t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        // Format thousands as K (e.g. "10000 steps" → "10K steps")
+        t = t.replacingOccurrences(of: "\\b(\\d{1,})(000)\\b", with: "$1K", options: .regularExpression)
+        return t
+    }
+    
+    var isActive: Bool { status == "active" }
+    var isPending: Bool { status == "pending" }
+    
+    /// The current user's member status in this group challenge
+    var myMemberStatus: String? {
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else { return nil }
+        return members?.first(where: { $0.userId == currentUserId })?.status
+    }
+    
+    /// Whether the current user still needs to accept/decline this invite
+    var isMyInvitePending: Bool {
+        myMemberStatus == "pending"
+    }
+    
+    /// Whether the current user has already accepted
+    var iHaveAccepted: Bool {
+        myMemberStatus == "accepted"
+    }
+    
+    /// The creator's name
+    var creatorName: String? {
+        members?.first(where: { $0.userId == createdBy })?.name?.components(separatedBy: " ").first
+            ?? members?.first(where: { $0.userId == createdBy })?.username
+    }
+    
+    var acceptedMembers: [GroupChallengeMember] {
+        members?.filter(\.isAccepted) ?? []
+    }
+    
+    var pendingMembers: [GroupChallengeMember] {
+        members?.filter(\.isPending) ?? []
+    }
+    
+    /// Whether all members have completed today's target
+    var allCompletedToday: Bool {
+        guard let target = dailyTarget, target > 0, let members = members else { return false }
+        return members.filter(\.isAccepted).allSatisfy { $0.todayProgress >= target }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description
+        case challengeType = "challenge_type"
+        case mode
+        case dailyTarget = "daily_target"
+        case totalTarget = "total_target"
+        case targetUnit = "target_unit"
+        case startDateString = "start_date"
+        case endDateString = "end_date"
+        case durationDays = "duration_days"
+        case daysElapsed = "days_elapsed"
+        case daysRemaining = "days_remaining"
+        case status
+        case createdBy = "created_by"
+        case memberCount = "member_count"
+        case members
     }
 }
 

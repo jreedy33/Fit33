@@ -15,6 +15,7 @@ struct ChallengeDetailView: View {
     
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var healthKitService = HealthKitService.shared
+    @ObservedObject private var realtimeService = RealtimeService.shared
     
     let challenge: ActiveChallenge
     
@@ -112,14 +113,35 @@ struct ChallengeDetailView: View {
             }
         }
         .task(id: challenge.challengeId) {
-            // Periodic refresh while view is visible (every 30 seconds)
-            // This catches opponent's progress updates
+            // Subscribe to real-time opponent progress updates (battery-efficient WebSocket)
+            // This replaces the old 30-second polling
+            RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
+                // Only refresh if it's for THIS challenge
+                if payload.challengeId == challenge.challengeId {
+                    print("⚡️ [CHALLENGE] Real-time opponent update received!")
+                    Task {
+                        details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
+                        
+                        // Haptic feedback when opponent hits their target
+                        if payload.targetHit {
+                            HapticManager.notification(.warning) // Alert them!
+                        }
+                    }
+                }
+            }
+            
+            // Fallback: Still refresh every 2 minutes as a safety net
+            // (in case WebSocket disconnects temporarily)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes (was 30 seconds)
                 if !isLoading {
                     details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
                 }
             }
+        }
+        .onDisappear {
+            // Clean up callback when leaving view
+            RealtimeService.shared.onOpponentDailyProgressUpdated = nil
         }
         .alert("Cancel Challenge?", isPresented: $showingCancelConfirmation) {
             Button("Keep Challenge", role: .cancel) { }
@@ -190,27 +212,15 @@ struct ChallengeDetailView: View {
     
     private var headToHeadSection: some View {
         VStack(spacing: 20) {
-            // Challenge type badge
-            HStack(spacing: 8) {
-                Image(systemName: challengeType.icon)
-                    .font(.system(size: 14))
+            // Challenge type badge with emoji
+            HStack(spacing: 6) {
+                Text(challengeType.emoji)
+                    .font(.system(size: 16))
                 Text(challengeType.displayName)
                     .font(.caption)
                     .fontWeight(.semibold)
+                    .foregroundColor(.primary)
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: challengeType.gradientColors,
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-            )
             
             // VS Battle Display
             HStack(spacing: 0) {

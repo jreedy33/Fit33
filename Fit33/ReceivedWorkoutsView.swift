@@ -29,7 +29,7 @@ struct ReceivedWorkoutsView: View {
     
     var body: some View {
         ZStack {
-            AdaptiveGradient.stats(for: colorScheme)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             if friendService.receivedWorkouts.isEmpty {
@@ -989,7 +989,7 @@ struct EditReceivedWorkoutView: View {
     
     var body: some View {
         ZStack {
-            AdaptiveGradient.stats(for: colorScheme)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             ScrollView {

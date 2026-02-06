@@ -690,9 +690,9 @@ struct CustomWorkoutBuilderView: View {
     var body: some View {
         ZStack(alignment: .top) {
             ZStack(alignment: .bottom) {
-                // Background gradient - uses adaptive colors for dark mode
-                AdaptiveGradient.exercises(for: colorScheme)
-                .ignoresSafeArea(.all, edges: .all)
+                // Animated blue/cyan orb background
+                AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                     VStack(spacing: 0) {
                         // Add top padding for the animated title (accounting for safe area + header)
@@ -765,11 +765,29 @@ struct CustomWorkoutBuilderView: View {
                     updateFilteredExercises()
                     forceRenderID = UUID()
                     workoutManager.isOnCustomWorkoutBuilder = true
+                    
+                    // Check for pre-selected exercise (from "Add to workout" button on ExerciseDetailView)
+                    if let exerciseToAdd = workoutManager.exerciseToAddToCustomWorkout {
+                        // Only add if not already selected
+                        if !selectedExercises.contains(where: { $0.id == exerciseToAdd.id }) {
+                            selectedExercises.append(exerciseToAdd)
+                            print("✅ Pre-selected exercise: \(exerciseToAdd.name ?? "Unknown")")
+                            
+                            // Prefetch the video for this exercise
+                            if let name = exerciseToAdd.name {
+                                VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
+                            }
+                        }
+                        // Clear the pre-selected exercise
+                        workoutManager.exerciseToAddToCustomWorkout = nil
+                    }
+                    
                     workoutManager.selectedCustomWorkoutExercises = selectedExercises
                 }
                 .onDisappear {
                     workoutManager.isOnCustomWorkoutBuilder = false
                     workoutManager.selectedCustomWorkoutExercises = []
+                    workoutManager.shouldNavigateToCustomWorkoutBuilder = false
                 }
                 // 🔄 Reload when exercises become ready after sync
                 .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in

@@ -162,28 +162,9 @@ struct ChallengePreviewWidget: View {
     
     private var challengeDetailsSection: some View {
         HStack(spacing: 16) {
-            // Challenge type icon
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: gradientColors.map { $0.opacity(0.15) },
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                
-                Image(systemName: challengeType.icon)
-                    .font(.system(size: 22))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: gradientColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
+            // Challenge type emoji - floating
+            Text(challengeType.emoji)
+                .font(.system(size: 36))
             
             VStack(alignment: .leading, spacing: 4) {
                 // Challenge title
@@ -242,6 +223,7 @@ struct ChallengePreviewWidget: View {
         HStack(spacing: 12) {
             // Decline button
             Button(action: {
+                print("❌ [CHALLENGE ACCEPT] Decline button tapped")
                 HapticManager.impact(.light)
                 showingDeclineConfirmation = true
             }) {
@@ -259,13 +241,15 @@ struct ChallengePreviewWidget: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.primary)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color.secondary.opacity(0.15))
                 )
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
             
             // Accept button
@@ -284,7 +268,7 @@ struct ChallengePreviewWidget: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
@@ -296,7 +280,9 @@ struct ChallengePreviewWidget: View {
                             )
                         )
                 )
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
         }
         .padding(16)
@@ -305,15 +291,23 @@ struct ChallengePreviewWidget: View {
     // MARK: - Actions
     
     private func acceptChallenge() {
+        print("✅ [CHALLENGE ACCEPT] Accept button tapped for challenge: \(invite.title)")
         HapticManager.impact(.medium)
         isAccepting = true
         
         Task {
+            print("📤 [CHALLENGE ACCEPT] Calling respondToChallenge...")
             let success = await challengeService.respondToChallenge(challengeId: invite.challengeId, accept: true)
             if success {
+                print("✅ [CHALLENGE ACCEPT] Challenge accepted successfully!")
+                print("🔄 [CHALLENGE ACCEPT] Refreshing challenges...")
+                // Immediately refresh to show active challenge
+                await challengeService.fetchActiveChallenges()
+                await challengeService.fetchPendingInvites()
                 HapticManager.notification(.success)
                 onAccept()
             } else {
+                print("❌ [CHALLENGE ACCEPT] Failed to accept challenge")
                 HapticManager.notification(.error)
             }
             isAccepting = false
@@ -417,15 +411,8 @@ struct ActiveChallengeWidget: View {
             VStack(spacing: 12) {
                 // Header
                 HStack(spacing: 8) {
-                    Image(systemName: challengeType.icon)
-                        .font(.system(size: 16))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: challengeType.gradientColors,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    Text(challengeType.emoji)
+                        .font(.system(size: 18))
                     
                     Text(challenge.title)
                         .font(.subheadline)
@@ -567,23 +554,9 @@ struct FriendChallengeRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // Type icon with gradient circle
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: challengeType.gradientColors),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 44, height: 44)
-                        .shadow(color: challengeType.color.opacity(0.3), radius: 4, x: 0, y: 2)
-                    
-                    Image(systemName: challengeType.icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(.white)
-                }
+                // Type emoji - floating
+                Text(challengeType.emoji)
+                    .font(.system(size: 32))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(challenge.title)
@@ -667,6 +640,301 @@ struct FriendChallengeRow: View {
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Group Challenge Invite Widget
+
+/// Shows a group challenge invite with Accept/Decline buttons
+/// Displayed above the challenge cards section for invites the user hasn't responded to yet
+struct GroupChallengeInviteWidget: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+    @ObservedObject private var challengeService = ChallengeService.shared
+    
+    let challenge: ActiveGroupChallenge
+    
+    @State private var isAccepting = false
+    @State private var isDeclining = false
+    @State private var showingDeclineConfirmation = false
+    @State private var glowRotation: Double = 0
+    @State private var nudgedUserIds: Set<UUID> = []
+    @State private var isNudging: UUID? = nil
+    
+    private let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7) // Green teal
+    
+    private var challengeType: ChallengeType {
+        challenge.type ?? .steps
+    }
+    
+    private var themeColor: Color { challengeColor }
+    private var gradientColors: [Color] { [Color(red: 0.0, green: 0.9, blue: 0.7), .teal] }
+    
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color.white
+    }
+    
+    /// Names of all OTHER members (not the current user)
+    private var otherMemberNames: [String] {
+        let myId = SupabaseManager.shared.currentUser?.id
+        return (challenge.members ?? [])
+            .filter { $0.userId != myId }
+            .map { $0.firstName }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header — who invited you
+            HStack(spacing: 12) {
+                // Creator avatar
+                if let creator = challenge.members?.first(where: { $0.userId == challenge.createdBy }) {
+                    CachedFriendPhoto(
+                        friendId: creator.userId.uuidString,
+                        photoUrl: creator.profilePhotoUrl,
+                        name: creator.name ?? "?",
+                        size: 48,
+                        showGradientRing: true,
+                        gradientColors: gradientColors
+                    )
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 48, height: 48)
+                        .overlay(Text("?").font(.title3).fontWeight(.bold).foregroundColor(.white))
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("Group Challenge")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(themeColor)
+                        
+                        Text("NEW")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(themeColor))
+                    }
+                    
+                    Text("\(challenge.creatorName ?? "Someone") invited you!")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                Text(challengeType.emoji)
+                    .font(.system(size: 28))
+            }
+            .padding(16)
+            
+            Divider().padding(.horizontal, 16)
+            
+            // Challenge details row
+            HStack(spacing: 16) {
+                // Challenge title
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(challenge.displayTitle)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    if let target = challenge.dailyTarget {
+                        Text("\(target) \(challenge.targetUnit)/day • \(challenge.durationDays) days")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                // Member avatars + names
+                VStack(alignment: .trailing, spacing: 2) {
+                    // Overlapping avatars
+                    HStack(spacing: -8) {
+                        let myId = SupabaseManager.shared.currentUser?.id
+                        ForEach((challenge.members ?? []).filter({ $0.userId != myId }).prefix(3)) { member in
+                            CachedFriendPhoto(
+                                friendId: member.userId.uuidString,
+                                photoUrl: member.profilePhotoUrl,
+                                name: member.name ?? "?",
+                                size: 24,
+                                showGradientRing: false,
+                                gradientColors: gradientColors
+                            )
+                            .overlay(Circle().stroke(cardBackground, lineWidth: 1.5))
+                        }
+                    }
+                    
+                    Text("with \(otherMemberNames.joined(separator: " & "))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            
+            Divider().padding(.horizontal, 16)
+            
+            // Accept / Decline buttons
+            HStack(spacing: 12) {
+                // Decline button
+                Button {
+                    showingDeclineConfirmation = true
+                } label: {
+                    HStack(spacing: 4) {
+                        if isDeclining {
+                            ProgressView().scaleEffect(0.7).tint(.secondary)
+                        } else {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        Text("Decline")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.gray.opacity(0.12))
+                    )
+                }
+                .disabled(isAccepting || isDeclining)
+                
+                // Accept button
+                Button {
+                    acceptChallenge()
+                } label: {
+                    HStack(spacing: 4) {
+                        if isAccepting {
+                            ProgressView().scaleEffect(0.7).tint(.white)
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        Text("Join Challenge")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing))
+                    )
+                }
+                .disabled(isAccepting || isDeclining)
+            }
+            .padding(16)
+        }
+        .background(
+            ZStack {
+                // Animated glowing border
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.5),
+                                challengeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                challengeColor.opacity(0.2),
+                                Color.mint.opacity(0.4),
+                                challengeColor.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(glowRotation)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(cardBackground)
+                
+                // Inner border for definition
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .onAppear {
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                glowRotation = 360
+            }
+            loadNudgedUsers()
+        }
+        .confirmationDialog(
+            "Decline this group challenge?",
+            isPresented: $showingDeclineConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Decline", role: .destructive) { declineChallenge() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("If only 2 members remain, it'll become a 1v1 challenge between them.")
+        }
+    }
+    
+    // MARK: - Actions
+    
+    private func acceptChallenge() {
+        HapticManager.impact(.medium)
+        isAccepting = true
+        
+        Task {
+            let allAccepted = await challengeService.acceptGroupChallenge(challengeId: challenge.challengeId)
+            
+            // Refresh group challenges so the widget updates
+            await challengeService.fetchActiveGroupChallenges()
+            
+            HapticManager.notification(.success)
+            isAccepting = false
+        }
+    }
+    
+    private func declineChallenge() {
+        HapticManager.impact(.medium)
+        isDeclining = true
+        
+        Task {
+            await challengeService.declineGroupChallenge(challengeId: challenge.challengeId)
+            
+            // Refresh everything — decline may convert to 1v1 for others
+            await challengeService.fetchActiveGroupChallenges()
+            await challengeService.fetchActiveChallenges()
+            
+            HapticManager.notification(.success)
+            isDeclining = false
+        }
+    }
+    
+    private func loadNudgedUsers() {
+        // Load which users we've already nudged from UserDefaults
+        let myId = SupabaseManager.shared.currentUser?.id
+        for member in (challenge.members ?? []) where member.isPending && member.userId != myId {
+            let key = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
+            if UserDefaults.standard.bool(forKey: key) {
+                nudgedUserIds.insert(member.userId)
+            }
+        }
     }
 }
 

@@ -4,8 +4,8 @@ import CoreData
 // MARK: - Weight Tracker Widget (Carousel with Graph)
 
 struct WeightTrackerWidget: View {
-    @StateObject private var weightService = WeightTrackingService.shared
-    @StateObject private var premiumManager = PremiumManager.shared
+    @ObservedObject private var weightService = WeightTrackingService.shared
+    @ObservedObject private var premiumManager = PremiumManager.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingAddSheet = false
     @State private var showingDetailView = false
@@ -36,6 +36,18 @@ struct WeightTrackerWidget: View {
         }
         .sheet(isPresented: $showingDetailView) {
             WeightDetailView(weightService: weightService)
+        }
+        .onAppear {
+            // Refresh weight data to stay in sync with home screen widget
+            Task {
+                await weightService.loadAllData()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .weightDidUpdate)) { _ in
+            // Weight was updated elsewhere (e.g., home screen) - force reload to stay in sync
+            Task {
+                await weightService.loadAllData()
+            }
         }
     }
     
@@ -113,11 +125,11 @@ struct WeightTrackerWidget: View {
                 .offset(y: 4)
             
             // Main card background
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
             
             // Inner highlight (top edge glow)
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -130,7 +142,7 @@ struct WeightTrackerWidget: View {
                 )
             
             // Colored accent border (orange)
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [
@@ -211,7 +223,7 @@ struct WeightTrackerWidget: View {
                 }) {
                     ZStack {
                         // Semi-transparent overlay
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .fill(Color.black.opacity(0.3))
                         
                         // Lock icon and message
@@ -252,10 +264,10 @@ struct WeightTrackerWidget: View {
     // MARK: - Locked Widget Background
     private var lockedWidgetBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
             
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [
@@ -893,7 +905,7 @@ struct LogWeightSheet: View {
                     }
                     .padding()
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(16)
+                    .cornerRadius(24)
                     
                     // Optional notes
                     VStack(alignment: .leading, spacing: 8) {
@@ -946,10 +958,12 @@ struct LogWeightSheet: View {
                                 .tint(.orange)
                         } else {
                             Text("Save")
-                                .fontWeight(.semibold)
+                                .fontWeight(.bold)
+                                .foregroundStyle(
+                                    LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing)
+                                )
                         }
                     }
-                    .foregroundColor(.orange)
                     .disabled(weightInput.isEmpty || parsedWeight == nil || isLogging)
                 }
             }
@@ -1146,7 +1160,7 @@ struct WeightDetailView: View {
         }
         .padding(24)
         .background(Color(white: 0.12))
-        .cornerRadius(20)
+        .cornerRadius(24)
     }
     
     // MARK: - Goal Card
@@ -1228,7 +1242,7 @@ struct WeightDetailView: View {
         }
         .padding(20)
         .background(Color(white: 0.12))
-        .cornerRadius(20)
+        .cornerRadius(24)
     }
     
     // MARK: - Statistics Grid
@@ -1298,7 +1312,7 @@ struct WeightDetailView: View {
         }
         .padding(20)
         .background(Color(white: 0.12))
-        .cornerRadius(20)
+        .cornerRadius(24)
     }
     
     // MARK: - Recent Entries Section
@@ -1336,7 +1350,7 @@ struct WeightDetailView: View {
         }
         .padding(20)
         .background(Color(white: 0.12))
-        .cornerRadius(20)
+        .cornerRadius(24)
     }
 }
 

@@ -1,0 +1,1652 @@
+//
+//  ChallengeFlowStartView.swift
+//  Fit33
+//
+//  Challenge creation flow matching auto-gen workout style
+//  Tab bar stays visible, cards rotate through inside container
+//
+
+import SwiftUI
+
+struct ChallengeFlowStartView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+    @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var contactsService = ContactsService.shared
+    
+    enum FlowStep {
+        case contactSync       // Shown first when user has no friends
+        case friendSelection
+        case groupOrSeparate   // NEW: choose group challenge vs separate challenges
+        case modeSelection
+        case activityType
+        case challengeOptions
+        case duration
+        case review
+    }
+    
+    @State private var currentStep: FlowStep = .friendSelection
+    @State private var selectedFriend: Friend? // Legacy single-select (still used for 1 friend)
+    @State private var selectedFriends: [Friend] = [] // Multi-select (up to 2)
+    @State private var isGroupChallenge: Bool = true // true = one group, false = separate 1v1s
+    @State private var selectedMode: ChallengeMode?
+    @State private var selectedActivity: ChallengeActivityType?
+    @State private var selectedOption: ChallengeOption?
+    @State private var customTarget: Int = 10000
+    @State private var hydrationUnit: HydrationUnit = .ml
+    @State private var selectedDuration: Int = 7
+    @State private var isCreating = false
+    @State private var showingSuccess = false
+    @State private var showingError = false
+    @State private var isCustomDuration = false
+    @State private var customDurationText = ""
+    @FocusState private var durationFieldFocused: Bool
+    @State private var searchText = ""
+    @State private var topFriendsPage = 0 // 0: Most engaged, 1: Newest added
+    @State private var friendSwipeDragOffset: CGFloat = 0
+    
+    private var filteredFriends: [Friend] {
+        if searchText.isEmpty {
+            return friendService.friends
+        }
+        return friendService.friends.filter { friend in
+            let name = friend.friendName ?? ""
+            let username = friend.friendUsername ?? ""
+            return name.localizedCaseInsensitiveContains(searchText) ||
+                   username.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            // Blue orbs background
+            AnimatedOrbBackground.home(colorScheme: colorScheme)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Progress indicator at top
+                progressHeader
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                
+                // Main content (card rotates through)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        switch currentStep {
+                        case .contactSync:
+                            contactSyncCard
+                        case .friendSelection:
+                            friendSelectionCard
+                        case .groupOrSeparate:
+                            groupOrSeparateCard
+                        case .modeSelection:
+                            modeSelectionCard
+                        case .activityType:
+                            activityTypeCard
+                        case .challengeOptions:
+                            challengeOptionsCard
+                        case .duration:
+                            durationCard
+                        case .review:
+                            reviewCard
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 160)
+                }
+                .scrollIndicators(.hidden)
+                
+                Spacer(minLength: 0)
+                
+                // Bottom button container (blends with orb background)
+                navigationBar
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+            }
+        }
+        .navigationTitle("Create Challenge")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    if currentStep == .friendSelection || currentStep == .contactSync {
+                        print("❌ [CHALLENGE FLOW] Dismissing from \(currentStep)")
+                        dismiss()
+                    } else {
+                        print("⬅️ [CHALLENGE FLOW] Going back from \(currentStep)")
+                        goBack()
+                    }
+                }) {
+                    Image(systemName: (currentStep == .friendSelection || currentStep == .contactSync) ? "xmark" : "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
+        }
+        .alert(selectedFriends.count > 1 && !isGroupChallenge ? "Challenges Sent! 🎯" : "Challenge Sent! 🎯", isPresented: $showingSuccess) {
+            Button("Done") {
+                print("✅ [CHALLENGE FLOW] Success - dismissing")
+                dismiss()
+            }
+        } message: {
+            let names = selectedFriends.map { $0.friendName?.components(separatedBy: " ").first ?? $0.friendUsername ?? "Friend" }
+            if selectedFriends.count > 1 && isGroupChallenge {
+                Text("\(names.joined(separator: " & ")) will receive a notification to join the group challenge!")
+            } else if selectedFriends.count > 1 {
+                Text("\(names.joined(separator: " & ")) will each receive a challenge notification!")
+            } else {
+                Text("\(names.first ?? "Your friend") will receive a notification to accept your challenge!")
+            }
+        }
+        .alert("Failed to Send Challenge 😔", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text("There was an issue sending your challenge. Please try again.")
+        }
+        .onAppear {
+            print("🏆 [CHALLENGE FLOW] View appeared")
+            // If user has no friends, start with contact sync screen
+            if friendService.friends.isEmpty {
+                currentStep = .contactSync
+            }
+        }
+        .onChange(of: customTarget) { _, newValue in
+            // Keep selectedOption in sync when user adjusts the custom stepper
+            if let activity = selectedActivity, selectedOption?.isCustom == true {
+                let unit = activity == .hydrate ? hydrationUnit.rawValue : getUnitForActivity(activity)
+                selectedOption = ChallengeOption(
+                    title: "\(newValue) \(unit) Daily \(activity.rawValue)",
+                    description: "Daily target: \(newValue) \(unit)",
+                    dailyTarget: newValue,
+                    unit: unit,
+                    isPreset: false,
+                    isCustom: true
+                )
+            }
+        }
+    }
+    
+    // MARK: - Progress Header
+    
+    private var progressHeader: some View {
+        let hasContactSyncStep = currentStep == .contactSync || friendService.friends.isEmpty
+        let stepNumber: Int = {
+            switch currentStep {
+            case .contactSync: return 1
+            case .friendSelection: return hasContactSyncStep ? 2 : 1
+            case .groupOrSeparate: return hasContactSyncStep ? 3 : 2
+            case .modeSelection: return hasContactSyncStep ? 4 : 3
+            case .activityType: return hasContactSyncStep ? 5 : 4
+            case .challengeOptions: return hasContactSyncStep ? 6 : 5
+            case .duration: return hasContactSyncStep ? 7 : 6
+            case .review: return hasContactSyncStep ? 8 : 7
+            }
+        }()
+        
+        let baseSteps = selectedFriends.count > 1 ? 7 : 6
+        let totalSteps = hasContactSyncStep ? baseSteps + 1 : baseSteps
+        let progress = Double(stepNumber) / Double(totalSteps)
+        
+        return GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background track
+                Capsule()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(height: 5)
+                
+                // Gradient fill
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geometry.size.width * progress, height: 5)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: progress)
+            }
+        }
+        .frame(height: 5)
+        .padding(.horizontal, 40)
+    }
+    
+    // MARK: - Navigation Bar
+    
+    private var navigationBar: some View {
+        let canProgress: Bool = {
+            switch currentStep {
+            case .contactSync: return true
+            case .friendSelection: return !selectedFriends.isEmpty
+            case .groupOrSeparate: return true
+            case .modeSelection: return selectedMode != nil
+            case .activityType: return selectedActivity != nil
+            case .challengeOptions: return selectedOption != nil
+            case .duration: return true
+            case .review: return true
+            }
+        }()
+        
+        let isMultiChallenge = selectedFriends.count > 1 && !isGroupChallenge
+        let sendTitle = isMultiChallenge ? "Send \(selectedFriends.count) Challenges" : "Send Challenge"
+        let buttonTitle: String = currentStep == .review ? sendTitle : "Continue"
+        let buttonIcon: String = currentStep == .review ? "paperplane.fill" : "arrow.right"
+        let buttonColors: [Color] = currentStep == .review ? [.green, .mint] : [.blue, .cyan]
+        
+        return HStack(spacing: 12) {
+            // Back button (grey circular) — matches auto-gen & onboarding
+            if currentStep != .friendSelection && currentStep != .contactSync {
+                Button(action: {
+                    goBack()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.gray)
+                        .frame(width: 52, height: 52)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.gray.opacity(0.5), lineWidth: 2)
+                        )
+                }
+            }
+            
+            // Continue / Send button
+            Button(action: {
+                if currentStep == .review {
+                    print("📤 [CHALLENGE FLOW] Send button tapped")
+                    Task {
+                        await sendChallenge()
+                    }
+                } else {
+                    print("➡️ [CHALLENGE FLOW] Continue from \(currentStep)")
+                    goForward()
+                }
+            }) {
+                HStack(spacing: 8) {
+                    if isCreating {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: buttonColors[0]))
+                            .scaleEffect(0.9)
+                    } else {
+                        Text(buttonTitle)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .foregroundStyle(
+                    canProgress
+                        ? AnyShapeStyle(LinearGradient(colors: buttonColors, startPoint: .leading, endPoint: .trailing))
+                        : AnyShapeStyle(Color.gray)
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            canProgress
+                                ? AnyShapeStyle(LinearGradient(colors: buttonColors, startPoint: .leading, endPoint: .trailing))
+                                : AnyShapeStyle(Color.gray.opacity(0.3)),
+                            lineWidth: 2
+                        )
+                )
+                .opacity(canProgress ? 1 : 0.6)
+            }
+            .disabled(!canProgress || isCreating)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Navigation Logic
+    
+    private func goForward() {
+        withAnimation(.spring(response: 0.3)) {
+            switch currentStep {
+            case .contactSync:
+                currentStep = .friendSelection
+            case .friendSelection:
+                // If multiple friends selected, show group/separate choice
+                if selectedFriends.count > 1 {
+                    currentStep = .groupOrSeparate
+                } else {
+                    // Single friend — set legacy selectedFriend and skip group screen
+                    selectedFriend = selectedFriends.first
+                    currentStep = .modeSelection
+                }
+            case .groupOrSeparate:
+                currentStep = .modeSelection
+            case .modeSelection:
+                currentStep = .activityType
+            case .activityType:
+                currentStep = .challengeOptions
+            case .challengeOptions:
+                currentStep = .duration
+            case .duration:
+                // Dismiss keyboard and commit custom duration before navigating
+                durationFieldFocused = false
+                if isCustomDuration, let val = Int(customDurationText), val >= 1, val <= 365 {
+                    selectedDuration = val
+                }
+                currentStep = .review
+            case .review:
+                break
+            }
+        }
+        HapticManager.impact(.medium)
+    }
+    
+    private func goBack() {
+        withAnimation(.spring(response: 0.3)) {
+            switch currentStep {
+            case .contactSync:
+                break
+            case .friendSelection:
+                break
+            case .groupOrSeparate:
+                currentStep = .friendSelection
+            case .modeSelection:
+                if selectedFriends.count > 1 {
+                    currentStep = .groupOrSeparate
+                } else {
+                    currentStep = .friendSelection
+                }
+            case .activityType:
+                currentStep = .modeSelection
+            case .challengeOptions:
+                currentStep = .activityType
+            case .duration:
+                currentStep = .challengeOptions
+            case .review:
+                currentStep = .duration
+            }
+        }
+        HapticManager.impact(.light)
+    }
+    
+    // MARK: - Card Views (same content as ChallengeCreationFlow, but in card style)
+    
+    /// Toggle a friend in/out of the multi-select list (max 2)
+    private func toggleFriendSelection(_ friend: Friend) {
+        HapticManager.impact(.medium)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            if let idx = selectedFriends.firstIndex(where: { $0.friendId == friend.friendId }) {
+                selectedFriends.remove(at: idx)
+            } else if selectedFriends.count < 2 {
+                selectedFriends.append(friend)
+            } else {
+                // Already 2 selected — replace the oldest selection
+                selectedFriends.removeFirst()
+                selectedFriends.append(friend)
+            }
+            // Keep legacy single-select in sync
+            selectedFriend = selectedFriends.first
+        }
+    }
+    
+    private func isFriendSelected(_ friend: Friend) -> Bool {
+        selectedFriends.contains(where: { $0.friendId == friend.friendId })
+    }
+    
+    // MARK: - Contact Sync Card (shown when user has no friends)
+    
+    private var contactSyncCard: some View {
+        VStack(spacing: 20) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green.opacity(0.15), .teal.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 100, height: 100)
+                
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 50))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .teal],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            
+            Text("Find Friends to Challenge")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            
+            Text("Sync your contacts to see who's already on Fit33 — then challenge them!")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+            
+            // Sync Contacts Button
+            Button(action: {
+                HapticManager.impact(.medium)
+                Task {
+                    if contactsService.permissionDenied {
+                        // Already denied — open Settings
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            await UIApplication.shared.open(url)
+                        }
+                    } else {
+                        // Request permission (first time or not determined)
+                        let granted = await contactsService.requestAccess()
+                        if granted {
+                            // After sync, auto-advance to friend selection
+                            // (friends list will refresh via FriendService)
+                            await friendService.fetchFriends()
+                        }
+                    }
+                }
+            }) {
+                HStack(spacing: 10) {
+                    if contactsService.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.9)
+                    } else {
+                        Image(systemName: contactsService.permissionDenied ? "gear.badge" : "person.crop.rectangle.stack.fill")
+                            .font(.system(size: 18))
+                        Text(contactsService.permissionDenied ? "Enable in Settings" : "Sync Contacts")
+                            .font(.headline)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [.green, .teal],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(16)
+                .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
+            }
+            .padding(.horizontal, 10)
+            
+            // Suggested friends (if contacts already synced and found matches)
+            if contactsService.canAccessContacts && !contactsService.suggestedFriends.isEmpty {
+                VStack(spacing: 8) {
+                    HStack {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(height: 1)
+                        Text("Friends Found!")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.6))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(height: 1)
+                    }
+                    
+                    Text("\(contactsService.suggestedFriends.count) of your contacts are on Fit33")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                        .fontWeight(.semibold)
+                }
+                .padding(.top, 4)
+            }
+            
+            // Privacy note
+            HStack(spacing: 4) {
+                Image(systemName: "lock.shield")
+                    .font(.caption2)
+                Text("Your contacts stay private and are never shared")
+                    .font(.caption2)
+            }
+            .foregroundColor(.white.opacity(0.4))
+        }
+        .padding(.vertical, 8)
+    }
+    
+    private var friendSelectionCard: some View {
+        // Page 0: Top 3 most interacted with
+        let mostEngaged = Array(friendService.friends.sorted(by: { $0.totalWorkoutsShared > $1.totalWorkoutsShared }).prefix(3))
+        let mostEngagedIds = Set(mostEngaged.map(\.friendId))
+        
+        // Page 1: Newest added — skip anyone already on page 0
+        let newestAdded: [Friend] = {
+            let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
+            return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
+        }()
+        
+        let floatingHeadIds = Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
+        let listFriends = filteredFriends.filter { !floatingHeadIds.contains($0.friendId) }
+        
+        return VStack(spacing: 16) {
+            Text("Who do you want to challenge?")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            
+            // Selection count badge
+            Text(selectedFriends.isEmpty ? "Pick a buddy (or two!)" : selectedFriends.count == 1 ? "1 buddy selected — add another?" : "\(selectedFriends.count) buddies selected")
+                .font(.caption)
+                .foregroundColor(selectedFriends.isEmpty ? .white.opacity(0.6) : .cyan)
+            
+            // Selected friends preview chips
+            if !selectedFriends.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(selectedFriends) { friend in
+                        HStack(spacing: 6) {
+                            CachedFriendPhoto(
+                                friendId: friend.friendId.uuidString,
+                                photoUrl: friend.profilePhotoUrl,
+                                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                                size: 24,
+                                showGradientRing: false,
+                                gradientColors: [.blue, .cyan]
+                            )
+                            
+                            Text(friend.friendName?.components(separatedBy: " ").first ?? friend.friendUsername ?? "Friend")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                            
+                            Button(action: { toggleFriendSelection(friend) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Color.blue.opacity(0.25))
+                                .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
+                        )
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            if friendService.friends.isEmpty {
+                Text("No friends yet")
+                    .foregroundColor(.white.opacity(0.7))
+            } else {
+                VStack(spacing: 16) {
+                    // Swipeable top friends
+                    GeometryReader { geometry in
+                        let cardWidth = geometry.size.width
+                        
+                        HStack(spacing: 0) {
+                            HStack(spacing: 12) {
+                                ForEach(mostEngaged) { friend in
+                                    TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
+                                        toggleFriendSelection(friend)
+                                    }
+                                }
+                            }
+                            .frame(width: cardWidth)
+                            
+                            HStack(spacing: 12) {
+                                ForEach(newestAdded) { friend in
+                                    TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
+                                        toggleFriendSelection(friend)
+                                    }
+                                }
+                            }
+                            .frame(width: cardWidth)
+                        }
+                        .offset(x: -CGFloat(topFriendsPage) * cardWidth + friendSwipeDragOffset)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: topFriendsPage)
+                    }
+                    .frame(height: 90)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 10)
+                            .onChanged { value in
+                                friendSwipeDragOffset = value.translation.width
+                            }
+                            .onEnded { value in
+                                let horizontalAmount = value.translation.width
+                                let velocity = value.predictedEndTranslation.width - value.translation.width
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)) {
+                                    friendSwipeDragOffset = 0
+                                    if (horizontalAmount < -30 || velocity < -100) && topFriendsPage == 0 {
+                                        topFriendsPage = 1
+                                    } else if (horizontalAmount > 30 || velocity > 100) && topFriendsPage == 1 {
+                                        topFriendsPage = 0
+                                    }
+                                }
+                                HapticManager.impact(.light)
+                            }
+                    )
+                    
+                    // Page indicator (dash and dot style)
+                    HStack(spacing: 6) {
+                        Capsule()
+                            .fill(topFriendsPage == 0 ? Color.blue : Color.white.opacity(0.3))
+                            .frame(width: topFriendsPage == 0 ? 20 : 8, height: 6)
+                            .animation(.easeOut(duration: 0.2), value: topFriendsPage)
+                        Capsule()
+                            .fill(topFriendsPage == 1 ? Color.blue : Color.white.opacity(0.3))
+                            .frame(width: topFriendsPage == 1 ? 20 : 8, height: 6)
+                            .animation(.easeOut(duration: 0.2), value: topFriendsPage)
+                    }
+                    
+                    // Friends list
+                    if !listFriends.isEmpty {
+                        LazyVStack(spacing: 12) {
+                            ForEach(listFriends) { friend in
+                                ChallengeFlowFriendCard(
+                                    friend: friend,
+                                    isSelected: isFriendSelected(friend),
+                                    onSelect: { selected in
+                                        toggleFriendSelection(selected)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Group vs Separate Screen
+    
+    private var groupOrSeparateCard: some View {
+        let friendNames = selectedFriends.map { $0.friendName?.components(separatedBy: " ").first ?? $0.friendUsername ?? "Friend" }
+        let userName = userManager.currentUser?.name?.components(separatedBy: " ").first ?? "You"
+        
+        return VStack(spacing: 20) {
+            Text("How should this work?")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            
+            Text("You selected \(friendNames.joined(separator: " & "))")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
+            
+            VStack(spacing: 14) {
+                // Option 1: Group Challenge (all in one)
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    withAnimation(.spring(response: 0.3)) {
+                        isGroupChallenge = true
+                    }
+                }) {
+                    VStack(spacing: 14) {
+                        HStack {
+                            Text("Group Challenge")
+                                .font(.headline)
+                                .fontWeight(isGroupChallenge ? .bold : .semibold)
+                                .foregroundColor(.white)
+                            Spacer()
+                            if isGroupChallenge {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            }
+                        }
+                        
+                        // Visual: all 3 together
+                        HStack(spacing: 0) {
+                            Spacer()
+                            HStack(spacing: -10) {
+                                // User avatar with profile photo
+                                if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                    Image(uiImage: cachedImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 40, height: 40)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.darkBackground, lineWidth: 2))
+                                } else {
+                                    Circle()
+                                        .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .frame(width: 40, height: 40)
+                                        .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 14, weight: .bold)).foregroundColor(.white))
+                                        .overlay(Circle().stroke(Color.darkBackground, lineWidth: 2))
+                                }
+                                
+                                ForEach(selectedFriends) { friend in
+                                    CachedFriendPhoto(
+                                        friendId: friend.friendId.uuidString,
+                                        photoUrl: friend.profilePhotoUrl,
+                                        name: friend.friendName ?? "F",
+                                        size: 40,
+                                        showGradientRing: false,
+                                        gradientColors: [.blue, .cyan]
+                                    )
+                                    .overlay(Circle().stroke(Color.darkBackground, lineWidth: 2))
+                                }
+                            }
+                            Spacer()
+                        }
+                        
+                        Text("One challenge. Everyone's in it together.")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(18)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                .fill(Color.black.opacity(0.2))
+                                .offset(y: 4)
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    isGroupChallenge
+                                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        : AnyShapeStyle(Color.blue.opacity(0.15)),
+                                    lineWidth: isGroupChallenge ? 2 : 1
+                                )
+                        }
+                    )
+                    .shadow(color: isGroupChallenge ? Color.blue.opacity(0.3) : .clear, radius: 12, x: 0, y: 6)
+                }
+                .buttonStyle(.plain)
+                
+                // ---- or ---- divider
+                HStack(spacing: 12) {
+                    Rectangle().fill(Color.white.opacity(0.3)).frame(height: 1)
+                    Text("OR").font(.caption).fontWeight(.semibold).foregroundColor(.white.opacity(0.6))
+                    Rectangle().fill(Color.white.opacity(0.3)).frame(height: 1)
+                }
+                
+                // Option 2: Separate Challenges (individual 1v1s)
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    withAnimation(.spring(response: 0.3)) {
+                        isGroupChallenge = false
+                    }
+                }) {
+                    VStack(spacing: 14) {
+                        HStack {
+                            Text("Separate Challenges")
+                                .font(.headline)
+                                .fontWeight(!isGroupChallenge ? .bold : .semibold)
+                                .foregroundColor(.white)
+                            Spacer()
+                            if !isGroupChallenge {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            }
+                        }
+                        
+                        // Visual: separate 1v1 lines
+                        VStack(spacing: 8) {
+                            ForEach(selectedFriends) { friend in
+                                HStack(spacing: 8) {
+                                    // User avatar with profile photo
+                                    if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                        Image(uiImage: cachedImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 28, height: 28)
+                                            .clipShape(Circle())
+                                    } else {
+                                        Circle()
+                                            .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .frame(width: 28, height: 28)
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 10, weight: .bold)).foregroundColor(.white))
+                                    }
+                                    
+                                    Rectangle()
+                                        .fill(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                                        .frame(height: 2)
+                                        .frame(maxWidth: 60)
+                                    
+                                    Text("vs")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.orange)
+                                    
+                                    Rectangle()
+                                        .fill(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                                        .frame(height: 2)
+                                        .frame(maxWidth: 60)
+                                    
+                                    CachedFriendPhoto(
+                                        friendId: friend.friendId.uuidString,
+                                        photoUrl: friend.profilePhotoUrl,
+                                        name: friend.friendName ?? "F",
+                                        size: 28,
+                                        showGradientRing: false,
+                                        gradientColors: [.orange, .red]
+                                    )
+                                    
+                                    Text(friend.friendName?.components(separatedBy: " ").first ?? friend.friendUsername ?? "Friend")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        
+                        Text("Creates \(selectedFriends.count) separate 1-on-1 challenges.")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(18)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                .fill(Color.black.opacity(0.2))
+                                .offset(y: 4)
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    !isGroupChallenge
+                                        ? AnyShapeStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        : AnyShapeStyle(Color.orange.opacity(0.15)),
+                                    lineWidth: !isGroupChallenge ? 2 : 1
+                                )
+                        }
+                    )
+                    .shadow(color: !isGroupChallenge ? Color.orange.opacity(0.3) : .clear, radius: 12, x: 0, y: 6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    private var modeSelectionCard: some View {
+        let buddyText = selectedFriends.count > 1 ? "your buddies" : (selectedFriends.first?.friendName?.components(separatedBy: " ").first ?? "your buddy")
+        
+        return VStack(spacing: 24) {
+            Text("How will you challenge \(buddyText)?")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            
+            VStack(spacing: 16) {
+                ForEach(ChallengeMode.allCases, id: \.self) { mode in
+                    ModeSelectionCard(
+                        mode: mode,
+                        isSelected: selectedMode == mode,
+                        onSelect: {
+                            print("✅ [CHALLENGE FLOW] Selected mode: \(mode.title)")
+                            selectedMode = mode
+                        }
+                    )
+                }
+            }
+        }
+    }
+    
+    private var activityTypeCard: some View {
+        VStack(spacing: 24) {
+            Text("What will you compete on?")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                ForEach(ChallengeActivityType.allCases, id: \.self) { activity in
+                    ActivityTypeCard(
+                        activity: activity,
+                        isSelected: selectedActivity == activity,
+                        onSelect: {
+                            print("✅ [CHALLENGE FLOW] Selected activity: \(activity.rawValue)")
+                            selectedActivity = activity
+                            customTarget = getDefaultCustomTarget(activity)
+                            hydrationUnit = .ml
+                            // Auto-select custom option by default
+                            let unit = activity == .hydrate ? HydrationUnit.ml.rawValue : getUnitForActivity(activity)
+                            selectedOption = ChallengeOption(
+                                title: "\(getDefaultCustomTarget(activity)) \(unit) Daily \(activity.rawValue)",
+                                description: "Daily target: \(getDefaultCustomTarget(activity)) \(unit)",
+                                dailyTarget: getDefaultCustomTarget(activity),
+                                unit: unit,
+                                isPreset: false,
+                                isCustom: true
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+    
+    private var challengeOptionsCard: some View {
+        VStack(spacing: 16) {
+            if let activity = selectedActivity {
+                Text("Choose Your \(activity.emoji) \(activity.rawValue) Goal")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                Text(customGoalSubtitle(for: activity))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                
+                VStack(spacing: 10) {
+                    // Custom Goal Creator (unique per activity)
+                    CustomTargetCard(
+                        activity: activity,
+                        customTarget: $customTarget,
+                        hydrationUnit: $hydrationUnit,
+                        isSelected: selectedOption?.isCustom == true,
+                        gradientColors: activity.gradientColors,
+                        onSelect: {
+                            HapticManager.impact(.medium)
+                            let unit = activity == .hydrate ? hydrationUnit.rawValue : getUnitForActivity(activity)
+                            withAnimation(.spring(response: 0.3)) {
+                                selectedOption = ChallengeOption(
+                                    title: "\(customTarget) \(unit) Daily \(activity.rawValue)",
+                                    description: "Daily target: \(customTarget) \(unit)",
+                                    dailyTarget: customTarget,
+                                    unit: unit,
+                                    isPreset: false,
+                                    isCustom: true
+                                )
+                            }
+                        }
+                    )
+                    
+                    // ---- or ---- divider
+                    HStack(spacing: 12) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                        
+                        Text("OR")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                    }
+                    .padding(.vertical, 2)
+                    
+                    // Preset Options
+                    ForEach(getOptionsForActivity(activity)) { option in
+                        ChallengeOptionCard(
+                            option: option,
+                            isSelected: selectedOption?.id == option.id && selectedOption?.isCustom == false,
+                            gradientColors: activity.gradientColors,
+                            onSelect: {
+                                HapticManager.impact(.medium)
+                                withAnimation(.spring(response: 0.3)) {
+                                    selectedOption = option
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    private var durationCard: some View {
+        VStack(spacing: 16) {
+            Text("How long should the challenge last?")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            VStack(spacing: 10) {
+                // Custom duration input
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    isCustomDuration = true
+                    customDurationText = "\(selectedDuration)"
+                    durationFieldFocused = true
+                }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 46, height: 46)
+                                .shadow(color: isCustomDuration ? Color.blue.opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
+                            
+                            Text("✏️")
+                                .font(.system(size: 22))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Custom Duration")
+                                .font(.body)
+                                .fontWeight(isCustomDuration ? .bold : .semibold)
+                                .foregroundColor(.white)
+                            
+                            Text("Set your own number of days")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        
+                        Spacer()
+                        
+                        if isCustomDuration {
+                            HStack(spacing: 6) {
+                                TextField("", text: $customDurationText)
+                                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.center)
+                                    .frame(width: 50)
+                                    .focused($durationFieldFocused)
+                                    .onChange(of: customDurationText) { _, newValue in
+                                        if let val = Int(newValue), val >= 1, val <= 365 {
+                                            selectedDuration = val
+                                        }
+                                    }
+                                
+                                Text("days")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                .fill(Color.black.opacity(0.2))
+                                .offset(y: 4)
+                            
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(
+                                    isCustomDuration
+                                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        : AnyShapeStyle(Color.blue.opacity(0.15)),
+                                    lineWidth: isCustomDuration ? 2 : 1
+                                )
+                        }
+                    )
+                    .shadow(color: isCustomDuration ? Color.blue.opacity(0.3) : .clear, radius: 12, x: 0, y: 6)
+                }
+                .buttonStyle(.plain)
+                
+                // ---- or ---- divider
+                HStack(spacing: 12) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(height: 1)
+                    Text("OR")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.6))
+                    Rectangle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(height: 1)
+                }
+                .padding(.vertical, 2)
+                
+                // Preset duration options
+                ForEach([3, 7, 14, 30], id: \.self) { days in
+                    ChallengeDurationCard(
+                        days: days,
+                        isSelected: selectedDuration == days && !isCustomDuration,
+                        onSelect: {
+                            isCustomDuration = false
+                            durationFieldFocused = false
+                            selectedDuration = days
+                        }
+                    )
+                }
+            }
+        }
+    }
+    
+    private var reviewCard: some View {
+        let userName = userManager.currentUser?.name?.components(separatedBy: " ").first ?? "You"
+        let isMultiple = selectedFriends.count > 1
+        let friendNames = selectedFriends.map { $0.friendName?.components(separatedBy: " ").first ?? $0.friendUsername ?? "Friend" }
+        
+        return VStack(spacing: 24) {
+            Text("Review Your Challenge")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            if let mode = selectedMode,
+               let activity = selectedActivity,
+               let option = selectedOption {
+                VStack(spacing: 16) {
+                    
+                    // MARK: Participants Visual
+                    if isMultiple && isGroupChallenge {
+                        // GROUP CHALLENGE: All together
+                        VStack(spacing: 10) {
+                            Text("Group Challenge")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
+                            
+                            // Overlapping avatars (you + all friends)
+                            HStack(spacing: 0) {
+                                Spacer()
+                                HStack(spacing: -12) {
+                                    // Your avatar
+                                    if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                        Image(uiImage: cachedImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 50, height: 50)
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
+                                    } else {
+                                        Circle()
+                                            .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .frame(width: 50, height: 50)
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 16, weight: .bold)).foregroundColor(.white))
+                                            .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
+                                    }
+                                    
+                                    ForEach(selectedFriends) { friend in
+                                        CachedFriendPhoto(
+                                            friendId: friend.friendId.uuidString,
+                                            photoUrl: friend.profilePhotoUrl,
+                                            name: friend.friendName ?? "Friend",
+                                            size: 50,
+                                            showGradientRing: false,
+                                            gradientColors: [.blue, .cyan]
+                                        )
+                                        .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
+                                    }
+                                }
+                                Spacer()
+                            }
+                            
+                            Text("\(userName), \(friendNames.joined(separator: " & "))")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        
+                    } else if isMultiple && !isGroupChallenge {
+                        // SEPARATE 1v1 CHALLENGES: Show each matchup
+                        VStack(spacing: 10) {
+                            Text("\(selectedFriends.count) Separate Challenges")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                            
+                            ForEach(selectedFriends) { friend in
+                                HStack(spacing: 10) {
+                                    // Your avatar (small)
+                                    if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                        Image(uiImage: cachedImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 36, height: 36)
+                                            .clipShape(Circle())
+                                    } else {
+                                        Circle()
+                                            .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .frame(width: 36, height: 36)
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 12, weight: .bold)).foregroundColor(.white))
+                                    }
+                                    
+                                    Text("vs")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.orange)
+                                    
+                                    CachedFriendPhoto(
+                                        friendId: friend.friendId.uuidString,
+                                        photoUrl: friend.profilePhotoUrl,
+                                        name: friend.friendName ?? "Friend",
+                                        size: 36,
+                                        showGradientRing: false,
+                                        gradientColors: [.orange, .red]
+                                    )
+                                    
+                                    Text(friend.friendName?.components(separatedBy: " ").first ?? friend.friendUsername ?? "Friend")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                            }
+                        }
+                        
+                    } else {
+                        // SINGLE 1v1: You vs Friend
+                        HStack(spacing: 12) {
+                            if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                                Image(uiImage: cachedImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 50, height: 50)
+                                    .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 50, height: 50)
+                                    .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 16, weight: .bold)).foregroundColor(.white))
+                            }
+                            
+                            Text("VS")
+                                .font(.title3)
+                                .fontWeight(.black)
+                                .foregroundColor(.white)
+                            
+                            if let friend = selectedFriends.first {
+                                CachedFriendPhoto(
+                                    friendId: friend.friendId.uuidString,
+                                    photoUrl: friend.profilePhotoUrl,
+                                    name: friend.friendName ?? "Friend",
+                                    size: 50,
+                                    showGradientRing: true,
+                                    gradientColors: [.orange, .red]
+                                )
+                            }
+                        }
+                    }
+                    
+                    // MARK: Details Card
+                    VStack(spacing: 12) {
+                        if isMultiple {
+                            ReviewRow(title: "Type", value: isGroupChallenge ? "Group Challenge" : "Separate Challenges")
+                            ReviewRow(title: "Buddies", value: friendNames.joined(separator: ", "))
+                        } else {
+                            ReviewRow(title: "Opponent", value: friendNames.first ?? "Friend")
+                        }
+                        ReviewRow(title: "Mode", value: "\(mode.emoji) \(mode.title)")
+                        ReviewRow(title: "Activity", value: "\(activity.emoji) \(activity.rawValue)")
+                        ReviewRow(title: "Goal", value: option.title)
+                        ReviewRow(title: "Duration", value: "\(selectedDuration) days")
+                    }
+                    .padding(20)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 21, style: .continuous)
+                                .fill(Color.black.opacity(0.2))
+                                .offset(y: 4)
+                            
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        }
+                    )
+                }
+            }
+        }
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func getDefaultCustomTarget(_ activity: ChallengeActivityType) -> Int {
+        switch activity {
+        case .walk: return 30
+        case .run: return 20
+        case .lift: return 5
+        case .hydrate: return 2000
+        case .steps: return 10000
+        case .calories: return 500
+        case .protein: return 150
+        }
+    }
+    
+    private func getUnitForActivity(_ activity: ChallengeActivityType) -> String {
+        switch activity {
+        case .walk, .run: return "minutes"
+        case .lift: return "workouts"
+        case .hydrate: return "ml"
+        case .steps: return "steps"
+        case .calories: return "calories"
+        case .protein: return "grams"
+        }
+    }
+    
+    private func customGoalSubtitle(for activity: ChallengeActivityType) -> String {
+        switch activity {
+        case .steps: return "Set your daily step target or pick a preset below"
+        case .walk: return "Choose how many minutes you'll walk each day"
+        case .run: return "Set your daily running goal in minutes"
+        case .lift: return "How many workouts per week can you commit to?"
+        case .hydrate: return "Track your daily water intake goal"
+        case .calories: return "Set your daily active calorie burn target"
+        case .protein: return "Hit your daily protein intake goal"
+        }
+    }
+    
+    private func getOptionsForActivity(_ activity: ChallengeActivityType) -> [ChallengeOption] {
+        switch activity {
+        case .steps:
+            return [
+                ChallengeOption(title: "🌤️ Morning Walker", description: "Get moving with a light daily goal", dailyTarget: 5000, unit: "steps", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🏆 10K Club", description: "The classic daily step goal", dailyTarget: 10000, unit: "steps", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🔥 Step Machine", description: "Push your limits every day", dailyTarget: 15000, unit: "steps", isPreset: true, isCustom: false)
+            ]
+        case .walk:
+            return [
+                ChallengeOption(title: "☕ Coffee Walk", description: "A quick 15-min stroll daily", dailyTarget: 15, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🎧 Podcast Walk", description: "30 minutes of fresh air", dailyTarget: 30, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🌅 Golden Hour", description: "A full 60-min walk each day", dailyTarget: 60, unit: "minutes", isPreset: true, isCustom: false)
+            ]
+        case .run:
+            return [
+                ChallengeOption(title: "🐣 Easy Jog", description: "Start with 15 mins daily", dailyTarget: 15, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🏃 Steady Runner", description: "Build up to 30 mins daily", dailyTarget: 30, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "⚡ Speed Demon", description: "45 mins of running every day", dailyTarget: 45, unit: "minutes", isPreset: true, isCustom: false)
+            ]
+        case .lift:
+            return [
+                ChallengeOption(title: "💪 Starter Strength", description: "3 sessions per week", dailyTarget: 3, unit: "workouts", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🏋️ Gym Rat", description: "5 sessions per week", dailyTarget: 5, unit: "workouts", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🦾 Iron Addict", description: "6 sessions — rest only once", dailyTarget: 6, unit: "workouts", isPreset: true, isCustom: false)
+            ]
+        case .hydrate:
+            return [
+                ChallengeOption(title: "💦 Stay Sipping", description: "6 cups — build the habit", dailyTarget: 1500, unit: "ml", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🥤 Hydro Homie", description: "8 cups — the gold standard", dailyTarget: 2000, unit: "ml", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🌊 Water Warrior", description: "3 liters — max hydration", dailyTarget: 3000, unit: "ml", isPreset: true, isCustom: false)
+            ]
+        case .calories:
+            return [
+                ChallengeOption(title: "🕯️ Slow Burn", description: "300 active calories daily", dailyTarget: 300, unit: "calories", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🔥 Torch Mode", description: "500 active calories daily", dailyTarget: 500, unit: "calories", isPreset: true, isCustom: false),
+                ChallengeOption(title: "☄️ Inferno", description: "1000 active calories daily", dailyTarget: 1000, unit: "calories", isPreset: true, isCustom: false)
+            ]
+        case .protein:
+            return [
+                ChallengeOption(title: "🥚 Protein Basics", description: "100g daily — maintenance mode", dailyTarget: 100, unit: "grams", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🍗 Muscle Fuel", description: "150g daily — building phase", dailyTarget: 150, unit: "grams", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🥩 Gains Machine", description: "200g daily — max protein", dailyTarget: 200, unit: "grams", isPreset: true, isCustom: false)
+            ]
+        }
+    }
+    
+    private func sendChallenge() async {
+        guard let mode = selectedMode,
+              let activity = selectedActivity,
+              let option = selectedOption else {
+            print("❌ [CHALLENGE FLOW] Missing required selections")
+            return
+        }
+        
+        guard !selectedFriends.isEmpty else {
+            print("❌ [CHALLENGE FLOW] No friends selected")
+            return
+        }
+        
+        isCreating = true
+        
+        let challengeType: ChallengeType
+        switch activity {
+        case .walk: challengeType = .walk
+        case .run: challengeType = .run
+        case .lift: challengeType = .lift
+        case .hydrate: challengeType = .steps
+        case .steps: challengeType = .steps
+        case .calories: challengeType = .activeMinutes
+        case .protein: challengeType = .steps
+        }
+        
+        let title = "\(mode.titlePrefix) \(activity.emoji) \(option.title)"
+        var success = false
+        
+        if selectedFriends.count > 1 && isGroupChallenge {
+            // GROUP CHALLENGE: Create one group challenge with all members
+            print("👥 [CHALLENGE FLOW] Creating group challenge with \(selectedFriends.count) friends")
+            let groupId = await ChallengeService.shared.createGroupChallenge(
+                memberIds: selectedFriends.map(\.friendId),
+                type: challengeType,
+                title: title,
+                description: option.description,
+                mode: mode.rawValue,
+                dailyTarget: option.dailyTarget,
+                totalTarget: option.dailyTarget * selectedDuration,
+                targetUnit: option.unit,
+                durationDays: selectedDuration
+            )
+            success = groupId != nil
+        } else {
+            // SEPARATE CHALLENGES: Create individual 1v1 for each friend
+            print("🔀 [CHALLENGE FLOW] Creating \(selectedFriends.count) separate challenge(s)")
+            var allSucceeded = true
+            for friend in selectedFriends {
+                print("📤 [CHALLENGE FLOW] Sending challenge to \(friend.displayName)")
+                let challengeId = await ChallengeService.shared.createChallenge(
+                    opponentId: friend.friendId,
+                    type: challengeType,
+                    title: title,
+                    description: option.description,
+                    dailyTarget: option.dailyTarget,
+                    totalTarget: option.dailyTarget * selectedDuration,
+                    targetUnit: option.unit,
+                    durationDays: selectedDuration
+                )
+                if challengeId == nil { allSucceeded = false }
+            }
+            success = allSucceeded
+        }
+        
+        isCreating = false
+        
+        if success {
+            print("✅ [CHALLENGE FLOW] Challenge(s) created successfully")
+            HapticManager.notification(.success)
+            showingSuccess = true
+        } else {
+            print("❌ [CHALLENGE FLOW] Challenge creation failed")
+            HapticManager.notification(.error)
+            showingError = true
+        }
+    }
+}
+
+// MARK: - Friend Card Component
+
+struct TopFriendBubble: View {
+    let friend: Friend
+    var isSelected: Bool = false
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 10) {
+                // Avatar — ring only when selected, glow behind when selected
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 60,
+                    showGradientRing: isSelected,
+                    gradientColors: [.blue, .cyan]
+                )
+                .shadow(color: isSelected ? Color.cyan.opacity(0.5) : .clear, radius: 10, x: 0, y: 4)
+                .scaleEffect(isSelected ? 1.08 : 1.0)
+                
+                // First name only
+                Text(friend.friendName?.components(separatedBy: " ").first ?? friend.friendUsername ?? "Friend")
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .bold : .semibold)
+                    .foregroundColor(isSelected ? .cyan : .white)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ChallengeFlowFriendCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let friend: Friend
+    let isSelected: Bool
+    let onSelect: (Friend) -> Void
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            onSelect(friend)
+        }) {
+            HStack(spacing: 14) {
+                // Friend photo with blue glow ring when selected
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 50,
+                    showGradientRing: isSelected,
+                    gradientColors: [.blue, .cyan]
+                )
+                
+                // Friend info
+                VStack(alignment: .leading, spacing: 4) {
+                    // Username (primary)
+                    if let username = friend.friendUsername, !username.isEmpty {
+                        Text("@\(username)")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    // Name (secondary)
+                    if let name = friend.friendName, !name.isEmpty {
+                        Text(name)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                }
+                
+                Spacer()
+                
+                // Checkmark when selected, chevron when not
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.96)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            : AnyShapeStyle(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.0)),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+            .shadow(color: isSelected ? Color.blue.opacity(0.25) : Color.black.opacity(colorScheme == .dark ? 0.15 : 0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}

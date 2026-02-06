@@ -308,7 +308,7 @@ struct HealthyRecipesCarousel: View {
     private var carouselBackground: some View {
         ZStack {
             // Bottom shadow layer
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(Color.orange.opacity(colorScheme == .dark ? 0.12 : 0.06))
                 .offset(y: 8)
                 .blur(radius: 4)
@@ -319,7 +319,7 @@ struct HealthyRecipesCarousel: View {
                 .offset(y: 4)
             
             // Main background
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -331,7 +331,7 @@ struct HealthyRecipesCarousel: View {
                 )
             
             // Inner highlight
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -344,7 +344,7 @@ struct HealthyRecipesCarousel: View {
                 )
             
             // Accent border
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(
                     LinearGradient(
                         colors: [

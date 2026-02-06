@@ -14,7 +14,7 @@ class SupabaseManager: ObservableObject {
     private let supabaseURL = "https://ehooeghabzefgoqzugrc.supabase.co"  
     private let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0"     
     
-    private var client: SupabaseClient!
+    internal var client: SupabaseClient!
     
     // MARK: - Cached Date Formatter (Performance Optimization)
     /// ISO8601DateFormatter is expensive to create - reuse this instance
@@ -34,6 +34,63 @@ class SupabaseManager: ObservableObject {
     @inline(__always)
     private func isoToDate(_ string: String) -> Date? {
         ISO8601Parser.parse(string)
+    }
+    
+    /// Convert birthday from display format (MM/DD/YYYY or DD/MM/YYYY) to ISO format (YYYY-MM-DD)
+    /// Handles both US (MM/DD/YYYY) and international (DD/MM/YYYY) formats
+    /// Returns nil if the input is nil, empty, or invalid
+    /// If already in ISO format (YYYY-MM-DD), returns as-is
+    private func birthdayToISO(_ birthday: String?) -> String? {
+        guard let birthday = birthday, !birthday.isEmpty else { return nil }
+        
+        // If already in ISO format (YYYY-MM-DD), return as-is
+        if birthday.contains("-") && birthday.count == 10 {
+            return birthday
+        }
+        
+        // Parse from slash format (MM/DD/YYYY or DD/MM/YYYY)
+        let parts = birthday.split(separator: "/")
+        guard parts.count == 3 else { return nil }
+        
+        guard let part1 = Int(parts[0]),
+              let part2 = Int(parts[1]),
+              let year = Int(parts[2]) else { return nil }
+        
+        let month: Int
+        let day: Int
+        
+        // Determine format based on values
+        // If first part > 12, it must be a day (DD/MM/YYYY format)
+        // If second part > 12, it must be a day (MM/DD/YYYY format)
+        // Otherwise, use locale preference
+        if part1 > 12 {
+            // First part is day (DD/MM/YYYY - international format)
+            day = part1
+            month = part2
+        } else if part2 > 12 {
+            // Second part is day (MM/DD/YYYY - US format)
+            month = part1
+            day = part2
+        } else {
+            // Ambiguous - check device locale
+            let usesMonthFirst = Locale.current.identifier.hasPrefix("en_US") ||
+                                 Locale.current.identifier.hasPrefix("en_PH") ||
+                                 Locale.current.region?.identifier == "US"
+            if usesMonthFirst {
+                month = part1
+                day = part2
+            } else {
+                day = part1
+                month = part2
+            }
+        }
+        
+        // Validate and format
+        guard month >= 1 && month <= 12,
+              day >= 1 && day <= 31,
+              year >= 1900 && year <= 2100 else { return nil }
+        
+        return String(format: "%04d-%02d-%02d", year, month, day)
     }
     
     // Public getter for client (needed by FoodDatabaseService)
@@ -1080,6 +1137,102 @@ class SupabaseManager: ObservableObject {
         print("✅ User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))")
     }
     
+    // MARK: - Activity & Integration Tracking
+    
+    /// Update last login timestamp - call when app opens
+    func updateLastLogin() async {
+        guard let userId = currentUser?.id else { return }
+        
+        do {
+            try await client.rpc("update_last_login", params: ["p_user_id": userId.uuidString]).execute()
+            print("✅ [ACTIVITY] Updated last login timestamp")
+        } catch {
+            // Fallback to direct update if RPC doesn't exist
+            do {
+                struct LastLoginUpdate: Encodable {
+                    let last_login_at: String
+                }
+                
+                let update = LastLoginUpdate(last_login_at: ISO8601DateFormatter().string(from: Date()))
+                
+                try await client
+                    .from("user_profiles")
+                    .update(update)
+                    .eq("id", value: userId.uuidString)
+                    .execute()
+                print("✅ [ACTIVITY] Updated last login timestamp (direct)")
+            } catch {
+                print("⚠️ [ACTIVITY] Failed to update last login: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Update integration connection status
+    func updateIntegrationStatus(integration: String, isConnected: Bool) async {
+        guard let userId = currentUser?.id else { return }
+        
+        // Use direct update (simpler and more reliable than RPC for this use case)
+        do {
+            let columnName: String
+            switch integration {
+            case "strava": columnName = "is_strava_connected"
+            case "fitbit": columnName = "is_fitbit_connected"
+            case "apple_health": columnName = "is_apple_health_connected"
+            case "inbody": columnName = "is_inbody_connected"
+            default:
+                print("⚠️ [INTEGRATIONS] Unknown integration: \(integration)")
+                return
+            }
+            
+            // Create typed update struct for each integration
+            struct IntegrationUpdate: Encodable {
+                let is_strava_connected: Bool?
+                let is_fitbit_connected: Bool?
+                let is_apple_health_connected: Bool?
+                let is_inbody_connected: Bool?
+            }
+            
+            let update = IntegrationUpdate(
+                is_strava_connected: integration == "strava" ? isConnected : nil,
+                is_fitbit_connected: integration == "fitbit" ? isConnected : nil,
+                is_apple_health_connected: integration == "apple_health" ? isConnected : nil,
+                is_inbody_connected: integration == "inbody" ? isConnected : nil
+            )
+            
+            try await client
+                .from("user_profiles")
+                .update(update)
+                .eq("id", value: userId.uuidString)
+                .execute()
+            print("✅ [INTEGRATIONS] Updated \(integration) status to \(isConnected)")
+        } catch {
+            print("⚠️ [INTEGRATIONS] Failed to update \(integration) status: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Update all integration statuses at once (called on app launch)
+    func syncAllIntegrationStatuses() async {
+        guard currentUser != nil else { return }
+        
+        // Check each integration's current connection status (MainActor isolated)
+        let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected) = await MainActor.run {
+            (
+                StravaService.shared.isConnected,
+                FitbitService.shared.isConnected,
+                HealthKitManager.shared.isAuthorized,
+                InBodyService.shared.isConnected
+            )
+        }
+        
+        // Update each status
+        await updateIntegrationStatus(integration: "strava", isConnected: stravaConnected)
+        await updateIntegrationStatus(integration: "fitbit", isConnected: fitbitConnected)
+        await updateIntegrationStatus(integration: "apple_health", isConnected: appleHealthConnected)
+        await updateIntegrationStatus(integration: "inbody", isConnected: inbodyConnected)
+        
+        print("✅ [INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected)")
+    }
+    
     /// Public function to create user profile for OAuth users when they complete onboarding
     /// This should be called when the user taps "Create Account" at the end of onboarding
     /// Only creates the profile if the user is authenticated via OAuth but doesn't have a profile yet
@@ -1087,6 +1240,7 @@ class SupabaseManager: ObservableObject {
         name: String,
         email: String,
         username: String?,
+        birthday: String?,  // Added: birthday string (e.g., "26/10/1996")
         age: Int?,
         gender: String?,
         heightCm: Double?,
@@ -1095,7 +1249,8 @@ class SupabaseManager: ObservableObject {
         experienceLevel: String?,
         equipment: [String]?,
         availableDays: Int?,
-        workoutEnvironment: String?
+        workoutEnvironment: String?,
+        phoneNumber: String? = nil  // For 2FA / account security (private)
     ) async throws {
         guard let userId = currentUser?.id else {
             print("❌ [PROFILE] Cannot create profile - no authenticated user")
@@ -1115,6 +1270,7 @@ class SupabaseManager: ObservableObject {
                 equipment: equipment,
                 availableDays: availableDays,
                 workoutEnvironment: workoutEnvironment,
+                birthday: birthday,  // Include birthday in update
                 age: age,
                 gender: gender
             )
@@ -1139,7 +1295,9 @@ class SupabaseManager: ObservableObject {
             let id: String
             let name: String
             let email: String
+            let phone_number: String?  // For 2FA / account security (private)
             let username: String?
+            let birthday: String?  // Birthday string (e.g., "26/10/1996" or "1996-10-26")
             let age: Int?
             let gender: String?
             let height_cm: Double?
@@ -1156,7 +1314,9 @@ class SupabaseManager: ObservableObject {
             id: userId.uuidString,
             name: name,
             email: email,
+            phone_number: phoneNumber,  // 2FA phone number (private)
             username: username,
+            birthday: birthday,  // Birthday string from onboarding
             age: age,
             gender: gender,
             height_cm: heightCm,
@@ -1174,7 +1334,9 @@ class SupabaseManager: ObservableObject {
         print("   - id: \(userId.uuidString)")
         print("   - name: \(name)")
         print("   - email: \(email)")
+        print("   - phone_number: \(phoneNumber ?? "nil (not verified)")")
         print("   - username: \(username ?? "nil")")
+        print("   - birthday: \(birthday ?? "nil")")
         print("   - age: \(age ?? 0)")
         print("   - gender: \(gender ?? "nil")")
         print("   - height_cm: \(heightCm ?? 0)")
@@ -1239,6 +1401,7 @@ class SupabaseManager: ObservableObject {
         equipment: [String]? = nil,
         availableDays: Int? = nil,
         workoutEnvironment: String? = nil,
+        birthday: String? = nil,  // Added: birthday string
         age: Int? = nil,
         gender: String? = nil
     ) async throws {
@@ -1253,6 +1416,7 @@ class SupabaseManager: ObservableObject {
             let equipment: [String]?
             let available_days: Int?
             let workout_environment: String?
+            let birthday: String?
             let age: Int?
             let gender: String?
             let updated_at: String
@@ -1267,6 +1431,7 @@ class SupabaseManager: ObservableObject {
             equipment: equipment,
             available_days: availableDays,
             workout_environment: workoutEnvironment,
+            birthday: birthday,
             age: age,
             gender: gender,
             updated_at: dateToISO(Date())
@@ -1279,6 +1444,57 @@ class SupabaseManager: ObservableObject {
             .execute()
         
         print("✅ User profile updated - Equipment: \(equipment ?? []), Days: \(availableDays ?? 0)")
+    }
+    
+    // MARK: - Phone Number
+    
+    /// Update phone number for existing user (used for contact matching & 2FA)
+    func updatePhoneNumber(_ phoneNumber: String) async throws {
+        guard let userId = currentUser?.id else {
+            print("❌ [PHONE] Cannot update phone - no authenticated user")
+            throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        struct PhoneUpdate: Encodable {
+            let phone_number: String
+            let updated_at: String
+        }
+        
+        let update = PhoneUpdate(
+            phone_number: phoneNumber,
+            updated_at: dateToISO(Date())
+        )
+        
+        try await client
+            .from("user_profiles")
+            .update(update)
+            .eq("id", value: userId.uuidString)
+            .execute()
+        
+        print("✅ [PHONE] Phone number updated for user: \(phoneNumber)")
+    }
+    
+    /// Check if current user has a phone number saved
+    func getUserPhoneNumber() async -> String? {
+        guard let userId = currentUser?.id else { return nil }
+        
+        do {
+            let result: [PhoneResult] = try await client
+                .from("user_profiles")
+                .select("phone_number")
+                .eq("id", value: userId.uuidString)
+                .execute()
+                .value
+            
+            return result.first?.phone_number
+        } catch {
+            print("⚠️ [PHONE] Error fetching phone number: \(error)")
+            return nil
+        }
+    }
+    
+    private struct PhoneResult: Decodable {
+        let phone_number: String?
     }
     
     // MARK: - Profile Photo
@@ -1626,6 +1842,7 @@ class SupabaseManager: ObservableObject {
         struct ProfileSync: Encodable {
             let name: String?
             let email: String?
+            let phone_number: String?  // For 2FA / account security (private, not displayed)
             let birthday: String?
             let age: Int?
             let gender: String?
@@ -1661,7 +1878,8 @@ class SupabaseManager: ObservableObject {
         let profile = ProfileSync(
             name: user.name,
             email: user.email,
-            birthday: user.birthday,
+            phone_number: user.phoneNumber,  // 2FA phone number (private)
+            birthday: birthdayToISO(user.birthday),  // Convert to ISO format for database
             age: Int(user.age),
             gender: user.gender,
             height_cm: Double(user.height),
@@ -1697,6 +1915,7 @@ class SupabaseManager: ObservableObject {
             let id: String
             let name: String?
             let email: String?
+            let phone_number: String?  // For 2FA / account security (private)
             let birthday: String?
             let age: Int?
             let gender: String?
@@ -1727,6 +1946,7 @@ class SupabaseManager: ObservableObject {
             id: userId.uuidString,
             name: profile.name,
             email: profile.email,
+            phone_number: profile.phone_number,  // 2FA phone number (private)
             birthday: profile.birthday,
             age: profile.age,
             gender: profile.gender,
@@ -1819,7 +2039,7 @@ class SupabaseManager: ObservableObject {
         
         let fullUpdate = FullProfileUpdate(
             name: user.name,
-            birthday: user.birthday,
+            birthday: birthdayToISO(user.birthday),  // Convert to ISO format for database
             age: user.age > 0 ? Int(user.age) : nil,
             gender: user.gender,
             height_cm: user.height > 0 ? Double(user.height) : nil,

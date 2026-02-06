@@ -12,6 +12,7 @@ struct ShareWorkoutSheet: View {
     let accentColor: Color
     
     @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var rankingService = FriendRankingService.shared
     @State private var showingFriendPicker = false
     @State private var selectedFriend: Friend?
     @State private var messageText = ""
@@ -90,6 +91,7 @@ struct ShareWorkoutSheet: View {
         }
         .task {
             await friendService.fetchFriends()
+            await rankingService.fetchRankedFriends()
         }
     }
     
@@ -348,8 +350,42 @@ struct ShareWorkoutSheet: View {
                     .padding(32)
                 } else {
                     List {
+                        // Top Friends section (ranked 1-3)
+                        if rankingService.rankedFriends.count >= 1 {
+                            Section {
+                                ForEach(rankingService.rankedFriends.prefix(3)) { rankedFriend in
+                                    if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
+                                        Button(action: {
+                                            HapticManager.impact(.light)
+                                            withAnimation(.spring(response: 0.3)) {
+                                                selectedFriend = friend
+                                            }
+                                        }) {
+                                            RankedFriendSelectionRow(
+                                                friend: friend,
+                                                rankedFriend: rankedFriend,
+                                                accentColor: accentColor
+                                            )
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                            } header: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "star.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Top Friends")
+                                        .textCase(nil)
+                                }
+                            }
+                        }
+                        
+                        // All friends section
                         Section {
-                            ForEach(friendService.friends) { friend in
+                            let topFriendIds = Set(rankingService.rankedFriends.prefix(3).map { $0.friendId })
+                            let otherFriends = friendService.friends.filter { !topFriendIds.contains($0.friendId) }
+                            
+                            ForEach(otherFriends) { friend in
                                 Button(action: {
                                     HapticManager.impact(.light)
                                     withAnimation(.spring(response: 0.3)) {
@@ -361,7 +397,7 @@ struct ShareWorkoutSheet: View {
                                 .buttonStyle(PlainButtonStyle())
                             }
                         } header: {
-                            Text("Select a friend")
+                            Text(rankingService.rankedFriends.count >= 1 ? "All Friends" : "Select a friend")
                                 .textCase(nil)
                         }
                     }
@@ -656,6 +692,126 @@ private struct FriendSelectionRow: View {
                         endPoint: .bottomTrailing
                     )
                 )
+                .frame(width: 44, height: 44)
+            
+            Text(String(friend.displayName.prefix(1)).uppercased())
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+        }
+    }
+}
+
+// MARK: - Ranked Friend Selection Row (for top friends)
+private struct RankedFriendSelectionRow: View {
+    let friend: Friend
+    let rankedFriend: RankedFriend
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Avatar with rank badge
+            ZStack(alignment: .bottomTrailing) {
+                if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        avatarPlaceholder
+                    }
+                    .frame(width: 44, height: 44)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(rankGradient, lineWidth: 2)
+                    )
+                } else {
+                    avatarPlaceholder
+                }
+                
+                // Rank badge
+                Text(rankEmoji)
+                    .font(.system(size: 14))
+                    .offset(x: 4, y: 4)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(friend.displayName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    // Relationship tier badge
+                    HStack(spacing: 3) {
+                        Image(systemName: rankedFriend.relationshipTier.icon)
+                            .font(.system(size: 9))
+                        Text("\(Int(rankedFriend.relationshipScore))")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundColor(rankedFriend.relationshipTier.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(rankedFriend.relationshipTier.color.opacity(0.15))
+                    )
+                }
+                
+                // Interaction summary
+                HStack(spacing: 8) {
+                    if rankedFriend.workoutsShared > 0 {
+                        Label("\(rankedFriend.workoutsShared) shared", systemImage: "dumbbell.fill")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                    if rankedFriend.challengesTogether > 0 {
+                        Label("\(rankedFriend.challengesTogether) challenges", systemImage: "flame.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                    if rankedFriend.workoutsShared == 0 && rankedFriend.challengesTogether == 0 {
+                        Text("New workout buddy!")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private var rankEmoji: String {
+        switch rankedFriend.rank {
+        case 1: return "🥇"
+        case 2: return "🥈"
+        case 3: return "🥉"
+        default: return "⭐️"
+        }
+    }
+    
+    private var rankGradient: LinearGradient {
+        switch rankedFriend.rank {
+        case 1: return LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case 2: return LinearGradient(colors: [.gray, .white.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case 3: return LinearGradient(colors: [.orange.opacity(0.7), .brown], startPoint: .topLeading, endPoint: .bottomTrailing)
+        default: return LinearGradient(colors: [accentColor, accentColor.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+    
+    private var avatarPlaceholder: some View {
+        ZStack {
+            Circle()
+                .fill(rankGradient)
                 .frame(width: 44, height: 44)
             
             Text(String(friend.displayName.prefix(1)).uppercased())

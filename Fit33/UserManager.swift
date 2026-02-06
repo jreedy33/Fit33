@@ -163,13 +163,14 @@ class UserManager: ObservableObject {
     }
     #endif
     
-    func createUser(name: String, age: Int16, gender: String?, email: String?, height: Int16, weight: Int16, fitnessGoal: String, experienceLevel: String, equipment: [String], availableDays: Int16, strengthLevel: String? = nil, workoutEnvironment: String? = nil, birthday: String? = nil, weightLbs: Double? = nil, heightInches: Int16? = nil) {
+    func createUser(name: String, age: Int16, gender: String?, email: String?, height: Int16, weight: Int16, fitnessGoal: String, experienceLevel: String, equipment: [String], availableDays: Int16, strengthLevel: String? = nil, workoutEnvironment: String? = nil, birthday: String? = nil, weightLbs: Double? = nil, heightInches: Int16? = nil, phoneNumber: String? = nil) {
         let newUser = User(context: viewContext)
         newUser.id = UUID()
         newUser.name = name
         newUser.age = age
         newUser.gender = gender
         newUser.email = email
+        newUser.phoneNumber = phoneNumber  // For 2FA / account security (private)
         newUser.height = height
         newUser.weight = weight
         newUser.fitnessGoal = fitnessGoal

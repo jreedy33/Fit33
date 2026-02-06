@@ -115,7 +115,7 @@ struct MealQuickActionTile: View {
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: cardBackgroundGradient,
@@ -125,7 +125,7 @@ struct MealQuickActionTile: View {
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -138,7 +138,7 @@ struct MealQuickActionTile: View {
                         )
                     
                     // Colored accent border
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [gradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],

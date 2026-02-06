@@ -42,13 +42,16 @@ class ContactsService: ObservableObject {
     
     /// Request contact access permission
     func requestAccess() async -> Bool {
+        print("📇 [CONTACTS] requestAccess() called")
         do {
             let granted = try await store.requestAccess(for: .contacts)
             checkAuthorizationStatus()
+            print("📇 [CONTACTS] Authorization status after request: \(authorizationStatus.rawValue)")
             
             if granted {
-                print("✅ [CONTACTS] Access granted")
+                print("✅ [CONTACTS] Access granted - now fetching contacts and finding friends...")
                 await fetchContactsAndFindFriends()
+                print("✅ [CONTACTS] Fetch complete - suggestedFriends: \(suggestedFriends.count)")
             } else {
                 print("❌ [CONTACTS] Access denied by user")
             }
@@ -65,24 +68,38 @@ class ContactsService: ObservableObject {
     
     /// Fetch contacts and find matching app users
     func fetchContactsAndFindFriends() async {
+        print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
+        print("📇 [CONTACTS SERVICE] Starting fetchContactsAndFindFriends...")
+        
         guard canAccessContacts else {
-            print("⚠️ [CONTACTS] No access to contacts")
+            print("⚠️ [CONTACTS SERVICE] No access to contacts - aborting")
+            print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
             return
         }
         
         isLoading = true
-        defer { isLoading = false }
+        defer { 
+            isLoading = false
+            print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
+        }
         
-        // Fetch contact emails and phone numbers
+        // Step 1: Fetch contact emails and phone numbers from device
+        print("📇 [CONTACTS SERVICE] Step 1: Fetching contact info from device...")
         await fetchContactInfo()
+        print("📇 [CONTACTS SERVICE] ✓ Fetched \(contactPhoneNumbers.count) phones, \(contactEmails.count) emails")
         
-        // Find matching users in the app
+        // Step 2: Find matching users in the app database
+        print("📇 [CONTACTS SERVICE] Step 2: Finding matching Fit33 users...")
         await findMatchingUsers()
+        print("📇 [CONTACTS SERVICE] ✓ Found \(suggestedFriends.count) Fit33 users in contacts")
         
-        // Sync contacts to database for "contact joined" notifications
+        // Step 3: Sync contacts to database for "contact joined" notifications
+        print("📇 [CONTACTS SERVICE] Step 3: Syncing contacts to database...")
         await syncContactsToDatabase()
+        print("📇 [CONTACTS SERVICE] ✓ Contacts synced for future notifications")
         
         hasCheckedContacts = true
+        print("📇 [CONTACTS SERVICE] ✅ fetchContactsAndFindFriends complete!")
     }
     
     private func fetchContactInfo() async {
@@ -139,20 +156,84 @@ class ContactsService: ObservableObject {
     // MARK: - Find Matching Users
     
     private func findMatchingUsers() async {
+        guard !contactEmails.isEmpty || !contactPhoneNumbers.isEmpty else {
+            print("⚠️ [CONTACTS] No contact emails or phone numbers to search")
+            return
+        }
+        
+        // Log sample emails for debugging (first 5, truncated)
+        let sampleEmails = contactEmails.prefix(5).map { email in
+            let parts = email.split(separator: "@")
+            if parts.count == 2 {
+                return "\(parts[0].prefix(3))...@\(parts[1])"
+            }
+            return "\(email.prefix(6))..."
+        }
+        
+        // Log sample phones for debugging (first 5, partially hidden)
+        let samplePhones = contactPhoneNumbers.prefix(5).map { phone in
+            if phone.count >= 6 {
+                return "***\(phone.suffix(4))"
+            }
+            return "***"
+        }
+        
+        print("🔍 [CONTACTS] Searching for matching Fit33 users...")
+        print("   └─ Emails: \(contactEmails.count) (sample: \(sampleEmails.joined(separator: ", ")))")
+        print("   └─ Phone numbers: \(contactPhoneNumbers.count) (sample: \(samplePhones.joined(separator: ", ")))")
+        
+        do {
+            // Call database function to find matching users by email AND phone
+            print("🔍 [CONTACTS] Calling find_friends_from_contacts_v2...")
+            let result: [SuggestedFriend] = try await SupabaseManager.shared.supabaseClient
+                .rpc("find_friends_from_contacts_v2", params: [
+                    "contact_emails": contactEmails,
+                    "contact_phones": contactPhoneNumbers
+                ])
+                .execute()
+                .value
+            
+            suggestedFriends = result
+            print("✅ [CONTACTS] Found \(result.count) suggested friends!")
+            
+            // Log found friends with details
+            if result.isEmpty {
+                print("   └─ No matches found in your contacts")
+            } else {
+                for friend in result {
+                    let username = friend.username ?? "no username"
+                    let email = friend.email ?? "no email"
+                    print("   👤 Found: \(friend.displayName) (@\(username), \(email))")
+                }
+            }
+        } catch {
+            // Fallback to email-only search if v2 function doesn't exist
+            print("⚠️ [CONTACTS] v2 function failed: \(error)")
+            print("⚠️ [CONTACTS] Falling back to email-only search...")
+            await findMatchingUsersByEmailOnly()
+        }
+    }
+    
+    /// Fallback: search by email only (for backwards compatibility)
+    private func findMatchingUsersByEmailOnly() async {
         guard !contactEmails.isEmpty else {
             print("⚠️ [CONTACTS] No contact emails to search")
             return
         }
         
         do {
-            // Call database function to find matching users
             let result: [SuggestedFriend] = try await SupabaseManager.shared.supabaseClient
                 .rpc("find_friends_from_contacts", params: ["contact_emails": contactEmails])
                 .execute()
                 .value
             
             suggestedFriends = result
-            print("✅ [CONTACTS] Found \(result.count) suggested friends from contacts")
+            print("✅ [CONTACTS] Found \(result.count) suggested friends from emails (fallback)")
+            
+            // Log found friends
+            for friend in result {
+                print("   👤 Found: \(friend.displayName) (\(friend.email ?? "no email"))")
+            }
         } catch {
             print("❌ [CONTACTS] Error finding matching users: \(error)")
             suggestedFriends = []

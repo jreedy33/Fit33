@@ -18,7 +18,7 @@ extension EnvironmentValues {
 
 // MARK: - Robust Adaptive Card Modifier
 extension View {
-    func robustWhiteCard(cornerRadius: CGFloat = 16, shadowRadius: CGFloat = 5, shadowOpacity: Double = 0.1) -> some View {
+    func robustWhiteCard(cornerRadius: CGFloat = 24, shadowRadius: CGFloat = 5, shadowOpacity: Double = 0.1) -> some View {
         self.modifier(AdaptiveWhiteCardModifier(cornerRadius: cornerRadius, shadowRadius: shadowRadius, shadowOpacity: shadowOpacity))
     }
 }
@@ -565,6 +565,12 @@ struct MainTabView: View {
                 selectedTab = 2  // Switch to Workout tab (will trigger navigation in WorkoutTabView)
             }
         }
+        .onChange(of: workoutManager.shouldNavigateToFindFriends) { _, shouldNavigate in
+            // 🔧 Redirect to find friends from Home tab to Workout tab (for challenges)
+            if shouldNavigate {
+                selectedTab = 2  // Switch to Workout tab (will trigger navigation in WorkoutTabView)
+            }
+        }
         .onChange(of: workoutManager.shouldNavigateToProgramOverview) { _, shouldNavigate in
             // 🔧 Navigate to Program Overview on Workout tab (from Dashboard)
             if shouldNavigate {
@@ -575,6 +581,13 @@ struct MainTabView: View {
             // 🔧 Navigate to Program Day Preview on Workout tab (from Dashboard)
             if shouldNavigate {
                 selectedTab = 2  // Switch to Workout tab first
+            }
+        }
+        .onChange(of: workoutManager.shouldNavigateToCustomWorkoutBuilder) { _, shouldNavigate in
+            // Navigate to Custom Workout Builder (from Exercise Detail "Add to workout" button)
+            if shouldNavigate {
+                selectedTab = 2  // Switch to Workout tab first, WorkoutTabView handles the navigation
+                print("➕ Switching to Workout tab for Custom Workout Builder")
             }
         }
         .onChange(of: selectedTab) { oldValue, newValue in
@@ -898,6 +911,7 @@ struct SimpleMealPlanView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
     @StateObject private var mealService = MealService.shared
+    @StateObject private var insightsService = PersonalizedInsightsService.shared
     @State private var showingProfileSetup = false
     @State private var showingMacroGoalsExplainer = false
     @AppStorage("hasSeenMacroGoalsExplainer") private var hasSeenMacroGoalsExplainer = false
@@ -977,6 +991,13 @@ struct SimpleMealPlanView: View {
                             } else {
                                 // Comprehensive nutrition content
                                 comprehensiveNutritionView
+                            }
+                        }
+                        .onAppear {
+                            // 🧠 Fetch personalized insights for daily insights card
+                            Task {
+                                await insightsService.fetchActiveInsights()
+                                await insightsService.fetchStreaks()
                             }
                         }
                     }
@@ -1251,7 +1272,7 @@ struct SimpleMealPlanView: View {
         }
         .padding(32)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
@@ -1287,7 +1308,7 @@ struct SimpleMealPlanView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
@@ -1618,24 +1639,24 @@ struct SimpleMealPlanView: View {
             ZStack {
                 if isCurrentMealTime {
                     // Bottom shadow layer (deepest) - color glow for current meal
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
                         .fill(mealType.gradientColors.0.opacity(colorScheme == .dark ? 0.2 : 0.12))
                         .offset(y: 6)
                         .blur(radius: 6)
                     
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
                         .offset(y: 3)
                 }
                 
                 // Main card background
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
                 
                 if isCurrentMealTime {
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark
@@ -1648,7 +1669,7 @@ struct SimpleMealPlanView: View {
                         )
                     
                     // Colored accent border
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [mealType.gradientColors.0.opacity(colorScheme == .dark ? 0.5 : 0.4), mealType.gradientColors.1.opacity(colorScheme == .dark ? 0.4 : 0.3)],
@@ -1891,18 +1912,18 @@ struct SimpleMealPlanView: View {
     private var insightsCardBackground: some View {
         ZStack {
             // Bottom shadow layer - teal glow
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
                 .offset(y: 6)
                 .blur(radius: 3)
             
             // Middle shadow layer
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 25, style: .continuous)
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                 .offset(y: 3)
             
             // Main card background
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -1914,7 +1935,7 @@ struct SimpleMealPlanView: View {
                 )
             
             // Inner highlight
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -1927,7 +1948,7 @@ struct SimpleMealPlanView: View {
                 )
             
             // Teal accent border (matches other cards)
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
@@ -2015,6 +2036,39 @@ struct SimpleMealPlanView: View {
     private func generateTextInsights() -> [InsightItem] {
         var insights: [InsightItem] = []
         let hour = Calendar.current.component(.hour, from: Date())
+        
+        // 🧠 PERSONALIZED INSIGHTS: Add database-driven insights first (highest priority)
+        for personalInsight in insightsService.activeInsights.prefix(1) {
+            // Only show nutrition-related insights here
+            if personalInsight.insightCategory == .nutrition || 
+               personalInsight.insightCategory == .goal ||
+               personalInsight.insightCategory == .streak {
+                insights.append(InsightItem(
+                    icon: personalInsight.icon,
+                    text: personalInsight.message,
+                    color: personalInsight.color
+                ))
+            }
+        }
+        
+        // 🔥 STREAK-BASED INSIGHTS: Show relevant streaks
+        if let proteinStreak = insightsService.streaks.first(where: { $0.streakType == "protein_goal" }),
+           proteinStreak.currentStreak >= 3 {
+            insights.append(InsightItem(
+                icon: "flame.fill",
+                text: "\(proteinStreak.currentStreak)-day protein streak! Keep it going! 🔥",
+                color: .orange
+            ))
+        }
+        
+        if let hydrationStreak = insightsService.streaks.first(where: { $0.streakType == "hydration" }),
+           hydrationStreak.currentStreak >= 3 {
+            insights.append(InsightItem(
+                icon: "drop.fill",
+                text: "\(hydrationStreak.currentStreak) days hitting hydration! 💧",
+                color: .cyan
+            ))
+        }
         
         // Protein insight with quick fix suggestions
         let proteinRemaining = max(0, proteinGoal - consumedProtein)
@@ -2162,18 +2216,18 @@ struct SimpleMealPlanView: View {
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - teal color glow
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
                     .offset(y: 8)
                     .blur(radius: 4)
                 
                 // Middle shadow layer
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 25, style: .continuous)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2185,7 +2239,7 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2198,7 +2252,7 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Colored accent border (teal)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
@@ -2229,18 +2283,18 @@ struct SimpleMealPlanView: View {
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - teal color glow
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
                     .offset(y: 8)
                     .blur(radius: 4)
                 
                 // Middle shadow layer
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 25, style: .continuous)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2252,7 +2306,7 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2265,7 +2319,7 @@ struct SimpleMealPlanView: View {
                     )
                 
                 // Colored accent border (teal)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.mint.opacity(colorScheme == .dark ? 0.3 : 0.2)],
@@ -4407,9 +4461,9 @@ struct NutritionMetricCard: View {
         .frame(maxWidth: .infinity, minHeight: 120)
         .padding(16)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -4496,9 +4550,9 @@ struct NutritionInsightCard: View {
         .frame(height: 100)
         .padding(16)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -4724,9 +4778,9 @@ struct SummaryMetricCard: View {
         .frame(height: 100)
         .padding(16)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -4992,7 +5046,7 @@ struct WorkingNutritionInsightCard: View {
         .frame(height: 100)
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(Color.white)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )
@@ -5038,7 +5092,7 @@ struct WorkingSummaryMetricCard: View {
         .frame(height: 100)
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 24)
                 .fill(Color.white)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )

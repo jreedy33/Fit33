@@ -3,28 +3,51 @@ import Combine
 
 /// Global orientation manager that observes device orientation changes
 /// and provides updated screen dimensions to all views
+/// Thread-safe singleton - all UIKit calls are dispatched to main thread
 class OrientationManager: ObservableObject {
+    // Swift's static let is inherently thread-safe (uses dispatch_once)
     static let shared = OrientationManager()
     
-    /// Current screen width (updates on rotation)
-    @Published var screenWidth: CGFloat = UIScreen.main.bounds.width
+    /// Current screen width (updates on rotation) - defaults to iPhone 15 Pro width
+    @Published var screenWidth: CGFloat = 393
     
-    /// Current screen height (updates on rotation)
-    @Published var screenHeight: CGFloat = UIScreen.main.bounds.height
+    /// Current screen height (updates on rotation) - defaults to iPhone 15 Pro height
+    @Published var screenHeight: CGFloat = 852
     
     /// Current screen size (updates on rotation)
-    @Published var screenSize: CGSize = UIScreen.main.bounds.size
+    @Published var screenSize: CGSize = CGSize(width: 393, height: 852)
     
     /// Whether the device is in landscape orientation
-    @Published var isLandscape: Bool = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+    @Published var isLandscape: Bool = false
     
     /// Current safe area insets
     @Published var safeAreaInsets: EdgeInsets = EdgeInsets()
     
     private var cancellables = Set<AnyCancellable>()
+    private var isInitialized = false
     
     private init() {
+        // Don't call UIKit APIs in init - defer to main thread
+        // This prevents crashes when singleton is accessed from background thread during app launch
+        DispatchQueue.main.async { [weak self] in
+            self?.setupInitialValues()
+            self?.setupObservers()
+        }
+    }
+    
+    private func setupInitialValues() {
+        // Safe to call UIKit here - we're guaranteed to be on main thread
+        let bounds = UIScreen.main.bounds
+        screenWidth = bounds.width
+        screenHeight = bounds.height
+        screenSize = bounds.size
+        isLandscape = bounds.width > bounds.height
+        isInitialized = true
+    }
+    
+    private func setupObservers() {
         // Observe orientation changes - use shorter debounce for faster response
+        // RunLoop.main scheduler ensures we're on main thread
         NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
             .debounce(for: .milliseconds(50), scheduler: RunLoop.main)
             .sink { [weak self] _ in
@@ -34,6 +57,7 @@ class OrientationManager: ObservableObject {
         
         // Also observe when the app becomes active (handles rotation while backgrounded)
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateScreenDimensions()
             }
@@ -41,6 +65,7 @@ class OrientationManager: ObservableObject {
         
         // Observe when trait collection changes (handles split view, etc.)
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self?.updateScreenDimensions()
@@ -50,6 +75,7 @@ class OrientationManager: ObservableObject {
         
         // 📱 Also observe UIWindowScene notifications for more reliable orientation detection
         NotificationCenter.default.publisher(for: UIScene.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self?.updateScreenDimensions()
@@ -64,17 +90,16 @@ class OrientationManager: ObservableObject {
     
     /// Force update screen dimensions (call this from views if needed)
     func updateScreenDimensions() {
-        // Ensure we're on main thread for UI updates
-        if !Thread.isMainThread {
+        // Ensure we're on main thread for UIKit access
+        guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in
-                self?.performScreenUpdate()
+                self?.updateScreenDimensions()
             }
-        } else {
-            performScreenUpdate()
+            return
         }
-    }
-    
-    private func performScreenUpdate() {
+        
+        guard isInitialized else { return }
+        
         // Get the most accurate bounds from the key window scene
         let bounds: CGRect
         if let windowScene = UIApplication.shared.connectedScenes

@@ -184,6 +184,11 @@ final class FitbitService: ObservableObject {
         
         print("✅ [FITBIT] Connected! User ID: \(tokenResponse.userId)")
         
+        // Update integration status in database
+        Task {
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "fitbit", isConnected: true)
+        }
+        
         // Fetch user profile and sync data
         await fetchUserProfile()
         await syncAllData()
@@ -638,6 +643,11 @@ final class FitbitService: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "fitbit_user")
         UserDefaults.standard.removeObject(forKey: "fitbit_last_sync")
         UserDefaults.standard.removeObject(forKey: "fitbit_code_verifier")
+        
+        // Update integration status in database
+        Task {
+            await SupabaseManager.shared.updateIntegrationStatus(integration: "fitbit", isConnected: false)
+        }
         
         print("🔌 [FITBIT] Disconnected")
     }

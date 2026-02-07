@@ -32,7 +32,7 @@ struct ChallengeDetailView: View {
     }
     
     private var challengeType: ChallengeType {
-        challenge.type ?? .steps
+        challenge.resolvedType
     }
     
     var body: some View {
@@ -441,7 +441,7 @@ struct ChallengeDetailView: View {
                 .padding(.horizontal, 4)
             
             VStack(spacing: 16) {
-                // My progress bar
+                // My progress bar — type-colored with live data
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("You")
@@ -457,23 +457,24 @@ struct ChallengeDetailView: View {
                     }
                     
                     GeometryReader { geometry in
+                        let livePercent = ChallengeProgressResolver.shared.progressPercentage(for: challenge)
                         ZStack(alignment: .leading) {
                             // Background
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Color.gray.opacity(0.2))
                                 .frame(height: 12)
                             
-                            // Progress
+                            // Progress — type-colored
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(
                                     LinearGradient(
-                                        colors: [.blue, .cyan],
+                                        colors: challengeType.gradientColors,
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
-                                .frame(width: geometry.size.width * challenge.progressPercentage, height: 12)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: challenge.progressPercentage)
+                                .frame(width: geometry.size.width * livePercent, height: 12)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: livePercent)
                         }
                     }
                     .frame(height: 12)

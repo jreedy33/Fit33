@@ -442,6 +442,12 @@ class HydrationService: ObservableObject {
                 print("❌ [Water] Failed to log to cloud: \(error)")
                 // Don't reload from cloud if insert failed - keep local data
             }
+            
+            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated total to any active hydration challenges
+            let totalForChallenge = todayTotal
+            Task {
+                await ChallengeService.shared.syncTrackingForType(.hydrate, value: totalForChallenge, source: "hydration")
+            }
         } else {
             print("ℹ️ [Water] Logged \(amountMl)ml locally (offline mode)")
         }
@@ -462,6 +468,13 @@ class HydrationService: ObservableObject {
             
             print("✅ [Water] Deleted log")
             await loadTodayData()
+            
+            // ⚡ Re-sync challenge progress with updated (lower) total
+            let updatedTotal = todayTotal
+            Task {
+                await ChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration")
+            }
+            
             return true
         } catch {
             print("❌ [Water] Failed to delete log: \(error)")

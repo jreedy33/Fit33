@@ -542,16 +542,21 @@ struct DashboardView: View {
                         print("🌙 [CHALLENGES] Day changed! Auto-refreshing for new day...")
                     }
                     
-                    // Sync HealthKit first (includes challenge sync)
+                    // Sync HealthKit first
                     await HealthKitService.shared.syncAllData(force: true)
                     
-                    // Fetch updated challenges from database
-                    // Force refresh if day changed to get fresh today_progress (starts at 0)
-                    print("🔄 [DASHBOARD] Refreshing all challenge lists on foreground...")
-                    await ChallengeService.shared.fetchActiveChallenges()
+                    // Reload hydration + meal data so challenge resolver has fresh values
+                    await HydrationService.shared.loadTodayData()
+                    MealService.shared.loadTodaysMeals()
+                    
+                    // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to challenges
+                    print("🔄 [DASHBOARD] Universal challenge sync on foreground...")
+                    await ChallengeService.shared.syncAllTrackingToChallenges()
+                    
+                    // Also refresh pending/sent lists
                     await ChallengeService.shared.fetchPendingInvites()
-                    await ChallengeService.shared.fetchPendingSentChallenges()  // Also refresh sent challenges
-                    print("✅ [DASHBOARD] Challenge lists refreshed")
+                    await ChallengeService.shared.fetchPendingSentChallenges()
+                    print("✅ [DASHBOARD] All challenge data refreshed")
                     
                     // Update last refresh date
                     lastChallengeRefreshDate = Date()
@@ -2715,8 +2720,9 @@ struct DashboardView: View {
     @State private var challengeToCancel: UUID?
     
     private func pendingSentChallengeWidget(challenge: PendingSentChallenge) -> some View {
-        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
-        let challengeType = challenge.type ?? .steps
+        let resolvedType = challenge.resolvedType
+        let challengeColor = resolvedType.color
+        let challengeType = resolvedType
         let isShowingCancelForThis = Binding(
             get: { challengeToCancel == challenge.challengeId },
             set: { if !$0 { challengeToCancel = nil } }
@@ -3045,17 +3051,24 @@ struct DashboardView: View {
     
     private func activeChallengeDetailWidget(challenge: ActiveChallenge) -> some View {
         let isAccountability = challenge.mode == .accountability
-        let challengeColor: Color = isAccountability ? .cyan : .blue
-        let challengeGradient: [Color] = isAccountability ? [.blue, .cyan] : [.blue, .cyan]
-        let challengeType = challenge.type ?? .steps
+        let resolvedType = challenge.resolvedType
+        // Type-aware colors — each challenge type gets its own visual identity
+        let typeColor: Color = resolvedType.color
+        let typeGradient: [Color] = resolvedType.gradientColors
         let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
         
         return VStack(spacing: 0) {
-            // Header — shared shape, mode-aware content
+            // Header — shared shape, type-aware content
             NavigationLink(destination: ChallengeDetailView(challenge: challenge)) {
                 HStack(alignment: .center, spacing: 10) {
-                    Text(challengeType.emoji)
-                        .font(.system(size: 28))
+                    // Type-specific icon with gradient background
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 36, height: 36)
+                        Text(resolvedType.emoji)
+                            .font(.system(size: 18))
+                    }
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(challenge.displayTitle)
@@ -3076,7 +3089,7 @@ struct DashboardView: View {
                             Text("\(challenge.daysRemaining)d left")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(challengeColor)
+                                .foregroundColor(typeColor)
                         }
                     }
                     
@@ -3095,20 +3108,18 @@ struct DashboardView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
-            // Bottom section — different layout per mode
+            // Bottom section — different layout per mode, type-aware colors + live data
             HStack(spacing: 0) {
-                // Left accent bar
+                // Left accent bar — type-colored
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(LinearGradient(colors: challengeGradient, startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
                     .padding(.vertical, 4)
                 
                 if isAccountability {
-                    // ACCOUNTABILITY: Buddy check-in layout
-                    accountabilityProgressSection(challenge: challenge, challengeColor: challengeColor)
+                    accountabilityProgressSection(challenge: challenge, challengeColor: typeColor, typeGradient: typeGradient)
                 } else {
-                    // COMPETITION: Head-to-head battle layout
-                    competitionProgressSection(challenge: challenge, challengeColor: challengeColor)
+                    competitionProgressSection(challenge: challenge, challengeColor: typeColor, typeGradient: typeGradient)
                 }
             }
             .padding(.vertical, 12)
@@ -3123,19 +3134,19 @@ struct DashboardView: View {
         }
         .background(
             ZStack {
-                // Animated glowing border (matches group widget)
+                // Animated glowing border — type-colored
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
-                                challengeColor.opacity(0.7),
-                                Color.teal.opacity(0.5),
-                                challengeColor.opacity(0.3),
+                                typeColor.opacity(0.7),
+                                typeGradient.last?.opacity(0.5) ?? typeColor.opacity(0.5),
+                                typeColor.opacity(0.3),
                                 Color.clear,
                                 Color.clear,
-                                challengeColor.opacity(0.2),
-                                Color.mint.opacity(0.4),
-                                challengeColor.opacity(0.6)
+                                typeColor.opacity(0.2),
+                                typeGradient.last?.opacity(0.4) ?? typeColor.opacity(0.4),
+                                typeColor.opacity(0.6)
                             ]),
                             center: .center,
                             angle: .degrees(challengeGlowPhase)
@@ -3158,7 +3169,7 @@ struct DashboardView: View {
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -3166,49 +3177,50 @@ struct DashboardView: View {
                     )
             }
         )
-        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: typeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: typeColor.opacity(0.08), radius: 25, x: 0, y: 4)
     }
     
     // MARK: - Accountability Progress (buddy check-in)
     
-    private func accountabilityProgressSection(challenge: ActiveChallenge, challengeColor: Color) -> some View {
-        let myProgress = (challenge.myTodayProgress ?? 0) > 0 ? (challenge.myTodayProgress ?? 0) : challenge.myTotalProgress
+    private func accountabilityProgressSection(challenge: ActiveChallenge, challengeColor: Color, typeGradient: [Color]) -> some View {
+        let resolver = ChallengeProgressResolver.shared
+        let myLiveProgress = resolver.liveProgress(for: challenge)
         let oppProgress = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
-        let myDone = challenge.dailyTarget.map { myProgress >= $0 } ?? false
+        let myDone = challenge.dailyTarget.map { myLiveProgress >= $0 } ?? false
         let oppDone = challenge.dailyTarget.map { oppProgress >= $0 } ?? false
         let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Buddy"
+        let livePercent = resolver.progressPercentage(for: challenge)
+        let resolvedType = challenge.resolvedType
         
         return HStack(spacing: 12) {
             // Both avatars together with status
             HStack(spacing: -8) {
-                // Your avatar
                 challengeAvatar(
                     isUser: true,
                     photoUrl: nil,
                     name: userManager.currentUser?.name,
                     done: myDone,
-                    gradientColors: [.blue, .cyan]
+                    gradientColors: typeGradient
                 )
-                
-                // Buddy avatar
                 challengeAvatar(
                     isUser: false,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
                     done: oppDone,
-                    gradientColors: [.blue, .cyan]
+                    gradientColors: typeGradient
                 )
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                // Today's check-in status
+                // Live progress value for "my" side
                 HStack(spacing: 4) {
                     Text(myDone ? "✅" : "⬜")
                         .font(.system(size: 12))
-                    Text("You")
+                    Text(resolver.formattedProgress(for: challenge))
                         .font(.caption2)
-                        .foregroundColor(myDone ? .green : .secondary)
+                        .fontWeight(.bold)
+                        .foregroundColor(myDone ? .green : challengeColor)
                     
                     Text("·")
                         .font(.caption2)
@@ -3233,7 +3245,8 @@ struct DashboardView: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing))
                     } else {
-                        Text("Start your streak today!")
+                        // Type-specific encouragement
+                        Text(accountabilityEncouragement(for: resolvedType))
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -3242,14 +3255,14 @@ struct DashboardView: View {
             
             Spacer(minLength: 4)
             
-            // Daily progress ring (combined)
+            // Daily progress ring — type-colored with live percentage
             ZStack {
                 Circle()
                     .stroke(Color.gray.opacity(0.15), lineWidth: 3)
                     .frame(width: 36, height: 36)
                 Circle()
-                    .trim(from: 0, to: challenge.progressPercentage)
-                    .stroke(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .trim(from: 0, to: livePercent)
+                    .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .frame(width: 36, height: 36)
                     .rotationEffect(.degrees(-90))
                 
@@ -3258,7 +3271,7 @@ struct DashboardView: View {
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.green)
                 } else {
-                    Text("\(Int(challenge.progressPercentage * 100))%")
+                    Text("\(Int(livePercent * 100))%")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                 }
@@ -3268,13 +3281,30 @@ struct DashboardView: View {
         .padding(.trailing, 14)
     }
     
+    /// Returns a type-specific encouragement string for accountability challenges
+    private func accountabilityEncouragement(for type: ChallengeType) -> String {
+        switch type {
+        case .hydrate: return "Drink up together today!"
+        case .protein: return "Hit your protein today!"
+        case .calories: return "Burn it together!"
+        case .steps: return "Start stepping today!"
+        case .walk: return "Get walking today!"
+        case .run: return "Lace up and go!"
+        case .lift: return "Hit the weights today!"
+        case .activeMinutes: return "Get moving today!"
+        case .workoutStreak: return "Start your streak today!"
+        }
+    }
+    
     // MARK: - Competition Progress (head-to-head battle)
     
-    private func competitionProgressSection(challenge: ActiveChallenge, challengeColor: Color) -> some View {
-        // Use todayProgress if available, otherwise fall back to totalProgress
-        let myToday = (challenge.myTodayProgress ?? 0) > 0 ? (challenge.myTodayProgress ?? 0) : challenge.myTotalProgress
+    private func competitionProgressSection(challenge: ActiveChallenge, challengeColor: Color, typeGradient: [Color]) -> some View {
+        let resolver = ChallengeProgressResolver.shared
+        let resolvedType = challenge.resolvedType
+        // Use live data for my progress, server data for opponent
+        let myLiveToday = resolver.liveProgress(for: challenge)
         let oppToday = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
-        let amWinningNow = challenge.amWinningToday ?? challenge.amWinning
+        let amWinningNow = myLiveToday > oppToday
         
         return HStack(spacing: 8) {
             // Your side
@@ -3283,8 +3313,8 @@ struct DashboardView: View {
                     isUser: true,
                     photoUrl: nil,
                     name: userManager.currentUser?.name,
-                    done: challenge.amWinning,
-                    gradientColors: [.blue, .cyan]
+                    done: amWinningNow,
+                    gradientColors: typeGradient
                 )
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -3293,14 +3323,14 @@ struct DashboardView: View {
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
-                        if challenge.amWinning {
+                        if amWinningNow {
                             Image(systemName: "crown.fill")
                                 .font(.system(size: 8))
                                 .foregroundColor(.yellow)
                         }
                     }
                     
-                    Text(formatChallengeProgress(myToday, unit: challenge.targetUnit))
+                    Text(resolver.formatValue(myLiveToday, unit: challenge.targetUnit, type: resolvedType))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(amWinningNow ? .green : .primary)
                         .lineLimit(1)
@@ -3316,9 +3346,10 @@ struct DashboardView: View {
                 Text("⚔️")
                     .font(.system(size: 14))
                 
-                if myToday != oppToday {
-                    let diff = abs(myToday - oppToday)
-                    Text(amWinningNow ? "+\(formatChallengeProgress(diff, unit: challenge.targetUnit))" : "-\(formatChallengeProgress(diff, unit: challenge.targetUnit))")
+                if myLiveToday != oppToday {
+                    let diff = abs(myLiveToday - oppToday)
+                    let diffStr = resolver.formatValue(diff, unit: challenge.targetUnit, type: resolvedType)
+                    Text(amWinningNow ? "+\(diffStr)" : "-\(diffStr)")
                         .font(.system(size: 8, weight: .bold, design: .rounded))
                         .foregroundColor(amWinningNow ? .green : .red)
                         .lineLimit(1)
@@ -3333,7 +3364,7 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 VStack(alignment: .trailing, spacing: 2) {
                     HStack(spacing: 3) {
-                        if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
+                        if !amWinningNow && oppToday > 0 {
                             Image(systemName: "crown.fill")
                                 .font(.system(size: 8))
                                 .foregroundColor(.yellow)
@@ -3345,7 +3376,7 @@ struct DashboardView: View {
                             .lineLimit(1)
                     }
                     
-                    Text(formatChallengeProgress(oppToday, unit: challenge.targetUnit))
+                    Text(resolver.formatValue(oppToday, unit: challenge.targetUnit, type: resolvedType))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(!amWinningNow && oppToday > 0 ? .green : .primary)
                         .lineLimit(1)
@@ -3357,7 +3388,7 @@ struct DashboardView: View {
                     isUser: false,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
-                    done: !challenge.amWinning && challenge.opponentTotalProgress > 0,
+                    done: !amWinningNow && oppToday > 0,
                     gradientColors: [.orange, .red]
                 )
             }
@@ -3445,21 +3476,27 @@ struct DashboardView: View {
     // MARK: - Group Challenge Widget (3-person)
     
     private func groupChallengeWidget(challenge: ActiveGroupChallenge) -> some View {
+        let resolvedType = challenge.resolvedType
         let isAccountability = challenge.challengeMode == .accountability
-        let accentColor: Color = isAccountability ? .cyan : .orange
-        let accentGradient: [Color] = isAccountability ? [.blue, .cyan] : [.orange, .red]
+        let accentColor: Color = resolvedType.color
+        let accentGradient: [Color] = resolvedType.gradientColors
         let allMembers = challenge.members ?? []
         let acceptedMembers = challenge.acceptedMembers
         let pendingMembers = challenge.pendingMembers
         let isPending = challenge.isPending
-        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal (matches 1v1 pending)
+        let challengeColor = resolvedType.color
         
         return VStack(spacing: 0) {
             // Header
             NavigationLink(destination: GroupChallengeDetailView(challenge: challenge).environmentObject(userManager)) {
                 HStack(alignment: .center, spacing: 10) {
-                    Text(challenge.type?.emoji ?? "🏆")
-                        .font(.system(size: 28))
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 36, height: 36)
+                        Text(resolvedType.emoji)
+                            .font(.system(size: 18))
+                    }
                     
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
@@ -3708,10 +3745,28 @@ struct DashboardView: View {
     }
     
     private func formatChallengeProgress(_ value: Int, unit: String) -> String {
-        if value >= 10000 {
-            return String(format: "%.1fk", Double(value) / 1000)
+        // Type-aware formatting based on unit
+        switch unit.lowercased() {
+        case "ml":
+            if value >= 1000 {
+                return String(format: "%.1fL", Double(value) / 1000)
+            }
+            return "\(value) ml"
+        case "oz":
+            return "\(value) oz"
+        case "grams", "g":
+            return "\(value)g"
+        case "cal", "calories", "kcal":
+            if value >= 10000 {
+                return String(format: "%.1fk", Double(value) / 1000)
+            }
+            return "\(value) cal"
+        default:
+            if value >= 10000 {
+                return String(format: "%.1fk", Double(value) / 1000)
+            }
+            return value.formatted()
         }
-        return value.formatted()
     }
     
     // MARK: - Unified Smart Program Widget

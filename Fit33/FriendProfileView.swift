@@ -520,15 +520,21 @@ struct FriendProfileView: View {
     // MARK: - Active Challenge Card (shows when challenge already exists with friend)
     
     private func activeChallengeCard(challenge: ActiveChallenge) -> some View {
-        let challengeType = challenge.type ?? .steps
+        let resolvedType = challenge.resolvedType
+        let resolver = ChallengeProgressResolver.shared
         
         return Button(action: {
             selectedChallenge = challenge
             showingChallengeDetail = true
         }) {
             HStack(spacing: 12) {
-                Text(challengeType.emoji)
-                    .font(.system(size: 32))
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 40, height: 40)
+                    Text(resolvedType.emoji)
+                        .font(.system(size: 20))
+                }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Active Challenge")
@@ -536,18 +542,18 @@ struct FriendProfileView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                     
-                    Text("\(challenge.title) • \(challenge.daysRemaining) days left")
+                    Text("\(challenge.displayTitle) • \(challenge.daysRemaining) days left")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
                 
-                // Score comparison
+                // Live score comparison
                 VStack(spacing: 2) {
                     Text(challenge.amWinning ? "🏆" : "")
                         .font(.system(size: 10))
-                    Text("\(challenge.myTotalProgress) - \(challenge.opponentTotalProgress)")
+                    Text("\(resolver.formattedProgress(for: challenge)) - \(resolver.formatValue(challenge.opponentTotalProgress, unit: challenge.targetUnit, type: resolvedType))")
                         .font(.caption)
                         .fontWeight(.bold)
                         .foregroundColor(challenge.amWinning ? .green : (challenge.opponentTotalProgress > challenge.myTotalProgress ? .red : .primary))
@@ -555,7 +561,7 @@ struct FriendProfileView: View {
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(resolvedType.color)
             }
             .padding(16)
             .background(

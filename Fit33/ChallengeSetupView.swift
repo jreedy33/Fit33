@@ -731,6 +731,9 @@ struct ChallengeSetupView: View {
         case .steps: return "steps"
         case .walk, .run, .activeMinutes: return "minutes"
         case .lift, .workoutStreak: return "workouts"
+        case .hydrate: return "ml"
+        case .calories: return "calories"
+        case .protein: return "grams"
         }
     }
     
@@ -752,6 +755,12 @@ struct ChallengeSetupView: View {
             dailyTarget = min(180, dailyTarget + 5)
         case .lift, .workoutStreak:
             dailyTarget = min(3, dailyTarget + 1)
+        case .hydrate:
+            dailyTarget = min(5000, dailyTarget + 250)
+        case .calories:
+            dailyTarget = min(5000, dailyTarget + 100)
+        case .protein:
+            dailyTarget = min(300, dailyTarget + 10)
         }
     }
     
@@ -764,6 +773,12 @@ struct ChallengeSetupView: View {
             dailyTarget = max(5, dailyTarget - 5)
         case .lift, .workoutStreak:
             dailyTarget = max(1, dailyTarget - 1)
+        case .hydrate:
+            dailyTarget = max(250, dailyTarget - 250)
+        case .calories:
+            dailyTarget = max(100, dailyTarget - 100)
+        case .protein:
+            dailyTarget = max(10, dailyTarget - 10)
         }
     }
     

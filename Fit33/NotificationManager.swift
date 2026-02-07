@@ -1219,13 +1219,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchPendingSentChallenges()
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchPendingInvites()
-            if let challengeId = userInfo["challenge_id"] as? String {
-                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                print("🏆 [NOTIFICATIONS] Opening challenge detail: \(challengeId)")
-            } else {
-                DeepLinkManager.shared.pendingDestination = .challenges
-                print("🏆 [NOTIFICATIONS] Opening challenges list")
-            }
+            // Navigate to Dashboard so user sees the active challenge widget in the carousel
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            print("🏆 [NOTIFICATIONS] Challenge \(type) — opening dashboard with active widget")
             
         case "challenge_cancelled":
             await ChallengeService.shared.fetchActiveChallenges()

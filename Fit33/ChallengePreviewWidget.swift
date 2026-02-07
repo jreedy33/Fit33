@@ -24,7 +24,7 @@ struct ChallengePreviewWidget: View {
     @State private var showingDeclineConfirmation = false
     
     private var challengeType: ChallengeType {
-        invite.type ?? .steps
+        invite.resolvedType
     }
     
     // Theme colors based on challenge type
@@ -415,8 +415,12 @@ struct ActiveChallengeWidget: View {
     let challenge: ActiveChallenge
     let onTap: () -> Void
     
-    private var challengeType: ChallengeType {
-        challenge.type ?? .steps
+    private var resolvedType: ChallengeType {
+        challenge.resolvedType
+    }
+    
+    private var resolver: ChallengeProgressResolver {
+        ChallengeProgressResolver.shared
     }
     
     private var cardBackground: Color {
@@ -426,12 +430,17 @@ struct ActiveChallengeWidget: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 12) {
-                // Header
+                // Header — type-aware
                 HStack(spacing: 8) {
-                    Text(challengeType.emoji)
-                        .font(.system(size: 18))
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 28, height: 28)
+                        Text(resolvedType.emoji)
+                            .font(.system(size: 14))
+                    }
                     
-                    Text(challenge.title)
+                    Text(challenge.displayTitle)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
@@ -469,16 +478,16 @@ struct ActiveChallengeWidget: View {
                     }
                 }
                 
-                // Progress comparison
+                // Progress comparison — live data for "my" side
                 HStack(spacing: 0) {
-                    // My progress
+                    // My live progress
                     VStack(spacing: 4) {
-                        Text(formatProgress(challenge.myTotalProgress))
+                        Text(resolver.formattedProgress(for: challenge))
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [.blue, .cyan],
+                                    colors: resolvedType.gradientColors,
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -493,9 +502,9 @@ struct ActiveChallengeWidget: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    // Opponent progress
+                    // Opponent progress (from server)
                     VStack(spacing: 4) {
-                        Text(formatProgress(challenge.opponentTotalProgress))
+                        Text(resolver.formatValue(challenge.opponentTotalProgress, unit: challenge.targetUnit, type: resolvedType))
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(
@@ -512,26 +521,47 @@ struct ActiveChallengeWidget: View {
                     .frame(maxWidth: .infinity)
                 }
                 
-                // Days remaining
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                    Text("\(challenge.daysRemaining) days left")
-                        .font(.caption)
+                // Live progress bar + days remaining
+                VStack(spacing: 6) {
+                    // Type-colored progress bar
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.gray.opacity(0.15))
+                                .frame(height: 6)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * resolver.progressPercentage(for: challenge), height: 6)
+                        }
+                    }
+                    .frame(height: 6)
+                    
+                    HStack {
+                        Text("\(Int(resolver.progressPercentage(for: challenge) * 100))% of daily goal")
+                            .font(.caption2)
+                            .foregroundColor(resolvedType.color)
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.caption2)
+                            Text("\(challenge.daysRemaining)d left")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
+                    }
                 }
-                .foregroundColor(.secondary)
             }
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(cardBackground)
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .shadow(color: resolvedType.color.opacity(0.08), radius: 8, x: 0, y: 4)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeType.gradientColors[0].opacity(0.3), challengeType.gradientColors[1].opacity(0.2)],
+                            colors: [resolvedType.gradientColors[0].opacity(0.3), resolvedType.gradientColors[1].opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -540,13 +570,6 @@ struct ActiveChallengeWidget: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-    }
-    
-    private func formatProgress(_ value: Int) -> String {
-        if value >= 10000 {
-            return String(format: "%.1fk", Double(value) / 1000)
-        }
-        return value.formatted()
     }
 }
 
@@ -559,7 +582,7 @@ struct FriendChallengeRow: View {
     let onTap: () -> Void
     
     private var challengeType: ChallengeType {
-        challenge.type ?? .steps
+        challenge.resolvedType
     }
     
     private var cardBackgroundGradient: [Color] {
@@ -681,7 +704,7 @@ struct GroupChallengeInviteWidget: View {
     private let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7) // Green teal
     
     private var challengeType: ChallengeType {
-        challenge.type ?? .steps
+        challenge.resolvedType
     }
     
     private var themeColor: Color { challengeColor }

@@ -87,6 +87,19 @@ class MealService: ObservableObject {
                     protein: foodEntry.protein
                 )
             }
+            
+            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated protein/calories to any active challenges
+            Task { @MainActor in
+                let totalProtein = todaysMeals.reduce(0) { $0 + $1.protein }
+                let totalCalories = todaysMeals.reduce(0) { $0 + $1.calories }
+                
+                if totalProtein > 0 {
+                    await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
+                }
+                if totalCalories > 0 {
+                    await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
+                }
+            }
         } catch {
             print("Error saving meal entry: \(error)")
         }
@@ -123,6 +136,14 @@ class MealService: ObservableObject {
                             print("⚠️ [MEAL SERVICE] Failed to delete from cloud: \(error)")
                         }
                     }
+                }
+                
+                // ⚡ Re-sync challenge progress with updated (lower) totals
+                Task { @MainActor in
+                    let totalProtein = todaysMeals.reduce(0) { $0 + $1.protein }
+                    let totalCalories = todaysMeals.reduce(0) { $0 + $1.calories }
+                    await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
+                    await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
                 }
             }
         } catch {

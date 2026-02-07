@@ -1564,10 +1564,144 @@ class ChallengeService: ObservableObject {
             // Active minutes challenge
             return healthKit.todayActiveMinutes
             
+        case "hydrate":
+            // Hydration challenge — pull from HydrationService
+            let totalMl = HydrationService.shared.todayTotal
+            if targetUnit.lowercased() == "oz" {
+                return Int(Double(totalMl) / 29.5735)
+            }
+            return totalMl
+            
+        case "protein":
+            // Protein challenge — pull from MealService
+            return MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+            
+        case "calories":
+            // Calorie challenge — pull from HealthKit (burned) or MealService (consumed)
+            let hkCalories = healthKit.todayCalories
+            let mealCalories = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
+            return max(hkCalories, mealCalories)
+            
         default:
             print("⚠️ [CHALLENGES] Unknown challenge type: \(challengeType)")
             return 0
         }
+    }
+    
+    // MARK: - Universal Tracking Sync
+    
+    /// Sync ALL tracking data (hydration, meals, HealthKit) to active challenges.
+    /// Call this on foreground, after any log event, and periodically.
+    func syncAllTrackingToChallenges() async {
+        let allChallenges = activeChallenges + activeGroupChallenges.compactMap { group -> ActiveChallenge? in
+            // Skip group challenges — they have their own sync method
+            return nil
+        }
+        
+        guard !activeChallenges.isEmpty || !activeGroupChallenges.isEmpty else { return }
+        
+        print("🔄 [CHALLENGES] Universal sync: pushing all tracking data to challenges...")
+        
+        // Sync 1v1 challenges
+        for challenge in activeChallenges {
+            guard challenge.status == "active" || challenge.status == "pending" else { continue }
+            
+            let resolvedType = challenge.resolvedType
+            var progressValue = 0
+            var source = "auto_sync"
+            
+            switch resolvedType {
+            case .hydrate:
+                let totalMl = HydrationService.shared.todayTotal
+                progressValue = challenge.targetUnit.lowercased() == "oz"
+                    ? Int(Double(totalMl) / 29.5735)
+                    : totalMl
+                source = "hydration"
+                
+            case .protein:
+                progressValue = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+                source = "meals"
+                
+            case .calories:
+                let hkCal = HealthKitService.shared.todayCalories
+                let mealCal = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
+                progressValue = max(hkCal, mealCal)
+                source = hkCal >= mealCal ? "healthkit" : "meals"
+                
+            case .steps:
+                let steps = HealthKitManager.shared.todaySteps > 0
+                    ? HealthKitManager.shared.todaySteps
+                    : HealthKitService.shared.todaySteps
+                progressValue = steps
+                source = "healthkit"
+                
+            case .activeMinutes:
+                progressValue = HealthKitService.shared.todayActiveMinutes
+                source = "healthkit"
+                
+            case .walk, .run:
+                progressValue = await calculateProgressFromHealthKit(
+                    challengeType: challenge.challengeType,
+                    targetUnit: challenge.targetUnit
+                )
+                source = "healthkit"
+                
+            case .lift, .workoutStreak:
+                progressValue = await calculateProgressFromHealthKit(
+                    challengeType: challenge.challengeType,
+                    targetUnit: challenge.targetUnit
+                )
+                source = "healthkit"
+            }
+            
+            if progressValue > 0 {
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: progressValue,
+                    source: source
+                )
+            }
+        }
+        
+        // Also sync group challenges
+        await syncHealthKitDataToGroupChallenges()
+        
+        // Refresh to show latest
+        await fetchActiveChallenges()
+        await fetchActiveGroupChallenges()
+        
+        print("✅ [CHALLENGES] Universal tracking sync complete")
+    }
+    
+    /// Quick sync for a SPECIFIC challenge type (called immediately when user logs data).
+    /// Much faster than full sync — only touches matching challenges.
+    func syncTrackingForType(_ type: ChallengeType, value: Int, source: String = "auto_sync") async {
+        let matching = activeChallenges.filter { challenge in
+            challenge.resolvedType == type && (challenge.status == "active" || challenge.status == "pending")
+        }
+        
+        guard !matching.isEmpty else { return }
+        
+        print("⚡ [CHALLENGES] Quick sync \(type.rawValue): \(value) \(type.unitLabel) to \(matching.count) challenge(s)")
+        
+        for challenge in matching {
+            var adjustedValue = value
+            // Handle unit conversion for hydration
+            if type == .hydrate && challenge.targetUnit.lowercased() == "oz" {
+                adjustedValue = Int(Double(value) / 29.5735)
+            }
+            
+            if adjustedValue > 0 {
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: adjustedValue,
+                    source: source
+                )
+            }
+        }
+        
+        // Light refresh — just fetch active to reflect new progress
+        await fetchActiveChallenges()
     }
     
     /// Check if a Strava workout satisfies a challenge
@@ -1857,6 +1991,124 @@ class ChallengeService: ObservableObject {
     }
 }
 
+// MARK: - Challenge Progress Resolver
+/// Resolves live "my today" progress from the corresponding tracking service for each challenge type.
+/// Use this to show real-time progress on challenge widgets instead of stale server data.
+/// Must be @MainActor because the services it reads from publish on the main actor.
+@MainActor
+class ChallengeProgressResolver: ObservableObject {
+    static let shared = ChallengeProgressResolver()
+    
+    private let hydrationService = HydrationService.shared
+    private let mealService = MealService.shared
+    private let healthKitService = HealthKitService.shared
+    private let healthKitManager = HealthKitManager.shared
+    
+    private init() {}
+    
+    /// Returns the live "my today" progress value for the given challenge type, read from the
+    /// actual tracking service. Falls back to `serverValue` when no local data is available.
+    func liveProgress(for challenge: ActiveChallenge) -> Int {
+        let resolvedType = challenge.resolvedType
+        let serverValue = challenge.myTodayProgress ?? 0
+        
+        switch resolvedType {
+        case .steps:
+            // Prefer HealthKitManager (real-time observer) → HealthKitService fallback
+            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
+            return steps > 0 ? steps : serverValue
+            
+        case .hydrate:
+            let totalMl = hydrationService.todayTotal
+            // If challenge target is in oz, convert
+            if challenge.targetUnit.lowercased() == "oz" {
+                let totalOz = Int(Double(totalMl) / 29.5735)
+                return totalOz > 0 ? totalOz : serverValue
+            }
+            return totalMl > 0 ? totalMl : serverValue
+            
+        case .protein:
+            let protein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+            return protein > 0 ? protein : serverValue
+            
+        case .calories:
+            // Use HealthKit active calories (burned) — or MealService consumed calories
+            // depending on unit: "cal" from HealthKit (burned), "calories" from meals (consumed)
+            let hkCalories = healthKitService.todayCalories
+            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
+            // Prefer whichever has data; challenge unit gives a hint
+            let value = max(hkCalories, mealCalories)
+            return value > 0 ? value : serverValue
+            
+        case .activeMinutes:
+            let minutes = healthKitService.todayActiveMinutes
+            return minutes > 0 ? minutes : serverValue
+            
+        case .walk, .run:
+            // Distance in meters from HealthKit, challenges track in minutes typically
+            let distance = healthKitService.todayDistance
+            let km = distance / 1000.0
+            // If unit is "min" use active minutes, if "km"/"mi" use distance
+            if challenge.targetUnit.lowercased().contains("min") {
+                let minutes = healthKitService.todayActiveMinutes
+                return minutes > 0 ? minutes : serverValue
+            }
+            return km > 0 ? Int(km) : serverValue
+            
+        case .lift:
+            // Lifting challenges — track completed workouts/reps today
+            return serverValue
+            
+        case .workoutStreak:
+            return serverValue
+        }
+    }
+    
+    /// Returns a formatted string for the live progress + unit
+    func formattedProgress(for challenge: ActiveChallenge) -> String {
+        let value = liveProgress(for: challenge)
+        return formatValue(value, unit: challenge.targetUnit, type: challenge.resolvedType)
+    }
+    
+    /// Formats a progress value with the appropriate unit label
+    func formatValue(_ value: Int, unit: String, type: ChallengeType) -> String {
+        switch type {
+        case .hydrate:
+            if unit.lowercased() == "oz" {
+                return "\(value) oz"
+            }
+            if value >= 1000 {
+                return String(format: "%.1fL", Double(value) / 1000)
+            }
+            return "\(value) ml"
+        case .protein:
+            return "\(value)g"
+        case .calories:
+            if value >= 10000 {
+                return String(format: "%.1fk", Double(value) / 1000)
+            }
+            return "\(value) cal"
+        case .steps:
+            if value >= 10000 {
+                return String(format: "%.1fk", Double(value) / 1000)
+            }
+            return value.formatted()
+        default:
+            if value >= 10000 {
+                return String(format: "%.1fk", Double(value) / 1000)
+            }
+            return value.formatted()
+        }
+    }
+    
+    /// Progress percentage (0.0–1.0) based on live data vs daily target
+    func progressPercentage(for challenge: ActiveChallenge) -> Double {
+        guard let target = challenge.dailyTarget, target > 0 else { return 0 }
+        let value = Double(liveProgress(for: challenge))
+        return min(1.0, value / Double(target))
+    }
+}
+
 // MARK: - Challenge Type Enum
 
 enum ChallengeType: String, CaseIterable, Identifiable {
@@ -1866,6 +2118,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
     case lift = "lift"
     case workoutStreak = "workout_streak"
     case activeMinutes = "active_minutes"
+    case hydrate = "hydrate"
+    case calories = "calories"
+    case protein = "protein"
     
     var id: String { rawValue }
     
@@ -1877,6 +2132,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .lift: return "Lift Challenge"
         case .workoutStreak: return "Workout Streak"
         case .activeMinutes: return "Active Minutes"
+        case .hydrate: return "Hydration Challenge"
+        case .calories: return "Calorie Challenge"
+        case .protein: return "Protein Challenge"
         }
     }
     
@@ -1888,6 +2146,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .lift: return "dumbbell.fill"
         case .workoutStreak: return "flame.fill"
         case .activeMinutes: return "timer"
+        case .hydrate: return "drop.fill"
+        case .calories: return "flame.fill"
+        case .protein: return "fork.knife"
         }
     }
     
@@ -1899,6 +2160,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .lift: return "🏋️"
         case .workoutStreak: return "🔥"
         case .activeMinutes: return "⏱️"
+        case .hydrate: return "💧"
+        case .calories: return "🔥"
+        case .protein: return "🥩"
         }
     }
     
@@ -1910,6 +2174,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .lift: return .purple
         case .workoutStreak: return .red
         case .activeMinutes: return .cyan
+        case .hydrate: return .cyan
+        case .calories: return .orange
+        case .protein: return .pink
         }
     }
     
@@ -1921,6 +2188,24 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .lift: return [.purple, .pink]
         case .workoutStreak: return [.red, .orange]
         case .activeMinutes: return [.cyan, .blue]
+        case .hydrate: return [.cyan, .blue]
+        case .calories: return [.orange, .red]
+        case .protein: return [.pink, .purple]
+        }
+    }
+    
+    /// The unit label to display for this challenge type
+    var unitLabel: String {
+        switch self {
+        case .steps: return "steps"
+        case .walk: return "min"
+        case .run: return "min"
+        case .lift: return "reps"
+        case .workoutStreak: return "days"
+        case .activeMinutes: return "min"
+        case .hydrate: return "ml"
+        case .calories: return "cal"
+        case .protein: return "g"
         }
     }
 }
@@ -1956,6 +2241,21 @@ struct ChallengeInvite: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Smart type detection using targetUnit and title emoji
+    var resolvedType: ChallengeType {
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes { return direct }
+        switch targetUnit.lowercased() {
+        case "ml", "oz": return .hydrate
+        case "grams", "g": return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     /// Display title without emojis, with K formatting
@@ -2064,6 +2364,21 @@ struct PendingSentChallenge: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Smart type detection using targetUnit and title emoji
+    var resolvedType: ChallengeType {
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes { return direct }
+        switch targetUnit.lowercased() {
+        case "ml", "oz": return .hydrate
+        case "grams", "g": return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     /// Display title without emojis, with K formatting
@@ -2197,6 +2512,29 @@ struct ActiveChallenge: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Smart type detection: uses targetUnit and title emoji to infer the real challenge type
+    /// even if it was stored as a fallback (e.g. hydration stored as "steps")
+    var resolvedType: ChallengeType {
+        // First try direct mapping
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes {
+            return direct
+        }
+        // Infer from targetUnit
+        switch targetUnit.lowercased() {
+        case "ml", "oz":     return .hydrate
+        case "grams", "g":   return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        // Infer from title emoji
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        if title.contains("🔥") && (targetUnit.lowercased().contains("cal")) { return .calories }
+        // Fall back to raw type or .steps
+        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     /// Detect challenge mode from the title prefix (🤝 = accountability, ⚔️ = competition)
@@ -2375,6 +2713,21 @@ struct ActiveGroupChallenge: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Smart type detection using targetUnit and title emoji
+    var resolvedType: ChallengeType {
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes { return direct }
+        switch targetUnit.lowercased() {
+        case "ml", "oz": return .hydrate
+        case "grams", "g": return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     var challengeMode: ChallengeMode {
@@ -2575,6 +2928,21 @@ struct FriendChallenge: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+    
+    /// Smart type detection using targetUnit and title emoji
+    var resolvedType: ChallengeType {
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes { return direct }
+        switch targetUnit.lowercased() {
+        case "ml", "oz": return .hydrate
+        case "grams", "g": return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     var isActive: Bool {

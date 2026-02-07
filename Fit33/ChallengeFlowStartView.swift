@@ -1660,10 +1660,10 @@ struct ChallengeFlowStartView: View {
         case .walk: challengeType = .walk
         case .run: challengeType = .run
         case .lift: challengeType = .lift
-        case .hydrate: challengeType = .steps
+        case .hydrate: challengeType = .hydrate
         case .steps: challengeType = .steps
-        case .calories: challengeType = .activeMinutes
-        case .protein: challengeType = .steps
+        case .calories: challengeType = .calories
+        case .protein: challengeType = .protein
         }
         
         let title = "\(mode.titlePrefix) \(activity.emoji) \(option.title)"

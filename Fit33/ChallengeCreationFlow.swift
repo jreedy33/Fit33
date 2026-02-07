@@ -805,10 +805,10 @@ struct ChallengeCreationFlow: View {
         case .walk: challengeType = .walk
         case .run: challengeType = .run
         case .lift: challengeType = .lift
-        case .hydrate: challengeType = .steps // Use steps as fallback for hydrate
+        case .hydrate: challengeType = .hydrate
         case .steps: challengeType = .steps
-        case .calories: challengeType = .activeMinutes // Use activeMinutes for calories
-        case .protein: challengeType = .steps // Use steps as fallback for protein
+        case .calories: challengeType = .calories
+        case .protein: challengeType = .protein
         }
         
         print("🔄 [CHALLENGE FLOW] Mapped to ChallengeType: \(challengeType.rawValue)")

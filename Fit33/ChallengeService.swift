@@ -45,6 +45,7 @@ func parseFlexibleDate(_ string: String) -> Date {
 @MainActor
 class ChallengeService: ObservableObject {
     static let shared = ChallengeService()
+    private let logger = SessionLogManager.shared
     
     // MARK: - Cache Keys
     
@@ -261,9 +262,13 @@ class ChallengeService: ObservableObject {
                 self.pendingSentChallenges = result
             }
             cachePendingSentChallenges()
+            logger.log(.info, category: .challenge, message: "Fetched \(result.count) pending SENT challenges", metadata: result.isEmpty ? nil : [
+                "challenges": result.map { "\($0.displayTitle) → \($0.opponentName ?? "?")" }.joined(separator: ", ")
+            ])
             print("💾 [CHALLENGES] Cached \(result.count) pending sent challenges")
             print("✅ [CHALLENGES] Fetched \(result.count) pending sent challenges")
         } catch {
+            logger.log(.error, category: .challenge, message: "Failed to fetch pending sent challenges", metadata: ["error": "\(error)"])
             print("❌ [CHALLENGES] Error fetching pending sent challenges: \(error)")
         }
     }
@@ -343,8 +348,12 @@ class ChallengeService: ObservableObject {
                 print("📊 [WIDGET DATA] '\(c.displayTitle)' → myTotal: \(c.myTotalProgress), myToday: \(c.myTodayProgress ?? -1), oppTotal: \(c.opponentTotalProgress), oppToday: \(c.opponentTodayProgress ?? -1), amWinning: \(c.amWinning), amWinningToday: \(c.amWinningToday ?? false)")
             }
             
+            logger.log(.info, category: .challenge, message: "Fetched \(result.count) active challenges", metadata: result.isEmpty ? nil : [
+                "challenges": result.map { "\($0.displayTitle) vs \($0.opponentName ?? "?")" }.joined(separator: ", ")
+            ])
             print("✅ [CHALLENGES] Fetched \(result.count) active challenges")
         } catch {
+            logger.log(.error, category: .challenge, message: "Failed to fetch active challenges", metadata: ["error": "\(error)"])
             print("❌ [CHALLENGES] Error fetching active challenges: \(error)")
         }
     }
@@ -425,6 +434,54 @@ class ChallengeService: ObservableObject {
         startDate: Date = Date(), // Today - challenge starts when opponent accepts
         durationDays: Int = 7
     ) async -> UUID? {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let startDateStr = dateFormatter.string(from: startDate)
+        
+        // Try RPC first (preferred - atomic transaction in DB)
+        if let challengeId = await createChallengeViaRPC(
+            opponentId: opponentId, type: type, title: title, description: description,
+            dailyTarget: dailyTarget, totalTarget: totalTarget, targetUnit: targetUnit,
+            startDateStr: startDateStr, durationDays: durationDays
+        ) {
+            await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            return challengeId
+        }
+        
+        // Retry RPC once after a brief delay (transient network issues)
+        print("🔄 [CHALLENGES] Retrying challenge creation after delay...")
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        
+        if let challengeId = await createChallengeViaRPC(
+            opponentId: opponentId, type: type, title: title, description: description,
+            dailyTarget: dailyTarget, totalTarget: totalTarget, targetUnit: targetUnit,
+            startDateStr: startDateStr, durationDays: durationDays
+        ) {
+            await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            return challengeId
+        }
+        
+        // Fallback: Direct table inserts if RPC is broken/missing
+        print("⚠️ [CHALLENGES] RPC failed twice, attempting direct table insert fallback...")
+        if let challengeId = await createChallengeDirectInsert(
+            opponentId: opponentId, type: type, title: title, description: description,
+            dailyTarget: dailyTarget, totalTarget: totalTarget, targetUnit: targetUnit,
+            startDateStr: startDateStr, durationDays: durationDays
+        ) {
+            await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            return challengeId
+        }
+        
+        print("❌ [CHALLENGES] All challenge creation methods failed")
+        return nil
+    }
+    
+    /// Create challenge via RPC function (preferred - single atomic transaction)
+    private func createChallengeViaRPC(
+        opponentId: UUID, type: ChallengeType, title: String, description: String?,
+        dailyTarget: Int?, totalTarget: Int?, targetUnit: String,
+        startDateStr: String, durationDays: Int
+    ) async -> UUID? {
         do {
             struct CreateChallengeParams: Encodable {
                 let p_opponent_id: String
@@ -438,9 +495,6 @@ class ChallengeService: ObservableObject {
                 let p_duration_days: Int
             }
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            
             let params = CreateChallengeParams(
                 p_opponent_id: opponentId.uuidString,
                 p_challenge_type: type.rawValue,
@@ -449,47 +503,214 @@ class ChallengeService: ObservableObject {
                 p_daily_target: dailyTarget,
                 p_total_target: totalTarget,
                 p_target_unit: targetUnit,
-                p_start_date: dateFormatter.string(from: startDate),
+                p_start_date: startDateStr,
                 p_duration_days: durationDays
             )
+            
+            print("📤 [CHALLENGES] Calling create_challenge RPC...")
+            print("   └─ opponent: \(opponentId.uuidString.prefix(8))...")
+            print("   └─ type: \(type.rawValue), title: \(title)")
+            print("   └─ daily_target: \(dailyTarget ?? 0), duration: \(durationDays)d")
             
             let challengeId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("create_challenge", params: params)
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Created challenge: \(challengeId)")
-            
-            // Log interaction for friend ranking
-            await FriendRankingService.shared.logInteraction(
-                withFriendId: opponentId,
-                type: .challengeCreated,
-                referenceId: challengeId,
-                referenceType: "challenge"
-            )
-            
-            // Refresh PENDING sent challenges (NOT active - challenge is pending until opponent accepts)
-            await fetchPendingSentChallenges()
-            
-            // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier
-            // This ensures creators get credit for progress made before creating the challenge
-            let calendar = Calendar.current
-            let today = calendar.startOfDay(for: Date())
-            let challengeStartDay = calendar.startOfDay(for: startDate)
-            
-            if challengeStartDay <= today {
-                print("🔄 [CHALLENGES] Challenge starts today - syncing creator's existing progress...")
-                await syncCreatorProgressOnCreate(
-                    challengeId: challengeId,
-                    challengeType: type,
-                    targetUnit: targetUnit
-                )
-            }
-            
+            print("✅ [CHALLENGES] RPC created challenge: \(challengeId)")
             return challengeId
         } catch {
-            print("❌ [CHALLENGES] Error creating challenge: \(error)")
+            print("❌ [CHALLENGES] RPC create_challenge failed: \(error)")
+            print("   └─ Error type: \(String(describing: Swift.type(of: error)))")
+            print("   └─ Details: \(error.localizedDescription)")
             return nil
+        }
+    }
+    
+    /// Fallback: Create challenge via direct table inserts (if RPC is broken)
+    private func createChallengeDirectInsert(
+        opponentId: UUID, type: ChallengeType, title: String, description: String?,
+        dailyTarget: Int?, totalTarget: Int?, targetUnit: String,
+        startDateStr: String, durationDays: Int
+    ) async -> UUID? {
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
+            print("❌ [CHALLENGES] No current user for direct insert")
+            return nil
+        }
+        
+        let challengeId = UUID()
+        let endDate: String
+        if let start = {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            return df.date(from: startDateStr)
+        }() {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            endDate = df.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
+        } else {
+            endDate = startDateStr
+        }
+        
+        // Detect mode from title prefix
+        let mode = title.hasPrefix("🤝") ? "accountability" : "competition"
+        
+        do {
+            // Step 1: Insert into group_challenges
+            struct ChallengeInsert: Encodable {
+                let id: String
+                let created_by: String
+                let challenge_type: String
+                let title: String
+                let description: String?
+                let mode: String
+                let daily_target: Int?
+                let total_target: Int?
+                let target_unit: String
+                let start_date: String
+                let end_date: String
+                let duration_days: Int
+                let status: String
+            }
+            
+            let challenge = ChallengeInsert(
+                id: challengeId.uuidString,
+                created_by: currentUserId.uuidString,
+                challenge_type: type.rawValue,
+                title: title,
+                description: description,
+                mode: mode,
+                daily_target: dailyTarget,
+                total_target: totalTarget,
+                target_unit: targetUnit,
+                start_date: startDateStr,
+                end_date: endDate,
+                duration_days: durationDays,
+                status: "pending"
+            )
+            
+            print("📝 [CHALLENGES] Direct insert: group_challenges...")
+            try await SupabaseManager.shared.supabaseClient
+                .from("group_challenges")
+                .insert(challenge)
+                .execute()
+            print("✅ [CHALLENGES] group_challenges row created: \(challengeId)")
+            
+            // Step 2: Insert creator + opponent participants
+            // Note: challenge_participants has NO "role" column
+            struct ParticipantInsert: Encodable {
+                let challenge_id: String
+                let user_id: String
+                let status: String
+                let total_progress: Int
+                let days_completed: Int
+                let current_streak: Int
+                let best_streak: Int
+                let notify_on_opponent_complete: Bool
+            }
+            
+            let creatorParticipant = ParticipantInsert(
+                challenge_id: challengeId.uuidString,
+                user_id: currentUserId.uuidString,
+                status: "accepted",
+                total_progress: 0, days_completed: 0, current_streak: 0, best_streak: 0,
+                notify_on_opponent_complete: true
+            )
+            
+            let opponentParticipant = ParticipantInsert(
+                challenge_id: challengeId.uuidString,
+                user_id: opponentId.uuidString,
+                status: "pending",
+                total_progress: 0, days_completed: 0, current_streak: 0, best_streak: 0,
+                notify_on_opponent_complete: true
+            )
+            
+            print("📝 [CHALLENGES] Direct insert: challenge_participants...")
+            try await SupabaseManager.shared.supabaseClient
+                .from("challenge_participants")
+                .insert([creatorParticipant, opponentParticipant])
+                .execute()
+            print("✅ [CHALLENGES] Both participants created")
+            
+            // Step 3: Queue push notification (non-critical)
+            do {
+                struct NotificationInsert: Encodable {
+                    let recipient_user_id: String
+                    let notification_type: String
+                    let title: String
+                    let body: String
+                    let data: [String: String]
+                    let status: String
+                }
+                
+                let notification = NotificationInsert(
+                    recipient_user_id: opponentId.uuidString,
+                    notification_type: "challenge_invite",
+                    title: "You've been challenged! 🏆",
+                    body: "Accept the \"\(title)\" challenge!",
+                    data: [
+                        "type": "challenge_invite",
+                        "challenge_id": challengeId.uuidString,
+                        "from_user_id": currentUserId.uuidString,
+                        "challenge_type": type.rawValue,
+                        "challenge_title": title
+                    ],
+                    status: "pending"
+                )
+                
+                try await SupabaseManager.shared.supabaseClient
+                    .from("push_notification_queue")
+                    .insert(notification)
+                    .execute()
+                print("✅ [CHALLENGES] Push notification queued")
+            } catch {
+                print("⚠️ [CHALLENGES] Failed to queue notification (non-critical): \(error.localizedDescription)")
+            }
+            
+            print("✅ [CHALLENGES] Direct insert challenge created: \(challengeId)")
+            return challengeId
+            
+        } catch {
+            print("❌ [CHALLENGES] Direct insert fallback failed: \(error)")
+            print("   └─ Details: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    /// Post-creation tasks (logging, syncing, etc.)
+    private func postChallengeCreation(challengeId: UUID, opponentId: UUID, type: ChallengeType, targetUnit: String, startDate: Date) async {
+        logger.log(.info, category: .challenge, message: "🏆 Challenge CREATED", metadata: [
+            "challenge_id": challengeId.uuidString.prefix(8),
+            "opponent_id": opponentId.uuidString.prefix(8),
+            "type": type.rawValue,
+            "unit": targetUnit
+        ])
+        print("✅ [CHALLENGES] Created challenge: \(challengeId)")
+        
+        // Log interaction for friend ranking
+        await FriendRankingService.shared.logInteraction(
+            withFriendId: opponentId,
+            type: .challengeCreated,
+            referenceId: challengeId,
+            referenceType: "challenge"
+        )
+        
+        // Refresh PENDING sent challenges (NOT active - challenge is pending until opponent accepts)
+        await fetchPendingSentChallenges()
+        
+        // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier
+        // This ensures creators get credit for progress made before creating the challenge
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let challengeStartDay = calendar.startOfDay(for: startDate)
+        
+        if challengeStartDay <= today {
+            print("🔄 [CHALLENGES] Challenge starts today - syncing creator's existing progress...")
+            await syncCreatorProgressOnCreate(
+                challengeId: challengeId,
+                challengeType: type,
+                targetUnit: targetUnit
+            )
         }
     }
     
@@ -507,6 +728,11 @@ class ChallengeService: ObservableObject {
         startDate: Date = Date(),
         durationDays: Int = 7
     ) async -> UUID? {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let startDateStr = dateFormatter.string(from: startDate)
+        
+        // Try RPC first
         do {
             struct CreateGroupParams: Encodable {
                 let p_member_ids: [String]
@@ -521,9 +747,6 @@ class ChallengeService: ObservableObject {
                 let p_duration_days: Int
             }
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            
             let params = CreateGroupParams(
                 p_member_ids: memberIds.map { $0.uuidString },
                 p_challenge_type: type.rawValue,
@@ -533,9 +756,11 @@ class ChallengeService: ObservableObject {
                 p_daily_target: dailyTarget,
                 p_total_target: totalTarget,
                 p_target_unit: targetUnit,
-                p_start_date: dateFormatter.string(from: startDate),
+                p_start_date: startDateStr,
                 p_duration_days: durationDays
             )
+            
+            print("📤 [CHALLENGES] Calling create_group_challenge RPC with \(memberIds.count) members...")
             
             let groupId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("create_group_challenge", params: params)
@@ -559,7 +784,103 @@ class ChallengeService: ObservableObject {
             
             return groupId
         } catch {
-            print("❌ [CHALLENGES] Error creating group challenge: \(error)")
+            print("❌ [CHALLENGES] RPC create_group_challenge failed: \(error)")
+            print("   └─ Details: \(error.localizedDescription)")
+        }
+        
+        // Fallback: Direct inserts
+        print("⚠️ [CHALLENGES] Attempting direct insert fallback for group challenge...")
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
+            print("❌ [CHALLENGES] No current user for group challenge fallback")
+            return nil
+        }
+        
+        let challengeId = UUID()
+        let endDateStr: String = {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            if let start = df.date(from: startDateStr) {
+                return df.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
+            }
+            return startDateStr
+        }()
+        
+        do {
+            struct ChallengeInsert: Encodable {
+                let id: String
+                let created_by: String
+                let challenge_type: String
+                let title: String
+                let description: String?
+                let mode: String
+                let daily_target: Int?
+                let total_target: Int?
+                let target_unit: String
+                let start_date: String
+                let end_date: String
+                let duration_days: Int
+                let status: String
+            }
+            
+            try await SupabaseManager.shared.supabaseClient
+                .from("group_challenges")
+                .insert(ChallengeInsert(
+                    id: challengeId.uuidString, created_by: currentUserId.uuidString,
+                    challenge_type: type.rawValue, title: title, description: description,
+                    mode: mode, daily_target: dailyTarget, total_target: totalTarget,
+                    target_unit: targetUnit, start_date: startDateStr, end_date: endDateStr,
+                    duration_days: durationDays, status: "pending"
+                ))
+                .execute()
+            
+            // Note: challenge_participants has NO "role" column
+            struct ParticipantInsert: Encodable {
+                let challenge_id: String
+                let user_id: String
+                let status: String
+                let total_progress: Int
+                let days_completed: Int
+                let current_streak: Int
+                let best_streak: Int
+                let notify_on_opponent_complete: Bool
+            }
+            
+            var participants = [ParticipantInsert(
+                challenge_id: challengeId.uuidString, user_id: currentUserId.uuidString,
+                status: "accepted",
+                total_progress: 0, days_completed: 0, current_streak: 0, best_streak: 0,
+                notify_on_opponent_complete: true
+            )]
+            
+            for memberId in memberIds where memberId != currentUserId {
+                participants.append(ParticipantInsert(
+                    challenge_id: challengeId.uuidString, user_id: memberId.uuidString,
+                    status: "pending",
+                    total_progress: 0, days_completed: 0, current_streak: 0, best_streak: 0,
+                    notify_on_opponent_complete: true
+                ))
+            }
+            
+            try await SupabaseManager.shared.supabaseClient
+                .from("challenge_participants")
+                .insert(participants)
+                .execute()
+            
+            print("✅ [CHALLENGES] Group challenge created via direct insert: \(challengeId)")
+            
+            for memberId in memberIds {
+                await FriendRankingService.shared.logInteraction(
+                    withFriendId: memberId,
+                    type: .challengeCreated,
+                    referenceId: challengeId,
+                    referenceType: "group_challenge"
+                )
+            }
+            
+            await fetchActiveGroupChallenges()
+            return challengeId
+        } catch {
+            print("❌ [CHALLENGES] Group challenge direct insert failed: \(error)")
             return nil
         }
     }
@@ -821,6 +1142,9 @@ class ChallengeService: ObservableObject {
     // MARK: - Respond to Challenge
     
     func respondToChallenge(challengeId: UUID, accept: Bool) async -> Bool {
+        logger.log(.info, category: .challenge, message: accept ? "⚡ ACCEPTING challenge" : "❌ DECLINING challenge", metadata: [
+            "challenge_id": challengeId.uuidString.prefix(8)
+        ])
         print("🔄 [CHALLENGES] respondToChallenge called - challengeId: \(challengeId), accept: \(accept)")
         do {
             // Get challenge details BEFORE accepting (need type/unit for progress sync)

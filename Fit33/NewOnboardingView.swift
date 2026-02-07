@@ -81,6 +81,8 @@ struct NewOnboardingView: View {
     @State private var confirmPassword = ""
     @State private var showPassword = false
     @State private var showConfirmPassword = false
+    @State private var isOnConfirmPasswordStep = false  // Track if user is on confirm password step
+    @State private var hasStartedAuth = false  // Track if user has started interacting with auth
     @State private var name = ""
     @State private var errorMessage = ""
     @State private var showError = false
@@ -108,7 +110,6 @@ struct NewOnboardingView: View {
     
     // Constants for phone verification limits
     private let maxPhoneVerificationAttempts = 2
-    private let phoneVerificationLockoutKey = "phoneVerificationLockoutTime"
     
     // Username fields
     @State private var username = ""
@@ -254,8 +255,8 @@ struct NewOnboardingView: View {
     private var stepDescription: String {
         switch currentStep {
         case .auth: return "Account"
+        case .username: return "Profile"
         case .phoneNumber: return "Security"
-        case .username: return "Username"
         case .basics: return "About You"
         case .body: return "Measurements"
         case .goal: return "Goals"
@@ -285,8 +286,8 @@ struct NewOnboardingView: View {
     
     enum OnboardingStep: Int, CaseIterable {
         case auth = 0
-        case phoneNumber = 1  // Phone number for 2FA/account security (sign up only)
-        case username = 2    // Choose username (sign up only)
+        case username = 1    // Choose username (sign up only) - comes first to reduce spam feel
+        case phoneNumber = 2  // Phone number for 2FA/account security (sign up only)
         case basics = 3      // Birthday + Gender
         case body = 4        // Height + Weight
         case goal = 5
@@ -318,7 +319,13 @@ struct NewOnboardingView: View {
     
     private var isAuthFormValid: Bool {
         if isSignUp {
-            return !email.isEmpty && email.contains("@") && !name.isEmpty && isPasswordValid && passwordsMatch && acceptedTerms
+            if isOnConfirmPasswordStep {
+                // On confirm password step: require passwords match and terms accepted
+                return !email.isEmpty && email.contains("@") && isPasswordValid && passwordsMatch && acceptedTerms
+            } else {
+                // On first password step: only require valid email and password
+                return !email.isEmpty && email.contains("@") && isPasswordValid
+            }
         } else {
             return !email.isEmpty && email.contains("@") && !password.isEmpty
         }
@@ -437,18 +444,10 @@ struct NewOnboardingView: View {
             )
         }
         
-        // Change step - with or without animation
+        // Change step - let view-level animations handle transitions
         print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
-        if animated && !isEditingFromConfirmation {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            currentStep = step
-            print("🔄 [NAV] currentStep now: \(currentStep)")
-        }
-        } else {
-            // No animation when editing from confirmation
-            currentStep = step
-            print("🔄 [NAV] currentStep now (no animation): \(currentStep)")
-        }
+        currentStep = step
+        print("🔄 [NAV] currentStep now: \(currentStep)")
     }
     
     // Navigation direction for slide animation
@@ -466,18 +465,13 @@ struct NewOnboardingView: View {
             // Animated gradient background
             backgroundGradient
             
-            // Auth step has its own layout (with keyboard handling)
-            if currentStep == .auth {
+            // Auth step has its own layout when NOT in standard mode
+            if currentStep == .auth && !hasStartedAuth {
                 authStep
             }
             
-            // Complete step has its own layout (celebration)
-            if currentStep == .complete {
-                completeStep
-            }
-            
-            // Main onboarding flow (shared header + sliding content + floating button)
-            if currentStep != .auth && currentStep != .complete && currentStep != .confirmation && currentStep != .limitations {
+            // Auth step in standard mode (with shared header and button bar)
+            else if currentStep == .auth && hasStartedAuth {
                 let keyboardUp = keyboardObserver.keyboardHeight > 0
                 
                 ZStack(alignment: .bottom) {
@@ -487,25 +481,137 @@ struct NewOnboardingView: View {
                         onboardingSharedHeader(compact: keyboardUp)
                         
                         // Content
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: 0) {
+                                authFormContent
+                                    .padding(.top, 8)
+                            }
+                        }
+                        .scrollDismissesKeyboard(.interactively)
+                        
+                        Spacer()
+                    }
+                    
+                    // Shared button bar
+                    VStack(spacing: 0) {
+                        HStack(spacing: 12) {
+                            // Back button logic for auth step
+                            if isSignUp && isOnConfirmPasswordStep {
+                                // If on confirm password, go back to first password
+                                Button(action: {
+                                    isOnConfirmPasswordStep = false
+                                    confirmPassword = ""  // Clear only confirm password, keep first password
+                                    // First password stays valid with all indicators lit
+                                    // onChange handler will manage focus to keep keyboard up
+                                }) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.gray)
+                                        .frame(width: 52, height: 52)
+                                        .background(Circle().fill(Color(.systemGray6)))
+                                        .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+                                }
+                            } else {
+                                // If on first password/email, go back to welcome screen
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                                        hasStartedAuth = false
+                                        focusedField = nil  // Dismiss keyboard
+                                    }
+                                }) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.gray)
+                                        .frame(width: 52, height: 52)
+                                        .background(Circle().fill(Color(.systemGray6)))
+                                        .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+                                }
+                            }
+                            
+                            // Continue button
+                            Button(action: { 
+                                if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
+                                    // Advance to confirm password step
+                                    isOnConfirmPasswordStep = true
+                                } else {
+                                    handleAuth()
+                                }
+                            }) {
+                                HStack(spacing: 8) {
+                                    if supabaseManager.isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .blue : .gray))
+                                            .scaleEffect(0.9)
+                                    }
+                                    Text(isSignUp ? "Continue" : "Sign In")
+                                        .font(.headline)
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundStyle(
+                                    isAuthFormValid
+                                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                                        : AnyShapeStyle(Color.gray)
+                                )
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Capsule().fill(Color(.systemGray6)))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(
+                                            isAuthFormValid
+                                                ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                                                : AnyShapeStyle(Color.gray.opacity(0.3)),
+                                            lineWidth: 2
+                                        )
+                                )
+                            }
+                            .disabled(!isAuthFormValid || supabaseManager.isLoading)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
+                    .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
+                    .animation(nil, value: isOnConfirmPasswordStep)  // No animation on button bar for password step changes
+                }
+            }
+            
+            // Complete step has its own layout (celebration)
+            else if currentStep == .complete {
+                completeStep
+            }
+            
+            // Main onboarding flow (shared header + sliding content + floating button)
+            else if currentStep != .limitations && currentStep != .confirmation {
+                let keyboardUp = keyboardObserver.keyboardHeight > 0
+                
+                ZStack(alignment: .bottom) {
+                    // Main content
+                    VStack(spacing: 0) {
+                        // Header
+                        onboardingSharedHeader(compact: keyboardUp)
+                            .animation(nil, value: currentStep)  // Don't animate header on step changes
+                        
+                        // Content - use opacity transitions to avoid layout bouncing
                         ZStack {
                             if currentStep == .phoneNumber {
                                 let _ = print("🎯 [ZSTACK] Rendering phoneNumberStepContent for currentStep: \(currentStep)")
                                 phoneNumberStepContent
+                                    .transition(.opacity)
                             }
-                            if currentStep == .username { usernameStepContent.transition(slideTransition) }
-                            if currentStep == .basics { basicsStepContent.transition(slideTransition) }
-                            if currentStep == .body { bodyStepContent.transition(slideTransition) }
-                            if currentStep == .goal { goalStepContent.transition(slideTransition) }
-                            if currentStep == .experience { experienceStepContent.transition(slideTransition) }
-                            if currentStep == .strengthAssessment { strengthStepContent.transition(slideTransition) }
-                            if currentStep == .workoutLocation { locationStepContent.transition(slideTransition) }
-                            if currentStep == .equipment { equipmentStepContent.transition(slideTransition) }
-                            if currentStep == .schedule { scheduleStepContent.transition(slideTransition) }
-                            if currentStep == .profilePhoto { profilePhotoStepContent.transition(slideTransition) }
-                            if currentStep == .contacts { contactsStepContent.transition(slideTransition) }
-                            if currentStep == .addFriends { addFriendsStepContent.transition(slideTransition) }
+                            if currentStep == .username { usernameStepContent.transition(.opacity) }
+                            if currentStep == .basics { basicsStepContent.transition(.opacity) }
+                            if currentStep == .body { bodyStepContent.transition(.opacity) }
+                            if currentStep == .goal { goalStepContent.transition(.opacity) }
+                            if currentStep == .experience { experienceStepContent.transition(.opacity) }
+                            if currentStep == .strengthAssessment { strengthStepContent.transition(.opacity) }
+                            if currentStep == .workoutLocation { locationStepContent.transition(.opacity) }
+                            if currentStep == .equipment { equipmentStepContent.transition(.opacity) }
+                            if currentStep == .schedule { scheduleStepContent.transition(.opacity) }
+                            if currentStep == .profilePhoto { profilePhotoStepContent.transition(.opacity) }
+                            if currentStep == .contacts { contactsStepContent.transition(.opacity) }
+                            if currentStep == .addFriends { addFriendsStepContent.transition(.opacity) }
                         }
-                        .animation(.easeInOut(duration: 0.3), value: currentStep)
+                        .animation(.easeInOut(duration: 0.25), value: currentStep)  // Smooth fade for content
                         
                         Spacer()
                     }
@@ -515,11 +621,13 @@ struct NewOnboardingView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
                         .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
+                        .animation(nil, value: currentStep)  // Don't animate button bar on step changes
+                        .animation(nil, value: isCheckingUsername)  // Don't animate during username verification
                 }
             }
             
             // Limitations step - separate layout with bounded scroll area
-            if currentStep == .limitations {
+            else if currentStep == .limitations {
                 VStack(spacing: 0) {
                     // Header
                     onboardingSharedHeader(compact: false)
@@ -551,7 +659,16 @@ struct NewOnboardingView: View {
                                 .padding(.horizontal, 16)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(selectedLimitations.isEmpty ? Color.green.opacity(0.1) : Color(.systemGray6))
+                                        .fill(selectedLimitations.isEmpty 
+                                            ? AnyShapeStyle(Color.green.opacity(0.1))
+                                            : AnyShapeStyle(LinearGradient(
+                                                colors: colorScheme == .dark 
+                                                    ? [Color(white: 0.14), Color(white: 0.10)]
+                                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ))
+                                        )
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
@@ -582,7 +699,7 @@ struct NewOnboardingView: View {
             }
             
             // Confirmation step - separate layout with bounded scroll area
-            if currentStep == .confirmation {
+            else if currentStep == .confirmation {
                 VStack(spacing: 0) {
                     // Header
                     onboardingSharedHeader(compact: false)
@@ -666,11 +783,50 @@ struct NewOnboardingView: View {
         .sheet(isPresented: $showTermsSheet) {
             TermsAndConditionsSheet()
         }
+        .onChange(of: focusedField) { oldField, newField in
+            // When user focuses on auth fields, show the onboarding header
+            if currentStep == .auth && !hasStartedAuth {
+                if newField == .email || newField == .password || newField == .confirmPassword {
+                    let fieldToFocus = newField  // Capture the field
+                    // Trigger layout change
+                    hasStartedAuth = true
+                    // Re-establish focus immediately and after animations
+                    DispatchQueue.main.async {
+                        focusedField = fieldToFocus
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        focusedField = fieldToFocus
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        focusedField = fieldToFocus
+                    }
+                }
+            }
+        }
         .onChange(of: currentStep) { oldStep, newStep in
             // Set focus based on the new step
             switch newStep {
             case .auth:
-                break
+                // Keep hasStartedAuth true when going back from username (user wants to see their filled form)
+                // Only reset to welcome screen when coming from far away steps
+                if oldStep == .username || oldStep == .phoneNumber {
+                    hasStartedAuth = true  // Keep in standard mode to show filled form
+                    // Check if we need to restore confirm password step
+                    // If confirm password has content, user was on that step
+                    if !confirmPassword.isEmpty && passwordsMatch {
+                        isOnConfirmPasswordStep = true
+                        DispatchQueue.main.async {
+                            focusedField = .confirmPassword
+                        }
+                    } else {
+                        // Focus on password field (or email if password empty)
+                        DispatchQueue.main.async {
+                            focusedField = password.isEmpty ? .email : .password
+                        }
+                    }
+                } else if oldStep != .auth {
+                    hasStartedAuth = false  // Reset to welcome screen
+                }
             case .phoneNumber:
                 focusedField = .phoneNumber
             case .username:
@@ -680,8 +836,20 @@ struct NewOnboardingView: View {
                     UserDefaults.standard.removeObject(forKey: "pending_social_username")
                     print("📘 Pre-filled username from social login: @\(socialUsername)")
                 }
-                // Focus name field first if user needs to enter their name (Apple didn't provide it)
-                focusedField = needsNameInput ? .name : .username
+                // Note: Focus is now handled in:
+                // - handleAuth() for email signup (keeps keyboard open)
+                // - handleAppleSignIn() for Apple auth
+                // - handleOAuthUserOnboarding() for Google auth
+                // Only set focus here if coming from non-auth steps (like phone or basics)
+                if oldStep != .auth && oldStep != .phoneNumber {
+                    let targetField: FocusedField = name.isEmpty ? .name : .username
+                    DispatchQueue.main.async {
+                        focusedField = targetField
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        focusedField = targetField
+                    }
+                }
             case .basics:
                 focusedField = .birthday
             case .body:
@@ -792,15 +960,28 @@ struct NewOnboardingView: View {
         print("🔐 [OAUTH] Final values - name: '\(name)', email: '\(email)'")
         print("🔐 [OAUTH] needsNameInput will be: \(needsNameInput)")
         
-        // Navigate to phone number step for 2FA security (same flow as Apple Sign-In)
-        print("🔐 [OAUTH] Navigating to phone number step...")
-        navigateTo(.phoneNumber)
+        // Navigate to username step (name pre-filled from OAuth)
+        print("🔐 [OAUTH] Navigating to username step...")
+        navigateTo(.username)
+        
+        // Auto-focus the appropriate field based on whether name was filled
+        let targetField: FocusedField = name.isEmpty ? .name : .username
+        DispatchQueue.main.async {
+            focusedField = targetField
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            focusedField = targetField
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            focusedField = targetField
+        }
+        print("🔐 [OAUTH] Focus set to: \(targetField)")
     }
     
     // MARK: - Shared Header (Simple, fixed layout)
     @ViewBuilder
     private func onboardingSharedHeader(compact: Bool = false) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: currentStep == .auth ? 12 : 16) {
             // Logo
             Image("fit33-logo")
                 .resizable()
@@ -812,7 +993,7 @@ struct NewOnboardingView: View {
             progressIndicator
             
             // Title + subtitle (always show)
-            VStack(spacing: 8) {
+            VStack(spacing: currentStep == .auth ? 6 : 8) {
                 Text(onboardingStepTitle)
                     .font(.title3.weight(.bold))
                     .foregroundColor(.primary)
@@ -828,15 +1009,15 @@ struct NewOnboardingView: View {
             }
         }
         .padding(.top, 70) // Safe area clearance
-        .padding(.bottom, 24)
+        .padding(.bottom, currentStep == .auth ? 12 : 24)
     }
 
     // MARK: - Step Titles
     private var onboardingStepTitle: String {
         switch currentStep {
-        case .auth: return "Create Account"
+        case .auth: return isSignUp ? "Create Account" : "Welcome Back"
         case .phoneNumber: return "Secure Your Account"
-        case .username: return needsNameInput ? "Your Profile" : "Choose Username"
+        case .username: return "Your Profile"
         case .basics: return "About You"
         case .body: return "Your Measurements"
         case .goal: return "Your Goals"
@@ -856,9 +1037,9 @@ struct NewOnboardingView: View {
     
     private var onboardingStepSubtitle: String {
         switch currentStep {
-        case .auth: return "Start your fitness journey"
+        case .auth: return isSignUp ? "Join the club" : "Continue your journey"
         case .phoneNumber: return "Set up two-factor authentication"
-        case .username: return needsNameInput ? "Tell us a bit about yourself" : "How friends will find you"
+        case .username: return "Tell us about yourself and how friends will find you"
         case .basics: return "Help us personalize your experience"
         case .body: return "For accurate recommendations"
         case .goal: return "What do you want to achieve?"
@@ -904,7 +1085,7 @@ struct NewOnboardingView: View {
             // Back button - always show (goes to auth from basics, or previous step)
             Button(action: {
                 isNavigatingForward = false
-                withAnimation { goToPreviousStep() }
+                goToPreviousStep()
             }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
@@ -917,19 +1098,42 @@ struct NewOnboardingView: View {
             // Continue button
             Button(action: {
                 isNavigatingForward = true
-                withAnimation { goToNextStep() }
+                if currentStep == .username && !isUsernameAvailable {
+                    // Verify username first
+                    checkUsernameAvailability()
+                } else if currentStep == .phoneNumber && !isVerificationCodeSent && sendCodeCountdown == 0 {
+                    // Send verification code first
+                    sendVerificationCode()
+                } else {
+                    goToNextStep()
+                }
             }) {
-                Text(currentStep == .confirmation ? "Create Account" : (currentStep == .profilePhoto ? (profilePhotoImage != nil ? "Continue" : "Skip") : (currentStep == .contacts ? (contactsPermissionGranted ? "Continue" : "Skip") : (currentStep == .addFriends ? (sentFriendRequests.isEmpty ? "Skip" : "Continue") : "Continue"))))
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(
-                        isCurrentStepValid
-                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                            : AnyShapeStyle(Color.gray)
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Capsule().fill(Color(.systemGray6)))
+                HStack(spacing: 8) {
+                    if currentStep == .username && isCheckingUsername {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: isCurrentStepValid ? .blue : .gray))
+                            .scaleEffect(0.9)
+                    }
+                    if currentStep == .phoneNumber && !isVerificationCodeSent && sendCodeCountdown == 0 {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    if currentStep == .phoneNumber && sendCodeCountdown > 0 {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    Text(continueButtonText)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(
+                    isCurrentStepValid
+                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                        : AnyShapeStyle(Color.gray)
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Capsule().fill(Color(.systemGray6)))
                     .overlay(
                         Capsule()
                             .stroke(
@@ -944,15 +1148,58 @@ struct NewOnboardingView: View {
         }
     }
     
+    // MARK: - Continue Button Text
+    private var continueButtonText: String {
+        switch currentStep {
+        case .username:
+            if isCheckingUsername {
+                return "Verifying..."
+            } else if !isUsernameAvailable && isUsernameValid {
+                return "Verify Username"
+            } else {
+                return "Continue"
+            }
+        case .phoneNumber:
+            if !isVerificationCodeSent {
+                if sendCodeCountdown > 0 {
+                    return "Retry in \(sendCodeCountdown)s"
+                } else {
+                    return "Send Code"
+                }
+            } else {
+                return "Continue"
+            }
+        case .confirmation:
+            return "Create Account"
+        case .profilePhoto:
+            return profilePhotoImage != nil ? "Continue" : "Skip"
+        case .contacts:
+            return contactsPermissionGranted ? "Continue" : "Skip"
+        case .addFriends:
+            return sentFriendRequests.isEmpty ? "Skip" : "Continue"
+        default:
+            return "Continue"
+        }
+    }
+    
     // MARK: - Step Validation
     private var isCurrentStepValid: Bool {
         switch currentStep {
         case .auth: return isAuthFormValid
-        case .phoneNumber: return isPhoneVerified  // Only allow continue after phone is verified
+        case .phoneNumber: 
+            // Enable button when:
+            // 1. Phone valid and can send (sendCodeCountdown == 0)
+            // 2. Code already sent and verified
+            if !isVerificationCodeSent {
+                return isPhoneNumberValid && sendCodeCountdown == 0
+            } else {
+                return isPhoneVerified
+            }
         case .username: 
-            // If name needs input, require it to be filled
-            let nameValid = !needsNameInput || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return isUsernameValid && isUsernameAvailable && nameValid
+            // Always require name to be filled and username to be valid format
+            // Username doesn't need to be verified yet - button will trigger verification
+            let nameValid = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return isUsernameValid && nameValid
         case .basics: return selectedGender != nil && !birthday.isEmpty
         case .body: return isHeightValid && isWeightValid
         case .goal: return !selectedGoals.isEmpty
@@ -1018,17 +1265,6 @@ struct NewOnboardingView: View {
         // Special case: if on phone step with code sent, go back to phone input (not previous step)
         // Start 30s countdown so user can't spam send code
         if currentStep == .phoneNumber && isVerificationCodeSent {
-            // Check if user has exceeded max attempts (2 sends + going back)
-            if phoneVerificationAttempts >= maxPhoneVerificationAttempts {
-                // Lock them out for 12 hours and skip to username
-                let lockoutTime = Date().addingTimeInterval(12 * 60 * 60)  // 12 hours
-                UserDefaults.standard.set(lockoutTime, forKey: phoneVerificationLockoutKey)
-                hasSkippedPhoneVerification = true
-                
-                // Skip directly to username screen
-                navigateTo(.username)
-                return
-            }
             
             isVerificationCodeSent = false
             verificationCode = ""
@@ -1055,73 +1291,6 @@ struct NewOnboardingView: View {
     // MARK: - Content-Only Step Views (for sliding)
     // These are simplified versions that just show the content portion
     // The existing full step views (basicsStep, bodyStep, etc.) are kept for reference
-    
-    // Check if user is locked out from phone verification
-    private var isPhoneVerificationLockedOut: Bool {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            return Date() < lockoutTime
-        }
-        return false
-    }
-    
-    // Get remaining lockout time
-    private var lockoutTimeRemaining: String {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            let remaining = lockoutTime.timeIntervalSince(Date())
-            if remaining > 0 {
-                let hours = Int(remaining) / 3600
-                let minutes = (Int(remaining) % 3600) / 60
-                if hours > 0 {
-                    return "\(hours)h \(minutes)m"
-                } else {
-                    return "\(minutes) minutes"
-                }
-            }
-        }
-        return ""
-    }
-    
-    // MARK: - Phone Verification Sub-Views
-    
-    private var phoneLockedOutView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "clock.badge.exclamationmark.fill")
-                .font(.system(size: 50))
-                .foregroundColor(.orange)
-            
-            Text("Try Again Later")
-                .font(.title2.weight(.bold))
-                .foregroundColor(.primary)
-            
-            Text("You can set up 2FA in \(lockoutTimeRemaining)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Text("You can complete this step later in your profile settings.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-            
-            Button(action: { navigateTo(.username) }) {
-                HStack(spacing: 8) {
-                    Text("Continue Without 2FA")
-                        .font(.system(size: 15, weight: .semibold))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    Capsule()
-                        .fill(Color.orange)
-                )
-            }
-        }
-        .padding(.vertical, 20)
-    }
     
     private var phoneInputView: some View {
         let _ = print("📱 [PHONE INPUT] Rendering phoneInputView - selectedCountryCode: \(selectedCountryCode.rawValue)")
@@ -1220,51 +1389,16 @@ struct NewOnboardingView: View {
     // MARK: - Phone Number Step Content (2FA / Account Security)
     private var phoneNumberStepContent: some View {
         let _ = print("📱 [PHONE STEP] Rendering phoneNumberStepContent")
-        let _ = print("   └─ isPhoneVerificationLockedOut: \(isPhoneVerificationLockedOut)")
         let _ = print("   └─ isVerificationCodeSent: \(isVerificationCodeSent)")
         let _ = print("   └─ isPhoneVerified: \(isPhoneVerified)")
         let _ = print("   └─ phoneNumber: '\(phoneNumber)'")
         let _ = print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
         
         return VStack(spacing: 20) {
-            // STATE 0: LOCKED OUT - User exceeded attempts
-            if isPhoneVerificationLockedOut {
-                let _ = print("📱 [PHONE STEP] Showing STATE 0: Locked out")
-                phoneLockedOutView
-            }
             // STATE 1: PHONE NUMBER INPUT (before code sent)
-            else if !isVerificationCodeSent && !isPhoneVerified {
+            if !isVerificationCodeSent && !isPhoneVerified {
                 let _ = print("📱 [PHONE STEP] Showing STATE 1: Phone input")
                 phoneInputView
-                
-                // SEND CODE BUTTON (with cooldown)
-                if isPhoneNumberValid {
-                    let canSend = sendCodeCountdown == 0
-                    
-                    Button(action: sendVerificationCode) {
-                        HStack(spacing: 10) {
-                            if sendCodeCountdown > 0 {
-                                Image(systemName: "clock.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text("Retry in \(sendCodeCountdown)s")
-                                    .font(.system(size: 15, weight: .semibold))
-                            } else {
-                                Image(systemName: "paperplane.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text("Send Verification Code")
-                                    .font(.system(size: 15, weight: .semibold))
-                            }
-                        }
-                        .foregroundColor(canSend ? .white : .gray)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            Capsule()
-                                .fill(canSend ? Color.blue : Color.gray.opacity(0.3))
-                        )
-                    }
-                    .disabled(!canSend)
-                }
                 
                 // Privacy message
                 HStack(spacing: 10) {
@@ -1521,19 +1655,123 @@ struct NewOnboardingView: View {
         isVerifyingCode = true
         verificationError = ""
         
+        verifyCodeAsync()
+    }
+    
+    private func verifyCodeAsync() {
         Task {
             let success = await phoneVerificationService.verifyCode(verificationCode, for: fullPhoneNumber)
             
-            await MainActor.run {
-                isVerifyingCode = false
-                if success {
-                    isPhoneVerified = true
-                    selectionFeedback.selectionChanged()
+            isVerifyingCode = false
+            if success {
+                isPhoneVerified = true
+                selectionFeedback.selectionChanged()
+                
+                // ✨ For EMAIL/PASSWORD signups: Create MINIMAL account NOW (after phone verification)
+                // This matches the Google/Apple login flow where user is authenticated early
+                if isSignUp && !supabaseManager.isAuthenticated {
+                    await createMinimalAccountForEmailPasswordSignup()
                 } else {
-                    verificationError = phoneVerificationService.error ?? "Invalid code"
-                    verificationCode = ""
+                    // OAuth users are already authenticated - just update profile
+                    await createMinimalProfileForContactMatching()
                 }
+            } else {
+                verificationError = phoneVerificationService.error ?? "Invalid code"
+                verificationCode = ""
             }
+        }
+    }
+    
+    private func createMinimalAccountForEmailPasswordSignup() async {
+        print("📝 [PHONE VERIFIED] Creating minimal account for email/password signup...")
+        
+        do {
+            // Create account with minimal info (just like OAuth flow)
+            try await supabaseManager.signUp(
+                email: email,
+                password: password,
+                name: name.isEmpty ? "User" : name
+            )
+            print("✅ [PHONE VERIFIED] Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")")
+            
+            // Update profile with phone number for contact matching
+            if let userId = supabaseManager.currentUser?.id {
+                struct PhoneUpdate: Encodable {
+                    let phone_number: String
+                    let phone_verified: Bool
+                }
+                
+                let update = PhoneUpdate(
+                    phone_number: fullPhoneNumber,
+                    phone_verified: true
+                )
+                
+                try await supabaseManager.supabaseClient
+                    .from("user_profiles")
+                    .update(update)
+                    .eq("id", value: userId.uuidString)
+                    .execute()
+                print("✅ [PHONE VERIFIED] Phone added - contact matching enabled!")
+            }
+            
+            // Set username if provided
+            if !username.isEmpty {
+                print("📝 [PHONE VERIFIED] Setting username: @\(username)")
+                try? await supabaseManager.setUsername(username)
+            }
+            
+            print("✅ [PHONE VERIFIED] Minimal account ready - user can continue onboarding")
+            
+        } catch {
+            print("❌ [PHONE VERIFIED] Failed to create account: \(error)")
+            await MainActor.run {
+                verificationError = "Account creation failed. Please try again."
+                isPhoneVerified = false
+            }
+        }
+    }
+    
+    // Create a minimal profile immediately after phone verification
+    // This enables contact matching to work during onboarding
+    private func createMinimalProfileForContactMatching() async {
+        guard let userId = supabaseManager.currentUser?.id else {
+            print("⚠️ [EARLY PROFILE] No user ID available")
+            return
+        }
+        
+        print("📝 [EARLY PROFILE] Creating minimal profile for contact matching...")
+        print("   └─ User ID: \(userId.uuidString)")
+        print("   └─ Phone: \(fullPhoneNumber)")
+        print("   └─ Email: \(email)")
+        
+        do {
+            // Create or update minimal profile with just phone + email
+            struct MinimalProfile: Encodable {
+                let id: String
+                let email: String
+                let phone_number: String
+                let phone_verified: Bool
+                let name: String?
+                let has_completed_onboarding: Bool
+            }
+            
+            let profile = MinimalProfile(
+                id: userId.uuidString,
+                email: email,
+                phone_number: fullPhoneNumber,
+                phone_verified: true,
+                name: name.isEmpty ? nil : name,
+                has_completed_onboarding: false
+            )
+            
+            try await supabaseManager.supabaseClient
+                .from("user_profiles")
+                .upsert(profile)
+                .execute()
+            
+            print("✅ [EARLY PROFILE] Minimal profile created - contact matching now enabled!")
+        } catch {
+            print("❌ [EARLY PROFILE] Failed to create profile: \(error)")
         }
     }
     
@@ -1636,57 +1874,57 @@ struct NewOnboardingView: View {
     // MARK: - Username Step Content
     private var usernameStepContent: some View {
         VStack(spacing: 28) {
-            // Name field (for social auth users when Apple didn't provide name)
-            // Show if name is empty, looks like email prefix, or is a generic fallback
-            if needsNameInput {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Your Name")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
+            // Name field - always show for all users (email, Apple, Google auth)
+            // For email signup: user enters manually
+            // For Apple/Google: autofills from OAuth but is editable
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Your Name")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                
+                HStack(spacing: 16) {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: !name.isEmpty ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 26)
                     
-                    HStack(spacing: 16) {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(
+                    TextField("What should we call you?", text: $name)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .name)
+                }
+                .font(.system(size: 16, weight: .medium))
+                .padding(.horizontal, 22)
+                .padding(.vertical, 18)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
                                 LinearGradient(
-                                    colors: !name.isEmpty ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
+                                    colors: colorScheme == .dark 
+                                        ? [Color(white: 0.14), Color(white: 0.10)]
+                                        : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 26)
                         
-                        TextField("What should we call you?", text: $name)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
-                            .focused($focusedField, equals: .name)
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.clear)
+                            .shadow(
+                                color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
+                                radius: focusedField == .name ? 12 : 8,
+                                x: 0,
+                                y: focusedField == .name ? 6 : 3
+                            )
                     }
-                    .font(.system(size: 16, weight: .medium))
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 18)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                            
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                                .shadow(
-                                    color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
-                                    radius: focusedField == .name ? 12 : 8,
-                                    x: 0,
-                                    y: focusedField == .name ? 6 : 3
-                                )
-                        }
-                    )
-                    
-                    if needsNameInput && name.isEmpty {
-                        Text("Please enter your name to personalize your experience.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.top, 4)
-                    }
-                }
+                )
             }
             
             // Username - matching Birthday field style exactly
@@ -1708,7 +1946,7 @@ struct NewOnboardingView: View {
                     } else if isUsernameAvailable && isUsernameValid {
                         Text("Available ✓")
                             .font(.caption)
-                            .foregroundColor(.green)
+                            .foregroundColor(.blue)
                     } else if !usernameError.isEmpty {
                         Text(usernameError)
                             .font(.caption)
@@ -1752,10 +1990,18 @@ struct NewOnboardingView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                            .fill(
+                                LinearGradient(
+                                    colors: colorScheme == .dark 
+                                        ? [Color(white: 0.14), Color(white: 0.10)]
+                                        : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                         
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                            .fill(Color.clear)
                             .shadow(
                                 color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
                                 radius: focusedField == .username ? 12 : 8,
@@ -1765,34 +2011,6 @@ struct NewOnboardingView: View {
                     }
                 )
             }
-            
-            // Check Availability Button
-            Button(action: checkUsernameAvailability) {
-                HStack(spacing: 8) {
-                    if isCheckingUsername {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    Text(isCheckingUsername ? "Checking..." : "Check Availability")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    Capsule()
-                        .fill(
-                            isUsernameValid && !isCheckingUsername
-                                ? LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
-                                : LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.4)], startPoint: .leading, endPoint: .trailing)
-                        )
-                )
-            }
-            .disabled(!isUsernameValid || isCheckingUsername)
         }
         .padding(.horizontal, 24)
     }
@@ -1812,8 +2030,17 @@ struct NewOnboardingView: View {
                     isUsernameAvailable = available
                     if !available {
                         usernameError = "This username is already taken"
+                        isCheckingUsername = false
+                    } else {
+                        // Username is available! Auto-advance to next step
+                        isCheckingUsername = false
+                        // Small delay for smooth UX (show checkmark briefly)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            withAnimation {
+                                goToNextStep()
+                            }
+                        }
                     }
-                    isCheckingUsername = false
                 }
             } catch {
                 await MainActor.run {
@@ -1960,8 +2187,11 @@ struct NewOnboardingView: View {
                     let inchValue = Int(inches) ?? 0
                     let isComplete = limitedDigits.count == 3 || 
                         (limitedDigits.count == 2 && !inches.isEmpty && inchValue >= 2)
-                    if isComplete {
+                    if isComplete && isHeightValid {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            focusedField = .weight
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             focusedField = .weight
                         }
                     }
@@ -1971,8 +2201,19 @@ struct NewOnboardingView: View {
                     
                     // Auto-advance to weight when cm height is complete (3 digits like 175)
                     let digits = newValue.filter { $0.isNumber }
-                    if digits.count == 3 {
+                    if digits.count == 3 && isHeightValid {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            focusedField = .weight
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            focusedField = .weight
+                        }
+                    }
+                }
+                .onChange(of: isHeightValid) { oldValue, newValue in
+                    // Auto-advance when height becomes valid
+                    if newValue && !oldValue && focusedField == .height {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                             focusedField = .weight
                         }
                     }
@@ -2184,7 +2425,16 @@ struct NewOnboardingView: View {
                         .padding(.vertical, 16)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(selectedGoals.contains(goal.0) ? goal.3.opacity(0.2) : Color(.systemGray6))
+                                .fill(selectedGoals.contains(goal.0) 
+                                    ? AnyShapeStyle(goal.3.opacity(0.2))
+                                    : AnyShapeStyle(LinearGradient(
+                                        colors: colorScheme == .dark 
+                                            ? [Color(white: 0.14), Color(white: 0.10)]
+                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                )
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
@@ -2229,7 +2479,16 @@ struct NewOnboardingView: View {
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(selectedExperience == level.0 ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                                .fill(selectedExperience == level.0 
+                                    ? AnyShapeStyle(Color.blue.opacity(0.1))
+                                    : AnyShapeStyle(LinearGradient(
+                                        colors: colorScheme == .dark 
+                                            ? [Color(white: 0.14), Color(white: 0.10)]
+                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                )
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
@@ -2268,7 +2527,16 @@ struct NewOnboardingView: View {
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(selectedStrengthLevel == level ? Color.orange.opacity(0.15) : Color(.systemGray6))
+                                .fill(selectedStrengthLevel == level 
+                                    ? AnyShapeStyle(Color.orange.opacity(0.15))
+                                    : AnyShapeStyle(LinearGradient(
+                                        colors: colorScheme == .dark 
+                                            ? [Color(white: 0.14), Color(white: 0.10)]
+                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                )
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
@@ -2309,7 +2577,16 @@ struct NewOnboardingView: View {
                         .padding(.vertical, 20)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(selectedWorkoutLocation == loc.0 ? loc.3.opacity(0.2) : Color(.systemGray6))
+                                .fill(selectedWorkoutLocation == loc.0 
+                                    ? AnyShapeStyle(loc.3.opacity(0.2))
+                                    : AnyShapeStyle(LinearGradient(
+                                        colors: colorScheme == .dark 
+                                            ? [Color(white: 0.14), Color(white: 0.10)]
+                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                )
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
@@ -2372,7 +2649,16 @@ struct NewOnboardingView: View {
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(isSelected ? (needsSelection ? Color.orange.opacity(0.08) : Color.blue.opacity(0.1)) : Color(.systemGray6))
+                        .fill(isSelected 
+                            ? AnyShapeStyle(needsSelection ? Color.orange.opacity(0.08) : Color.blue.opacity(0.1))
+                            : AnyShapeStyle(LinearGradient(
+                                colors: colorScheme == .dark 
+                                    ? [Color(white: 0.14), Color(white: 0.10)]
+                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                        )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -2433,7 +2719,16 @@ struct NewOnboardingView: View {
                             .padding(.vertical, 9)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .fill(limitationAccommodations[area] == level ? level.color.opacity(0.12) : Color(.systemGray6))
+                                    .fill(limitationAccommodations[area] == level 
+                                        ? AnyShapeStyle(level.color.opacity(0.12))
+                                        : AnyShapeStyle(LinearGradient(
+                                            colors: colorScheme == .dark 
+                                                ? [Color(white: 0.14), Color(white: 0.10)]
+                                                : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
+                                    )
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
@@ -2466,7 +2761,16 @@ struct NewOnboardingView: View {
                                 .frame(width: 50, height: 50)
                                 .background(
                                     Circle()
-                                        .fill(selectedDays == day ? Color.blue : Color(.systemGray6))
+                                        .fill(selectedDays == day 
+                                            ? AnyShapeStyle(Color.blue)
+                                            : AnyShapeStyle(LinearGradient(
+                                                colors: colorScheme == .dark 
+                                                    ? [Color(white: 0.14), Color(white: 0.10)]
+                                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ))
+                                        )
                                 )
                                 .foregroundColor(selectedDays == day ? .white : .primary)
                         }
@@ -2919,23 +3223,6 @@ struct NewOnboardingView: View {
             }
             
             Spacer()
-            
-            // Summary of requests sent
-            if !sentFriendRequests.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("\(sentFriendRequests.count) friend request\(sentFriendRequests.count == 1 ? "" : "s") sent")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 20)
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(10)
-                .padding(.bottom, 8)
-            }
         }
         .onAppear {
             print("👥 [ADD FRIENDS] Step appeared")
@@ -3206,10 +3493,10 @@ struct NewOnboardingView: View {
     }
     
     
-    // MARK: - Auth Step
+    // MARK: - Auth Step (Non-Standard Mode - used before user starts interacting)
     private var authStep: some View {
         let keyboardUp = keyboardObserver.keyboardHeight > 0
-        let showingConfirmPassword = isSignUp && isPasswordValid
+        let showingConfirmPassword = isSignUp && isOnConfirmPasswordStep
         let keyboardHeight = keyboardObserver.keyboardHeight
         
         return ZStack(alignment: .bottom) {
@@ -3221,7 +3508,7 @@ struct NewOnboardingView: View {
                             // Top spacing - account for safe area when keyboard is up
                             if keyboardUp {
                                 Spacer()
-                                    .frame(height: 60) // Safe area + some padding
+                                    .frame(height: 60)
                             } else {
                                 Spacer()
                                     .frame(height: max(20, (geometry.size.height - 620) / 2.5))
@@ -3263,17 +3550,39 @@ struct NewOnboardingView: View {
                 }
             }
             
-            // Floating Continue Button - only show when keyboard is open
-            if keyboardUp {
+            // Floating Continue Button - only show when keyboard is open and NOT in standard mode
+            if keyboardUp && !hasStartedAuth {
                 VStack(spacing: 0) {
-                    // Continue/Sign In button - full width, hollow when incomplete
-                    Button(action: {
-                        if isEditingFromConfirmation {
-                            returnToConfirmation()
-                        } else {
-                            handleAuth()
+                    HStack(spacing: 12) {
+                        // Back button - show when on confirm password step
+                        if isSignUp && isOnConfirmPasswordStep {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    isOnConfirmPasswordStep = false
+                                    confirmPassword = ""  // Clear confirm password
+                                }
+                                // Focus back on first password after animation
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                    focusedField = .password
+                                }
+                            }) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.gray)
+                                    .frame(width: 52, height: 52)
+                                    .background(Circle().fill(Color(.systemGray6)))
+                                    .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+                            }
                         }
-                    }) {
+                        
+                        // Continue/Sign In button - full width, hollow when incomplete
+                        Button(action: {
+                            if isEditingFromConfirmation {
+                                returnToConfirmation()
+                            } else {
+                                handleAuth()
+                            }
+                        }) {
                         HStack(spacing: 8) {
                             if supabaseManager.isLoading {
                                 ProgressView()
@@ -3312,6 +3621,7 @@ struct NewOnboardingView: View {
                     }
                     .disabled(supabaseManager.isLoading || !isAuthFormValid)
                     .animation(.easeInOut(duration: 0.3), value: isAuthFormValid)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, keyboardObserver.keyboardHeight + 10)
@@ -3319,6 +3629,7 @@ struct NewOnboardingView: View {
                 .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
             }
         }
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: hasStartedAuth)
     }
     
     // Auth toggle - unified segmented control style
@@ -3333,7 +3644,7 @@ struct NewOnboardingView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isSignUp ? .white : .secondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, hasStartedAuth ? 10 : 11)
                     .background(
                         Group {
                             if isSignUp {
@@ -3360,7 +3671,7 @@ struct NewOnboardingView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(!isSignUp ? .white : .secondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, hasStartedAuth ? 10 : 11)
                     .background(
                         Group {
                             if !isSignUp {
@@ -3391,8 +3702,8 @@ struct NewOnboardingView: View {
         let keyboardUp = keyboardObserver.keyboardHeight > 0
         
         return VStack(spacing: 0) {
-            // Fit33 Logo - Large and centered (hides when keyboard up)
-            if !keyboardUp {
+            // Fit33 Logo - Large and centered (only show when NOT in standard header mode)
+            if !keyboardUp && !hasStartedAuth {
                 Image("fit33-logo")
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -3401,42 +3712,30 @@ struct NewOnboardingView: View {
                     .padding(.bottom, 20)
             }
             
-            // Header - compact version when keyboard up, full version when not
-            VStack(spacing: keyboardUp ? 4 : 6) {
-                Text(isSignUp ? "Create Account" : "Welcome Back")
-                    .font(.system(size: keyboardUp ? 22 : 26, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                
-                if !keyboardUp {
-                    Text(isSignUp ? "Start your fitness journey" : "Continue your journey")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
+            // Header - only show when NOT in standard header mode
+            if !hasStartedAuth {
+                VStack(spacing: keyboardUp ? 4 : 6) {
+                    Text(isSignUp ? "Create Account" : "Welcome Back")
+                        .font(.system(size: keyboardUp ? 22 : 26, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    
+                    if !keyboardUp {
+                        Text(isSignUp ? "Join the club" : "Continue your journey")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
                 }
-            }
-            
-            Spacer()
-                .frame(height: keyboardUp ? 12 : 20)
-                
-                // Auth Toggle - always visible at top for easy switching
-                authToggleButtons
                 
                 Spacer()
                     .frame(height: keyboardUp ? 12 : 20)
+            }
                 
-                // Form fields - slightly compact spacing when keyboard is up
-                VStack(spacing: keyboardUp ? 10 : 14) {
-                    // Name field (only for sign up)
-                    if isSignUp {
-                        OnboardingTextField(
-                            icon: "person.fill",
-                            placeholder: "Name",
-                            text: $name,
-                            focusedField: $focusedField,
-                            fieldValue: .name,
-                            isValid: !name.isEmpty
-                        )
-                    }
-                    
+            // Auth Toggle - always visible
+            authToggleButtons
+                .padding(.bottom, hasStartedAuth ? 16 : (keyboardUp ? 12 : 20))
+                
+                // Form fields - compact spacing when in standard mode
+                VStack(spacing: hasStartedAuth ? 12 : (keyboardUp ? 10 : 14)) {
                     OnboardingTextField(
                         icon: "envelope.fill",
                         placeholder: "Email",
@@ -3446,19 +3745,54 @@ struct NewOnboardingView: View {
                         fieldValue: .email,
                         isValid: !email.isEmpty && email.contains("@")
                     )
+                    .id("emailField")
                     
-                    // Password field with show/hide toggle
+                    // Unified password field - no flickering when toggling Sign Up/Sign In
                     PasswordTextField(
-                        placeholder: "Password",
-                        text: $password,
-                        isVisible: $showPassword,
+                        placeholder: isSignUp && isOnConfirmPasswordStep ? "Re-enter Password" : "Password",
+                        text: isSignUp && isOnConfirmPasswordStep ? $confirmPassword : $password,
+                        isVisible: isSignUp && isOnConfirmPasswordStep ? $showConfirmPassword : $showPassword,
                         focusedField: $focusedField,
-                        fieldValue: .password,
-                        isValid: isPasswordValid
+                        fieldValue: isSignUp && isOnConfirmPasswordStep ? .confirmPassword : .password,
+                        showMatchIndicator: isSignUp && isOnConfirmPasswordStep,
+                        passwordsMatch: passwordsMatch,
+                        isValid: isSignUp && isOnConfirmPasswordStep ? (passwordsMatch && !confirmPassword.isEmpty) : (isSignUp ? isPasswordValid : !password.isEmpty)
                     )
+                    .id("unifiedPassword")
+                    .onChange(of: isOnConfirmPasswordStep) { _, newValue in
+                        // Maintain focus during password step transitions with aggressive restoration
+                        if newValue {
+                            // Switched to confirm password - set focus multiple times
+                            print("🔐 Switching to confirm password field")
+                            DispatchQueue.main.async {
+                                focusedField = .confirmPassword
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                focusedField = .confirmPassword
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                focusedField = .confirmPassword
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                focusedField = .confirmPassword
+                            }
+                        } else {
+                            // Switched back to first password
+                            print("🔐 Switching back to first password field")
+                            DispatchQueue.main.async {
+                                focusedField = .password
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                focusedField = .password
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                focusedField = .password
+                            }
+                        }
+                    }
                     
-                    // Password requirements (only for sign up, show when focused, hide once all met)
-                    if isSignUp && focusedField == .password && !isPasswordValid {
+                    // Password requirements (show once user starts typing, stay visible even when met)
+                    if isSignUp && !isOnConfirmPasswordStep && !password.isEmpty {
                         PasswordRequirementsView(
                             hasMinLength: hasMinLength,
                             hasUppercase: hasUppercase,
@@ -3466,26 +3800,23 @@ struct NewOnboardingView: View {
                             hasNumber: hasNumber,
                             hasSpecialChar: hasSpecialChar
                         )
+                        .padding(.top, hasStartedAuth ? -4 : 0)
                     }
                     
-                    // Confirm password (only show after password is valid)
-                    if isSignUp && isPasswordValid {
-                        PasswordTextField(
-                            placeholder: "Confirm Password",
-                            text: $confirmPassword,
-                            isVisible: $showConfirmPassword,
-                            focusedField: $focusedField,
-                            fieldValue: .confirmPassword,
-                            showMatchIndicator: true,
-                            passwordsMatch: passwordsMatch,
-                            isValid: passwordsMatch && !confirmPassword.isEmpty
-                        )
-                        .id("confirmPassword")
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Show message if passwords don't match
+                    if isSignUp && isOnConfirmPasswordStep && !confirmPassword.isEmpty && !passwordsMatch {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundColor(.orange)
+                            Text("Passwords don't match")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, hasStartedAuth ? 2 : 4)
                     }
                     
-                    // Terms and Services checkbox (only for sign up, show after passwords match)
-                    if isSignUp && isPasswordValid && passwordsMatch {
+                    // Terms and Services checkbox (only for sign up, show after passwords match on confirm step)
+                    if isSignUp && isOnConfirmPasswordStep && passwordsMatch {
                         HStack(spacing: 10) {
                             Button(action: { acceptedTerms.toggle() }) {
                                 ZStack {
@@ -3520,7 +3851,7 @@ struct NewOnboardingView: View {
                             
                             Spacer()
                         }
-                        .padding(.top, 12)
+                        .padding(.top, hasStartedAuth ? 8 : 12)
                         .padding(.horizontal, 4)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -3566,7 +3897,7 @@ struct NewOnboardingView: View {
                                 }
                             }
                         }
-                        .padding(12)
+                        .padding(hasStartedAuth ? 10 : 12)
                 .background(
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.orange.opacity(0.1))
@@ -3586,7 +3917,7 @@ struct NewOnboardingView: View {
                                 .font(.caption)
                                 .foregroundColor(.green)
                         }
-                        .padding(12)
+                        .padding(hasStartedAuth ? 10 : 12)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.green.opacity(0.1))
@@ -3613,7 +3944,7 @@ struct NewOnboardingView: View {
                                     .foregroundColor(.primary)
                                     .multilineTextAlignment(.leading)
                             }
-                            .padding(16)
+                            .padding(hasStartedAuth ? 12 : 16)
                             .frame(maxWidth: .infinity)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
@@ -3652,20 +3983,24 @@ struct NewOnboardingView: View {
                     // Forgot Password (only for login)
                     if !isSignUp {
                         Button(action: {
-                            sendPasswordReset()
+                            if email.isEmpty || !email.contains("@") {
+                                // Show helpful message
+                                errorMessage = "Please enter your email address above first"
+                                showError = true
+                            } else {
+                                sendPasswordReset()
+                            }
                         }) {
                             Text("Forgot Password?")
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
                         }
-                        .disabled(email.isEmpty || !email.contains("@"))
-                        .opacity(email.isEmpty || !email.contains("@") ? 0.5 : 1.0)
-                        .padding(.top, 4)
+                        .padding(.top, hasStartedAuth ? 2 : 4)
                     }
                     
-                    // MARK: - Primary Sign In/Continue Button (only shows when user starts filling form)
+                    // MARK: - Primary Sign In/Continue Button (only shows when NOT in standard mode)
                     // Hidden by default - appears when user has entered email and password
-                    if keyboardObserver.keyboardHeight == 0 && !email.isEmpty && !password.isEmpty {
+                    if keyboardObserver.keyboardHeight == 0 && !email.isEmpty && !password.isEmpty && !hasStartedAuth {
                         Button(action: {
                             if isEditingFromConfirmation {
                                 returnToConfirmation()
@@ -3710,11 +4045,11 @@ struct NewOnboardingView: View {
                         .disabled(supabaseManager.isLoading || !isAuthFormValid)
                         .opacity(supabaseManager.isLoading || !isAuthFormValid ? 0.6 : 1.0)
                         .animation(.easeInOut(duration: 0.2), value: isAuthFormValid)
-                        .padding(.top, 16)
+                        .padding(.top, hasStartedAuth ? 12 : 16)
                     }
                     
-                    // MARK: - Social Login Section (hidden when keyboard is up)
-                    if keyboardObserver.keyboardHeight == 0 {
+                    // MARK: - Social Login Section (hidden when keyboard is up or in standard mode)
+                    if keyboardObserver.keyboardHeight == 0 && !hasStartedAuth {
                         VStack(spacing: 16) {
                             SocialLoginDivider()
                                 .padding(.top, 8)
@@ -3733,18 +4068,8 @@ struct NewOnboardingView: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
-            .padding(.horizontal, 28)
-            .animation(.easeInOut(duration: 0.2), value: keyboardObserver.keyboardHeight)
-            .onChange(of: isPasswordValid) { _, isValid in
-                // Auto-focus confirm password when all requirements are met
-                if isValid && isSignUp && focusedField == .password {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            focusedField = .confirmPassword
-                        }
-                    }
-                }
-            }
+            .padding(.horizontal, hasStartedAuth ? 24 : 28)
+            .animation(.spring(response: 0.5, dampingFraction: 0.85), value: hasStartedAuth)
         }
     }
     
@@ -4968,7 +5293,7 @@ struct NewOnboardingView: View {
                         ConfirmationListSection(title: "ACCOUNT") {
                             ConfirmationListRow(icon: "person.fill", label: "Name", value: name) {
                                 isEditingFromConfirmation = true
-                                navigateTo(.auth)
+                                navigateTo(.username)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                     focusedField = .name
                                 }
@@ -5141,9 +5466,9 @@ struct NewOnboardingView: View {
         print("📝 [ONBOARDING] Password length: \(password.count)")
         print("📝 [ONBOARDING] isAuthenticated: \(supabaseManager.isAuthenticated)")
         
-        // If user is already authenticated (e.g., via Apple/Google Sign-In), skip account creation
+        // If user is already authenticated (social sign-in OR email/password created after phone verification)
         if supabaseManager.isAuthenticated {
-            print("✅ User already authenticated (social sign-in) - completing onboarding")
+            print("✅ User already authenticated - completing onboarding with full profile update")
             completeOnboarding()
             return
         }
@@ -5170,6 +5495,9 @@ struct NewOnboardingView: View {
             // For sign up: Create the Supabase account first
             Task {
                 do {
+                    // This code path should NOT be reached for email/password signups anymore
+                    // Account is now created after phone verification (earlier in the flow)
+                    print("⚠️ [ONBOARDING] This signup path should not be reached - account should already exist!")
                     print("🔐 [ONBOARDING] Starting signup for: \(email)")
                     try await supabaseManager.signUp(email: email, password: password, name: name.isEmpty ? "User" : name)
                     print("✅ [ONBOARDING] Signup successful, user authenticated: \(supabaseManager.isAuthenticated)")
@@ -5228,22 +5556,38 @@ struct NewOnboardingView: View {
     }
     
     private func sendPasswordReset() {
-        guard !email.isEmpty && email.contains("@") else { return }
+        guard !email.isEmpty && email.contains("@") else {
+            errorMessage = "Please enter a valid email address"
+            showError = true
+            return
+        }
         
+        // Clear previous states
         passwordResetSent = false
         showError = false
+        errorMessage = ""
         emailAlreadyExists = false
+        
+        print("📧 [PASSWORD RESET] Sending reset email to: \(email)")
         
         Task {
             do {
                 try await supabaseManager.resetPassword(email: email)
                 await MainActor.run {
                     passwordResetSent = true
+                    HapticManager.notification(.success)
+                    print("✅ [PASSWORD RESET] Email sent successfully")
+                    
+                    // Auto-hide success message after 10 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                        passwordResetSent = false
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Failed to send reset email. Please try again."
+                    errorMessage = "Failed to send reset email. Please check your email address and try again."
                     showError = true
+                    print("❌ [PASSWORD RESET] Failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -5254,6 +5598,24 @@ struct NewOnboardingView: View {
         errorMessage = ""
         emailAlreadyExists = false
         passwordResetSent = false
+        acceptedTerms = false  // Uncheck terms when switching modes
+        // Reset password step and clear all password fields when switching auth modes
+        let currentFocus = focusedField
+        isOnConfirmPasswordStep = false
+        password = ""  // Clear password
+        confirmPassword = ""  // Clear confirm password
+        // Maintain focus to keep keyboard up
+        DispatchQueue.main.async {
+            // Keep focus on email or password depending on what was focused
+            if currentFocus == .email {
+                focusedField = .email
+            } else if currentFocus == .password || currentFocus == .confirmPassword {
+                focusedField = .password
+            } else {
+                focusedField = currentFocus
+            }
+        }
+        // Keep hasStartedAuth true so header stays visible when switching between Sign Up/Sign In
     }
     
     // MARK: - Complete Step
@@ -5363,16 +5725,38 @@ struct NewOnboardingView: View {
         showAuthProviderHint = false
         
         if isSignUp {
-            // For sign up: Just validate and proceed to phone number step (2FA security)
+            // For sign up: Just validate and proceed to username step
             // Account will be created on the confirmation screen
-            print("🔐 [AUTH] Sign up mode - navigating to phone number step")
-            print("   └─ Current state before navigation:")
-            print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
-            print("   └─ phoneNumber: '\(phoneNumber)'")
-            print("   └─ isVerificationCodeSent: \(isVerificationCodeSent)")
-            print("   └─ isPhoneVerified: \(isPhoneVerified)")
-            navigateTo(.phoneNumber)
-            print("🔐 [AUTH] Navigation call complete")
+            print("🔐 [AUTH] Sign up mode - navigating to username step")
+            // Clean up auth states
+            hasStartedAuth = false
+            isOnConfirmPasswordStep = false
+            
+            // Determine which field should be focused based on name state
+            let targetField: FocusedField = name.isEmpty ? .name : .username
+            print("🔐 [AUTH] Target field will be: \(targetField)")
+            
+            // Navigate
+            navigateTo(.username)
+            
+            // Aggressively maintain keyboard by setting focus multiple times
+            DispatchQueue.main.async {
+                focusedField = targetField
+                print("🔐 [AUTH] Focus set immediately: \(targetField)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                focusedField = targetField
+                print("🔐 [AUTH] Focus reinforced at 50ms: \(targetField)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                focusedField = targetField
+                print("🔐 [AUTH] Focus reinforced at 150ms: \(targetField)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                focusedField = targetField
+                print("🔐 [AUTH] Focus reinforced at 300ms: \(targetField)")
+            }
+            print("🔐 [AUTH] Navigation initiated with focus on \(targetField)")
         } else {
             // For sign in: First check if email is linked to Apple/Google
             Task {
@@ -5631,6 +6015,15 @@ struct NewOnboardingView: View {
                     print("📊 [FIELD LOG] Verifying what was actually saved to database...")
                     await supabaseManager.verifyAndLogSavedProfile()
                     
+                    // 📬 NOTIFY EXISTING USERS: If phone is verified and contacts synced, notify contacts
+                    // This sends push notifications to existing Fit33 users who have this new user in their contacts
+                    if isPhoneVerified && ContactsService.shared.hasCheckedContacts {
+                        print("📬 [ONBOARDING] Phone verified + contacts synced → notifying existing users...")
+                        await ContactsService.shared.notifyExistingUsersOfNewJoin()
+                    } else {
+                        print("⚠️ [ONBOARDING] Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))")
+                    }
+                    
                 } catch {
                     print("❌ [ONBOARDING] Failed to create OAuth profile: \(error.localizedDescription)")
                     
@@ -5761,6 +6154,24 @@ struct NewOnboardingView: View {
         if let gender = selectedGender {
             let genderPref: GenderFilterService.Gender = gender.lowercased().contains("female") ? .female : .male
             GenderFilterService.shared.setPreferredGender(genderPref)
+        }
+        
+        // 📬 NOTIFY EXISTING USERS: For email/password signup users
+        // This sends push notifications to existing Fit33 users who have this new user in their contacts
+        // (OAuth users are handled in the Task block above)
+        if !supabaseManager.isAuthenticated {
+            // This shouldn't happen, but log it
+            print("⚠️ [ONBOARDING] User not authenticated after profile creation - skipping contact notifications")
+        } else {
+            Task {
+                // Check if phone is verified and contacts are synced
+                if isPhoneVerified && ContactsService.shared.hasCheckedContacts {
+                    print("📬 [ONBOARDING] Phone verified + contacts synced → notifying existing users...")
+                    await ContactsService.shared.notifyExistingUsersOfNewJoin()
+                } else {
+                    print("⚠️ [ONBOARDING] Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))")
+                }
+            }
         }
         
         // Show completion screen
@@ -5907,9 +6318,19 @@ struct NewOnboardingView: View {
                             print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
                             
                             if isNewUser {
-                                // New user - go to phone number for 2FA security first
-                                print("👤 [SOCIAL AUTH] New Apple user - directing to phone number step")
-                                navigateTo(.phoneNumber)
+                                // New user - go to username step (name pre-filled from Apple)
+                                print("👤 [SOCIAL AUTH] New Apple user - directing to username step")
+                                navigateTo(.username)
+                                // Auto-focus username field since name is pre-filled
+                                DispatchQueue.main.async {
+                                    focusedField = .username
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    focusedField = .username
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    focusedField = .username
+                                }
                             } else {
                                 // Returning user - force reload from Core Data to get latest onboarding status
                                 userManager.reloadCurrentUser()
@@ -6121,14 +6542,22 @@ struct OnboardingTextField<F: Hashable>: View {
         .padding(.vertical, 18)
         .contentShape(RoundedRectangle(cornerRadius: 16)) // Rounded rectangle hit area
         .background(
-            // Modern floating card effect
+            // Modern floating card effect with gradient
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.14), Color(white: 0.10)]
+                                : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                 
                 // Enhanced shadow for floating effect
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(Color.clear)
                     .shadow(
                         color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
                         radius: isFocused ? 12 : 8,
@@ -6215,6 +6644,14 @@ struct PasswordTextField<F: Hashable>: View {
                 }
             }
             
+            // Eye button (show/hide password)
+            Button(action: { isVisible.toggle() }) {
+                Image(systemName: isVisible ? "eye.slash.fill" : "eye.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain) // Prevent keyboard dismissal
+            
             // Match indicator (for confirm password) - only show when valid
             if showMatchIndicator && !text.isEmpty && passwordsMatch {
                 Image(systemName: "checkmark.circle.fill")
@@ -6223,22 +6660,33 @@ struct PasswordTextField<F: Hashable>: View {
                     .allowsHitTesting(false)
                     .transition(.scale.combined(with: .opacity))
             }
-            
-            Button(action: { isVisible.toggle() }) {
-                Image(systemName: isVisible ? "eye.slash.fill" : "eye.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain) // Prevent keyboard dismissal
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .contentShape(RoundedRectangle(cornerRadius: 16)) // Match OnboardingTextField shape
         .background(
-            // Modern floating card effect - matching OnboardingTextField
+            // Modern floating card effect with gradient - matching OnboardingTextField
+            ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                    .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.14), Color(white: 0.10)]
+                                : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.clear)
+                    .shadow(
+                        color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
+                        radius: 8,
+                        x: 0,
+                        y: 3
+                    )
+            }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -6266,7 +6714,15 @@ struct VerificationCodeBox: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark 
+                            ? [Color(white: 0.14), Color(white: 0.10)]
+                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .shadow(
                     color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
                     radius: isFocused ? 8 : 4,
@@ -6507,11 +6963,7 @@ struct GenderButton: View {
     private let selectionFeedback = UISelectionFeedbackGenerator()
     
     var color: Color {
-        switch title {
-        case "Male": return .blue
-        case "Female": return .pink
-        default: return .purple
-        }
+        return .blue
     }
     
     var body: some View {
@@ -6535,8 +6987,8 @@ struct GenderButton: View {
                                 )
                                 : LinearGradient(
                                     colors: colorScheme == .dark 
-                                        ? [Color(white: 0.18), Color(white: 0.18)]
-                                        : [Color.white, Color.white],
+                                        ? [Color(white: 0.14), Color(white: 0.10)]
+                                        : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )

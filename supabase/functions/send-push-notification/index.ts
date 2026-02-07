@@ -107,7 +107,7 @@ serve(async (req) => {
         // Get device token and APNs environment for this user
         const { data: tokenData, error: tokenError } = await supabase
           .from('user_push_tokens')
-          .select('device_token, apns_environment, is_valid')
+          .select('device_token, apns_environment, is_valid, updated_at')
           .eq('user_id', notification.recipient_user_id)
           .single()
 
@@ -118,12 +118,21 @@ serve(async (req) => {
           continue
         }
 
-        // Skip if token is marked invalid (user needs to re-register)
+        // Only skip invalid tokens if they haven't been refreshed recently
+        // When a user opens the app, is_valid is reset to true and updated_at is refreshed
+        // Give a 5-minute grace period after invalidation before skipping
         if (tokenData.is_valid === false) {
-          console.log(`Token marked invalid for user ${notification.recipient_user_id} - waiting for re-registration`)
-          await markNotificationFailed(supabase, notification.id, 'Device token marked invalid - user needs to re-open app')
-          failCount++
-          continue
+          const tokenAge = Date.now() - new Date(tokenData.updated_at).getTime()
+          const fiveMinutes = 5 * 60 * 1000
+          if (tokenAge > fiveMinutes) {
+            console.log(`Token invalid for user ${notification.recipient_user_id} (stale ${Math.round(tokenAge/60000)}min) - skipping`)
+            await markNotificationFailed(supabase, notification.id, 'Device token invalid - user needs to re-open app')
+            failCount++
+            continue
+          }
+          // Token was recently updated — user may have just reopened the app
+          // Try sending anyway and let APNs decide
+          console.log(`Token was invalid but recently refreshed (${Math.round(tokenAge/1000)}s ago) - attempting delivery`)
         }
 
         // Determine which APNs host to use based on token's environment
@@ -268,12 +277,20 @@ async function markNotificationFailed(
   errorMessage: string,
   retryCount: number = 0
 ) {
-  // Check if this is a permanent failure (invalid token, etc.)
+  // Check if this is a permanent APNs failure (invalid token, wrong app, etc.)
+  // Network errors, timeouts, and server errors are NOT permanent
   const isPermanentFailure = 
     errorMessage.includes('BadDeviceToken') ||
     errorMessage.includes('Unregistered') ||
     errorMessage.includes('TopicDisallowed') ||
-    errorMessage.includes('DeviceTokenNotForTopic')
+    errorMessage.includes('DeviceTokenNotForTopic') ||
+    errorMessage.includes('ExpiredProviderToken') ||
+    errorMessage.includes('InvalidProviderToken')
+  
+  // Don't invalidate tokens for transient/network errors
+  const shouldInvalidateToken = 
+    errorMessage.includes('BadDeviceToken') ||
+    errorMessage.includes('Unregistered')
 
   if (isPermanentFailure || retryCount >= MAX_RETRIES) {
     // Permanent failure - mark as failed
@@ -286,8 +303,8 @@ async function markNotificationFailed(
       })
       .eq('id', id)
     
-    // If it's a bad device token, also invalidate the token in user_push_tokens
-    if (errorMessage.includes('BadDeviceToken') || errorMessage.includes('Unregistered')) {
+    // Only invalidate token for confirmed bad/unregistered tokens (not network errors)
+    if (shouldInvalidateToken) {
       const { data: notification } = await supabase
         .from('push_notification_queue')
         .select('recipient_user_id')

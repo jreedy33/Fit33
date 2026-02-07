@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 class FriendService: ObservableObject {
     static let shared = FriendService()
+    private let logger = SessionLogManager.shared
     
     // MARK: - Published Properties
     @Published var friends: [Friend] = []
@@ -182,7 +183,14 @@ class FriendService: ObservableObject {
                 .value
             
             self.friends = result
+            logger.log(.info, category: .social, message: "Fetched \(result.count) friends", metadata: result.isEmpty ? nil : [
+                "friends": result.prefix(5).map { $0.friendName ?? $0.friendUsername ?? "?" }.joined(separator: ", ")
+            ])
             print("✅ Fetched \(result.count) friends")
+            
+            // Preload/refresh friend photos (detects URL changes for updated photos)
+            let photoData = result.map { (id: $0.friendId.uuidString, url: $0.profilePhotoUrl) }
+            FriendPhotoCache.shared.preloadPhotos(for: photoData)
         } catch {
             print("❌ Error fetching friends: \(error)")
         }
@@ -250,13 +258,31 @@ class FriendService: ObservableObject {
                 .execute()
                 .value
             
+            logger.log(.info, category: .social, message: "👋 Friend request SENT", metadata: [
+                "to_user_id": toUserId.uuidString.prefix(8),
+                "request_id": requestId.uuidString.prefix(8)
+            ])
             print("✅ [FRIEND REQUEST] Request sent successfully! ID: \(requestId)")
             await fetchUnreadCount()
             await fetchSentRequests()  // Refresh sent requests list
             return true
         } catch {
+            logger.log(.error, category: .social, message: "Friend request FAILED", metadata: [
+                "to_user_id": toUserId.uuidString.prefix(8),
+                "error": "\(error)"
+            ])
             print("❌ [FRIEND REQUEST] Error sending friend request: \(error)")
             print("❌ [FRIEND REQUEST] Error details: \(String(describing: error))")
+            
+            // Check if error is "Friend request already exists" - treat as success
+            let errorString = String(describing: error)
+            if errorString.contains("Friend request already exists") || errorString.contains("already exists") {
+                print("ℹ️ [FRIEND REQUEST] Request already exists - treating as success")
+                await fetchUnreadCount()
+                await fetchSentRequests()
+                return true
+            }
+            
             return false
         }
     }
@@ -272,10 +298,12 @@ class FriendService: ObservableObject {
                 // Update local state
                 pendingRequests.removeAll { $0.requestId == requestId }
                 await fetchFriends()
+                logger.log(.info, category: .social, message: "✅ Friend request ACCEPTED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 print("✅ Friend request accepted")
             }
             return success
         } catch {
+            logger.log(.error, category: .social, message: "Accept friend request FAILED", metadata: ["error": "\(error)"])
             print("❌ Error accepting friend request: \(error)")
             return false
         }
@@ -291,10 +319,12 @@ class FriendService: ObservableObject {
             if success {
                 // Update local state
                 pendingRequests.removeAll { $0.requestId == requestId }
+                logger.log(.info, category: .social, message: "Friend request DECLINED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 print("✅ Friend request declined")
             }
             return success
         } catch {
+            logger.log(.error, category: .social, message: "Decline friend request FAILED", metadata: ["error": "\(error)"])
             print("❌ Error declining friend request: \(error)")
             return false
         }
@@ -881,7 +911,7 @@ struct SentFriendRequest: Codable, Identifiable {
         case toUserName = "to_user_name"
         case toUserEmail = "to_user_email"
         case toUserUsername = "to_user_username"
-        case profilePhotoUrl = "profile_photo_url"
+        case profilePhotoUrl = "to_user_profile_photo_url"  // Fix: match SQL column name
         case message
         case createdAt = "created_at"
     }

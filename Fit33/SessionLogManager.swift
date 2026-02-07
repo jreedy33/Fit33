@@ -3152,6 +3152,11 @@ enum LogCategory: String, Codable {
     case onboarding = "ONBOARD"
     case data = "DATA"
     case health = "HEALTH"
+    case challenge = "CHALLENGE"
+    case pushNotification = "PUSH"
+    case social = "SOCIAL"
+    case auth = "AUTH"
+    case sync = "SYNC"
 }
 
 struct UserContext: Codable {

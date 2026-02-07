@@ -158,7 +158,16 @@ struct DevSessionLogsView: View {
     }
 }
 
-// Simple share sheet wrapper
+#Preview {
+    NavigationView {
+        DevSessionLogsView()
+    }
+}
+#endif
+
+// MARK: - Share Sheet (available in all build configurations)
+/// Reusable share sheet wrapper used by MyQRCodeView and other non-debug views.
+/// Must live outside #if DEBUG so it's available in Release/Archive builds.
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     
@@ -168,10 +177,3 @@ struct ShareSheet: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
-
-#Preview {
-    NavigationView {
-        DevSessionLogsView()
-    }
-}
-#endif

@@ -263,6 +263,10 @@ class SupabaseManager: ObservableObject {
                 // Clear the manual sign-out flag since user is logging back in
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
+            SessionLogManager.shared.log(.info, category: .auth, message: "🔐 Sign in successful", metadata: [
+                "email": email,
+                "user_id": String(currentUser?.id.uuidString.prefix(8) ?? "?")
+            ])
             print("✅ Sign in successful: \(email)")
             
             // Sync all data from cloud
@@ -656,6 +660,7 @@ class SupabaseManager: ObservableObject {
                 isAuthenticated = false
                 isLoading = false
             }
+            SessionLogManager.shared.log(.info, category: .auth, message: "🔐 Sign out complete")
             print("✅ Sign out successful - all local data cleared")
         } catch {
             await MainActor.run { isLoading = false }
@@ -741,13 +746,12 @@ class SupabaseManager: ObservableObject {
             ("challenge_daily_progress", "user_id"),
             ("challenge_participants", "user_id"),
             
-            // Friend/social data
-            ("friend_requests", "sender_id"),
-            ("friend_requests", "receiver_id"),
-            ("friendships", "user_id"),
-            ("friendships", "friend_id"),
-            ("sent_workouts", "sender_id"),
-            ("sent_workouts", "receiver_id"),
+            // Friend/social data — friendships uses requester_id/addressee_id, NOT user_id/friend_id
+            ("friendships", "requester_id"),
+            ("friendships", "addressee_id"),
+            // Shared workouts — table is shared_workouts, NOT sent_workouts
+            ("shared_workouts", "sender_id"),
+            ("shared_workouts", "recipient_id"),
             
             // Contact sync data
             ("user_synced_contacts", "user_id"),
@@ -759,8 +763,11 @@ class SupabaseManager: ObservableObject {
             
             // Workout data
             ("workout_history", "user_id"),
+            ("workout_exercises", "user_id"),
+            ("workout_context", "user_id"),
             ("workouts", "user_id"),
             ("exercise_usage_logs", "user_id"),
+            ("exercise_performance_history", "user_id"),
             
             // Program data
             ("user_active_programs", "user_id"),
@@ -773,23 +780,47 @@ class SupabaseManager: ObservableObject {
             ("user_food_frequency", "user_id"),
             ("user_ingredient_preferences", "user_id"),
             ("user_cuisine_preferences", "user_id"),
+            ("user_favorite_foods", "user_id"),
             
             // Favorites and custom content
             ("user_favorites", "user_id"),
             ("favorite_workouts", "user_id"),
             ("custom_exercises", "user_id"),
+            ("user_exercise_nicknames", "user_id"),
             
             // Health data
             ("step_tracking", "user_id"),
             ("weight_logs", "user_id"),
+            ("weight_goals", "user_id"),
+            ("weight_statistics", "user_id"),
             ("hydration_logs", "user_id"),
+            ("daily_activity_summary", "user_id"),
+            ("daily_summaries", "user_id"),
+            ("sleep_logs", "user_id"),
+            ("heart_rate_daily", "user_id"),
+            ("body_composition_logs", "user_id"),
+            ("inbody_connections", "user_id"),
+            
+            // Cardio data
+            ("cardio_personal_records", "user_id"),
+            ("cardio_streaks", "user_id"),
+            ("cardio_weekly_summaries", "user_id"),
+            ("cardio_goals", "user_id"),
+            ("cardio_workouts", "user_id"),
+            
+            // Intelligence/insights data
+            ("user_personalized_insights", "user_id"),
+            ("user_streak_tracking", "user_id"),
+            ("user_metric_correlations", "user_id"),
+            ("user_behavior_patterns", "user_id"),
+            ("user_performance_windows", "user_id"),
             
             // Strava integration
             ("user_strava_tokens", "user_id"),
             ("strava_activities", "user_id"),
             
-            // Cardio workouts
-            ("cardio_workouts", "user_id"),
+            // Notifications
+            ("app_notifications", "user_id"),
             
             // Other user data
             ("bug_reports", "user_id"),
@@ -810,16 +841,16 @@ class SupabaseManager: ObservableObject {
             }
         }
         
-        // Delete challenges created by this user
+        // Delete challenges created by this user (table is group_challenges, NOT friend_challenges)
         do {
             try await client
-                .from("friend_challenges")
+                .from("group_challenges")
                 .delete()
-                .eq("creator_id", value: userId.uuidString)
+                .eq("created_by", value: userId.uuidString)
                 .execute()
             print("  ✓ Deleted created challenges")
         } catch {
-            print("  ⚠️ friend_challenges (creator): \(error.localizedDescription)")
+            print("  ⚠️ group_challenges (created_by): \(error.localizedDescription)")
         }
         
         // Finally delete the user profile
@@ -856,12 +887,20 @@ class SupabaseManager: ObservableObject {
         await MainActor.run { isLoading = true }
         
         do {
-            try await client.auth.resetPasswordForEmail(email)
+            // Configure redirect URL for password reset
+            // This URL will be used in the email link that user receives
+            let redirectURL = "fit33://reset-password"  // Deep link to app
+            
+            try await client.auth.resetPasswordForEmail(
+                email,
+                redirectTo: URL(string: redirectURL)
+            )
             await MainActor.run { isLoading = false }
             print("✅ Password reset email sent to: \(email)")
         } catch {
             await MainActor.run { isLoading = false }
             print("❌ Password reset error: \(error.localizedDescription)")
+            print("❌ Full error: \(error)")
             throw error
         }
     }
@@ -1296,6 +1335,7 @@ class SupabaseManager: ObservableObject {
             let name: String
             let email: String
             let phone_number: String?  // For 2FA / account security (private)
+            let phone_verified: Bool  // Whether phone was verified during onboarding
             let username: String?
             let birthday: String?  // Birthday string (e.g., "26/10/1996" or "1996-10-26")
             let age: Int?
@@ -1315,6 +1355,7 @@ class SupabaseManager: ObservableObject {
             name: name,
             email: email,
             phone_number: phoneNumber,  // 2FA phone number (private)
+            phone_verified: phoneNumber != nil,  // true if phone provided = verified during onboarding
             username: username,
             birthday: birthday,  // Birthday string from onboarding
             age: age,
@@ -1334,7 +1375,8 @@ class SupabaseManager: ObservableObject {
         print("   - id: \(userId.uuidString)")
         print("   - name: \(name)")
         print("   - email: \(email)")
-        print("   - phone_number: \(phoneNumber ?? "nil (not verified)")")
+        print("   - phone_number: \(phoneNumber ?? "nil")")
+        print("   - phone_verified: \(phoneNumber != nil)")
         print("   - username: \(username ?? "nil")")
         print("   - birthday: \(birthday ?? "nil")")
         print("   - age: \(age ?? 0)")
@@ -1449,6 +1491,7 @@ class SupabaseManager: ObservableObject {
     // MARK: - Phone Number
     
     /// Update phone number for existing user (used for contact matching & 2FA)
+    /// Sets phone_verified = true in database after successful verification
     func updatePhoneNumber(_ phoneNumber: String) async throws {
         guard let userId = currentUser?.id else {
             print("❌ [PHONE] Cannot update phone - no authenticated user")
@@ -1457,11 +1500,13 @@ class SupabaseManager: ObservableObject {
         
         struct PhoneUpdate: Encodable {
             let phone_number: String
+            let phone_verified: Bool
             let updated_at: String
         }
         
         let update = PhoneUpdate(
             phone_number: phoneNumber,
+            phone_verified: true,  // Mark as verified since this is called after successful verification
             updated_at: dateToISO(Date())
         )
         
@@ -1471,7 +1516,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ [PHONE] Phone number updated for user: \(phoneNumber)")
+        print("✅ [PHONE] Phone number updated and marked as verified for user: \(phoneNumber)")
     }
     
     /// Check if current user has a phone number saved
@@ -1843,6 +1888,7 @@ class SupabaseManager: ObservableObject {
             let name: String?
             let email: String?
             let phone_number: String?  // For 2FA / account security (private, not displayed)
+            let phone_verified: Bool  // Whether phone was verified
             let birthday: String?
             let age: Int?
             let gender: String?
@@ -1879,6 +1925,7 @@ class SupabaseManager: ObservableObject {
             name: user.name,
             email: user.email,
             phone_number: user.phoneNumber,  // 2FA phone number (private)
+            phone_verified: user.phoneNumber != nil && !(user.phoneNumber?.isEmpty ?? true),  // true if phone exists and not empty
             birthday: birthdayToISO(user.birthday),  // Convert to ISO format for database
             age: Int(user.age),
             gender: user.gender,
@@ -1916,6 +1963,7 @@ class SupabaseManager: ObservableObject {
             let name: String?
             let email: String?
             let phone_number: String?  // For 2FA / account security (private)
+            let phone_verified: Bool  // Whether phone was verified
             let birthday: String?
             let age: Int?
             let gender: String?
@@ -1947,6 +1995,7 @@ class SupabaseManager: ObservableObject {
             name: profile.name,
             email: profile.email,
             phone_number: profile.phone_number,  // 2FA phone number (private)
+            phone_verified: profile.phone_verified,  // Pass through from ProfileSync
             birthday: profile.birthday,
             age: profile.age,
             gender: profile.gender,

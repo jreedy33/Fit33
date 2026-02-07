@@ -66,22 +66,6 @@ struct FriendsListView: View {
         .navigationTitle("Friends")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                // QR Code Menu
-                Menu {
-                    Button(action: { showingMyQRCode = true }) {
-                        Label("My QR Code", systemImage: "qrcode")
-                    }
-                    Button(action: { showingQRScanner = true }) {
-                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
-                    }
-                } label: {
-                    Image(systemName: "qrcode")
-                        .font(.system(size: 18))
-                        .foregroundColor(.blue)
-                }
-            }
-            
             ToolbarItem(placement: .navigationBarTrailing) {
                 // Received Workouts Badge Button
                 Button(action: { showingReceivedWorkouts = true }) {
@@ -660,81 +644,56 @@ struct FriendsListView: View {
     
     // MARK: - Search Content
     
+    @State private var showingQROptions = false
+    
     private var searchContent: some View {
-        VStack(spacing: 16) {
-            // Quick Add Section - QR Code Buttons
-            HStack(spacing: 12) {
-                // Scan QR Code Button
-                Button(action: { showingQRScanner = true }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "qrcode.viewfinder")
-                            .font(.system(size: 16))
-                        Text("Scan QR")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+        VStack(spacing: 12) {
+            // Search bar with QR button inline
+            HStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Search by @username...", text: $searchText)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.twitter)
+                        .onSubmit { performSearch() }
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [.blue, .cyan],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                }
+                .padding(12)
+                .background(cardBackground)
+                .cornerRadius(12)
+                
+                // QR Code button (replaces separate Scan QR / My Code buttons)
+                Button(action: { showingQROptions = true }) {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .cyan],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .cornerRadius(12)
+                        .cornerRadius(12)
                 }
-                
-                // My QR Code Button
-                Button(action: { showingMyQRCode = true }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "qrcode")
-                            .font(.system(size: 16))
-                        Text("My Code")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundColor(.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                    )
-                    .cornerRadius(12)
+                .confirmationDialog("QR Code", isPresented: $showingQROptions) {
+                    Button("Scan QR Code") { showingQRScanner = true }
+                    Button("Share My QR Code") { showingMyQRCode = true }
+                    Button("Cancel", role: .cancel) { }
                 }
             }
             .padding(.horizontal, 20)
             
-            // Search bar
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                
-                TextField("Search by @username...", text: $searchText)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.twitter) // Good for @mentions
-                    .onSubmit {
-                        performSearch()
-                    }
-                
-                if !searchText.isEmpty {
-                    Button(action: {
-                        searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .padding(12)
-            .background(cardBackground)
-            .cornerRadius(12)
-            .padding(.horizontal, 20)
-            
-            // Results
+            // Results — scrollable, directly below search bar (no Find Friends filler)
             ScrollView {
                 LazyVStack(spacing: 12) {
                     if isSearching {
@@ -755,12 +714,12 @@ struct FriendsListView: View {
                         }
                         .padding(.top, 50)
                     } else if searchText.isEmpty {
-                        // Show contact suggestions or permission prompt
                         contactSuggestionsSection
                     } else {
-                        ForEach(friendService.searchResults) { user in
+                        ForEach(friendService.searchResults.filter { user in
+                            return !user.isFriend && user.hasOutgoingRequest != true
+                        }) { user in
                             UserSearchResultCard(user: user, onRespondToRequest: {
-                                // Switch to Requests tab when user taps "Respond"
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     selectedTab = 1
                                 }
@@ -773,11 +732,10 @@ struct FriendsListView: View {
             }
         }
         .onChange(of: searchText) { newValue in
-            // Debounce search
             if newValue.count >= 3 {
                 Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce
-                    if searchText == newValue { // Still the same
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if searchText == newValue {
                         performSearch()
                     }
                 }
@@ -831,28 +789,7 @@ struct FriendsListView: View {
                 }
                 .padding(.top, 10)
             } else {
-                // Normal flow - show search header first
-                VStack(spacing: 8) {
-                    Image(systemName: "at")
-                        .font(.system(size: 40))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.blue, .cyan.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    Text("Find Friends")
-                        .font(.headline)
-                    
-                    Text("Search by username above")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 30)
-                
-                // Then show contact suggestions or states
+                // Show contact suggestions directly (no filler header)
                 if contactsService.canAccessContacts {
                     if contactsService.isLoading {
                         ProgressView("Finding friends from contacts...")
@@ -1150,21 +1087,22 @@ struct SuggestedFriendCard: View {
             avatarView
             
             VStack(alignment: .leading, spacing: 4) {
-                // Username
-                if let username = friend.username, !username.isEmpty {
-                    Text("@\(username)")
-                        .font(.headline)
-                        .foregroundColor(.blue)
-                }
-                
-                // Name
+                // Name — bold white, primary
                 if let name = friend.name, !name.isEmpty {
                     Text(name)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
                 }
                 
-                // "From contacts" label
+                // Username — small grey
+                if let username = friend.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                // "In your contacts" label — blue
                 HStack(spacing: 4) {
                     Image(systemName: "person.crop.rectangle.stack")
                         .font(.system(size: 10))
@@ -1207,6 +1145,20 @@ struct SuggestedFriendCard: View {
             }
         }
         .frame(width: 50, height: 50)
+        // Blue gradient ring around avatar
+        .overlay(
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [.blue, .cyan],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2.5
+                )
+                .frame(width: 56, height: 56)
+        )
+        .frame(width: 56, height: 56)
     }
     
     private var defaultAvatar: some View {

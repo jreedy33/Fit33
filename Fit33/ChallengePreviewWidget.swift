@@ -60,21 +60,34 @@ struct ChallengePreviewWidget: View {
                 actionButtonsSection
             }
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(cardBackground)
-                    .shadow(color: themeColor.opacity(0.15), radius: 12, x: 0, y: 4)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(cardBackground)
+                    
+                    // Subtle gradient glow overlay
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [themeColor.opacity(0.06), .clear, themeColor.opacity(0.03)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [gradientColors[0].opacity(0.5), gradientColors[1].opacity(0.3)],
+                            colors: [gradientColors[0].opacity(0.6), gradientColors[1].opacity(0.2), gradientColors[0].opacity(0.4)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: 1.5
                     )
             )
+            .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.2 : 0.1), radius: 20, x: 0, y: 8)
+            .shadow(color: themeColor.opacity(0.08), radius: 40, x: 0, y: 16)
         }
         .confirmationDialog(
             "Decline this challenge?",
@@ -113,11 +126,12 @@ struct ChallengePreviewWidget: View {
                         .background(Capsule().fill(themeColor))
                 }
                 
-                Text("\(invite.creatorName ?? "Someone") wants to challenge you!")
-                    .font(.subheadline)
+                Text("\(invite.creatorName ?? "Someone") wants to challenge...")
+                    .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 // Username if available
                 if let username = invite.creatorUsername, !username.isEmpty {
@@ -162,22 +176,24 @@ struct ChallengePreviewWidget: View {
     
     private var challengeDetailsSection: some View {
         HStack(spacing: 16) {
-            // Challenge type emoji - floating
-            Text(challengeType.emoji)
-                .font(.system(size: 36))
+            // Trophy icon
+            Image(systemName: "trophy.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             
             VStack(alignment: .leading, spacing: 4) {
-                // Challenge title
-                HStack(spacing: 6) {
-                    Text(invite.displayEmoji)
-                        .font(.title3)
-                    
-                    Text(invite.title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                }
+                // Challenge title — just the mode emoji + clean title
+                Text(invite.displayTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
                 
                 // Challenge details
                 HStack(spacing: 12) {
@@ -241,10 +257,10 @@ struct ChallengePreviewWidget: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Color.secondary.opacity(0.15))
                 )
                 .contentShape(Rectangle())
@@ -257,21 +273,21 @@ struct ChallengePreviewWidget: View {
                 HStack(spacing: 6) {
                     if isAccepting {
                         ProgressView()
-                            .scaleEffect(0.8)
+                            .scaleEffect(0.7)
                             .tint(.white)
                     } else {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .bold))
                     }
-                    Text("Accept Challenge")
+                    Text("Accept")
                         .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .fontWeight(.bold)
                 }
                 .foregroundColor(.white)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(
                             LinearGradient(
                                 colors: gradientColors,
@@ -285,7 +301,8 @@ struct ChallengePreviewWidget: View {
             .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
     
     // MARK: - Actions

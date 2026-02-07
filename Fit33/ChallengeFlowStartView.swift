@@ -45,6 +45,9 @@ struct ChallengeFlowStartView: View {
     @State private var searchText = ""
     @State private var topFriendsPage = 0 // 0: Most engaged, 1: Newest added
     @State private var friendSwipeDragOffset: CGFloat = 0
+    @State private var loadingFriendRequests: Set<UUID> = []
+    @State private var sentFriendRequests: Set<UUID> = []
+    @State private var showingQRScanner = false
     
     private var filteredFriends: [Friend] {
         if searchText.isEmpty {
@@ -58,17 +61,101 @@ struct ChallengeFlowStartView: View {
         }
     }
     
-    var body: some View {
+    private var filteredSuggestedContacts: [SuggestedFriend] {
+        guard !searchText.isEmpty else {
+            return contactsService.suggestedFriends
+        }
+        
+        let searchLower = searchText.lowercased()
+        return contactsService.suggestedFriends.filter { friend in
+            let name = (friend.name ?? "").lowercased()
+            let username = (friend.username ?? "").lowercased()
+            return name.contains(searchLower) || username.contains(searchLower)
+        }
+    }
+    
+    private var successAlertTitle: String {
+        if selectedFriends.count > 1 && !isGroupChallenge {
+            return "Challenges Sent! 🎯"
+        }
+        return "Challenge Sent! 🎯"
+    }
+    
+    // MARK: - Pinned Invite Header
+    private var inviteHeader: some View {
+        VStack(spacing: 12) {
+            Text("Invite Friends to Challenge")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            Text("Add them as friends first, then you can create challenges together!")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            
+            // Search bar with QR scanner
+            HStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.white.opacity(0.5))
+                        .font(.system(size: 16))
+                    
+                    TextField("Search", text: $searchText)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
+                
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    showingQRScanner = true
+                }) {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 48, height: 48)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(12)
+                }
+            }
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+    
+    private var mainContent: some View {
         ZStack {
             // Blue orbs background
             AnimatedOrbBackground.home(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Progress indicator at top
-                progressHeader
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
+                // Progress indicator at top (hidden in invite mode)
+                if !isInviteMode {
+                    progressHeader
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
+                }
+                
+                // Pinned header (invite mode only)
+                if isInviteMode && currentStep == .friendSelection {
+                    inviteHeader
+                        .padding(.horizontal, 20)
+                }
                 
                 // Main content (card rotates through)
                 ScrollView {
@@ -93,62 +180,117 @@ struct ChallengeFlowStartView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 160)
+                    .padding(.bottom, 120)
                 }
                 .scrollIndicators(.hidden)
                 
                 Spacer(minLength: 0)
                 
-                // Bottom button container (blends with orb background)
+                // Bottom button container
                 navigationBar
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 8)
             }
         }
-        .navigationTitle("Create Challenge")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    if currentStep == .friendSelection || currentStep == .contactSync {
-                        print("❌ [CHALLENGE FLOW] Dismissing from \(currentStep)")
-                        dismiss()
-                    } else {
-                        print("⬅️ [CHALLENGE FLOW] Going back from \(currentStep)")
-                        goBack()
+    }
+    
+    private var successAlertMessage: String {
+        var names: [String] = []
+        for friend in selectedFriends {
+            if let name = friend.friendName {
+                let firstName = name.components(separatedBy: " ").first ?? name
+                names.append(firstName)
+            } else if let username = friend.friendUsername {
+                names.append(username)
+            } else {
+                names.append("Friend")
+            }
+        }
+        
+        let friendCount = selectedFriends.count
+        let nameList = names.joined(separator: " & ")
+        
+        if friendCount > 1 && isGroupChallenge {
+            return "\(nameList) will receive a notification to join the group challenge!"
+        } else if friendCount > 1 {
+            return "\(nameList) will each receive a challenge notification!"
+        } else {
+            let firstName = names.first ?? "Your friend"
+            return "\(firstName) will receive a notification to accept your challenge!"
+        }
+    }
+    
+    private var toolbarIcon: String {
+        (currentStep == .friendSelection || currentStep == .contactSync) ? "xmark" : "chevron.left"
+    }
+    
+    private func handleToolbarTap() {
+        if currentStep == .friendSelection || currentStep == .contactSync {
+            dismiss()
+        } else {
+            goBack()
+        }
+    }
+    
+    private var isInviteMode: Bool {
+        // Invite mode when user has no friends AND either:
+        // - has suggested contacts to show, OR
+        // - has contacts access (contacts are loading/will load)
+        // This prevents a flash of "Who do you want to challenge?" while contacts load
+        friendService.friends.isEmpty && (contactsService.canAccessContacts || !contactsService.suggestedFriends.isEmpty)
+    }
+    
+    var body: some View {
+        mainContent
+            .navigationTitle(isInviteMode ? "" : "Create Challenge")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: handleToolbarTap) {
+                        Image(systemName: toolbarIcon)
+                            .font(.system(size: 17, weight: .semibold))
                     }
-                }) {
-                    Image(systemName: (currentStep == .friendSelection || currentStep == .contactSync) ? "xmark" : "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
                 }
             }
-        }
-        .alert(selectedFriends.count > 1 && !isGroupChallenge ? "Challenges Sent! 🎯" : "Challenge Sent! 🎯", isPresented: $showingSuccess) {
-            Button("Done") {
-                print("✅ [CHALLENGE FLOW] Success - dismissing")
-                dismiss()
+            .alert(successAlertTitle, isPresented: $showingSuccess) {
+                Button("Done") { dismiss() }
+            } message: {
+                Text(successAlertMessage)
             }
-        } message: {
-            let names = selectedFriends.map { $0.friendName?.components(separatedBy: " ").first ?? $0.friendUsername ?? "Friend" }
-            if selectedFriends.count > 1 && isGroupChallenge {
-                Text("\(names.joined(separator: " & ")) will receive a notification to join the group challenge!")
-            } else if selectedFriends.count > 1 {
-                Text("\(names.joined(separator: " & ")) will each receive a challenge notification!")
-            } else {
-                Text("\(names.first ?? "Your friend") will receive a notification to accept your challenge!")
+            .alert("Failed to Send Challenge", isPresented: $showingError) {
+                Button("OK") { }
+            } message: {
+                Text("There was an issue sending your challenge. Please try again.")
             }
-        }
-        .alert("Failed to Send Challenge 😔", isPresented: $showingError) {
-            Button("OK") { }
-        } message: {
-            Text("There was an issue sending your challenge. Please try again.")
-        }
-        .onAppear {
+            .sheet(isPresented: $showingQRScanner) {
+                QRCodeScannerView()
+            }
+            .onAppear {
             print("🏆 [CHALLENGE FLOW] View appeared")
-            // If user has no friends, start with contact sync screen
-            if friendService.friends.isEmpty {
+            print("   └─ friends.count: \(friendService.friends.count)")
+            print("   └─ suggestedFriends.count: \(contactsService.suggestedFriends.count)")
+            print("   └─ hasCheckedContacts: \(contactsService.hasCheckedContacts)")
+            print("   └─ canAccessContacts: \(contactsService.canAccessContacts)")
+            
+            // If user has friends OR has suggested friends from contacts → go to friend selection
+            // Only show contact sync if no friends AND no suggested friends AND hasn't synced
+            if friendService.friends.isEmpty && contactsService.suggestedFriends.isEmpty && !contactsService.canAccessContacts {
                 currentStep = .contactSync
+            } else {
+                currentStep = .friendSelection
+                
+                // If contacts were already synced but suggestedFriends is empty (app restart), re-fetch
+                if contactsService.canAccessContacts && contactsService.suggestedFriends.isEmpty {
+                    Task {
+                        await contactsService.fetchContactsAndFindFriends()
+                    }
+                }
+            }
+            
+            // Always refresh friends list
+            Task {
+                await friendService.fetchFriends()
             }
         }
         .onChange(of: customTarget) { _, newValue in
@@ -218,7 +360,10 @@ struct ChallengeFlowStartView: View {
         let canProgress: Bool = {
             switch currentStep {
             case .contactSync: return true
-            case .friendSelection: return !selectedFriends.isEmpty
+            case .friendSelection:
+                // Can only continue if they have accepted friends selected
+                // If showing suggested contacts, Continue is disabled (need to add friends first)
+                return !selectedFriends.isEmpty && !friendService.friends.isEmpty
             case .groupOrSeparate: return true
             case .modeSelection: return selectedMode != nil
             case .activityType: return selectedActivity != nil
@@ -230,7 +375,14 @@ struct ChallengeFlowStartView: View {
         
         let isMultiChallenge = selectedFriends.count > 1 && !isGroupChallenge
         let sendTitle = isMultiChallenge ? "Send \(selectedFriends.count) Challenges" : "Send Challenge"
-        let buttonTitle: String = currentStep == .review ? sendTitle : "Continue"
+        
+        // Special case: if showing invite friends screen (contacts but no accepted friends)
+        let isInviteMode = friendService.friends.isEmpty && (contactsService.canAccessContacts || !contactsService.suggestedFriends.isEmpty)
+        let buttonTitle: String = {
+            if currentStep == .review { return sendTitle }
+            if currentStep == .friendSelection && isInviteMode { return "Add Friends to Continue" }
+            return "Continue"
+        }()
         let buttonIcon: String = currentStep == .review ? "paperplane.fill" : "arrow.right"
         let buttonColors: [Color] = currentStep == .review ? [.green, .mint] : [.blue, .cyan]
         
@@ -255,18 +407,19 @@ struct ChallengeFlowStartView: View {
                 }
             }
             
-            // Continue / Send button
-            Button(action: {
-                if currentStep == .review {
-                    print("📤 [CHALLENGE FLOW] Send button tapped")
-                    Task {
-                        await sendChallenge()
+            // Continue / Send button (hidden in invite mode since they can't continue)
+            if !(currentStep == .friendSelection && isInviteMode) {
+                Button(action: {
+                    if currentStep == .review {
+                        print("📤 [CHALLENGE FLOW] Send button tapped")
+                        Task {
+                            await sendChallenge()
+                        }
+                    } else {
+                        print("➡️ [CHALLENGE FLOW] Continue from \(currentStep)")
+                        goForward()
                     }
-                } else {
-                    print("➡️ [CHALLENGE FLOW] Continue from \(currentStep)")
-                    goForward()
-                }
-            }) {
+                }) {
                 HStack(spacing: 8) {
                     if isCreating {
                         ProgressView()
@@ -301,6 +454,7 @@ struct ChallengeFlowStartView: View {
                 .opacity(canProgress ? 1 : 0.6)
             }
             .disabled(!canProgress || isCreating)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -447,9 +601,17 @@ struct ChallengeFlowStartView: View {
                         // Request permission (first time or not determined)
                         let granted = await contactsService.requestAccess()
                         if granted {
-                            // After sync, auto-advance to friend selection
-                            // (friends list will refresh via FriendService)
+                            // Sync contacts and find matching Fit33 users
+                            await contactsService.fetchContactsAndFindFriends()
+                            // Also refresh friends list
                             await friendService.fetchFriends()
+                            
+                            // Advance to friend selection after sync completes
+                            await MainActor.run {
+                                withAnimation {
+                                    currentStep = .friendSelection
+                                }
+                            }
                         }
                     }
                 }
@@ -531,17 +693,22 @@ struct ChallengeFlowStartView: View {
         let floatingHeadIds = Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
         let listFriends = filteredFriends.filter { !floatingHeadIds.contains($0.friendId) }
         
+        // Check if we're in invite mode (showing suggested contacts, not accepted friends)
+        let isInviteMode = friendService.friends.isEmpty && (contactsService.canAccessContacts || !contactsService.suggestedFriends.isEmpty)
+        
         return VStack(spacing: 16) {
-            Text("Who do you want to challenge?")
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-            
-            // Selection count badge
-            Text(selectedFriends.isEmpty ? "Pick a buddy (or two!)" : selectedFriends.count == 1 ? "1 buddy selected — add another?" : "\(selectedFriends.count) buddies selected")
-                .font(.caption)
-                .foregroundColor(selectedFriends.isEmpty ? .white.opacity(0.6) : .cyan)
+            // Header (only shown when NOT in invite mode - invite mode uses pinned header)
+            if !isInviteMode {
+                Text("Who do you want to challenge?")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                Text(selectedFriends.isEmpty ? "Pick a buddy (or two!)" : selectedFriends.count == 1 ? "1 buddy selected — add another?" : "\(selectedFriends.count) buddies selected")
+                    .font(.caption)
+                    .foregroundColor(selectedFriends.isEmpty ? .white.opacity(0.6) : .cyan)
+            }
             
             // Selected friends preview chips
             if !selectedFriends.isEmpty {
@@ -581,7 +748,26 @@ struct ChallengeFlowStartView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             
-            if friendService.friends.isEmpty {
+            // Show suggested friends from contacts if no accepted friends yet
+            if friendService.friends.isEmpty && !contactsService.suggestedFriends.isEmpty {
+                // Friends list - fills available space
+                VStack(spacing: 12) {
+                    ForEach(filteredSuggestedContacts) { suggestedFriend in
+                        suggestedFriendRow(friend: suggestedFriend)
+                    }
+                }
+                
+                // Sent requests badge
+                if !sentFriendRequests.isEmpty {
+                    Text("\(sentFriendRequests.count) request\(sentFriendRequests.count == 1 ? "" : "s") sent ✓")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                        .padding(.top, 4)
+                }
+            } else if friendService.friends.isEmpty {
                 Text("No friends yet")
                     .foregroundColor(.white.opacity(0.7))
             } else {
@@ -1530,6 +1716,113 @@ struct ChallengeFlowStartView: View {
             HapticManager.notification(.error)
             showingError = true
         }
+    }
+    
+    // MARK: - Suggested Friend Row (for contacts)
+    private func suggestedFriendRow(friend: SuggestedFriend) -> some View {
+        let isLoading = loadingFriendRequests.contains(friend.userId)
+        let isRequestSent = sentFriendRequests.contains(friend.userId) || friend.hasOutgoingRequest
+        
+        return HStack(spacing: 14) {
+            // Profile photo or initials with blue ring
+            ZStack {
+                // Blue gradient ring
+                Circle()
+                    .stroke(
+                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 2.5
+                    )
+                    .frame(width: 54, height: 54)
+                
+                if let photoUrl = friend.profilePhotoUrl, !photoUrl.isEmpty {
+                    AsyncImage(url: URL(string: photoUrl)) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            Circle()
+                                .fill(LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                    }
+                    .frame(width: 46, height: 46)
+                    .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 46, height: 46)
+                        .overlay(
+                            Text(friend.initials)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                        )
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friend.name ?? "Unknown")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                
+                if let username = friend.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            
+            Spacer()
+            
+            // Add button
+            Button(action: {
+                guard !isRequestSent && !isLoading else { return }
+                loadingFriendRequests.insert(friend.userId)
+                HapticManager.impact(.medium)
+                
+                Task {
+                    let success = await friendService.sendFriendRequest(toUserId: friend.userId)
+                    
+                    await MainActor.run {
+                        loadingFriendRequests.remove(friend.userId)
+                        if success {
+                            sentFriendRequests.insert(friend.userId)
+                            HapticManager.notification(.success)
+                        }
+                    }
+                }
+            }) {
+                HStack(spacing: 6) {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: isRequestSent ? "checkmark" : "plus")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    Text(isRequestSent ? "Sent" : (isLoading ? "" : "Add"))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(isRequestSent ? .green : .white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Group {
+                        if isRequestSent {
+                            Color.green.opacity(0.15)
+                        } else {
+                            LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                        }
+                    }
+                )
+                .cornerRadius(20)
+            }
+            .disabled(isRequestSent || isLoading)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(14)
     }
 }
 

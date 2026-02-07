@@ -29,6 +29,9 @@ final class FriendPhotoCache {
         print("📸 [FRIEND CACHE] Initialized")
     }
     
+    // Track cached URLs to detect when a friend updates their photo
+    private var cachedUrls: [String: String] = [:]
+    
     // MARK: - Public API
     
     /// Get cached image for a friend (memory first, then disk)
@@ -48,10 +51,25 @@ final class FriendPhotoCache {
         return nil
     }
     
-    /// Cache an image for a friend
-    func cacheImage(_ image: UIImage, for friendId: String) {
+    /// Check if the cached photo URL is stale (friend updated their photo)
+    func isUrlStale(for friendId: String, currentUrl: String?) -> Bool {
+        guard let currentUrl = currentUrl, !currentUrl.isEmpty else { return false }
+        if let cachedUrl = cachedUrls[friendId] {
+            return cachedUrl != currentUrl
+        }
+        // No cached URL tracked yet - not stale, just uncached
+        return false
+    }
+    
+    /// Cache an image for a friend (also tracks URL for update detection)
+    func cacheImage(_ image: UIImage, for friendId: String, url: String? = nil) {
         // Save to memory
         memoryCache.setObject(image, forKey: friendId as NSString)
+        
+        // Track URL for staleness detection
+        if let url = url {
+            cachedUrls[friendId] = url
+        }
         
         // Save to disk asynchronously
         Task.detached(priority: .background) {
@@ -62,15 +80,18 @@ final class FriendPhotoCache {
     /// Download and cache a friend's photo from URL
     @MainActor
     func downloadAndCache(url: URL, friendId: String) async -> UIImage? {
-        // Check cache first
-        if let cached = getImage(for: friendId) {
+        let urlString = url.absoluteString
+        
+        // If URL hasn't changed and we have a cached version, return it
+        if !isUrlStale(for: friendId, currentUrl: urlString),
+           let cached = getImage(for: friendId) {
             return cached
         }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             if let image = UIImage(data: data) {
-                cacheImage(image, for: friendId)
+                cacheImage(image, for: friendId, url: urlString)
                 return image
             }
         } catch {
@@ -80,13 +101,15 @@ final class FriendPhotoCache {
         return nil
     }
     
-    /// Preload photos for multiple friends
+    /// Preload photos for multiple friends (also refreshes stale photos)
     func preloadPhotos(for friends: [(id: String, url: String?)]) {
         Task {
             for friend in friends {
-                guard let urlString = friend.url,
-                      let url = URL(string: urlString),
-                      getImage(for: friend.id) == nil else { continue }
+                guard let urlString = friend.url, let url = URL(string: urlString) else { continue }
+                
+                // Download if not cached OR if URL changed (friend updated photo)
+                let needsDownload = getImage(for: friend.id) == nil || isUrlStale(for: friend.id, currentUrl: urlString)
+                guard needsDownload else { continue }
                 
                 _ = await downloadAndCache(url: url, friendId: friend.id)
             }
@@ -164,6 +187,9 @@ struct CachedFriendPhoto: View {
         self.size = size
         self.showGradientRing = showGradientRing
         self.gradientColors = gradientColors
+        
+        // Load from cache IMMEDIATELY so photo shows on first frame (no flash)
+        _image = State(initialValue: FriendPhotoCache.shared.getImage(for: friendId))
     }
     
     private var initials: String {
@@ -229,18 +255,21 @@ struct CachedFriendPhoto: View {
     private func loadImage() {
         guard !isLoading else { return }
         
-        // Check cache first
-        if let cached = FriendPhotoCache.shared.getImage(for: friendId) {
-            self.image = cached
+        let cache = FriendPhotoCache.shared
+        let isStale = cache.isUrlStale(for: friendId, currentUrl: photoUrl)
+        
+        // Show cached image immediately (already set in init, but refresh if needed)
+        if !isStale, let cached = cache.getImage(for: friendId) {
+            if self.image == nil { self.image = cached }
             return
         }
         
-        // Download if URL exists
+        // Download if URL exists (new photo or stale cache)
         guard let urlString = photoUrl, let url = URL(string: urlString) else { return }
         
         isLoading = true
         Task {
-            if let downloaded = await FriendPhotoCache.shared.downloadAndCache(url: url, friendId: friendId) {
+            if let downloaded = await cache.downloadAndCache(url: url, friendId: friendId) {
                 await MainActor.run {
                     self.image = downloaded
                 }
@@ -276,6 +305,9 @@ struct LargeCachedFriendPhoto: View {
         self.name = name
         self.size = size
         self.gradientColors = gradientColors
+        
+        // Load from cache IMMEDIATELY so photo shows on first frame
+        _image = State(initialValue: FriendPhotoCache.shared.getImage(for: friendId))
     }
     
     private var initials: String {
@@ -344,17 +376,20 @@ struct LargeCachedFriendPhoto: View {
     }
     
     private func loadImage() {
-        // Check cache first
-        if let cached = FriendPhotoCache.shared.getImage(for: friendId) {
-            self.image = cached
+        let cache = FriendPhotoCache.shared
+        let isStale = cache.isUrlStale(for: friendId, currentUrl: photoUrl)
+        
+        // Show cached image immediately
+        if !isStale, let cached = cache.getImage(for: friendId) {
+            if self.image == nil { self.image = cached }
             return
         }
         
-        // Download if URL exists
+        // Download if URL exists (new photo or stale cache)
         guard let urlString = photoUrl, let url = URL(string: urlString) else { return }
         
         Task {
-            if let downloaded = await FriendPhotoCache.shared.downloadAndCache(url: url, friendId: friendId) {
+            if let downloaded = await cache.downloadAndCache(url: url, friendId: friendId) {
                 await MainActor.run {
                     self.image = downloaded
                 }

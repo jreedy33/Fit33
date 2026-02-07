@@ -26,7 +26,6 @@ struct PhoneVerificationSheet: View {
     @StateObject private var phoneVerificationService = PhoneVerificationService.shared
     
     private let maxAttempts = 2
-    private let phoneVerificationLockoutKey = "phoneVerificationLockoutTime"
     
     enum Field {
         case phoneNumber, verificationCode
@@ -77,9 +76,7 @@ struct PhoneVerificationSheet: View {
                     }
                     
                     // Content based on state
-                    if isLockedOut {
-                        lockedOutView
-                    } else if !isVerificationCodeSent {
+                    if !isVerificationCodeSent {
                         phoneInputView
                     } else {
                         codeInputView
@@ -109,39 +106,6 @@ struct PhoneVerificationSheet: View {
             }
             focusedField = .phoneNumber
         }
-    }
-    
-    // MARK: - Locked Out View
-    
-    private var lockedOutView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "clock.badge.exclamationmark.fill")
-                .font(.system(size: 50))
-                .foregroundStyle(LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            
-            Text("Try Again Later")
-                .font(.title3.weight(.bold))
-                .foregroundColor(.primary)
-            
-            Text("You can try again in \(lockoutTimeRemaining)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button(action: { dismiss() }) {
-                Text("Got it")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        Capsule()
-                            .fill(LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                    )
-            }
-            .padding(.top, 20)
-        }
-        .padding(.vertical, 20)
     }
     
     // MARK: - Phone Input View
@@ -410,28 +374,6 @@ struct PhoneVerificationSheet: View {
         return "\(selectedCountryCode.rawValue)\(digits)"
     }
     
-    private var isLockedOut: Bool {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            return Date() < lockoutTime
-        }
-        return false
-    }
-    
-    private var lockoutTimeRemaining: String {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            let remaining = lockoutTime.timeIntervalSince(Date())
-            if remaining > 0 {
-                let hours = Int(remaining) / 3600
-                let minutes = (Int(remaining) % 3600) / 60
-                if hours > 0 {
-                    return "\(hours)h \(minutes)m"
-                } else {
-                    return "\(minutes) minutes"
-                }
-            }
-        }
-        return ""
-    }
     
     // MARK: - Helper Functions
     
@@ -563,15 +505,6 @@ struct PhoneVerificationSheet: View {
     }
     
     private func goBack() {
-        // Check if user has exceeded max attempts
-        if attempts >= maxAttempts {
-            // Lock them out for 12 hours
-            let lockoutTime = Date().addingTimeInterval(12 * 60 * 60)
-            UserDefaults.standard.set(lockoutTime, forKey: phoneVerificationLockoutKey)
-            dismiss()
-            return
-        }
-        
         isVerificationCodeSent = false
         verificationCode = ""
         verificationError = ""

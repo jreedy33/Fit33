@@ -1,6 +1,7 @@
 import Foundation
 import Contacts
 import SwiftUI
+import Supabase
 
 // MARK: - Contacts Service
 /// Manages contact access and finds friends from user's contact list
@@ -181,37 +182,15 @@ class ContactsService: ObservableObject {
         print("🔍 [CONTACTS] Searching for matching Fit33 users...")
         print("   └─ Emails: \(contactEmails.count) (sample: \(sampleEmails.joined(separator: ", ")))")
         print("   └─ Phone numbers: \(contactPhoneNumbers.count) (sample: \(samplePhones.joined(separator: ", ")))")
+        print("   └─ DEBUG: First 10 full normalized phones: \(Array(contactPhoneNumbers.prefix(10)))")
         
-        do {
-            // Call database function to find matching users by email AND phone
-            print("🔍 [CONTACTS] Calling find_friends_from_contacts_v2...")
-            let result: [SuggestedFriend] = try await SupabaseManager.shared.supabaseClient
-                .rpc("find_friends_from_contacts_v2", params: [
-                    "contact_emails": contactEmails,
-                    "contact_phones": contactPhoneNumbers
-                ])
-                .execute()
-                .value
-            
-            suggestedFriends = result
-            print("✅ [CONTACTS] Found \(result.count) suggested friends!")
-            
-            // Log found friends with details
-            if result.isEmpty {
-                print("   └─ No matches found in your contacts")
-            } else {
-                for friend in result {
-                    let username = friend.username ?? "no username"
-                    let email = friend.email ?? "no email"
-                    print("   👤 Found: \(friend.displayName) (@\(username), \(email))")
-                }
-            }
-        } catch {
-            // Fallback to email-only search if v2 function doesn't exist
-            print("⚠️ [CONTACTS] v2 function failed: \(error)")
-            print("⚠️ [CONTACTS] Falling back to email-only search...")
-            await findMatchingUsersByEmailOnly()
-        }
+        // Check if Abbie or Nicholas might be in the list
+        let abbieNumbers = contactPhoneNumbers.filter { $0.contains("716") || $0.contains("585") }
+        print("   └─ DEBUG: Phone numbers with 716/585 area code: \(abbieNumbers.count)")
+        
+        // Use direct database query method - more reliable than RPC
+        print("🔍 [CONTACTS] Using direct database query for maximum reliability...")
+        await findMatchingUsersDirect()
     }
     
     /// Fallback: search by email only (for backwards compatibility)
@@ -236,6 +215,184 @@ class ContactsService: ObservableObject {
             }
         } catch {
             print("❌ [CONTACTS] Error finding matching users: \(error)")
+            suggestedFriends = []
+        }
+    }
+    
+    /// Direct database query fallback - matches both phone and email
+    private func findMatchingUsersDirect() async {
+        print("🔍 [CONTACTS DIRECT] Querying database directly...")
+        
+        do {
+            // Get current user ID to exclude self
+            guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
+                print("⚠️ [CONTACTS DIRECT] No current user ID")
+                return
+            }
+            
+            // Query for users where phone OR email matches our contacts
+            // This is a more flexible query that handles different phone formats
+            var matchedUsers: [SuggestedFriend] = []
+            
+            // Search by email
+            if !contactEmails.isEmpty {
+                struct EmailMatch: Decodable {
+                    let id: UUID
+                    let name: String?
+                    let email: String?
+                    let username: String?
+                    let profile_photo_url: String?
+                }
+                
+                let emailResults: [EmailMatch] = try await SupabaseManager.shared.supabaseClient
+                    .from("user_profiles")
+                    .select("id, name, email, username, profile_photo_url")
+                    .in("email", values: contactEmails)
+                    .neq("id", value: currentUserId.uuidString)
+                    .execute()
+                    .value
+                
+                // Convert to SuggestedFriend
+                for match in emailResults {
+                    let friend = SuggestedFriend(
+                        userId: match.id,
+                        name: match.name,
+                        email: match.email,
+                        username: match.username,
+                        profilePhotoUrl: match.profile_photo_url,
+                        phoneNumber: nil,
+                        fitnessGoal: nil,
+                        isFriend: false,
+                        hasOutgoingRequest: false,
+                        hasIncomingRequest: false
+                    )
+                    matchedUsers.append(friend)
+                }
+                
+                print("📧 [CONTACTS DIRECT] Found \(emailResults.count) matches by email")
+            }
+            
+            // Search by phone - try multiple phone formats
+            if !contactPhoneNumbers.isEmpty {
+                // Try exact last 10 digits match
+                print("📱 [CONTACTS DIRECT] Searching \(contactPhoneNumbers.count) phone numbers...")
+                
+                // First, get count of ALL users in database for debugging
+                struct CountResult: Decodable {
+                    let count: Int?
+                }
+                
+                let totalCount: CountResult = try await SupabaseManager.shared.supabaseClient
+                    .from("user_profiles")
+                    .select("*", head: false, count: .exact)
+                    .limit(1)
+                    .single()
+                    .execute()
+                    .value
+                
+                print("📱 [CONTACTS DIRECT] Total users in database: \(totalCount.count ?? 0)")
+                
+                // Get ALL users with phone numbers
+                struct UserProfile: Decodable {
+                    let id: UUID
+                    let name: String?
+                    let email: String?
+                    let username: String?
+                    let profile_photo_url: String?
+                    let phone_number: String?
+                }
+                
+                print("📱 [CONTACTS DIRECT] Fetching all user profiles from database...")
+                let allUsers: [UserProfile] = try await SupabaseManager.shared.supabaseClient
+                    .from("user_profiles")
+                    .select("id, name, email, username, profile_photo_url, phone_number")
+                    .neq("id", value: currentUserId.uuidString)
+                    .execute()
+                    .value
+                
+                print("📱 [CONTACTS DIRECT] Got \(allUsers.count) TOTAL users from database")
+                
+                // Filter to those with phone numbers
+                let usersWithPhones = allUsers.filter { $0.phone_number != nil && !$0.phone_number!.isEmpty }
+                print("📱 [CONTACTS DIRECT] \(usersWithPhones.count) users have phone_number populated")
+                
+                // Log users with phones for debugging
+                for (index, user) in usersWithPhones.prefix(10).enumerated() {
+                    if let phone = user.phone_number {
+                        let digits = phone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                        let last4 = String(digits.suffix(4))
+                        let userName = user.name ?? user.username ?? "Unknown"
+                        print("   📱 User \(index + 1): \(userName) - ends in ...\(last4)")
+                    }
+                }
+                
+                // Check each user's phone against our contacts
+                for user in usersWithPhones {
+                    if let userPhone = user.phone_number {
+                        // Extract all digits from user's phone
+                        let userDigits = userPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                        
+                        // Try multiple matching strategies to handle country codes
+                        var matched = false
+                        
+                        // Strategy 1: Last 10 digits (standard US matching)
+                        let userLast10 = String(userDigits.suffix(10))
+                        let userName = user.name ?? user.username ?? "Unknown"
+                        if contactPhoneNumbers.contains(userLast10) {
+                            matched = true
+                            print("   ✅ Phone match (last 10)! \(userName) - \(userLast10)")
+                        }
+                        
+                        // Strategy 2: Full number with country code (e.g., +17163079290 matches 17163079290)
+                        if !matched && contactPhoneNumbers.contains(userDigits) {
+                            matched = true
+                            print("   ✅ Phone match (full)! \(userName) - \(userDigits)")
+                        }
+                        
+                        // Strategy 3: Check if contact has country code prefix
+                        if !matched {
+                            for contactPhone in contactPhoneNumbers {
+                                // Try with +1 prefix
+                                if userDigits == "1\(contactPhone)" || userDigits == contactPhone {
+                                    matched = true
+                                    print("   ✅ Phone match (country code)! \(userName) - \(contactPhone)")
+                                    break
+                                }
+                            }
+                        }
+                        
+                        if matched {
+                            // Convert to SuggestedFriend and add
+                            let friend = SuggestedFriend(
+                                userId: user.id,
+                                name: user.name,
+                                email: user.email,
+                                username: user.username,
+                                profilePhotoUrl: user.profile_photo_url,
+                                phoneNumber: user.phone_number,
+                                fitnessGoal: nil,
+                                isFriend: false,
+                                hasOutgoingRequest: false,
+                                hasIncomingRequest: false
+                            )
+                            
+                            // Avoid duplicates
+                            if !matchedUsers.contains(where: { $0.userId == friend.userId }) {
+                                matchedUsers.append(friend)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            suggestedFriends = matchedUsers
+            print("✅ [CONTACTS DIRECT] Total unique matches: \(matchedUsers.count)")
+            
+            for friend in matchedUsers {
+                print("   👤 \(friend.displayName) (@\(friend.username ?? "no username"))")
+            }
+        } catch {
+            print("❌ [CONTACTS DIRECT] Query failed: \(error)")
             suggestedFriends = []
         }
     }
@@ -333,6 +490,43 @@ class ContactsService: ObservableObject {
         // Sync to database
         await syncContactsToDatabase()
     }
+    
+    // MARK: - Notify Existing Users When New User Joins
+    
+    /// Call this after a new user completes onboarding (phone verified, contacts synced, account created)
+    /// This notifies existing Fit33 users who have the new user in their contacts
+    func notifyExistingUsersOfNewJoin() async {
+        guard let newUserId = SupabaseManager.shared.currentUser?.id else {
+            print("❌ [CONTACTS] Cannot notify - no user ID")
+            return
+        }
+        
+        print("📬 [CONTACTS] Notifying existing users that \(newUserId) joined Fit33...")
+        
+        do {
+            // Call the edge function to queue push notifications
+            struct NotifyResponse: Decodable {
+                let message: String
+                let notifications_queued: Int
+                let new_user_name: String?
+            }
+            
+            let response: NotifyResponse = try await SupabaseManager.shared.supabaseClient
+                .functions
+                .invoke(
+                    "notify-contacts-user-joined",
+                    options: FunctionInvokeOptions(
+                        body: ["new_user_id": newUserId.uuidString]
+                    )
+                )
+            
+            print("✅ [CONTACTS] Notified \(response.notifications_queued) existing users")
+            print("   Message: \(response.message)")
+            
+        } catch {
+            print("❌ [CONTACTS] Error notifying existing users: \(error)")
+        }
+    }
 }
 
 // MARK: - Suggested Friend Model
@@ -343,6 +537,7 @@ struct SuggestedFriend: Codable, Identifiable {
     let email: String?
     let username: String?
     let profilePhotoUrl: String?
+    let phoneNumber: String?  // Add phone number for direct query
     let fitnessGoal: String?
     let isFriend: Bool
     let hasOutgoingRequest: Bool
@@ -377,6 +572,7 @@ struct SuggestedFriend: Codable, Identifiable {
         case email
         case username
         case profilePhotoUrl = "profile_photo_url"
+        case phoneNumber = "phone_number"
         case fitnessGoal = "fitness_goal"
         case isFriend = "is_friend"
         case hasOutgoingRequest = "has_outgoing_request"

@@ -96,7 +96,7 @@ final class HealthKitService: ObservableObject {
     }
     
     /// Check current authorization status
-    private func checkAuthorizationStatus() {
+    func checkAuthorizationStatus() {
         guard isHealthKitAvailable else {
             isAuthorized = false
             return

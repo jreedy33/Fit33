@@ -326,6 +326,7 @@ struct DashboardView: View {
                     // STEP 2: Fetch updated challenges from database (reflects any changes)
                     await ChallengeService.shared.fetchPendingInvites()
                     await ChallengeService.shared.fetchActiveChallenges()
+                    await ChallengeService.shared.fetchPendingSentChallenges()
                     
                     // STEP 3: Refresh friend data and other home screen content
                     await FriendService.shared.refreshHomeScreenData()
@@ -510,9 +511,10 @@ struct DashboardView: View {
             await FriendService.shared.loadPendingRequests()
             await FriendService.shared.loadReceivedWorkouts()
             
-            // Load active challenges and pending invites (persists across app restarts)
+            // Load active challenges, pending invites, and pending sent challenges
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchPendingInvites()
+            await ChallengeService.shared.fetchPendingSentChallenges()
             
             // Load profile photo for home icon
             await loadProfilePhoto()

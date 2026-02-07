@@ -1046,6 +1046,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Process notification even when in foreground to refresh data
         Task { @MainActor in
             if let notificationType = userInfo["type"] as? String {
+                SessionLogManager.shared.log(.info, category: .pushNotification, message: "📨 Push received (foreground)", metadata: [
+                    "type": notificationType,
+                    "title": notification.request.content.title
+                ])
                 print("🔔 [NOTIFICATIONS] Received \(notificationType) while app in foreground - refreshing data")
                 
                 switch notificationType {
@@ -1146,7 +1150,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 // Handle notification tap based on type or category
                 // First check userInfo for push notification type
                 if let notificationType = userInfo["type"] as? String {
-                    self.handleNotificationType(notificationType, userInfo: userInfo)
+                    await self.handleNotificationType(notificationType, userInfo: userInfo)
                 } else {
                     // Fall back to category identifier for local notifications
                     self.handleNotificationCategory(categoryIdentifier)
@@ -1163,7 +1167,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     // MARK: - Deep Link Handlers for Notifications
     
     /// Handle push notification types (from userInfo["type"])
-    private func handleNotificationType(_ type: String, userInfo: [AnyHashable: Any]) {
+    private func handleNotificationType(_ type: String, userInfo: [AnyHashable: Any]) async {
+        SessionLogManager.shared.log(.info, category: .pushNotification, message: "📬 Notification TAPPED", metadata: [
+            "type": type,
+            "has_data": !userInfo.isEmpty
+        ])
         switch type {
         // Social notifications
         case "shared_workout":
@@ -1176,67 +1184,56 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             
         case "friend_request":
+            await FriendService.shared.fetchPendingRequests()
             DeepLinkManager.shared.pendingDestination = .friendRequests
-            Task { await FriendService.shared.fetchPendingRequests() }
             print("👥 [NOTIFICATIONS] Opening friend requests tab")
             
         case "friend_request_accepted":
+            await FriendService.shared.fetchFriends()
             DeepLinkManager.shared.pendingDestination = .friends
-            Task { await FriendService.shared.fetchFriends() }
             print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
             
+        case "contact_joined":
+            DeepLinkManager.shared.pendingDestination = .friendRequests
+            print("👥 [NOTIFICATIONS] Contact joined Fit33 - opening friend requests tab")
+            
         case "challenge_invite":
-            // Direct to home screen so user sees the challenge invite widget
-            Task { await ChallengeService.shared.fetchPendingInvites() }
+            // Fetch invites FIRST so the widget has data when dashboard appears
+            await ChallengeService.shared.fetchPendingInvites()
             DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget")
+            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites)")
             
         case "group_challenge_invite":
-            // Direct to home screen so user sees the group challenge widget
-            Task { await ChallengeService.shared.fetchActiveGroupChallenges() }
+            await ChallengeService.shared.fetchActiveGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
             print("🏆 [NOTIFICATIONS] Opening home screen for group challenge invite")
             
         case "group_challenge_started":
-            // Group challenge is now active — refresh, sync progress, and go to dashboard
-            Task {
-                await ChallengeService.shared.fetchActiveGroupChallenges()
-                await ChallengeService.shared.fetchActiveChallenges()
-                await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
-            }
+            await ChallengeService.shared.fetchActiveGroupChallenges()
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
             print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
             
         case "challenge_accepted", "challenge_progress", "challenge_completed":
+            await ChallengeService.shared.fetchPendingSentChallenges()
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchPendingInvites()
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                Task {
-                    print("🔄 [NOTIFICATIONS] Refreshing challenges after \(type) notification")
-                    await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from pending sent
-                    await ChallengeService.shared.fetchActiveChallenges()  // Add to active
-                    await ChallengeService.shared.fetchPendingInvites()  // Clean up any pending invites
-                    print("✅ [NOTIFICATIONS] Challenges refreshed - pending sent should now be active")
-                }
                 print("🏆 [NOTIFICATIONS] Opening challenge detail: \(challengeId)")
             } else {
                 DeepLinkManager.shared.pendingDestination = .challenges
-                Task {
-                    await ChallengeService.shared.fetchPendingSentChallenges()
-                    await ChallengeService.shared.fetchActiveChallenges()
-                }
                 print("🏆 [NOTIFICATIONS] Opening challenges list")
             }
             
         case "challenge_cancelled":
-            // Refresh ALL challenges to remove the cancelled one from every list
-            Task {
-                await ChallengeService.shared.fetchActiveChallenges()
-                await ChallengeService.shared.fetchPendingInvites()
-                await ChallengeService.shared.fetchPendingSentChallenges()
-                await ChallengeService.shared.fetchActiveGroupChallenges()
-            }
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchPendingInvites()
+            await ChallengeService.shared.fetchPendingSentChallenges()
+            await ChallengeService.shared.fetchActiveGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Challenge was cancelled, refreshing all challenges")
+            print("🏆 [NOTIFICATIONS] Challenge cancelled, all lists refreshed")
             
         // Achievement notifications
         case "personal_record":
@@ -1349,8 +1346,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         }
         
         let content = UNMutableNotificationContent()
-        content.title = "\(contactName) joined Fit33! 🎉"
-        content.body = "Your contact is now on Fit33 - Add them as a friend!"
+        content.title = "\(contactName) joined Fit33!"
+        content.body = "Send them a friend request!"
         content.categoryIdentifier = "CONTACT_JOINED"
         content.sound = .default
         content.userInfo = [

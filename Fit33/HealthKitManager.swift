@@ -319,6 +319,10 @@ class HealthKitManager: ObservableObject {
         case vigorous   // High intensity, minimal rest
     }
     
+    func checkAuthorizationStatus() {
+        checkAuthorization()
+    }
+    
     private func checkAuthorization() {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let status = healthStore.authorizationStatus(for: stepType)

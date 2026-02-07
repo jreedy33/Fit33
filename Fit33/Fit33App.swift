@@ -591,6 +591,10 @@ struct Fit33App: App {
                             await pushNotificationService.recheckAndRegister()
                         }
                         
+                        // 🏥 Re-check HealthKit authorization (in case user enabled in Settings during onboarding)
+                        HealthKitManager.shared.checkAuthorizationStatus()
+                        HealthKitService.shared.checkAuthorizationStatus()
+                        
                         // ☁️ Retry profile sync if user completed onboarding but sync may have failed
                         Task {
                             if SupabaseManager.shared.isAuthenticated,

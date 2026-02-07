@@ -293,11 +293,11 @@ class RealtimeService: ObservableObject {
             table: "challenge_participants"
         )
         
-        // Subscribe to challenge status changes
+        // Subscribe to challenge status changes (group_challenges is the actual table)
         let challengeUpdates = channel.postgresChange(
             UpdateAction.self,
             schema: "public",
-            table: "friend_challenges"
+            table: "group_challenges"
         )
         
         Task {

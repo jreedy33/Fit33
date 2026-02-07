@@ -9,6 +9,7 @@ class PushNotificationService: ObservableObject {
     
     @Published var deviceToken: String?
     @Published var isRegistered = false
+    private let logger = SessionLogManager.shared
     
     private init() {}
     
@@ -40,19 +41,22 @@ class PushNotificationService: ObservableObject {
         }
     }
     
-    /// Re-check and register if user enabled notifications after initial denial
-    /// Call this on app foreground to catch Settings changes
+    /// Re-check and ALWAYS re-register on app foreground
+    /// APNs can rotate tokens at any time — calling registerForRemoteNotifications()
+    /// either returns the same token (no-op) or a fresh one that gets saved to Supabase
     func recheckAndRegister() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         
         if settings.authorizationStatus == .authorized || 
            settings.authorizationStatus == .provisional {
-            // User has notifications enabled, make sure we're registered
+            // ALWAYS re-register — APNs will return current valid token
+            // This ensures stale/rotated tokens get refreshed automatically
+            await MainActor.run {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+            
             if deviceToken == nil {
-                print("📱 [PUSH] Notifications enabled but no token - registering...")
-                await MainActor.run {
-                    UIApplication.shared.registerForRemoteNotifications()
-                }
+                print("📱 [PUSH] Notifications enabled but no token yet - waiting for APNs callback...")
             }
         }
     }
@@ -65,6 +69,9 @@ class PushNotificationService: ObservableObject {
         self.deviceToken = tokenString
         self.isRegistered = true
         
+        logger.log(.info, category: .pushNotification, message: "📱 Device token received", metadata: [
+            "token_prefix": String(tokenString.prefix(12))
+        ])
         print("✅ [PUSH] Device token received: \(tokenString.prefix(20))...")
         
         // Store token in Supabase
@@ -75,6 +82,7 @@ class PushNotificationService: ObservableObject {
     
     /// Called when APNs registration fails
     func handleRegistrationError(_ error: Error) {
+        logger.log(.error, category: .pushNotification, message: "APNs registration FAILED", metadata: ["error": error.localizedDescription])
         print("❌ [PUSH] Failed to register: \(error.localizedDescription)")
         self.isRegistered = false
     }
@@ -121,6 +129,10 @@ class PushNotificationService: ObservableObject {
                 .upsert(record, onConflict: "user_id")
                 .execute()
             
+            logger.log(.info, category: .pushNotification, message: "Token saved to Supabase", metadata: [
+                "environment": apnsEnvironment,
+                "user_id": userId.uuidString.prefix(8)
+            ])
             print("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))")
             
             // Store locally for reference

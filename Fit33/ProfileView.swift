@@ -50,7 +50,6 @@ struct ProfileView: View {
     @State private var showPhoneVerificationSheet = false
     @State private var isPhoneVerified = false
     @State private var userPhoneNumber: String = ""
-    private let phoneVerificationLockoutKey = "phoneVerificationLockoutTime"
     
     // Friend system
     @State private var hasLoadedFriendData = false
@@ -335,10 +334,6 @@ struct ProfileView: View {
                                             Text("Enabled • \(formatPhoneForDisplay(userPhoneNumber))")
                                                 .font(.caption)
                                                 .foregroundColor(.blue)
-                                        } else if isPhoneVerificationLockedOut {
-                                            Text("Try again in \(lockoutTimeRemaining)")
-                                                .font(.caption)
-                                                .foregroundColor(.orange)
                                         } else {
                                             Text("Secure your account with SMS verification")
                                                 .font(.caption)
@@ -1244,28 +1239,6 @@ struct ProfileView: View {
     
     // MARK: - Phone Verification Helpers
     
-    private var isPhoneVerificationLockedOut: Bool {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            return Date() < lockoutTime
-        }
-        return false
-    }
-    
-    private var lockoutTimeRemaining: String {
-        if let lockoutTime = UserDefaults.standard.object(forKey: phoneVerificationLockoutKey) as? Date {
-            let remaining = lockoutTime.timeIntervalSince(Date())
-            if remaining > 0 {
-                let hours = Int(remaining) / 3600
-                let minutes = (Int(remaining) % 3600) / 60
-                if hours > 0 {
-                    return "\(hours)h \(minutes)m"
-                } else {
-                    return "\(minutes) minutes"
-                }
-            }
-        }
-        return ""
-    }
     
     private func formatPhoneForDisplay(_ phone: String) -> String {
         let digits = phone.filter { $0.isNumber }

@@ -383,21 +383,23 @@ struct ActiveWorkoutView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
+                
+                // Banner ad - integrated into header for free users
+                if shouldShowInlineAds {
+                    BannerAdView()
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
+                }
             }
-            .background(Color.clear)
+            .background(
+                (colorScheme == .dark
+                    ? Color(red: 0.08, green: 0.10, blue: 0.18)
+                    : Color(.systemBackground))
+            )
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        // Banner ad overlay - floats on top, doesn't affect scroll content size
-        .overlay(alignment: .top) {
-            if shouldShowInlineAds {
-                VStack {
-                    Spacer().frame(height: 60) // Position below header
-                    BannerAdView()
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
+        // Banner ad is now integrated into the header safeAreaInset above
         // 📱 Respond to orientation changes properly
         // Using GeometryReader proxy and size class changes ensures layout updates without resetting state
         .onChange(of: horizontalSizeClass) { _, _ in
@@ -1965,7 +1967,6 @@ struct ActiveWorkoutView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 6)
-        .background(Color.cardBackground)
     }
     
 }
@@ -2029,29 +2030,25 @@ struct ExerciseCard: View {
             // Add set button
             addSetButton
         }
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: isActiveCard ? .blue : Color(white: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .contentShape(Rectangle()) // Make entire card tappable
         .onTapGesture {
             // Set this card as active when tapped anywhere
             onFocusChanged?(true)
         }
         .overlay(
-            // Active card glow effect
-            RoundedRectangle(cornerRadius: 16)
+            // Active card glow effect (brighter when active)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.4)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: isActiveCard ? 2 : 0
+                    lineWidth: isActiveCard ? 2.5 : 0
                 )
         )
-        .shadow(color: isActiveCard ? Color.blue.opacity(0.3) : .black.opacity(0.15), 
-                radius: isActiveCard ? 12 : 8, 
-                x: 0, 
-                y: isActiveCard ? 4 : 6)
         // Drag offset for card being dragged, shift offset for other cards making room
         .offset(y: isBeingDragged ? dragOffset : CGFloat(shouldShift) * cardHeight)
         .scaleEffect(isBeingDragged ? 1.02 : 1.0)
@@ -2433,7 +2430,6 @@ struct ExerciseCard: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background(Color.cardBackgroundSecondary)
             
             // Sets
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, setItem in
@@ -2574,7 +2570,6 @@ struct SwipeableSetRow<Content: View>: View {
             
             // Main content
             content
-                .background(Color.cardBackgroundSecondary)
                 .offset(x: offset)
                 .gesture(
                     DragGesture(minimumDistance: 20) // Require 20pt drag before triggering (less sensitive)

@@ -85,6 +85,11 @@ final class TabPreloader: ObservableObject {
         preloadedTabs = [0, 1, 2, 3, 4]
         isPreloadingComplete = true
         
+        // ⚡️ MEMORY FIX: Release the heavy preloaded data now that tabs are warmed.
+        // Holding 7000+ faulted Exercise objects + search index = ~80-120MB retained permanently.
+        // Each tab view will re-fetch its own data (with Core Data faulting) when actually displayed.
+        releasePreloadedData()
+        
         let elapsed = (CACurrentMediaTime() - preloadStartTime) * 1000
         print("🚀 [TAB PRELOAD] Complete in \(String(format: "%.0f", elapsed))ms - ALL tabs ready!")
     }
@@ -431,6 +436,23 @@ final class TabPreloader: ObservableObject {
     /// Get preloaded achievements
     func getPreloadedAchievements() -> [Achievement] {
         return progressTabData?.achievements ?? []
+    }
+    
+    /// ⚡️ MEMORY FIX: Public entry point for MemoryPressureHandler to release data
+    func releaseDataForMemoryPressure() {
+        releasePreloadedData()
+    }
+    
+    /// ⚡️ MEMORY FIX: Release heavy data after preloading completes.
+    /// The preload phase faults 7000+ Exercise objects and builds a search index.
+    /// Once tabs are warmed, each tab re-fetches its own data on demand.
+    private func releasePreloadedData() {
+        let exerciseCount = exerciseLibraryData?.allExercises.count ?? 0
+        exerciseLibraryData = nil
+        workoutTabData = nil
+        nutritionTabData = nil
+        progressTabData = nil
+        print("💾 [TAB PRELOAD] Released preloaded data (\(exerciseCount) exercises freed from memory)")
     }
     
     /// Reset (for sign out)

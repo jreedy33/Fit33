@@ -38,10 +38,12 @@ struct DashboardView: View {
     @State private var selectedWidgetPage: Int = 0
     @State private var widgetSwipeInProgress: Bool = false
     
+    
     // Swipeable workout carousel (workout buttons + active program)
     @State private var selectedWorkoutPage: Int = 0
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var stravaService = StravaService.shared
     @State private var navigateToCustomWorkout = false
     @State private var navigateToAutoWorkout = false
     @State private var navigateToGeneratedPrograms = false
@@ -326,6 +328,7 @@ struct DashboardView: View {
                     // STEP 2: Fetch updated challenges from database (reflects any changes)
                     await ChallengeService.shared.fetchPendingInvites()
                     await ChallengeService.shared.fetchActiveChallenges()
+                    await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
                     await ChallengeService.shared.fetchPendingSentChallenges()
                     
                     // STEP 3: Refresh friend data and other home screen content
@@ -513,6 +516,7 @@ struct DashboardView: View {
             
             // Load active challenges, pending invites, and pending sent challenges
             await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
             await ChallengeService.shared.fetchPendingInvites()
             await ChallengeService.shared.fetchPendingSentChallenges()
             
@@ -553,9 +557,10 @@ struct DashboardView: View {
                     print("🔄 [DASHBOARD] Universal challenge sync on foreground...")
                     await ChallengeService.shared.syncAllTrackingToChallenges()
                     
-                    // Also refresh pending/sent lists
+                    // Also refresh pending/sent/group lists
                     await ChallengeService.shared.fetchPendingInvites()
                     await ChallengeService.shared.fetchPendingSentChallenges()
+                    await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
                     print("✅ [DASHBOARD] All challenge data refreshed")
                     
                     // Update last refresh date
@@ -568,6 +573,12 @@ struct DashboardView: View {
                     // Refresh friend data
                     await FriendService.shared.refreshHomeScreenData()
                 }
+            }
+        }
+        .onChange(of: stravaService.lastSyncDate) { _, newDate in
+            // Reload cardio workouts when Strava finishes syncing
+            if newDate != nil {
+                Task { await loadRecentCardioWorkouts() }
             }
         }
         .onChange(of: smartProgramEngine.userPrograms.count) { _, _ in
@@ -3619,7 +3630,14 @@ struct DashboardView: View {
                 } else {
                     // ACTIVE: Head-to-head battle layout
                     let currentUserId = SupabaseManager.shared.currentUser?.id
-                    let sorted = acceptedMembers.sorted { $0.totalProgress > $1.totalProgress }
+                    let resolver = ChallengeProgressResolver.shared
+                    // Use live HealthKit data for "my" progress, DB data for others
+                    let myLiveProgress = resolver.liveProgress(for: challenge, serverValue: acceptedMembers.first(where: { $0.userId == currentUserId })?.todayProgress ?? 0)
+                    let sorted = acceptedMembers.sorted { m1, m2 in
+                        let p1 = m1.userId == currentUserId ? myLiveProgress : m1.todayProgress
+                        let p2 = m2.userId == currentUserId ? myLiveProgress : m2.todayProgress
+                        return p1 > p2
+                    }
                     let leaderId = sorted.first?.userId
                     
                     HStack(spacing: 0) {
@@ -3632,8 +3650,9 @@ struct DashboardView: View {
                             }
                             
                             let isMe = member.userId == currentUserId
+                            let displayProgress = isMe ? myLiveProgress : member.todayProgress
                             let isLeader = member.userId == leaderId
-                            let done = challenge.dailyTarget.map { member.todayProgress >= $0 } ?? false
+                            let done = challenge.dailyTarget.map { displayProgress >= $0 } ?? false
                             
                             HStack(spacing: 6) {
                                 groupMemberAvatar(member: member, currentUserId: currentUserId, size: 32, accentGradient: accentGradient)
@@ -3656,7 +3675,7 @@ struct DashboardView: View {
                                         }
                                     }
                                     
-                                    Text(formatChallengeProgress(member.todayProgress, unit: challenge.targetUnit))
+                                    Text(formatChallengeProgress(displayProgress, unit: challenge.targetUnit))
                                         .font(.system(size: 14, weight: .bold, design: .rounded))
                                         .foregroundColor(isLeader ? .green : .primary)
                                         .lineLimit(1)

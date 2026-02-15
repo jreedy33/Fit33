@@ -16,20 +16,22 @@ final class VideoPlaybackEngine: ObservableObject {
     static let shared = VideoPlaybackEngine()
     
     // MARK: - Configuration (YouTube-style)
+    // ⚡️ MEMORY FIX: Drastically reduced cache sizes to prevent 600MB+ memory usage
+    // Each AVPlayer + buffered video = 20-50MB. Old limits allowed 40+ players across 3 systems.
     private struct Config {
-        // Cache tiers
-        static let hotCacheSize = 5          // Favorites + current (always in RAM)
-        static let warmCacheSize = 15        // Recently viewed (LRU eviction)
-        static let maxTotalPlayers = 20      // Total players in memory
+        // Cache tiers — REDUCED to prevent memory pressure killing network
+        static let hotCacheSize = 2          // Only current + 1 favorite (was 5)
+        static let warmCacheSize = 3         // Only most recent (was 15)
+        static let maxTotalPlayers = 5       // Hard cap (was 20)
         
-        // Buffering
+        // Buffering — REDUCED to lower per-player memory footprint
         static let minBufferForPlay: TimeInterval = 0.3    // Start playing after 300ms buffer
-        static let targetBuffer: TimeInterval = 3.0         // Target 3s ahead
-        static let maxBuffer: TimeInterval = 8.0            // Don't buffer more than 8s
+        static let targetBuffer: TimeInterval = 2.0         // Reduced from 3s
+        static let maxBuffer: TimeInterval = 4.0            // Reduced from 8s
         
-        // Prefetch
-        static let prefetchRadius = 3        // Prefetch 3 exercises around current
-        static let maxConcurrentPrefetch = 2 // Max concurrent network requests
+        // Prefetch — REDUCED to avoid creating players we don't need
+        static let prefetchRadius = 1        // Only prefetch adjacent (was 3)
+        static let maxConcurrentPrefetch = 1 // One at a time (was 2)
         
         // Persistence
         static let favoritesKey = "videoEngine_favorites"
@@ -326,18 +328,12 @@ final class VideoPlaybackEngine: ObservableObject {
     
     // MARK: - 🎯 Prefetching API
     
-    /// Call when user views exercise list - prefetch visible items
+    /// ⚡️ MEMORY FIX: DISABLED. Was called by 6+ list views on scroll, creating dozens of AVPlayers
+    /// per scroll gesture. Each player leaks ~20-50MB through iOS XPC video processes.
+    /// Videos now load on-demand only when user opens ExerciseDetailView.
     func prefetchVisible(exercises: [String]) {
-        prefetchQueue_bg.async { [weak self] in
-            guard let self = self else { return }
-            
-            for (index, name) in exercises.prefix(Config.prefetchRadius).enumerated() {
-                let priority: PrefetchJob.Priority = index == 0 ? .immediate : .adjacent
-                self.queuePrefetch(exerciseName: name, priority: priority)
-            }
-            
-            self.processPrefetchQueue()
-        }
+        // NO-OP: Scroll-based prefetching disabled to prevent memory pressure.
+        return
     }
     
     /// Call when user is about to tap an exercise (hover/highlight)
@@ -918,57 +914,22 @@ final class VideoPlaybackEngine: ObservableObject {
     
     // MARK: - Private: Database Loading
     
+    // ⚡️ MEMORY FIX: Removed duplicate Supabase fetch. VideoPlaybackEngine was paginating
+    // through ALL 7000+ exercises to build its own videoMappings dictionary, duplicating
+    // what VideoStreamingService already does. Now just marks as loaded and relies on
+    // getVideoFilename() which already falls back to VideoStreamingService and GenderFilterService.
     private func loadVideoMappingsAsync() {
+        // Wait for VideoStreamingService to finish loading, then mark ourselves as ready
         mappingQueue.async { [weak self] in
-            Task {
-                await self?.fetchVideoMappings()
-            }
-        }
-    }
-    
-    private func fetchVideoMappings() async {
-        do {
-            struct VideoMapping: Codable {
-                let name: String
-                let video_filename: String?
-            }
+            // Give VideoStreamingService time to load (it's the canonical source)
+            Thread.sleep(forTimeInterval: 3.0)
             
-            var allMappings: [VideoMapping] = []
-            let pageSize = 1000
-            var offset = 0
-            var hasMore = true
-            
-            while hasMore {
-                let response = try await SupabaseManager.shared.supabaseClient
-                    .from("exercises")
-                    .select("name, video_filename")
-                    .not("video_filename", operator: .is, value: "null")
-                    .range(from: offset, to: offset + pageSize - 1)
-                    .execute()
-                
-                let pageMappings = try JSONDecoder().decode([VideoMapping].self, from: response.data)
-                allMappings.append(contentsOf: pageMappings)
-                
-                hasMore = pageMappings.count == pageSize
-                offset += pageSize
-            }
-            
-            await MainActor.run { [weak self] in
-                for mapping in allMappings {
-                    if let filename = mapping.video_filename, !filename.isEmpty {
-                        self?.videoMappings[mapping.name.lowercased()] = filename
-                    }
-                }
+            Task { @MainActor in
                 self?.mappingsLoaded = true
-                
                 #if DEBUG
-                print("🎬 Loaded \(allMappings.count) video mappings")
+                print("🎬 [VideoPlaybackEngine] Using VideoStreamingService mappings (no duplicate fetch)")
                 #endif
             }
-        } catch {
-            #if DEBUG
-            print("❌ Failed to load video mappings: \(error)")
-            #endif
         }
     }
     
@@ -1027,7 +988,8 @@ final class VideoPlaybackEngine: ObservableObject {
     }
     
     private func preWarmFavorites() {
-        // ⚡️ PERFORMANCE: Prevent duplicate pre-warming
+        // ⚡️ MEMORY FIX: Limit pre-warming to max 2 favorites (was unlimited).
+        // Each pre-warmed player = 20-50MB. Users with 10+ favorites were getting 200MB+ just from pre-warming.
         prefetchLock.lock()
         let shouldSkip = isPreWarmingInProgress || 
             (lastPreWarmTime != nil && Date().timeIntervalSince(lastPreWarmTime!) < preWarmCooldown)
@@ -1063,11 +1025,14 @@ final class VideoPlaybackEngine: ObservableObject {
             return
         }
         
+        // ⚡️ MEMORY FIX: Only pre-warm the 2 most recently used favorites (was ALL favorites)
+        let limitedFavorites = Array(favoriteExercises.prefix(2))
+        
         #if DEBUG
-        print("🔥 Pre-warming \(favoriteExercises.count) favorites...")
+        print("🔥 Pre-warming \(limitedFavorites.count) of \(favoriteExercises.count) favorites (capped at 2)...")
         #endif
         
-        for favorite in favoriteExercises {
+        for favorite in limitedFavorites {
             queuePrefetch(exerciseName: favorite, priority: .favorite)
         }
         

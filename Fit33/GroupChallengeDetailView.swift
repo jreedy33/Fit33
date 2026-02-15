@@ -12,8 +12,23 @@ struct GroupChallengeDetailView: View {
     @State private var showingCancelConfirm = false
     @State private var isProcessing = false
     
+    /// Live version of the challenge from the service (updates when fetchActiveGroupChallenges runs)
+    private var liveChallenge: ActiveGroupChallenge {
+        challengeService.activeGroupChallenges.first(where: { $0.challengeId == challenge.challengeId }) ?? challenge
+    }
+    
     private var sortedMembers: [GroupChallengeMember] {
-        (challenge.members ?? []).sorted(by: { $0.totalProgress > $1.totalProgress })
+        let currentUserId = SupabaseManager.shared.currentUser?.id
+        let resolver = ChallengeProgressResolver.shared
+        return (liveChallenge.members ?? []).sorted { m1, m2 in
+            let p1 = m1.userId == currentUserId
+                ? resolver.liveProgress(for: liveChallenge, serverValue: m1.todayProgress)
+                : m1.todayProgress
+            let p2 = m2.userId == currentUserId
+                ? resolver.liveProgress(for: liveChallenge, serverValue: m2.todayProgress)
+                : m2.todayProgress
+            return p1 > p2
+        }
     }
     
     private var acceptedMembers: [GroupChallengeMember] {
@@ -65,8 +80,27 @@ struct GroupChallengeDetailView: View {
             )
             .ignoresSafeArea()
         )
-        .navigationTitle(challenge.displayTitle)
+        .navigationTitle(liveChallenge.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: challenge.challengeId) {
+            // Subscribe to real-time opponent progress updates for this group challenge
+            RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
+                if payload.challengeId == challenge.challengeId {
+                    Task {
+                        await challengeService.fetchActiveGroupChallenges()
+                    }
+                }
+            }
+            
+            // Periodic refresh as a safety net (every 2 minutes)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000_000)
+                await challengeService.fetchActiveGroupChallenges()
+            }
+        }
+        .onDisappear {
+            RealtimeService.shared.onOpponentDailyProgressUpdated = nil
+        }
         .alert("Leave Challenge?", isPresented: $showingLeaveConfirm) {
             Button("Leave", role: .destructive) {
                 Task { await leaveChallenge() }
@@ -216,7 +250,11 @@ struct GroupChallengeDetailView: View {
         let currentUserId = userManager.currentUser?.id
         let isMe = currentUserId != nil && member.userId == currentUserId
         let target = challenge.dailyTarget ?? 0
-        let completedToday = target > 0 && member.todayProgress >= target
+        // Use live HealthKit data for current user, DB data for others
+        let displayProgress = isMe
+            ? ChallengeProgressResolver.shared.liveProgress(for: challenge, serverValue: member.todayProgress)
+            : member.todayProgress
+        let completedToday = target > 0 && displayProgress >= target
         
         return HStack(spacing: 12) {
             // Rank or check
@@ -273,7 +311,7 @@ struct GroupChallengeDetailView: View {
             
             // Progress
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(member.todayProgress)")
+                Text("\(displayProgress)")
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(completedToday ? .green : .primary)
                 
@@ -393,9 +431,13 @@ struct GroupChallengeDetailView: View {
     
     // MARK: - Actions Section
     
+    private var isCreator: Bool {
+        userManager.currentUser?.id == liveChallenge.createdBy
+    }
+    
     private var actionsSection: some View {
         VStack(spacing: 12) {
-            // Leave Challenge button
+            // Leave Challenge button (any member)
             Button {
                 showingLeaveConfirm = true
             } label: {
@@ -421,26 +463,28 @@ struct GroupChallengeDetailView: View {
             }
             .disabled(isProcessing)
             
-            // Cancel Challenge button (ends it for everyone)
-            Button {
-                showingCancelConfirm = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Cancel Challenge for Everyone")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+            // Cancel Challenge button — only the creator can cancel for everyone
+            if isCreator {
+                Button {
+                    showingCancelConfirm = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Cancel Challenge for Everyone")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.red.opacity(0.12))
+                    )
                 }
-                .foregroundColor(.red)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.red.opacity(0.12))
-                )
+                .disabled(isProcessing)
             }
-            .disabled(isProcessing)
         }
         .padding(.top, 8)
     }

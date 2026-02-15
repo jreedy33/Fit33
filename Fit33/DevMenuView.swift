@@ -173,12 +173,18 @@ struct DevMenuView: View {
                     
                     QualityAuditTabContent()
                         .tag(3)
+                    
+                    AppHealthDiagnosticsView()
+                        .tag(4)
                     #else
                     Text("Learning Engine Debug (Debug builds only)")
                         .tag(2)
                     
                     Text("Quality Audit (Debug builds only)")
                         .tag(3)
+                    
+                    Text("App Health (Debug builds only)")
+                        .tag(4)
                     #endif
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -223,6 +229,7 @@ struct DevMenuView: View {
                 tabButton(title: "Bugs", icon: "ant.fill", index: 1, colors: [.red, .orange])
                 tabButton(title: "Learning", icon: "brain.head.profile", index: 2, colors: [.purple, .pink])
                 tabButton(title: "QA Test", icon: "checkmark.seal.fill", index: 3, colors: [.orange, .red])
+                tabButton(title: "Health", icon: "waveform.path.ecg", index: 4, colors: [.green, .cyan])
             }
         }
         .padding(.horizontal)

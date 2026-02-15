@@ -79,7 +79,12 @@ final class RequestDeduplicationService {
         if let existingTask = inFlightRequests[key] {
             requestLock.unlock()
             print("⚡️ [DEDUP] Reusing in-flight request for '\(key)'")
-            return try await existingTask.value as! T
+            let existingResult = try await existingTask.value
+            guard let typedResult = existingResult as? T else {
+                throw NSError(domain: "RequestDeduplication", code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Type mismatch for deduplicated request '\(key)'"])
+            }
+            return typedResult
         }
         
         // Create new task
@@ -90,7 +95,14 @@ final class RequestDeduplicationService {
         requestLock.unlock()
         
         do {
-            let result = try await task.value as! T
+            let rawResult = try await task.value
+            guard let result = rawResult as? T else {
+                requestLock.lock()
+                inFlightRequests.removeValue(forKey: key)
+                requestLock.unlock()
+                throw NSError(domain: "RequestDeduplication", code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Type mismatch for request '\(key)'"])
+            }
             
             // Cache the result
             requestLock.lock()
@@ -163,7 +175,11 @@ final class MemoryPressureHandler {
     
     private var memoryWarningObserver: NSObjectProtocol?
     private var lastCleanupTime: Date?
+    private var lastEmergencyTime: Date?
+    private var emergencyAttemptCount: Int = 0
     private let cleanupCooldown: TimeInterval = 5 // Reduced from 10 for faster response
+    private let emergencyCooldown: TimeInterval = 30 // Prevent emergency spam loop
+    private let maxEmergencyAttempts: Int = 3 // Stop after 3 failed attempts
     
     // ⚡️ PERFORMANCE: Lower memory thresholds for better performance
     // Memory thresholds (in MB) - lowered to prevent CPU spikes from memory pressure
@@ -187,7 +203,7 @@ final class MemoryPressureHandler {
     }
     
     private func startPeriodicMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.checkMemoryPressure()
         }
     }
@@ -201,27 +217,48 @@ final class MemoryPressureHandler {
             handleMemoryWarning(level: .critical)
         } else if memoryMB > warningThreshold {
             handleMemoryWarning(level: .warning)
+        } else {
+            // Memory is back to healthy — reset emergency attempt counter
+            if emergencyAttemptCount > 0 {
+                emergencyAttemptCount = 0
+                #if DEBUG
+                print("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — emergency counter reset")
+                #endif
+            }
         }
     }
     
     enum MemoryWarningLevel {
-        case warning    // > 400MB - Clear warm caches
-        case critical   // > 550MB - Clear all caches
-        case emergency  // > 650MB - Aggressive cleanup
+        case warning    // > 300MB - Clear warm caches
+        case critical   // > 450MB - Clear all caches
+        case emergency  // > 600MB - Aggressive cleanup
     }
     
     func handleMemoryWarning(level: MemoryWarningLevel) {
         let beforeMB = getMemoryUsageMB()
+        let now = Date()
         
-        // For emergency level, always run (ignore cooldown)
-        // For other levels, respect cooldown
-        if level != .emergency {
+        // Respect cooldown for ALL levels (including emergency)
+        // Emergency gets its own longer cooldown and attempt limit to prevent infinite loop
+        if level == .emergency {
+            // Stop spamming if we've already tried and failed multiple times
+            if emergencyAttemptCount >= maxEmergencyAttempts {
+                // Silently skip — we've already done everything we can
+                return
+            }
+            if let lastEmergency = lastEmergencyTime,
+               now.timeIntervalSince(lastEmergency) < emergencyCooldown {
+                return
+            }
+            lastEmergencyTime = now
+            emergencyAttemptCount += 1
+        } else {
             if let lastCleanup = lastCleanupTime,
-               Date().timeIntervalSince(lastCleanup) < cleanupCooldown {
+               now.timeIntervalSince(lastCleanup) < cleanupCooldown {
                 return
             }
         }
-        lastCleanupTime = Date()
+        lastCleanupTime = now
         
         switch level {
         case .warning:
@@ -233,7 +270,7 @@ final class MemoryPressureHandler {
             clearAllCaches()
             
         case .emergency:
-            print("🚨 [MEMORY] EMERGENCY (\(Int(beforeMB))MB) - aggressive cleanup!")
+            print("🚨 [MEMORY] EMERGENCY (\(Int(beforeMB))MB) - aggressive cleanup! (attempt \(emergencyAttemptCount)/\(maxEmergencyAttempts))")
             performEmergencyCleanup()
         }
         
@@ -249,50 +286,87 @@ final class MemoryPressureHandler {
         let freed = max(0, beforeMB - afterMB)
         if freed > 0 {
             print("💾 [MEMORY] Freed \(Int(freed))MB (now: \(Int(afterMB))MB)")
-        } else {
-            print("💾 [MEMORY] Cleanup complete (now: \(Int(afterMB))MB) - memory held by system/ads")
+        } else if level == .emergency {
+            print("💾 [MEMORY] Emergency cleanup had no effect (\(Int(afterMB))MB) — memory held by active objects/system")
+            if emergencyAttemptCount >= maxEmergencyAttempts {
+                print("ℹ️ [MEMORY] Max emergency attempts reached — suppressing further cleanup until memory drops below threshold")
+            }
         }
     }
     
+    // ⚡️ MEMORY FIX: Comprehensive cleanup across ALL caching systems.
+    // Previously only cleared VideoPlaybackEngine warm cache — missed 5+ other caches.
+    
     private func clearWarmCaches() {
-        // Clear video warm cache
+        // Clear video warm cache (VideoPlaybackEngine)
         VideoPlaybackEngine.shared.clearWarmCache()
+        
+        // Clear VideoPreloadManager cache (separate AVPlayer pool)
+        VideoPreloadManager.shared.reduceCache()
+        
+        // Clear VideoStreamingService preloaded players
+        VideoStreamingService.shared.clearPreloadCache()
         
         // Clear request deduplication cache
         Task { @MainActor in
             RequestDeduplicationService.shared.invalidateAllCaches()
         }
+        
+        #if DEBUG
+        print("🧹 [MEMORY] Warm caches cleared (3 video systems + dedup)")
+        #endif
     }
     
     private func clearAllCaches() {
         clearWarmCaches()
         
-        // Clear more aggressive caches
+        // Clear ALL video caches fully
+        VideoPlaybackEngine.shared.reduceMemoryFootprint()
+        VideoPreloadManager.shared.clearCache()
+        
+        // Clear friend photo memory cache (disk cache stays)
+        FriendPhotoCache.shared.clearMemoryCache()
+        
+        // Clear video thumbnail memory cache (disk cache stays — they're tiny)
+        VideoThumbnailService.shared.clearMemoryCache()
+        
+        // Clear URL caches
         URLCache.shared.removeAllCachedResponses()
         
-        // Notify video engine to reduce cache size
-        VideoPlaybackEngine.shared.reduceMemoryFootprint()
+        // Release TabPreloader data if still held
+        Task { @MainActor in
+            TabPreloader.shared.releaseDataForMemoryPressure()
+        }
+        
+        #if DEBUG
+        print("🧹 [MEMORY] All caches cleared (video + photos + URL + tab data)")
+        #endif
     }
     
     private func performEmergencyCleanup() {
         clearAllCaches()
         
-        // Stop all video prefetching
+        // Stop ALL video prefetching across all systems
         VideoPlaybackEngine.shared.pausePrefetching()
+        VideoPlaybackEngine.shared.clearAllCaches()
+        VideoPreloadManager.shared.clearCache()
+        VideoStreamingService.shared.clearPreloadCache()
+        
+        // Clear profile photo from memory (disk stays)
+        ProfilePhotoCache.shared.clearMemoryOnly()
         
         // Aggressively clear URL and image caches
         URLCache.shared.removeAllCachedResponses()
         URLCache.shared.diskCapacity = 0
         URLCache.shared.memoryCapacity = 0
         
-        // Reset cache after brief delay to allow normal operation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // Reset URL cache capacity after brief delay to allow normal operation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             URLCache.shared.diskCapacity = 50 * 1024 * 1024  // 50MB
             URLCache.shared.memoryCapacity = 10 * 1024 * 1024 // 10MB
         }
         
         // Clear WKWebView process pool (for banner ads)
-        // This forces WebContent processes to restart with clean memory
         Task { @MainActor in
             WKWebsiteDataStore.default().removeData(
                 ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
@@ -304,6 +378,10 @@ final class MemoryPressureHandler {
         for _ in 0..<5 {
             autoreleasepool { }
         }
+        
+        #if DEBUG
+        print("🚨 [MEMORY] Emergency cleanup complete — all video players, photos, URL caches, and tab data freed")
+        #endif
     }
     
     private func getMemoryUsageMB() -> Double {

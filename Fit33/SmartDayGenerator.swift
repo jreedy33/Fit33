@@ -329,9 +329,12 @@ class SmartDayGenerator {
         
         var selectedExercises: [DynamicProgramGenerator.GeneratedExercise] = []
         var usedExerciseNames: Set<String> = Set(previousDayExercises)
+        var bundleCounts: [String: Int] = [:]  // 📦 Track bundle usage
         
         // Determine exercise count based on experience and intensity
         let exerciseCount = getExerciseCount(experience: experience, intensity: intensity, programType: programType)
+        
+        let bundleEngine = ExerciseBundleEngine.shared
         
         // 🧠 Get user's favorites (same as auto-gen)
         let allExercises = ExerciseLibraryService.shared.getAllExercises()
@@ -384,8 +387,29 @@ class SmartDayGenerator {
                     }
                 }
                 
+                // 📦 BUNDLE CHECK - Don't exceed max per bundle
+                if let bundle = bundleEngine.bundleForExercise(named: exercise.name) {
+                    let currentCount = bundleCounts[bundle.id, default: 0]
+                    if currentCount >= bundle.maxPerWorkout {
+                        #if DEBUG
+                        print("   ⏭️ Bundle limit: skipping \(exercise.name) (\(bundle.displayName) has \(currentCount)/\(bundle.maxPerWorkout))")
+                        #endif
+                        continue
+                    }
+                }
+                
+                // 📦 COOLDOWN CHECK - Skip if exercise was done too recently
+                let cooldownTracker = ExerciseCooldownTracker.shared
+                let isAnchorLift = exercise.isCompound && pattern.isAnchorPattern
+                if cooldownTracker.isOnCooldown(exercise.name, isAnchor: isAnchorLift) {
+                    #if DEBUG
+                    print("   ❄️ Cooldown: skipping \(exercise.name)")
+                    #endif
+                    continue
+                }
+                
                 // Anchor lifts: compounds that should stay consistent across weeks
-                let isAnchor = exercise.isCompound && pattern.isAnchorPattern
+                let isAnchor = isAnchorLift
                 
                 let generatedExercise = DynamicProgramGenerator.GeneratedExercise(
                     id: UUID().uuidString,
@@ -406,6 +430,11 @@ class SmartDayGenerator {
                 
                 selectedExercises.append(generatedExercise)
                 usedExerciseNames.insert(exercise.name)
+                
+                // 📦 Track bundle usage
+                if let bundle = bundleEngine.bundleForExercise(named: exercise.name) {
+                    bundleCounts[bundle.id, default: 0] += 1
+                }
             }
         }
         
@@ -421,6 +450,14 @@ class SmartDayGenerator {
             
             for exercise in compoundExercises {
                 if selectedExercises.count >= exerciseCount { break }
+                
+                // 📦 BUNDLE CHECK - Don't exceed max per bundle
+                if let bundle = bundleEngine.bundleForExercise(named: exercise.name) {
+                    let currentCount = bundleCounts[bundle.id, default: 0]
+                    if currentCount >= bundle.maxPerWorkout {
+                        continue
+                    }
+                }
                 
                 // Determine movement pattern for variety tracking
                 let pattern = SmartExerciseSelectionEngine.shared.getMovementPattern(for: exercise.name)
@@ -447,6 +484,11 @@ class SmartDayGenerator {
                 
                 selectedExercises.append(generatedExercise)
                 usedExerciseNames.insert(exercise.name)
+                
+                // 📦 Track bundle usage
+                if let bundle = bundleEngine.bundleForExercise(named: exercise.name) {
+                    bundleCounts[bundle.id, default: 0] += 1
+                }
             }
         }
         

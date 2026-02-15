@@ -89,6 +89,98 @@ extension Color {
     }
 }
 
+// MARK: - Sleek Card Background (Reusable across app)
+/// The multi-layer card style used on Dashboard, ContentView, Meals, etc.
+/// Layers: colored shadow glow → depth shadow → gradient fill → inner highlight → accent border
+
+struct SleekCardBackground: View {
+    let cornerRadius: CGFloat
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    init(cornerRadius: CGFloat = 24, accentColor: Color = .blue) {
+        self.cornerRadius = cornerRadius
+        self.accentColor = accentColor
+    }
+    
+    var body: some View {
+        ZStack {
+            // Layer 1: Bottom shadow (deepest) — colored glow
+            // Exactly matches DepthQuickActionCard in WorkoutTabView
+            RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 8)
+                .blur(radius: 4)
+            
+            // Layer 2: Middle depth shadow
+            RoundedRectangle(cornerRadius: cornerRadius + 2, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 4)
+            
+            // Layer 3: Main card fill — subtle gradient
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.18), Color(white: 0.12)]
+                            : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            // Layer 4: Inner highlight — top edge glow
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            // Layer 5: Accent border — subtle color tint
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            accentColor.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                            accentColor.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+}
+
+/// ViewModifier for easy `.sleekCard()` usage
+struct SleekCardModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .background(SleekCardBackground(cornerRadius: cornerRadius, accentColor: accentColor))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+    }
+}
+
+extension View {
+    /// Apply the sleek multi-layer card background used across the app
+    /// Matches the exact style of DepthQuickActionCard (autogen/custom workout buttons)
+    func sleekCard(cornerRadius: CGFloat = 24, accentColor: Color = .blue) -> some View {
+        modifier(SleekCardModifier(cornerRadius: cornerRadius, accentColor: accentColor))
+    }
+}
+
 /// Adaptive gradient backgrounds for different tabs - Now unified for consistency
 struct AdaptiveGradient {
     

@@ -1280,21 +1280,10 @@ struct CustomWorkoutBuilderView: View {
     
     // MARK: - 🚀 Smart Video Prefetching
     
+    /// ⚡️ MEMORY FIX: DISABLED — scroll prefetching was creating AVPlayers for every visible row,
+    /// causing 600MB+ memory from XPC video process leaks. Videos load on-demand in detail view.
     private func prefetchVisibleExercise(exercise: Exercise, index: Int) {
-        guard let name = exercise.name else { return }
-        
-        var namesToPrefetch = [name]
-        
-        // Get next 2 exercises
-        let exercises = filteredExercises
-        if index + 1 < exercises.count, let nextName = exercises[index + 1].name {
-            namesToPrefetch.append(nextName)
-        }
-        if index + 2 < exercises.count, let nextName2 = exercises[index + 2].name {
-            namesToPrefetch.append(nextName2)
-        }
-        
-        VideoPlaybackEngine.shared.prefetchVisible(exercises: namesToPrefetch)
+        // NO-OP: Disabled to prevent memory pressure
     }
     
     private func startCustomWorkout() {

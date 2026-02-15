@@ -17,8 +17,25 @@ struct SevenDayProgramDetailView: View {
         if let first = allPrograms.first {
             return first
         }
-        // This should never happen - WorkoutProgramEngine always has programs
-        fatalError("No programs available in WorkoutProgramEngine")
+        // Safe fallback instead of crash
+        print("⚠️ [SevenDayProgramDetailView] No programs available — using fallback")
+        return WorkoutProgram(
+            id: "7_day_intro_fallback",
+            name: "7-Day Starter",
+            description: "Programs are loading...",
+            duration: 7,
+            difficulty: .beginner,
+            focus: .fullBody,
+            schedule: [:],
+            restDays: [4, 7],
+            icon: "figure.strengthtraining.traditional",
+            color: "blue",
+            workoutsPerWeek: 3,
+            estimatedTimePerWorkout: 30,
+            equipment: [],
+            benefits: ["Get started with fitness"],
+            preview: "A gentle introduction to working out"
+        )
     }
     
     // Use app's blue-cyan gradient theme

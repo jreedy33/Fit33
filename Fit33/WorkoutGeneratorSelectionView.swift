@@ -252,7 +252,7 @@ struct WorkoutGeneratorSelectionView: View {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(
                         LinearGradient(
-                            colors: [.purple, .blue],
+                            colors: [.blue, .cyan],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -304,7 +304,7 @@ struct WorkoutGeneratorSelectionView: View {
                 HStack(spacing: 8) {
                     if isGenerating && currentStep == .equipment {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .purple))
+                            .progressViewStyle(CircularProgressViewStyle(tint: .blue))
                             .scaleEffect(0.8)
                     }
                     Text(isGenerating && currentStep == .equipment ? "Generating..." : mainButtonTitle)
@@ -347,7 +347,7 @@ struct WorkoutGeneratorSelectionView: View {
     }
 
     private var mainButtonGradient: [Color] {
-        [.blue, .purple]
+        [.blue, .cyan]
     }
 
     private var isMainButtonDisabled: Bool {
@@ -464,19 +464,19 @@ struct WorkoutGeneratorSelectionView: View {
     
     var body: some View {
         ZStack {
-            // Full screen gradient background
+            // Full screen gradient background — blue theme
             LinearGradient(
                 gradient: Gradient(colors: colorScheme == .dark 
                     ? [
-                        Color.purple.opacity(0.2),
-                        Color.blue.opacity(0.1),
-                        Color(red: 0.06, green: 0.06, blue: 0.08),
-                        Color(red: 0.04, green: 0.04, blue: 0.06)
-                    ]
-                    : [
-                        Color.purple.opacity(0.3),
                         Color.blue.opacity(0.2),
                         Color.cyan.opacity(0.1),
+                        Color(red: 0.04, green: 0.06, blue: 0.10),
+                        Color(red: 0.03, green: 0.04, blue: 0.07)
+                    ]
+                    : [
+                        Color.blue.opacity(0.3),
+                        Color.cyan.opacity(0.2),
+                        Color.blue.opacity(0.05),
                         Color.white
                     ]),
                 startPoint: .topLeading,
@@ -758,11 +758,7 @@ struct WorkoutGeneratorSelectionView: View {
                         showingError = true
                     } else {
                         // 🚀 PERF: Dispatch prefetch to background immediately
-                        // Uses Task.detached to avoid blocking navigation
-                        let exerciseNames = exercises.map { $0.name }
-                        Task.detached(priority: .userInitiated) {
-                            VideoStreamingService.shared.prefetchVideos(for: exerciseNames)
-                        }
+                        // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand.
                         
                         // Navigate immediately
                         navigateToPreview = true
@@ -862,11 +858,7 @@ struct WorkoutGeneratorSelectionView: View {
                     } else {
                         print("✅ [AUTOGEN] Generated \(exercises.count) exercises - navigating to preview")
                         // 🚀 PERF: Dispatch prefetch to background immediately
-                        // Uses Task.detached to avoid blocking navigation
-                        let exerciseNames = exercises.map { $0.name }
-                        Task.detached(priority: .userInitiated) {
-                            VideoStreamingService.shared.prefetchVideos(for: exerciseNames)
-                        }
+                        // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand.
                         
                         // Navigate immediately
                         navigateToPreview = true
@@ -899,13 +891,13 @@ struct WelcomeStepView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color.purple, Color.blue],
+                                colors: [Color.blue, Color.cyan],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .frame(width: 100, height: 100)
-                        .shadow(color: .purple.opacity(0.3), radius: 12, x: 0, y: 6)
+                        .shadow(color: .blue.opacity(0.3), radius: 12, x: 0, y: 6)
                     
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 45, weight: .bold))
@@ -947,11 +939,8 @@ struct WelcomeStepView: View {
                     )
                 }
                 .padding(24)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.cardBackground)
-                        .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 4)
-                )
+                .sleekCard(cornerRadius: 20, accentColor: .cyan)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(.horizontal, 20)
             }
             
@@ -972,13 +961,13 @@ struct WelcomeStepView: View {
                 .padding(.vertical, 18)
                 .background(
                     LinearGradient(
-                        colors: [Color.purple, Color.blue],
+                        colors: [Color.blue, Color.cyan],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .shadow(color: .purple.opacity(0.3), radius: 12, x: 0, y: 6)
+                .shadow(color: .blue.opacity(0.3), radius: 12, x: 0, y: 6)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 40)
@@ -1115,27 +1104,12 @@ struct DurationStepView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .background(
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .fill(Color.cardBackground)
-                                    
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .stroke(
-                                            LinearGradient(
-                                                colors: [Color.white.opacity(0.1), Color.clear],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            ),
-                                            lineWidth: 1
-                                        )
-                                }
-                            )
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                                     .stroke(isSelected ? Color.purple.opacity(0.6) : Color.clear, lineWidth: 2)
                             )
-                            .shadow(color: isSelected ? .purple.opacity(0.4) : .black.opacity(0.1), radius: isSelected ? 10 : 6, x: 0, y: isSelected ? 5 : 3)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -1169,7 +1143,7 @@ struct DurationStepView: View {
                             Circle()
                                 .stroke(
                                     LinearGradient(
-                                        colors: [.purple, .blue],
+                                        colors: [.blue, .cyan],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -1190,13 +1164,13 @@ struct DurationStepView: View {
                             Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [.blue, .purple],
+                                    colors: [.blue, .cyan],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                             )
                     )
-                    .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
+                    .shadow(color: .blue.opacity(0.4), radius: 10, x: 0, y: 5)
                 }
             }
             .padding(.horizontal, 20)
@@ -1255,26 +1229,8 @@ struct DurationCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(
-                ZStack {
-                    // Floating card effect
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-                    
-                    // Inner highlight for depth
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? duration.color : Color(white: 0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
@@ -1282,8 +1238,6 @@ struct DurationCard: View {
                         lineWidth: 2
                     )
             )
-            // Floating shadow - glows with color when selected
-            .shadow(color: isSelected ? duration.color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.02 : 1.0)
@@ -1413,7 +1367,7 @@ struct PrimaryMuscleStepView: View {
                             Circle()
                                 .stroke(
                                     LinearGradient(
-                                        colors: [.purple, .blue],
+                                        colors: [.blue, .cyan],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -1434,13 +1388,13 @@ struct PrimaryMuscleStepView: View {
                             Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: hasMusclesSelected ? [.blue, .purple] : [.purple, .pink],
+                                    colors: hasMusclesSelected ? [.blue, .cyan] : [.blue, .cyan.opacity(0.6)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                             )
                     )
-                    .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
+                    .shadow(color: .blue.opacity(0.4), radius: 10, x: 0, y: 5)
                 }
             }
             .padding(.horizontal, 20)
@@ -1508,30 +1462,12 @@ struct PrimaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-                    
-                    // Inner highlight
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
             )
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -1745,7 +1681,7 @@ struct SecondaryMuscleStepView: View {
                             Circle()
                                 .stroke(
                                     LinearGradient(
-                                        colors: [.purple, .blue],
+                                        colors: [.blue, .cyan],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -1766,13 +1702,13 @@ struct SecondaryMuscleStepView: View {
                             Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [.blue, .purple],
+                                    colors: [.blue, .cyan],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                             )
                     )
-                    .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
+                    .shadow(color: .blue.opacity(0.4), radius: 10, x: 0, y: 5)
                 }
             }
             .padding(.horizontal, 20)
@@ -1834,29 +1770,12 @@ struct SecondaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-                    
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
             )
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -1918,29 +1837,12 @@ struct SmallSecondaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
             )
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -2121,7 +2023,7 @@ struct EquipmentStepView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    .foregroundColor(isAllSelected ? .purple : .secondary)
+                    .foregroundColor(isAllSelected ? .blue : .secondary)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
@@ -2178,7 +2080,7 @@ struct EquipmentStepView: View {
                             Circle()
                                 .stroke(
                                     LinearGradient(
-                                        colors: [.purple, .blue],
+                                        colors: [.blue, .cyan],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -2205,12 +2107,12 @@ struct EquipmentStepView: View {
                                 Capsule().fill(Color.gray.opacity(0.3))
                             } else {
                                 Capsule().fill(
-                                    LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)
+                                    LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
                                 )
                             }
                         }
                     )
-                    .shadow(color: selectedEquipment.isEmpty ? .clear : .purple.opacity(0.4), radius: 10, x: 0, y: 5)
+                    .shadow(color: selectedEquipment.isEmpty ? .clear : .blue.opacity(0.4), radius: 10, x: 0, y: 5)
                 }
                 .disabled(selectedEquipment.isEmpty)
             }
@@ -2290,29 +2192,12 @@ struct AutoWorkoutEquipmentCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-                    
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
             )
-            .shadow(color: isSelected ? color.opacity(0.4) : .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 6 : 4)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -2334,8 +2219,8 @@ struct DurationStepContentView: View {
     private var backgroundGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: colorScheme == .dark
-                ? [Color.purple.opacity(0.2), Color.blue.opacity(0.1), Color(red: 0.06, green: 0.06, blue: 0.08), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                : [Color.purple.opacity(0.3), Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color.white]),
+                ? [Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color(red: 0.04, green: 0.06, blue: 0.10), Color(red: 0.03, green: 0.04, blue: 0.07)]
+                : [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.blue.opacity(0.05), Color.white]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -2417,17 +2302,8 @@ struct DurationStepContentView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .background(
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .fill(Color.cardBackground)
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .stroke(
-                                            LinearGradient(colors: [Color.white.opacity(0.1), Color.clear], startPoint: .top, endPoint: .bottom),
-                                            lineWidth: 1
-                                        )
-                                }
-                            )
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                                     .stroke(isSelected ? Color.purple.opacity(0.6) : Color.clear, lineWidth: 2)
@@ -2456,8 +2332,8 @@ struct PrimaryMuscleContentView: View {
     private var backgroundGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: colorScheme == .dark
-                ? [Color.purple.opacity(0.2), Color.blue.opacity(0.1), Color(red: 0.06, green: 0.06, blue: 0.08), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                : [Color.purple.opacity(0.3), Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color.white]),
+                ? [Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color(red: 0.04, green: 0.06, blue: 0.10), Color(red: 0.03, green: 0.04, blue: 0.07)]
+                : [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.blue.opacity(0.05), Color.white]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -2545,8 +2421,8 @@ struct SecondaryMuscleContentView: View {
     private var backgroundGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: colorScheme == .dark
-                ? [Color.purple.opacity(0.2), Color.blue.opacity(0.1), Color(red: 0.06, green: 0.06, blue: 0.08), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                : [Color.purple.opacity(0.3), Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color.white]),
+                ? [Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color(red: 0.04, green: 0.06, blue: 0.10), Color(red: 0.03, green: 0.04, blue: 0.07)]
+                : [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.blue.opacity(0.05), Color.white]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -2648,8 +2524,8 @@ struct EquipmentContentView: View {
     private var backgroundGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: colorScheme == .dark
-                ? [Color.purple.opacity(0.2), Color.blue.opacity(0.1), Color(red: 0.06, green: 0.06, blue: 0.08), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                : [Color.purple.opacity(0.3), Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color.white]),
+                ? [Color.blue.opacity(0.2), Color.cyan.opacity(0.1), Color(red: 0.04, green: 0.06, blue: 0.10), Color(red: 0.03, green: 0.04, blue: 0.07)]
+                : [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.blue.opacity(0.05), Color.white]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -2727,7 +2603,7 @@ struct EquipmentContentView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    .foregroundColor(isAllSelected ? .purple : .secondary)
+                    .foregroundColor(isAllSelected ? .blue : .secondary)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
@@ -2841,14 +2717,12 @@ struct DurationTilesView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .background(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.cardBackground)
-                            )
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                                     .stroke(isSelected ? Color.purple.opacity(0.6) : Color.clear, lineWidth: 2)
                             )
-                            .shadow(color: isSelected ? .purple.opacity(0.4) : .black.opacity(0.1), radius: isSelected ? 10 : 6)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -2891,7 +2765,7 @@ struct PrimaryMuscleTilesView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(
                             surpriseMeSelected
-                                ? AnyShapeStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
                                 : AnyShapeStyle(Color.gray)
                         )
                         .frame(maxWidth: .infinity)
@@ -2904,7 +2778,7 @@ struct PrimaryMuscleTilesView: View {
                             Capsule()
                                 .stroke(
                                     surpriseMeSelected
-                                        ? AnyShapeStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
                                         : AnyShapeStyle(Color.gray.opacity(0.3)),
                                     lineWidth: 2
                                 )
@@ -3160,7 +3034,7 @@ struct EquipmentTilesView: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                         }
-                        .foregroundColor(isAllSelected ? .purple : .secondary)
+                        .foregroundColor(isAllSelected ? .blue : .secondary)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }

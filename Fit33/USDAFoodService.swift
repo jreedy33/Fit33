@@ -800,7 +800,7 @@ class USDAFoodService: ObservableObject {
     }
     
     /// Search local foods instantly (no network required)
-    /// Returns results ranked by relevance to the query
+    /// Returns results ranked by relevance to the query with commonality scoring
     func searchLocalFoods(query: String) -> [ProcessedFoodItem] {
         let normalizedQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return [] }
@@ -812,22 +812,70 @@ class USDAFoodService: ObservableObject {
             return name.contains(normalizedQuery) || category.contains(normalizedQuery)
         }
         
-        // Sort by relevance: exact matches first, then starts with, then contains
+        // Sort by relevance with commonality scoring
         return matches.sorted { food1, food2 in
-            let name1 = food1.name.lowercased()
-            let name2 = food2.name.lowercased()
-            
-            // Exact match wins
-            if name1 == normalizedQuery { return true }
-            if name2 == normalizedQuery { return false }
-            
-            // Starts with query wins
-            if name1.hasPrefix(normalizedQuery) && !name2.hasPrefix(normalizedQuery) { return true }
-            if name2.hasPrefix(normalizedQuery) && !name1.hasPrefix(normalizedQuery) { return false }
-            
-            // Shorter names (simpler foods) win
-            return name1.count < name2.count
+            let score1 = localFoodRelevanceScore(food: food1, query: normalizedQuery)
+            let score2 = localFoodRelevanceScore(food: food2, query: normalizedQuery)
+            return score1 < score2 // Lower = better
         }
+    }
+    
+    /// Calculate relevance score for local foods with commonality priority
+    /// Lower score = higher ranking. Cooked/common variants rank first.
+    private func localFoodRelevanceScore(food: ProcessedFoodItem, query: String) -> Int {
+        let name = food.name.lowercased()
+        var score = 0
+        
+        // PRIORITY 0: User's frequently logged foods (personal history)
+        let usageCount = cloudService.getUsageCount(fdcId: food.id, foodName: food.name)
+        if usageCount > 0 {
+            score -= 500000 + (usageCount * 1000)
+        }
+        
+        // PRIORITY 1: Exact match
+        if name == query { score -= 400000 }
+        
+        // PRIORITY 2: Starts with query
+        if name.hasPrefix(query) { score -= 200000 }
+        
+        // PRIORITY 3: Commonality scoring - most commonly eaten forms first
+        // People eat cooked chicken breast far more than raw
+        let highCommonalityKeywords = ["cooked", "grilled", "baked", "roasted", "boneless", "skinless"]
+        let mediumCommonalityKeywords = ["whole", "plain", "steamed", "boiled", "scrambled", "hard boiled"]
+        let lowCommonalityKeywords = ["raw", "uncooked", "dry", "dehydrated", "freeze-dried"]
+        
+        let hasHighCommonality = highCommonalityKeywords.contains(where: { name.contains($0) })
+        let hasMedCommonality = mediumCommonalityKeywords.contains(where: { name.contains($0) })
+        let hasLowCommonality = lowCommonalityKeywords.contains(where: { name.contains($0) })
+        
+        if hasHighCommonality { score -= 100000 }
+        else if hasMedCommonality { score -= 50000 }
+        else if hasLowCommonality { score += 50000 }
+        
+        // PRIORITY 4: Common staple foods get a bonus
+        // These are the most commonly tracked foods in fitness apps
+        let stapleBoosts: [String: Int] = [
+            "chicken breast, cooked": -80000, "chicken breast, grilled": -80000,
+            "eggs, whole, cooked": -75000, "eggs, scrambled": -75000, "eggs, hard boiled": -75000,
+            "white rice, cooked": -70000, "brown rice, cooked": -70000,
+            "greek yogurt, plain, nonfat": -70000,
+            "oatmeal, cooked": -65000, "banana": -65000,
+            "salmon, cooked": -65000, "ground beef, 90% lean": -60000,
+            "avocado": -60000, "sweet potato, baked": -60000,
+            "broccoli, cooked": -55000, "spinach, raw": -55000,
+            "protein powder, whey": -55000, "almonds": -50000,
+            "peanut butter": -50000, "cottage cheese, 2% milkfat": -50000,
+        ]
+        
+        if let boost = stapleBoosts[name] {
+            score += boost
+        }
+        
+        // PRIORITY 5: Simpler names (fewer words) are more common
+        let wordCount = name.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.count
+        score += wordCount * 500
+        
+        return score
     }
     
     // MARK: - Public Methods
@@ -1043,6 +1091,7 @@ class USDAFoodService: ObservableObject {
     }
     
     /// Calculate relevance score for ranking (lower = better)
+    /// Uses a multi-factor scoring: user history > commonality > data quality > query match
     private func calculateRelevanceScore(food: ProcessedFoodItem, query: String) -> Int {
         let nameText = food.name.lowercased()
         let category = (food.category ?? "").lowercased()
@@ -1060,101 +1109,128 @@ class USDAFoodService: ObservableObject {
             nameWords.contains { $0.contains(queryWord) || queryWord.contains($0) }
         }
         
-        // PRIORITY 0: FAVORITED FOODS - Highest priority (always show first)
-        if isFavorite(foodItemId: food.id) {
-            score -= 500000  // Favorited items ALWAYS rank at the very top
+        // ═══ TIER 0: USER PERSONAL HISTORY (highest priority) ═══
+        
+        // PRIORITY 0a: USER'S FREQUENTLY LOGGED FOODS
+        let usageCount = cloudService.getUsageCount(fdcId: food.id, foodName: food.name)
+        if usageCount > 0 {
+            score -= 600000 + (usageCount * 2000)  // More usage = higher rank
         }
         
-        // PRIORITY 1: EXACT QUERY MATCH - Most important for search relevance!
-        // "almond butter creamy" should match "almond butter, creamy" exactly
+        // PRIORITY 0b: FAVORITED FOODS
+        if isFavorite(foodItemId: food.id) {
+            score -= 550000
+        }
+        
+        // ═══ TIER 1: QUERY RELEVANCE ═══
+        
+        // PRIORITY 1: EXACT QUERY MATCH
         if normalizedName == normalizedQuery {
-            score -= 400000  // EXACT match is king - beats everything else
+            score -= 400000
         } else if allQueryWordsMatch && queryWords.count >= 2 {
-            // All search words found in name - very strong match
             score -= 300000
         }
         
-        // PRIORITY 2: FOUNDATION FOODS from USDA (lab-verified, most accurate)
+        // ═══ TIER 2: COMMONALITY - Most commonly eaten forms first ═══
+        
+        // PRIORITY 2a: Cooked/prepared forms rank ABOVE raw for proteins & grains
+        let cookedKeywords = ["cooked", "grilled", "baked", "roasted", "steamed", "boiled", "poached", "sauteed"]
+        let rawKeywords = ["raw", "uncooked", "unprepared"]
+        let isCookedForm = cookedKeywords.contains(where: { nameText.contains($0) })
+        let isRawForm = rawKeywords.contains(where: { nameText.contains($0) })
+        
+        // For proteins and grains, cooked is far more commonly tracked
+        let isProteinOrGrain = category.contains("poultry") || category.contains("beef") || category.contains("pork") ||
+                               category.contains("fish") || category.contains("seafood") || category.contains("egg") ||
+                               category.contains("grain") || category.contains("rice") || category.contains("pasta") ||
+                               nameText.contains("chicken") || nameText.contains("turkey") || nameText.contains("salmon") ||
+                               nameText.contains("rice") || nameText.contains("oatmeal")
+        
+        if isProteinOrGrain {
+            if isCookedForm { score -= 250000 }  // Cooked chicken breast > raw
+            else if isRawForm { score += 20000 }  // Raw forms rank lower
+        }
+        
+        // PRIORITY 2b: Common staple food forms
+        let highCommonalityTerms = ["boneless", "skinless", "lean", "plain", "nonfat", "low fat", "2%"]
+        if highCommonalityTerms.contains(where: { nameText.contains($0) }) {
+            score -= 30000
+        }
+        
+        // ═══ TIER 3: DATA QUALITY ═══
+        
+        // PRIORITY 3a: FOUNDATION FOODS from USDA (lab-verified, most accurate)
         if dataType == "Foundation" {
-            score -= 200000  // Foundation Foods are most accurate
+            score -= 200000
         } else if dataType == "SR Legacy" {
-            score -= 150000  // SR Legacy is also high quality USDA data
+            score -= 150000
         }
         
-        // PRIORITY 3: Generic foods over branded
+        // PRIORITY 3b: Generic foods over branded
         if food.brandName?.isEmpty ?? true {
-            score -= 100000  // Generic items rank highest
+            score -= 100000
         } else {
-            score += 100000  // Branded items rank lowest
+            score += 100000
         }
         
-        // PRIORITY 4: Starts with query (e.g., "almond butter" for query "almond")
+        // ═══ TIER 4: QUERY MATCH QUALITY ═══
+        
+        // PRIORITY 4: Starts with query
         if normalizedName.hasPrefix(normalizedQuery) || nameText.hasPrefix(query) {
             score -= 80000
         }
         
-        // PRIORITY 5: WHOLE/RAW PRODUCE & MEAT
+        // PRIORITY 5: WHOLE FOOD categories
         let wholeFoodCategories = ["fruits", "vegetables", "poultry", "beef", "pork", "lamb", "fish",
                                    "seafood", "eggs", "nuts", "seeds", "grains", "legumes"]
-        
         let isWholeFoodCategory = wholeFoodCategories.contains(where: { category.contains($0) })
-        
         let meatCuts = ["breast", "thigh", "drumstick", "wing", "leg", "tenderloin", "loin",
                        "chop", "steak", "roast", "ribs", "ground", "filet", "fillet"]
-        
         let isMeatCut = meatCuts.contains(where: { nameText.contains($0) })
         
-        let wholeRawKeywords = ["raw", "whole", "fresh", "plain", "uncooked", "natural"]
-        let hasWholeRawIndicator = wholeRawKeywords.contains(where: { nameText.contains($0) })
-        
-        if isWholeFoodCategory || isMeatCut || hasWholeRawIndicator {
-            score -= 50000  // Bonus for whole foods
+        if isWholeFoodCategory || isMeatCut {
+            score -= 50000
         }
         
-        // PRIORITY 6: Detect non-food items (beverages, supplements, etc.)
+        // ═══ TIER 5: PENALTIES ═══
+        
+        // Non-food items
         let nonWholeFoodTypes = ["beverage", "drink", "juice", "soda", "tea", "coffee", "smoothie",
                                  "shake", "supplement", "baby food", "infant formula", "meal replacement",
-                                 "protein powder", "energy drink", "sports drink"]
-        
+                                 "energy drink", "sports drink"]
         if nonWholeFoodTypes.contains(where: { nameText.contains($0) || category.contains($0) }) {
-            score += 80000  // Non-food items rank very low
+            score += 80000
         }
         
-        // PRIORITY 7: Detect "pre-packaged" or processed indicators
-        let prePackagedKeywords = ["pre-packaged", "prepackaged", "pre-prepared", "preprepared",
-                                   "pre-cooked", "precooked", "frozen", "canned", "jarred",
-                                   "packaged", "mix", "instant", "ready-to-eat", "ready to eat"]
-        
+        // Pre-packaged
+        let prePackagedKeywords = ["pre-packaged", "prepackaged", "frozen", "canned", "jarred",
+                                   "packaged", "mix", "instant", "ready-to-eat"]
         if prePackagedKeywords.contains(where: { nameText.contains($0) || category.contains($0) }) {
-            score += 70000  // Pre-packaged items rank very low
+            score += 70000
         }
         
-        // PRIORITY 8: Prepared/cooked foods (rank below whole foods)
-        let preparedKeywords = ["benedict", "burrito", "sandwich", "salad", "casserole", "scrambled", 
-                                "fried", "deviled", "creamed", "omelet", "omelette", "frittata", 
-                                "quiche", "souffle", "foo young", "stir fry", "stir-fry", "soup",
-                                "stew", "curry", "pasta", "pizza", "taco", "enchilada", "lasagna",
-                                "prepared", "breaded", "stuffed", "marinated", "glazed"]
-        
-        let isPreparedFood = preparedKeywords.contains { nameText.contains($0) }
-        
-        if isPreparedFood {
-            score += 60000  // Prepared foods rank lower
+        // Complex prepared dishes
+        let preparedKeywords = ["benedict", "burrito", "sandwich", "casserole",
+                                "deviled", "creamed", "frittata", "quiche", "souffle",
+                                "foo young", "stir-fry", "stew", "curry",
+                                "lasagna", "breaded", "stuffed", "marinated", "glazed"]
+        if preparedKeywords.contains(where: { nameText.contains($0) }) {
+            score += 60000
         }
         
-        // Bonus for basic descriptors (Grade A, Large, etc.)
-        let basicDescriptors = ["grade a", "grade aa", "large", "medium", "small", "extra large",
-                               "white", "yolk", "shell", "organic", "boneless", "skinless", "bone-in"]
+        // Basic descriptors bonus
+        let basicDescriptors = ["grade a", "grade aa", "large", "medium", "small",
+                               "organic", "boneless", "skinless", "bone-in"]
         if basicDescriptors.contains(where: { nameText.contains($0) }) {
             score -= 5000
         }
         
-        // PRIORITY 9: Contains query bonus
+        // Contains query bonus
         if nameText.contains(query) {
             score -= 10000
         }
         
-        // PRIORITY 10: Simplicity (fewer words = simpler = better)
+        // Simplicity (fewer words = simpler = better)
         let wordCount = nameText.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.count
         score += wordCount * 100
         

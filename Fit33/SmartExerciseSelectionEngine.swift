@@ -595,9 +595,30 @@ class SmartExerciseSelectionEngine {
             
             // ┌─────────────────────────────────────────────────────────────┐
             // │ VARIETY SCORING - Critical for fresh workouts!              │
+            // │ Uses ExerciseCooldownTracker for 7-14 day anti-repeat       │
             // └─────────────────────────────────────────────────────────────┘
             if previousDayExercises.contains(nameLower) {
                 score -= 60  // Heavy penalty for exact same exercise in recent days
+            }
+            
+            // 📦 COOLDOWN CHECK - Penalize exercises done recently (within cooldown window)
+            let cooldownTracker = ExerciseCooldownTracker.shared
+            if let daysSince = cooldownTracker.daysSinceLastDone(exerciseName) {
+                let cooldownDays = ExerciseBundleEngine.shared.cooldownDays(for: exerciseName)
+                if daysSince < cooldownDays {
+                    let cooldownPenalty = Double(cooldownDays - daysSince) * 20  // Stronger penalty the more recent
+                    score -= cooldownPenalty
+                }
+            }
+            
+            // 📦 BUNDLE VARIETY - Penalize if same bundle was used in previous days
+            if let exerciseBundle = ExerciseBundleEngine.shared.bundleForExercise(named: exerciseName) {
+                let previousInBundle = previousDayExercises.filter { prev in
+                    ExerciseBundleEngine.shared.bundleForExercise(named: prev)?.id == exerciseBundle.id
+                }.count
+                if previousInBundle > 0 {
+                    score -= Double(previousInBundle) * 25
+                }
             }
             
             // Penalize similar exercises (same movement pattern keyword)
@@ -816,7 +837,8 @@ class SmartExerciseSelectionEngine {
         var selectedNames: Set<String> = []
         var patternCounts: [MovementPattern: Int] = [:]
         var equipmentCounts: [String: Int] = [:]  // Track equipment diversity
-        var exerciseFamilyCounts: [String: Int] = [:]  // 🔥 NEW: Track exercise families to prevent duplicates
+        var exerciseBundleCounts: [String: Int] = [:]   // 📦 Track exercise BUNDLES (not just families)
+        var exerciseFamilyCounts: [String: Int] = [:]    // Also track families within bundles
         var compoundCount = 0
         var isolationCount = 0
         
@@ -824,10 +846,10 @@ class SmartExerciseSelectionEngine {
         let targetCompounds = max(2, Int(Double(exerciseCount) * 0.6))
         let targetIsolations = exerciseCount - targetCompounds
         
-        // 🔥 NEW: Max exercises per "family" to ensure variety
-        let maxPerExerciseFamily = 1  // Only 1 bench press variation, 1 squat variation, etc.
+        // 📦 Bundle engine handles max-per-workout limits intelligently
+        let bundleEngine = ExerciseBundleEngine.shared
         
-        print("📊 Target mix: \(targetCompounds) compounds, \(targetIsolations) isolations, max \(maxPerEquipmentType) per equipment type, max \(maxPerExerciseFamily) per exercise family")
+        print("📊 Target mix: \(targetCompounds) compounds, \(targetIsolations) isolations, max \(maxPerEquipmentType) per equipment type")
         
         for (exercise, score, pattern, type) in scoredExercises {
             guard selectedExercises.count < exerciseCount else { break }
@@ -847,13 +869,25 @@ class SmartExerciseSelectionEngine {
             guard !selectedNames.contains(nameLower) else { continue }
             
             // ═══════════════════════════════════════════════════════════════
-            // 🔥 EXERCISE FAMILY CHECK - Prevent multiple variations of same exercise
-            // e.g., No "Incline Bench Press" AND "Decline Bench Press" in same workout
+            // 📦 EXERCISE BUNDLE CHECK - Prevent exercises that are essentially the same
+            // e.g., Bench Press AND Chest Press Machine are in the same "horizontal_press" bundle
             // ═══════════════════════════════════════════════════════════════
-            let exerciseFamily = detectExerciseFamily(nameLower)
+            let exerciseFamily = bundleEngine.detectExerciseFamily(nameLower)
+            let bundle = bundleEngine.bundleForFamily(exerciseFamily)
+            
+            // Check bundle limit (e.g., max 2 horizontal presses per workout)
+            if let bundle = bundle {
+                let currentBundleCount = exerciseBundleCounts[bundle.id, default: 0]
+                if currentBundleCount >= bundle.maxPerWorkout {
+                    print("   ⏭️ Skipping \(exercise.name ?? "") - already have \(currentBundleCount)/\(bundle.maxPerWorkout) '\(bundle.displayName)' exercises in this workout")
+                    continue
+                }
+            }
+            
+            // Also check exact family within bundle (max 1 per family)
             let currentFamilyCount = exerciseFamilyCounts[exerciseFamily, default: 0]
-            if exerciseFamily != "other" && currentFamilyCount >= maxPerExerciseFamily {
-                print("   ⏭️ Skipping \(exercise.name ?? "") - already have \(currentFamilyCount) '\(exerciseFamily)' exercise(s)")
+            if exerciseFamily != "other" && currentFamilyCount >= 1 {
+                print("   ⏭️ Skipping \(exercise.name ?? "") - already have a '\(exerciseFamily)' exercise")
                 continue
             }
             
@@ -904,6 +938,9 @@ class SmartExerciseSelectionEngine {
             patternCounts[pattern, default: 0] += 1
             equipmentCounts[equipmentCategory, default: 0] += 1  // Track equipment used
             exerciseFamilyCounts[exerciseFamily, default: 0] += 1  // Track exercise family
+            if let bundle = bundle {
+                exerciseBundleCounts[bundle.id, default: 0] += 1  // 📦 Track exercise bundle
+            }
             
             if type == .compound { compoundCount += 1 }
             if type == .isolation { isolationCount += 1 }
@@ -1596,144 +1633,10 @@ class SmartExerciseSelectionEngine {
         }
     }
     
-    /// 🔥 Detects the "family" of an exercise to prevent selecting multiple variations
-    /// e.g., "Incline Bench Press" and "Decline Bench Press" are both in "bench_press" family
+    /// Detects the "family" of an exercise to prevent selecting multiple variations.
+    /// Delegates to the centralized ExerciseBundleEngine for consistent classification.
     private func detectExerciseFamily(_ exerciseName: String) -> String {
-        let name = exerciseName.lowercased()
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // SPECIAL CASES - Check these FIRST before standard patterns
-        // ═══════════════════════════════════════════════════════════════════
-        
-        // Combo exercises: "Romanian Deadlift To Bent Over Row" = deadlift (primary)
-        if name.contains("deadlift") && (name.contains("row") || name.contains("shrug")) {
-            return "deadlift"
-        }
-        
-        // Equipment names shouldn't classify: "Deadlift On Hack Squat Machine" = deadlift
-        if name.contains("deadlift") && (name.contains("squat machine") || name.contains("squat cage")) {
-            return "deadlift"
-        }
-        
-        // Good morning is separate from deadlifts
-        if name.contains("good morning") { return "good_morning" }
-        
-        // Back extension is separate
-        if name.contains("back extension") || name.contains("hyperextension") { return "back_extension" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // SHRUG - Check BEFORE bench press (equipment names can contain "bench")
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("shrug") && !name.contains("deadlift") { return "shrug" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // SKULL CRUSHER - Check early (contains "press" sometimes)
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("skull") { return "skull_crusher" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // SMITH MACHINE CHEST PRESSES
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("smith") && (name.contains("decline") || name.contains("incline") || name.contains("flat") || name.contains("reverse grip")) {
-            return "smith_chest_press"
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // CHEST FAMILIES
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("bench press") { return "bench_press" }
-        if name.contains("chest press") { return "chest_press" }
-        // Incline/Decline/Flat Press variations without "bench" or "chest" in name
-        if (name.contains("incline") || name.contains("decline") || name.contains("flat")) && name.contains("press") {
-            if !name.contains("shoulder") && !name.contains("leg") {
-                return "bench_press"
-            }
-        }
-        if name.contains("fly") || name.contains("flye") { return "chest_fly" }
-        if name.contains("push-up") || name.contains("pushup") || name.contains("push up") { return "pushup" }
-        if name.contains("crossover") { return "cable_crossover" }
-        if name.contains("pec deck") { return "pec_deck" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // LEG FAMILIES - CHECK BEFORE row (to avoid "narrow" matching "row")
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("leg press") || name.contains("sled") && name.contains("press") { return "leg_press" }
-        
-        // Squat - but NOT if it's just in equipment name (handled above)
-        if name.contains("squat") && !name.contains("squat machine") && !name.contains("squat cage") { return "squat" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // DEADLIFT - Check BEFORE row (deadlift combos already handled above)
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("deadlift") { return "deadlift" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // BACK FAMILIES - "row" checked AFTER deadlift to avoid combo false match
-        // ═══════════════════════════════════════════════════════════════════
-        // Include ALL row variations (narrow grip, wide grip, etc.)
-        // Note: "narrow" contains "arrow" so we check for " arrow" with space
-        if name.contains("row") && !name.contains("upright") && !name.contains("deadlift") {
-            // Only exclude actual "arrow" exercises, not "narrow" which contains "arrow"
-            if !name.contains(" arrow") && !name.hasPrefix("arrow") {
-                return "row"
-            }
-        }
-        if name.contains("pulldown") || name.contains("pull-down") || name.contains("pull down") { return "pulldown" }
-        if name.contains("pull-up") || name.contains("pullup") || name.contains("pull up") { return "pullup" }
-        if name.contains("chin-up") || name.contains("chinup") || name.contains("chin up") { return "chinup" }
-        if name.contains("face pull") { return "face_pull" }
-        // shrug already checked above
-        if name.contains("lunge") { return "lunge" }
-        if name.contains("leg extension") { return "leg_extension" }
-        if name.contains("leg curl") || name.contains("hamstring curl") { return "leg_curl" }
-        if name.contains("calf raise") || name.contains("calf press") { return "calf_raise" }
-        if name.contains("hip thrust") || name.contains("glute bridge") { return "hip_thrust" }
-        if name.contains("step up") || name.contains("step-up") { return "step_up" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // SHOULDER FAMILIES
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("overhead press") || name.contains("shoulder press") || name.contains("shoulders press") || name.contains("military press") || name.contains("arnold press") || name.contains("behind neck press") || name.contains("front press") || name.contains("neck press") { return "shoulder_press" }
-        if name.contains("lateral raise") || name.contains("side raise") { return "lateral_raise" }
-        if name.contains("front raise") { return "front_raise" }
-        if name.contains("rear delt") || name.contains("reverse fly") { return "rear_delt" }
-        if name.contains("upright row") { return "upright_row" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // ARM FAMILIES
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("bicep curl") || name.contains("biceps curl") { return "bicep_curl" }
-        if name.contains("hammer curl") { return "hammer_curl" }
-        if name.contains("preacher curl") { return "preacher_curl" }
-        if name.contains("concentration curl") { return "concentration_curl" }
-        if name.contains("tricep pushdown") || name.contains("triceps pushdown") { return "tricep_pushdown" }
-        if name.contains("tricep extension") || name.contains("triceps extension") { return "tricep_extension" }
-        if name.contains("skull crusher") || name.contains("skullcrusher") { return "skull_crusher" }
-        if name.contains("dip") && !name.contains("hip") { return "dip" }
-        if name.contains("kickback") { return "kickback" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // CORE FAMILIES - Prevent multiple plank variations
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("plank") { return "plank" }
-        if name.contains("crunch") || name.contains("sit-up") || name.contains("sit up") { return "crunch" }
-        if name.contains("leg raise") && !name.contains("lateral") { return "leg_raise" }
-        if name.contains("pallof") || name.contains("anti-rotation") { return "anti_rotation" }
-        if name.contains("woodchop") || name.contains("wood chop") { return "woodchop" }
-        if name.contains("dead bug") { return "dead_bug" }
-        if name.contains("hollow") { return "hollow_hold" }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // CORE FAMILIES
-        // ═══════════════════════════════════════════════════════════════════
-        if name.contains("crunch") { return "crunch" }
-        if name.contains("plank") { return "plank" }
-        if name.contains("leg raise") { return "leg_raise" }
-        if name.contains("russian twist") { return "russian_twist" }
-        if name.contains("ab wheel") || name.contains("rollout") { return "ab_wheel" }
-        
-        // Default: no specific family
-        return "other"
+        return ExerciseBundleEngine.shared.detectExerciseFamily(exerciseName)
     }
     
     private func isProvenEffective(exerciseName: String) -> Bool {

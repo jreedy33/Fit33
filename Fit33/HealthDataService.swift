@@ -287,7 +287,7 @@ final class HealthDataService: ObservableObject {
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("daily_activity_summary")
-                .upsert(insert)
+                .upsert(insert, onConflict: "user_id,date")
                 .execute()
             
             print("✅ [HEALTH] Saved daily activity from HealthKit")
@@ -326,21 +326,23 @@ final class HealthDataService: ObservableObject {
         
         let insert = HealthKitWorkoutInsert(
             userId: userId.uuidString,
-            workoutType: workoutType,
+            activityType: workoutType,
+            workoutName: "\(sourceName) \(workoutType)",
+            goalType: "open_goal",
+            goalAchieved: true,
             durationSeconds: Int(workout.duration),
             distanceMeters: workout.distance ?? 0,
             caloriesBurned: Int(workout.calories ?? 0),
             startedAt: ISO8601DateFormatter().string(from: workout.startDate),
             completedAt: ISO8601DateFormatter().string(from: workout.endDate),
             source: "healthkit",
-            externalId: workout.id.uuidString,
-            notes: "Synced from \(sourceName)"
+            externalId: workout.id.uuidString
         )
         
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("cardio_workouts")
-                .upsert(insert)
+                .upsert(insert, onConflict: "user_id,source,external_id")
                 .execute()
         } catch {
             // Silently handle duplicates
@@ -1054,7 +1056,10 @@ extension Dictionary where Key == String, Value == Any {
 
 struct HealthKitWorkoutInsert: Codable {
     let userId: String
-    let workoutType: String
+    let activityType: String
+    let workoutName: String?
+    let goalType: String
+    let goalAchieved: Bool
     let durationSeconds: Int
     let distanceMeters: Double
     let caloriesBurned: Int
@@ -1062,11 +1067,13 @@ struct HealthKitWorkoutInsert: Codable {
     let completedAt: String
     let source: String
     let externalId: String
-    let notes: String?
     
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
-        case workoutType = "workout_type"
+        case activityType = "activity_type"
+        case workoutName = "workout_name"
+        case goalType = "goal_type"
+        case goalAchieved = "goal_achieved"
         case durationSeconds = "duration_seconds"
         case distanceMeters = "distance_meters"
         case caloriesBurned = "calories_burned"
@@ -1074,7 +1081,6 @@ struct HealthKitWorkoutInsert: Codable {
         case completedAt = "completed_at"
         case source
         case externalId = "external_id"
-        case notes
     }
 }
 

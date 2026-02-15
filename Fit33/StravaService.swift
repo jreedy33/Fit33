@@ -216,13 +216,19 @@ final class StravaService: ObservableObject {
     
     /// Sync activities from Strava
     func syncActivities(daysBack: Int = 30) async {
-        guard isConnected else { return }
+        guard isConnected else {
+            print("⏭️ [STRAVA] Skipping sync — not connected (token: \(accessToken != nil), refresh: \(refreshToken != nil))")
+            return
+        }
         
         isLoading = true
         errorMessage = nil
         
+        print("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), token expires: \(tokenExpiresAt?.description ?? "nil"))")
+        
         do {
             let token = try await ensureValidToken()
+            print("🔑 [STRAVA] Token valid, fetching activities...")
             
             let after = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date())!
             let afterTimestamp = Int(after.timeIntervalSince1970)
@@ -238,12 +244,21 @@ final class StravaService: ObservableObject {
             
             let (data, response) = try await URLSession.shared.data(for: request)
             
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                throw StravaError.apiError("Failed to fetch activities")
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw StravaError.apiError("No HTTP response")
+            }
+            
+            print("📡 [STRAVA] API response: \(httpResponse.statusCode), body size: \(data.count) bytes")
+            
+            guard httpResponse.statusCode == 200 else {
+                let body = String(data: data, encoding: .utf8) ?? "no body"
+                print("❌ [STRAVA] API error body: \(body.prefix(500))")
+                throw StravaError.apiError("HTTP \(httpResponse.statusCode): \(body.prefix(200))")
             }
             
             let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            // Do NOT use .convertFromSnakeCase — CodingKeys already handle snake_case mapping
+            // Using both causes double-conversion: start_date → startDate but CodingKey expects "start_date"
             decoder.dateDecodingStrategy = .iso8601
             
             let activities = try decoder.decode([StravaActivity].self, from: data)
@@ -251,6 +266,11 @@ final class StravaService: ObservableObject {
             recentActivities = activities
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: "strava_last_sync")
+            
+            print("📊 [STRAVA] Decoded \(activities.count) activities")
+            for (i, activity) in activities.prefix(5).enumerated() {
+                print("   \(i+1). \(activity.type) — \(activity.name) — \(activity.startDate)")
+            }
             
             // Save activities to Supabase for persistence
             await saveActivitiesToCloud(activities)
@@ -282,7 +302,6 @@ final class StravaService: ObservableObject {
         }
         
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
         
         return try decoder.decode(StravaActivityDetail.self, from: data)
@@ -306,7 +325,6 @@ final class StravaService: ObservableObject {
         }
         
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         
         return try decoder.decode(StravaAthleteStats.self, from: data)
     }

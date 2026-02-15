@@ -218,9 +218,8 @@ struct SmartProgramDayPreviewView: View {
             .padding(.bottom, 120)
         }
         .onAppear {
-            // 🚀 Prefetch videos using high-performance engine
-            let exerciseNames = day.exercises.map { $0.exerciseName }
-            VideoPlaybackEngine.shared.prefetchVisible(exercises: exerciseNames)
+            // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand in detail view.
+            // Was creating AVPlayers for all exercises in the program day, contributing to 600MB+ memory.
         }
     }
     

@@ -434,43 +434,38 @@ struct FoodSearchView: View {
     private var quickAccessView: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Frequently Used Foods Section (TOP PRIORITY)
+                // Frequently Used Foods Section (TOP PRIORITY - Quick Add)
                 if !foodService.frequentFoods.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Frequently Logged")
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.green)
+                            Text("Your Quick Add")
                                 .font(.headline)
                                 .fontWeight(.bold)
+                            
                             Spacer()
-                            Text("Quick Add")
+                            
+                            Text("\(foodService.frequentFoods.count) foods")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.green)
+                                )
                         }
                         .padding(.horizontal)
                         
-                        ForEach(foodService.frequentFoods.prefix(6)) { food in
+                        Text("Based on your meal history")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        
+                        ForEach(foodService.frequentFoods.prefix(8)) { food in
                             QuickAccessFoodRow(food: food, badge: nil) {
-                                selectedFood = food
-                            }
-                        }
-                    }
-                }
-                
-                // Recent Foods Section
-                if !foodService.recentFoods.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "clock.fill")
-                                .foregroundColor(.blue)
-                            Text("Recent Foods")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        
-                        ForEach(foodService.recentFoods.prefix(5)) { food in
-                            QuickAccessFoodRow(food: food, badge: "RECENT") {
                                 selectedFood = food
                             }
                         }
@@ -498,18 +493,55 @@ struct FoodSearchView: View {
                     }
                 }
                 
-                // Popular Foods Section
-                if !foodService.popularFoods.isEmpty {
+                // Recent Foods Section
+                if !foodService.recentFoods.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Image(systemName: "flame.fill")
-                                .foregroundColor(.orange)
-                            Text("Popular Foods")
+                            Image(systemName: "clock.fill")
+                                .foregroundColor(.blue)
+                            Text("Recent Foods")
                                 .font(.headline)
                                 .fontWeight(.bold)
                             Spacer()
                         }
                         .padding(.horizontal)
+                        
+                        ForEach(foodService.recentFoods.prefix(5)) { food in
+                            QuickAccessFoodRow(food: food, badge: "RECENT") {
+                                selectedFood = food
+                            }
+                        }
+                    }
+                }
+                
+                // Popular Foods Section (Global - all users)
+                if !foodService.popularFoods.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(.orange)
+                            Text("Trending Foods")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                            
+                            Spacer()
+                            
+                            Text("All Users")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.orange.opacity(0.15))
+                                )
+                        }
+                        .padding(.horizontal)
+                        
+                        Text("Most logged across the community")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
                         
                         ForEach(foodService.popularFoods.prefix(10)) { food in
                             QuickAccessFoodRow(food: food, badge: nil) {

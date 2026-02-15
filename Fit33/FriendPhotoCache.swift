@@ -17,9 +17,9 @@ final class FriendPhotoCache {
     }
     
     private init() {
-        // Configure memory cache
-        memoryCache.countLimit = 50 // Max 50 friend photos in memory
-        memoryCache.totalCostLimit = 50 * 1024 * 1024 // 50MB limit
+        // ⚡️ MEMORY FIX: Reduced from 50/50MB to 20/20MB — most users have <20 friends
+        memoryCache.countLimit = 20 // Max 20 friend photos in memory (was 50)
+        memoryCache.totalCostLimit = 20 * 1024 * 1024 // 20MB limit (was 50MB)
         
         // Create cache directory if needed
         if let cacheDir = cacheDirectoryURL {
@@ -119,11 +119,19 @@ final class FriendPhotoCache {
     /// Clear all cached photos
     func clearCache() {
         memoryCache.removeAllObjects()
+        cachedUrls.removeAll()
         if let cacheDir = cacheDirectoryURL {
             try? fileManager.removeItem(at: cacheDir)
             try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         }
         print("🗑️ [FRIEND CACHE] Cache cleared")
+    }
+    
+    /// ⚡️ MEMORY FIX: Clear only in-memory images (disk stays for fast reload).
+    /// Called by MemoryPressureHandler when memory is critical.
+    func clearMemoryCache() {
+        memoryCache.removeAllObjects()
+        print("💾 [FRIEND CACHE] Memory cache cleared (disk cache retained)")
     }
     
     /// Remove cached photo for a specific friend

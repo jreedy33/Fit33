@@ -603,7 +603,8 @@ class SmartProgramEngine: ObservableObject {
     
     // MARK: - Public API
     
-    /// Get 10 personalized programs for the user
+    /// Get personalized programs for the user
+    /// Returns the 6 GAIN/LEAN templates (14/30/90) plus any legacy templates that match well
     func getPersonalizedPrograms(for user: User?) -> [PersonalizedProgram] {
         guard let user = user else {
             return programTemplates.prefix(10).map { template in
@@ -618,14 +619,60 @@ class SmartProgramEngine: ObservableObject {
             }
         }
         
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 1: Generate the 6 core GAIN/LEAN templates from the library
+        // These are the primary, evidence-based templates
+        // ═══════════════════════════════════════════════════════════════════
         var programs: [PersonalizedProgram] = []
         let completedProgramIds = getCompletedProgramIds(for: user)
+        let userGoal = user.fitnessGoal?.lowercased() ?? ""
+        let userLevel = user.experienceLevel?.lowercased() ?? "intermediate"
         
+        for newTemplate in ProgramTemplateLibrary.shared.templates {
+            let converted = convertToSmartTemplate(newTemplate, user: user)
+            let personalizedName = generatePersonalizedName(template: converted, user: user)
+            let isCompleted = completedProgramIds.contains(converted.id)
+            
+            // Calculate match score based on user's goal alignment
+            var matchScore = 0.5
+            
+            // Goal alignment
+            if (newTemplate.goalTrack == .gain && (userGoal.contains("muscle") || userGoal.contains("strong") || userGoal.contains("mass") || userGoal.contains("size"))) ||
+               (newTemplate.goalTrack == .lean && (userGoal.contains("lose") || userGoal.contains("lean") || userGoal.contains("cut") || userGoal.contains("fat") || userGoal.contains("tone"))) {
+                matchScore += 0.35
+            }
+            
+            // Duration alignment (beginners -> shorter, advanced -> longer)
+            if (userLevel == "beginner" && newTemplate.durationDays == 14) ||
+               (userLevel == "intermediate" && newTemplate.durationDays == 30) ||
+               (userLevel == "advanced" && newTemplate.durationDays == 90) {
+                matchScore += 0.15
+            }
+            
+            let personalizedDesc = "\(newTemplate.description) Personalized for your \(user.fitnessGoal ?? "fitness") goals."
+            
+            programs.append(PersonalizedProgram(
+                template: converted,
+                personalizedName: personalizedName,
+                isUnlocked: true,  // All GAIN/LEAN templates are unlocked
+                isCompleted: isCompleted,
+                matchScore: min(1.0, matchScore),
+                personalizedDescription: personalizedDesc
+            ))
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 2: Add any legacy templates that fill gaps
+        // (Foundation series, core, athletic - keep for variety)
+        // ═══════════════════════════════════════════════════════════════════
         for template in programTemplates {
+            // Skip the custom-goal template (replaced by GAIN/LEAN)
+            if template.id == "custom-goal" { continue }
+            
             let personalizedName = generatePersonalizedName(template: template, user: user)
             let isUnlocked = checkIfUnlocked(template: template, completedIds: completedProgramIds)
             let isCompleted = completedProgramIds.contains(template.id)
-            let matchScore = calculateMatchScore(template: template, user: user)
+            let matchScore = calculateMatchScore(template: template, user: user) * 0.8 // Slightly deprioritize legacy
             let personalizedDesc = generatePersonalizedDescription(template: template, user: user)
             
             programs.append(PersonalizedProgram(
@@ -638,20 +685,126 @@ class SmartProgramEngine: ObservableObject {
             ))
         }
         
-        // Sort by match score, but keep series together
+        // Sort by match score (best matches first), keep series together
         return programs.sorted { a, b in
-            // If same series, sort by order
             if let aSeriesId = a.template.seriesId, let bSeriesId = b.template.seriesId,
                aSeriesId == bSeriesId {
                 return (a.template.seriesOrder ?? 0) < (b.template.seriesOrder ?? 0)
             }
-            // Otherwise sort by match score
             return a.matchScore > b.matchScore
         }
     }
     
+    // MARK: - Convert MasterProgramTemplate → SmartProgramTemplate
+    
+    /// Bridges the new ProgramTemplateLibrary format to the existing SmartProgramTemplate format
+    /// so the UI and existing flow work without changes
+    private func convertToSmartTemplate(_ template: MasterProgramTemplate, user: User) -> SmartProgramTemplate {
+        let dayTemplates = template.weeklySchedule.enumerated().map { index, day in
+            ProgramDayTemplate(
+                dayNumber: index + 1,
+                name: day.name,
+                focusMuscles: day.primaryMuscles + day.secondaryMuscles,
+                exerciseCount: day.exerciseSlots.count,
+                isRestDay: day.isRestDay,
+                intensity: day.exerciseSlots.first?.isAnchor == true ? 0.85 : 0.75,
+                notes: template.blocks.first?.name
+            )
+        }
+        
+        let goalAlignment: [String]
+        switch template.goal {
+        case .gain: goalAlignment = ["Build Muscle", "Get Stronger"]
+        case .lean: goalAlignment = ["Lose Weight", "Get Fit", "Tone & Define"]
+        }
+        
+        let category: ProgramCategory
+        switch template.goal {
+        case .gain:
+            category = template.durationDays >= 90 ? .strength : .muscle
+        case .lean:
+            category = .shred
+        }
+        
+        // Calculate total training days (non-rest days × weeks)
+        let trainingDaysPerWeek = template.weeklySchedule.filter { !$0.isRestDay }.count
+        let totalTrainingDays = trainingDaysPerWeek * template.weekCount
+        
+        return SmartProgramTemplate(
+            id: template.id,
+            category: category,
+            baseName: template.name,
+            description: template.description,
+            totalDays: totalTrainingDays,
+            daysPerWeek: template.daysPerWeek,
+            difficulty: template.difficulty.lowercased() == "beginner" ? .beginner : (template.difficulty.lowercased() == "advanced" ? .advanced : .intermediate),
+            isProgressive: template.blocks.count > 1,
+            seriesOrder: nil,
+            seriesId: nil,
+            prerequisiteId: nil,
+            targetMuscleGroups: Array(Set(template.weeklySchedule.flatMap { $0.primaryMuscles })),
+            estimatedMinutesPerDay: template.goal == .lean ? 45 : 55,
+            restDayPattern: template.weeklySchedule.enumerated().compactMap { $0.element.isRestDay ? $0.offset + 1 : nil },
+            dayTemplates: dayTemplates,
+            goalAlignment: goalAlignment,
+            equipmentRequirements: [],  // Determined at generation time from user profile
+            minExperienceLevel: template.difficulty
+        )
+    }
+    
+    /// Internal: Start a program with a pre-converted SmartProgramTemplate
+    private func startProgramWithTemplate(_ template: SmartProgramTemplate, user: User) -> SmartActiveProgram? {
+        // Mark all existing active programs as completed
+        for (index, oldProgram) in userPrograms.enumerated() where !oldProgram.isCompleted {
+            var updatedProgram = oldProgram
+            updatedProgram.isCompleted = true
+            updatedProgram.completedDate = Date()
+            userPrograms[index] = updatedProgram
+            print("✅ Marked previous program '\(oldProgram.personalizedName)' as completed when starting new program")
+        }
+        
+        let personalizedName = generatePersonalizedName(template: template, user: user)
+        let firstDay = generateDay(dayNumber: 1, template: template, user: user, previousDays: [])
+        
+        let program = SmartActiveProgram(
+            id: UUID().uuidString,
+            templateId: template.id,
+            userId: user.id?.uuidString ?? "",
+            personalizedName: personalizedName,
+            startDate: Date(),
+            currentDay: 1,
+            completedDays: [],
+            generatedDays: [firstDay],
+            isCompleted: false,
+            completedDate: nil,
+            totalVolume: 0,
+            averageIntensity: 0,
+            consistencyScore: 1.0
+        )
+        
+        var activePrograms = userPrograms
+        activePrograms.append(program)
+        userPrograms = activePrograms
+        saveUserPrograms()
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.objectWillChange.send()
+        }
+        
+        print("🚀 Started new GAIN/LEAN program: '\(personalizedName)' (ID: \(program.id))")
+        return program
+    }
+    
     /// Start a program for the user
     func startProgram(templateId: String, for user: User) -> SmartActiveProgram? {
+        // First check the new GAIN/LEAN templates from ProgramTemplateLibrary
+        if let masterTemplate = ProgramTemplateLibrary.shared.getTemplate(byId: templateId) {
+            let converted = convertToSmartTemplate(masterTemplate, user: user)
+            // Use the converted template as the base
+            return startProgramWithTemplate(converted, user: user)
+        }
+        
+        // Fall back to legacy templates
         guard let baseTemplate = programTemplates.first(where: { $0.id == templateId }) else {
             return nil
         }
@@ -713,19 +866,27 @@ class SmartProgramEngine: ObservableObject {
     }
     
     /// Complete a day and generate the next one
+    /// Next day is ONLY generated after the current day is completed — this is our
+    /// lazy generation strategy that saves storage for long programs (90 days).
     func completeDay(programId: String, dayNumber: Int, actualDuration: Int, totalVolume: Double) {
         guard var program = userPrograms.first(where: { $0.id == programId }),
-              let baseTemplate = programTemplates.first(where: { $0.id == program.templateId }),
               let user = UserManager.shared.currentUser else {
             return
         }
         
-        // For custom programs with empty dayTemplates, generate them dynamically
+        // Look up template — check new GAIN/LEAN templates first, then legacy
         let template: SmartProgramTemplate
-        if baseTemplate.dayTemplates.isEmpty {
-            template = generateCustomTemplateForUser(baseTemplate: baseTemplate, user: user)
+        if let masterTemplate = ProgramTemplateLibrary.shared.getTemplate(byId: program.templateId) {
+            template = convertToSmartTemplate(masterTemplate, user: user)
+        } else if let baseTemplate = programTemplates.first(where: { $0.id == program.templateId }) {
+            if baseTemplate.dayTemplates.isEmpty {
+                template = generateCustomTemplateForUser(baseTemplate: baseTemplate, user: user)
+            } else {
+                template = baseTemplate
+            }
         } else {
-            template = baseTemplate
+            print("❌ [PROGRAMS] Could not find template for program \(programId)")
+            return
         }
         
         // Mark day as completed
@@ -736,6 +897,14 @@ class SmartProgramEngine: ObservableObject {
             program.generatedDays[dayIndex].actualDuration = actualDuration
             program.generatedDays[dayIndex].totalVolume = totalVolume
             completedDay = program.generatedDays[dayIndex]
+            
+            // ═══════════════════════════════════════════════════════════════
+            // 📦 Record exercises to cooldown tracker for anti-repeat variety
+            // This ensures the same exercise won't appear again within its
+            // bundle's cooldown window (typically 3-7 days)
+            // ═══════════════════════════════════════════════════════════════
+            let exerciseNames = program.generatedDays[dayIndex].exercises.map { $0.exerciseName }
+            ExerciseCooldownTracker.shared.recordWorkoutExercises(exerciseNames)
         }
         
         program.completedDays.append(dayNumber)
@@ -831,6 +1000,24 @@ class SmartProgramEngine: ObservableObject {
     // MARK: - Day Generation (Lazy)
     
     private func generateDay(dayNumber: Int, template: SmartProgramTemplate, user: User, previousDays: [SmartProgramDay]) -> SmartProgramDay {
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // CHECK: Is this a new GAIN/LEAN template from ProgramTemplateLibrary?
+        // If so, use the advanced block-based generation
+        // ═══════════════════════════════════════════════════════════════════
+        if let programTemplate = ProgramTemplateLibrary.shared.getTemplate(byId: template.id) {
+            return generateBlockAwareDay(
+                dayNumber: dayNumber,
+                programTemplate: programTemplate,
+                user: user,
+                previousDays: previousDays
+            )
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // LEGACY PATH: Original template-based generation
+        // ═══════════════════════════════════════════════════════════════════
+        
         // Safety guard: if dayTemplates is empty, create a default full body workout
         guard !template.dayTemplates.isEmpty else {
             print("⚠️ [PROGRAMS] Warning: dayTemplates is empty, generating default day")
@@ -873,6 +1060,216 @@ class SmartProgramEngine: ObservableObject {
             exercises: exercises,
             targetDuration: template.estimatedMinutesPerDay,
             restBetweenSets: calculateRestTime(intensity: dayTemplate.intensity, userLevel: user.experienceLevel ?? "Intermediate"),
+            isCompleted: false,
+            completedDate: nil,
+            actualDuration: nil,
+            totalVolume: nil
+        )
+    }
+    
+    // MARK: - Block-Aware Day Generation (New GAIN/LEAN Templates)
+    
+    /// Generates a workout day using the ProgramTemplate's exercise slots, periodization blocks,
+    /// and exercise cooldown tracking. This is the "real trainer" path.
+    private func generateBlockAwareDay(
+        dayNumber: Int,
+        programTemplate: MasterProgramTemplate,
+        user: User,
+        previousDays: [SmartProgramDay]
+    ) -> SmartProgramDay {
+        
+        // 1. Determine which day template to use (cycling through training days)
+        let trainingDays = programTemplate.weeklySchedule.filter { !$0.isRestDay }
+        guard !trainingDays.isEmpty else {
+            print("⚠️ [PROGRAMS] No training day templates, generating default")
+            return generateDefaultDay(dayNumber: dayNumber, user: user)
+        }
+        let dayIndex = (dayNumber - 1) % trainingDays.count
+        let dayTemplate = trainingDays[dayIndex]
+        
+        // 2. Determine which periodization block we're in
+        let trainingDaysPerWeek = trainingDays.count
+        let weekNumber = max(1, ((dayNumber - 1) / trainingDaysPerWeek) + 1)
+        let currentBlock = ProgramTemplateLibrary.shared.getActiveBlock(for: weekNumber, in: programTemplate)
+        
+        #if DEBUG
+        print("🎯 [BLOCK-GEN] Day \(dayNumber) | Week \(weekNumber) | Block: \(currentBlock?.name ?? "default")")
+        print("   Template: \(dayTemplate.name) | Muscles: \(dayTemplate.primaryMuscles.joined(separator: ", "))")
+        #endif
+        
+        // 3. Get user equipment and preferences
+        let userEquipment = parseEquipment(user.equipment)
+        let isGymUser = user.workoutEnvironment == "Gym" || userEquipment.contains {
+            ["Barbell", "Cables", "Machines", "Cable", "Machine"].contains($0)
+        }
+        
+        // 4. Get previously used exercise names for cooldown enforcement
+        let previousExerciseNames = Set(previousDays.flatMap { $0.exercises.map { $0.exerciseName.lowercased() } })
+        
+        // 5. Generate exercises slot-by-slot using the recipe
+        var exercises: [SmartProgramExercise] = []
+        let cooldownTracker = ExerciseCooldownTracker.shared
+        
+        for (slotIndex, slot) in dayTemplate.exerciseSlots.enumerated() {
+            // Skip finisher slots — handled separately below
+            if slot.role == .finisher { continue }
+            
+            // Determine the target movement pattern from the slot's bundle targets
+            let targetPattern = slot.targetBundles.first ?? ""
+            let isCompound = slot.role == .primaryCompound || slot.role == .secondaryCompound
+            
+            // Determine adjusted sets/reps based on block + slot overrides
+            // Slot overrides > block defaults > fallback
+            var adjustedSets: Int
+            var adjustedRepsMin: Int
+            var adjustedRepsMax: Int
+            var adjustedRest: Int
+            
+            if let block = currentBlock {
+                // Use slot override if present, otherwise block defaults
+                adjustedSets = slot.setsOverride ?? (isCompound ? block.primarySets : block.accessorySets)
+                adjustedRepsMin = slot.repsMinOverride ?? (isCompound ? block.primaryRepsMin : block.accessoryRepsMin)
+                adjustedRepsMax = slot.repsMaxOverride ?? (isCompound ? block.primaryRepsMax : block.accessoryRepsMax)
+                adjustedRest = slot.restOverride ?? (isCompound ? block.primaryRestSeconds : block.accessoryRestSeconds)
+                
+                // Deload check: if this week is a deload, reduce sets 30-40%
+                if ProgramTemplateLibrary.shared.isDeloadWeek(weekNumber, in: programTemplate) {
+                    adjustedSets = max(2, Int(Double(adjustedSets) * 0.65))
+                    adjustedRest = max(60, adjustedRest - 30)
+                }
+                
+                // Strength block adjustments for primary lifts
+                if block.emphasis == .strength && isCompound {
+                    adjustedRest = max(adjustedRest, 150) // Ensure long rest for heavy work
+                }
+                
+                // Density/conditioning block: shorter rest on accessories
+                if (block.emphasis == .densityConditioning || block.emphasis == .peakLeanness) && !isCompound {
+                    adjustedRest = max(30, adjustedRest - 15)
+                }
+            } else {
+                // No block found — use slot overrides or sensible defaults
+                adjustedSets = slot.setsOverride ?? (isCompound ? 4 : 3)
+                adjustedRepsMin = slot.repsMinOverride ?? (isCompound ? 6 : 10)
+                adjustedRepsMax = slot.repsMaxOverride ?? (isCompound ? 10 : 15)
+                adjustedRest = slot.restOverride ?? (isCompound ? 120 : 60)
+            }
+            
+            // Use SmartExerciseSelectionEngine to find the right exercise for this slot
+            let slotMuscles = !slot.targetMuscles.isEmpty ? slot.targetMuscles : dayTemplate.primaryMuscles
+            let selectedExercises = SmartExerciseSelectionEngine.shared.selectExercisesForWorkout(
+                targetMuscles: slotMuscles,
+                exerciseCount: 3,  // Get candidates
+                userEquipment: userEquipment,
+                isGymUser: isGymUser,
+                previousDayExercises: previousExerciseNames,
+                userGoal: user.fitnessGoal ?? "Build Muscle",
+                experienceLevel: user.experienceLevel ?? "Intermediate"
+            )
+            
+            // Find the best match for this slot's movement pattern
+            let matchingExercise = selectedExercises.first { exercise in
+                let pattern = exercise.movementPattern.rawValue
+                let exerciseName = exercise.name.lowercased()
+                
+                // Check pattern match against target bundles
+                let patternMatches = targetPattern.isEmpty ||
+                    pattern.contains(targetPattern.lowercased()) ||
+                    targetPattern.lowercased().contains(pattern)
+                
+                // Check cooldown (skip if on cooldown, unless it's an anchor)
+                if !slot.isAnchor {
+                    if cooldownTracker.isOnCooldown(exerciseName, isAnchor: false) {
+                        return false
+                    }
+                }
+                
+                // Check not already selected in this workout
+                let alreadySelected = exercises.contains { $0.exerciseName.lowercased() == exerciseName }
+                
+                return patternMatches && !alreadySelected
+            } ?? selectedExercises.first { exercise in
+                // Fallback: just avoid duplicates
+                !exercises.contains { $0.exerciseName.lowercased() == exercise.name.lowercased() }
+            }
+            
+            guard let selected = matchingExercise else { continue }
+            
+            // Build notes based on slot, block, and superset info
+            var notes: String? = slot.notes
+            if let block = currentBlock {
+                if block.emphasis == .strength && isCompound {
+                    notes = (notes ?? "") + " Focus on progressive overload. RPE 8-9."
+                } else if block.emphasis == .intensityTechniques {
+                    notes = (notes ?? "") + " Squeeze at contraction, control the negative."
+                }
+                // Deload note
+                if ProgramTemplateLibrary.shared.isDeloadWeek(weekNumber, in: programTemplate) {
+                    notes = "DELOAD: Lighter weight, perfect form. RPE 5-6."
+                }
+            }
+            
+            exercises.append(SmartProgramExercise(
+                id: UUID().uuidString,
+                exerciseName: selected.name,
+                exerciseId: selected.exercise.id,
+                sets: adjustedSets,
+                reps: (adjustedRepsMin + adjustedRepsMax) / 2,  // Use midpoint
+                suggestedWeight: nil,
+                restSeconds: adjustedRest,
+                notes: notes?.trimmingCharacters(in: .whitespaces),
+                isSuperset: false,
+                supersetWith: nil
+            ))
+        }
+        
+        // 6. Add warm-up suggestion as a note on the first exercise
+        let warmUp = WarmUpSuggestion.forDay(dayTemplate)
+        if var firstExercise = exercises.first {
+            let warmUpNote = "🔥 Warm-up (\(warmUp.durationMinutes) min): \(warmUp.description)"
+            exercises[0] = SmartProgramExercise(
+                id: firstExercise.id,
+                exerciseName: firstExercise.exerciseName,
+                exerciseId: firstExercise.exerciseId,
+                sets: firstExercise.sets,
+                reps: firstExercise.reps,
+                suggestedWeight: firstExercise.suggestedWeight,
+                restSeconds: firstExercise.restSeconds,
+                notes: warmUpNote,
+                isSuperset: firstExercise.isSuperset,
+                supersetWith: firstExercise.supersetWith
+            )
+        }
+        
+        // 7. Add finisher if this day template has one and the block calls for it
+        // Finisher info is stored in the last slot with role .finisher
+        if dayTemplate.hasFinisher, let block = currentBlock, block.finishersPerWeek > 0 {
+            if let finisherSlot = dayTemplate.exerciseSlots.first(where: { $0.role == .finisher }),
+               let finisherNotes = finisherSlot.notes {
+                exercises.append(SmartProgramExercise(
+                    id: UUID().uuidString,
+                    exerciseName: "🔥 Finisher",
+                    exerciseId: nil,
+                    sets: 1,
+                    reps: 1,
+                    suggestedWeight: nil,
+                    restSeconds: 0,
+                    notes: finisherNotes,
+                    isSuperset: false,
+                    supersetWith: nil
+                ))
+            }
+        }
+        
+        let estimatedDuration = programTemplate.goalTrack == .lean ? 45 : 55
+        
+        return SmartProgramDay(
+            id: UUID().uuidString,
+            dayNumber: dayNumber,
+            name: dayTemplate.name,
+            exercises: exercises,
+            targetDuration: estimatedDuration,
+            restBetweenSets: exercises.first?.restSeconds ?? 90,
             isCompleted: false,
             completedDate: nil,
             actualDuration: nil,

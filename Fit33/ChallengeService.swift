@@ -12,26 +12,43 @@ import HealthKit
 
 // MARK: - Flexible Date Parsing
 
+/// Cached date formatters to avoid expensive re-allocation on every call
+/// DateFormatter creation is ~10x more expensive than reusing a cached instance
+private enum ChallengeFormatters {
+    static let iso8601WithFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    
+    static let iso8601Standard: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    
+    static let dateOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+}
+
 /// Parses dates from various formats (DATE "2026-02-01" or TIMESTAMPTZ "2026-02-01T00:00:00+00:00")
 func parseFlexibleDate(_ string: String) -> Date {
-    // Try ISO8601 with time first
-    let iso8601Formatter = ISO8601DateFormatter()
-    iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = iso8601Formatter.date(from: string) {
+    // Try ISO8601 with fractional seconds first
+    if let date = ChallengeFormatters.iso8601WithFractional.date(from: string) {
         return date
     }
     
     // Try without fractional seconds
-    iso8601Formatter.formatOptions = [.withInternetDateTime]
-    if let date = iso8601Formatter.date(from: string) {
+    if let date = ChallengeFormatters.iso8601Standard.date(from: string) {
         return date
     }
     
     // Try date-only format (PostgreSQL DATE type)
-    let dateOnlyFormatter = DateFormatter()
-    dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-    dateOnlyFormatter.timeZone = TimeZone(identifier: "UTC")
-    if let date = dateOnlyFormatter.date(from: string) {
+    if let date = ChallengeFormatters.dateOnly.date(from: string) {
         return date
     }
     
@@ -434,9 +451,7 @@ class ChallengeService: ObservableObject {
         startDate: Date = Date(), // Today - challenge starts when opponent accepts
         durationDays: Int = 7
     ) async -> UUID? {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let startDateStr = dateFormatter.string(from: startDate)
+        let startDateStr = ChallengeFormatters.dateOnly.string(from: startDate)
         
         // Try RPC first (preferred - atomic transaction in DB)
         if let challengeId = await createChallengeViaRPC(
@@ -540,14 +555,8 @@ class ChallengeService: ObservableObject {
         
         let challengeId = UUID()
         let endDate: String
-        if let start = {
-            let df = DateFormatter()
-            df.dateFormat = "yyyy-MM-dd"
-            return df.date(from: startDateStr)
-        }() {
-            let df = DateFormatter()
-            df.dateFormat = "yyyy-MM-dd"
-            endDate = df.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
+        if let start = ChallengeFormatters.dateOnly.date(from: startDateStr) {
+            endDate = ChallengeFormatters.dateOnly.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
         } else {
             endDate = startDateStr
         }
@@ -728,9 +737,7 @@ class ChallengeService: ObservableObject {
         startDate: Date = Date(),
         durationDays: Int = 7
     ) async -> UUID? {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let startDateStr = dateFormatter.string(from: startDate)
+        let startDateStr = ChallengeFormatters.dateOnly.string(from: startDate)
         
         // Try RPC first
         do {
@@ -797,10 +804,8 @@ class ChallengeService: ObservableObject {
         
         let challengeId = UUID()
         let endDateStr: String = {
-            let df = DateFormatter()
-            df.dateFormat = "yyyy-MM-dd"
-            if let start = df.date(from: startDateStr) {
-                return df.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
+            if let start = ChallengeFormatters.dateOnly.date(from: startDateStr) {
+                return ChallengeFormatters.dateOnly.string(from: Calendar.current.date(byAdding: .day, value: durationDays, to: start) ?? start)
             }
             return startDateStr
         }()
@@ -889,8 +894,14 @@ class ChallengeService: ObservableObject {
     
     func fetchActiveGroupChallenges() async {
         do {
+            struct TimezoneParams: Encodable {
+                let p_timezone: String
+            }
+            
             let result: [ActiveGroupChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_active_group_challenges")
+                .rpc("get_active_group_challenges", params: TimezoneParams(
+                    p_timezone: TimeZone.current.identifier
+                ))
                 .execute()
                 .value
             
@@ -1034,11 +1045,13 @@ class ChallengeService: ObservableObject {
             struct LogParams: Encodable {
                 let p_challenge_id: String
                 let p_progress: Int
+                let p_timezone: String
             }
             try await SupabaseManager.shared.supabaseClient
                 .rpc("log_group_challenge_progress", params: LogParams(
                     p_challenge_id: challengeId.uuidString,
-                    p_progress: progressValue
+                    p_progress: progressValue,
+                    p_timezone: TimeZone.current.identifier
                 ))
                 .execute()
             
@@ -1087,7 +1100,9 @@ class ChallengeService: ObservableObject {
         print("🔄 [CHALLENGES] Syncing HealthKit data to \(activeGroupChallenges.count) active group challenges...")
         
         for challenge in activeGroupChallenges {
-            guard challenge.isActive, challenge.iHaveAccepted else { continue }
+            // Sync if user has accepted, even if challenge is still "pending" (waiting for others)
+            // This ensures early accepters get credit for progress before all members join
+            guard challenge.iHaveAccepted else { continue }
             
             let progressValue = await calculateProgressFromHealthKit(
                 challengeType: challenge.challengeType,
@@ -1176,22 +1191,27 @@ class ChallengeService: ObservableObject {
             if accept {
                 print("✅ [ACCEPT FLOW] Step 1: RPC successful - starting data refresh")
                 
-                // Fetch fresh data from server
+                // Fetch fresh data from server (both 1v1 AND group challenges)
                 await fetchPendingInvites()
                 await fetchActiveChallenges()
+                await fetchActiveGroupChallenges()  // CRITICAL: Group challenge may have been accepted via 1v1 path
                 await fetchPendingSentChallenges()
                 
-                print("📊 [ACCEPT FLOW] Step 2: After initial fetch - Active: \(activeChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
+                print("📊 [ACCEPT FLOW] Step 2: After initial fetch - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
                 
                 // IMPORTANT: Sync existing progress from today
                 print("🔄 [ACCEPT FLOW] Step 3: Syncing existing HealthKit progress...")
                 await syncExistingProgressOnAccept(challengeId: challengeId, inviteDetails: inviteDetails)
                 
+                // Also sync group challenge progress if this was a group challenge
+                await syncExistingProgressToGroupChallenge(challengeId: challengeId)
+                
                 // Fetch AGAIN after syncing our progress so the widget shows updated numbers
                 print("🔄 [ACCEPT FLOW] Step 4: Fetching active challenges AGAIN after progress sync...")
                 await fetchActiveChallenges()
+                await fetchActiveGroupChallenges()
                 
-                print("📊 [ACCEPT FLOW] Step 5: Final state - Active: \(activeChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
+                print("📊 [ACCEPT FLOW] Step 5: Final state - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
                 print("✅ [ACCEPT FLOW] Complete - widget should now show correct progress")
             } else {
                 print("✅ [CHALLENGES] Declined challenge - refreshing pending invites")
@@ -1413,14 +1433,11 @@ class ChallengeService: ObservableObject {
                 let p_workout_id: String?
             }
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            
             let _: Bool = try await SupabaseManager.shared.supabaseClient
                 .rpc("log_challenge_progress", params: LogProgressParams(
                     p_challenge_id: challengeId.uuidString,
                     p_progress_value: progressValue,
-                    p_progress_date: dateFormatter.string(from: date),
+                    p_progress_date: ChallengeFormatters.dateOnly.string(from: date),
                     p_source: source,
                     p_workout_id: workoutId?.uuidString
                 ))
@@ -1505,8 +1522,10 @@ class ChallengeService: ObservableObject {
         
         switch challengeType {
         case "steps":
-            // Steps challenge - use today's step count
-            return healthKit.todaySteps
+            // Steps challenge - prefer real-time HealthKitManager, fall back to HealthKitService
+            let managerSteps = HealthKitManager.shared.todaySteps
+            let serviceSteps = healthKit.todaySteps
+            return managerSteps > 0 ? managerSteps : serviceSteps
             
         case "walk":
             // Walk challenge - use walking minutes or distance based on target unit
@@ -1593,11 +1612,6 @@ class ChallengeService: ObservableObject {
     /// Sync ALL tracking data (hydration, meals, HealthKit) to active challenges.
     /// Call this on foreground, after any log event, and periodically.
     func syncAllTrackingToChallenges() async {
-        let allChallenges = activeChallenges + activeGroupChallenges.compactMap { group -> ActiveChallenge? in
-            // Skip group challenges — they have their own sync method
-            return nil
-        }
-        
         guard !activeChallenges.isEmpty || !activeGroupChallenges.isEmpty else { return }
         
         print("🔄 [CHALLENGES] Universal sync: pushing all tracking data to challenges...")
@@ -2107,6 +2121,55 @@ class ChallengeProgressResolver: ObservableObject {
         let value = Double(liveProgress(for: challenge))
         return min(1.0, value / Double(target))
     }
+    
+    // MARK: - Group Challenge Live Progress
+    
+    /// Returns live "my today" progress for a group challenge, using the same
+    /// HealthKit / tracking-service data that the 1v1 resolver uses.
+    /// Falls back to the member's DB `todayProgress` when no local data is available.
+    func liveProgress(for challenge: ActiveGroupChallenge, serverValue: Int = 0) -> Int {
+        let resolvedType = challenge.resolvedType
+        
+        switch resolvedType {
+        case .steps:
+            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
+            return steps > 0 ? steps : serverValue
+            
+        case .hydrate:
+            let totalMl = hydrationService.todayTotal
+            if challenge.targetUnit.lowercased() == "oz" {
+                let totalOz = Int(Double(totalMl) / 29.5735)
+                return totalOz > 0 ? totalOz : serverValue
+            }
+            return totalMl > 0 ? totalMl : serverValue
+            
+        case .protein:
+            let protein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+            return protein > 0 ? protein : serverValue
+            
+        case .calories:
+            let hkCalories = healthKitService.todayCalories
+            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
+            let value = max(hkCalories, mealCalories)
+            return value > 0 ? value : serverValue
+            
+        case .activeMinutes:
+            let minutes = healthKitService.todayActiveMinutes
+            return minutes > 0 ? minutes : serverValue
+            
+        case .walk, .run:
+            let distance = healthKitService.todayDistance
+            let km = distance / 1000.0
+            if challenge.targetUnit.lowercased().contains("min") {
+                let minutes = healthKitService.todayActiveMinutes
+                return minutes > 0 ? minutes : serverValue
+            }
+            return km > 0 ? Int(km) : serverValue
+            
+        case .lift, .workoutStreak:
+            return serverValue
+        }
+    }
 }
 
 // MARK: - Challenge Type Enum
@@ -2301,10 +2364,8 @@ struct ChallengeInvite: Codable, Identifiable {
         self.totalTarget = totalTarget
         self.targetUnit = targetUnit
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        self.startDateString = dateFormatter.string(from: startDate)
-        self.endDateString = dateFormatter.string(from: endDate)
+        self.startDateString = ChallengeFormatters.dateOnly.string(from: startDate)
+        self.endDateString = ChallengeFormatters.dateOnly.string(from: endDate)
         
         self.durationDays = durationDays
         self.creatorId = creatorId
@@ -2486,10 +2547,8 @@ struct ActiveChallenge: Codable, Identifiable {
         self.totalTarget = totalTarget
         self.targetUnit = targetUnit
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        self.startDateString = dateFormatter.string(from: startDate)
-        self.endDateString = dateFormatter.string(from: endDate)
+        self.startDateString = ChallengeFormatters.dateOnly.string(from: startDate)
+        self.endDateString = ChallengeFormatters.dateOnly.string(from: endDate)
         
         self.durationDays = durationDays
         self.daysElapsed = daysElapsed

@@ -318,8 +318,9 @@ struct ChallengePreviewWidget: View {
             if success {
                 print("✅ [CHALLENGE ACCEPT] Challenge accepted successfully!")
                 print("🔄 [CHALLENGE ACCEPT] Refreshing challenges...")
-                // Immediately refresh to show active challenge
+                // Immediately refresh to show active challenge (both 1v1 AND group)
                 await challengeService.fetchActiveChallenges()
+                await challengeService.fetchActiveGroupChallenges()  // Group challenge may appear here
                 await challengeService.fetchPendingInvites()
                 HapticManager.notification(.success)
                 onAccept()

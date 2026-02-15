@@ -1082,6 +1082,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     
                 case "challenge_invite":
                     await ChallengeService.shared.fetchPendingInvites()
+                    // Also fetch group challenges — group invites may arrive as "challenge_invite" type
+                    await ChallengeService.shared.fetchActiveGroupChallenges()
                     
                 case "group_challenge_invite":
                     print("🔄 [NOTIFICATIONS] Group challenge invite received - refreshing group challenges")
@@ -1200,8 +1202,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "challenge_invite":
             // Fetch invites FIRST so the widget has data when dashboard appears
             await ChallengeService.shared.fetchPendingInvites()
+            // Also fetch group challenges — group invites may arrive as "challenge_invite" type
+            await ChallengeService.shared.fetchActiveGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites)")
+            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites, \(ChallengeService.shared.activeGroupChallenges.count) group)")
             
         case "group_challenge_invite":
             await ChallengeService.shared.fetchActiveGroupChallenges()
@@ -1218,6 +1222,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "challenge_accepted", "challenge_progress", "challenge_completed":
             await ChallengeService.shared.fetchPendingSentChallenges()
             await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenge may have been activated
             await ChallengeService.shared.fetchPendingInvites()
             // Navigate to Dashboard so user sees the active challenge widget in the carousel
             DeepLinkManager.shared.pendingDestination = .dashboard

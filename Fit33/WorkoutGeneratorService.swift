@@ -1626,6 +1626,21 @@ class WorkoutGeneratorService: ObservableObject {
             }
             #endif
             
+            // 📦 COOLDOWN PENALTY - Exercises done recently get penalized for freshness
+            // This ensures each auto-gen gives different exercises even if same muscles
+            if let daysSince = ExerciseCooldownTracker.shared.daysSinceLastDone(name) {
+                let cooldown = ExerciseBundleEngine.shared.cooldownDays(for: name)
+                if daysSince < cooldown {
+                    let freshnessPenalty = Double(cooldown - daysSince) * 15.0
+                    score -= freshnessPenalty
+                    #if DEBUG
+                    if freshnessPenalty > 30 {
+                        print("   ❄️ [COOLDOWN] '\(exercise.name ?? "")' penalty -\(Int(freshnessPenalty)) (done \(daysSince) days ago, cooldown \(cooldown)d)")
+                    }
+                    #endif
+                }
+            }
+            
             // 🔄 Add randomness for variety
             score += Double.random(in: 0...30)
             
@@ -1708,6 +1723,7 @@ class WorkoutGeneratorService: ObservableObject {
         var usedEquipmentTypes: [String: Int] = [:]  // Track equipment diversity
         var usedNormalizedMuscles: [String: Int] = [:]  // Track muscle group diversity
         var usedExerciseFamilies: [String: Int] = [:]  // 🆕 Track exercise families (bench press, curl, fly, etc.)
+        var usedExerciseBundles: [String: Int] = [:]  // 📦 Track exercise BUNDLES (press ≈ chest press ≈ push-up)
         var usedBaseMovements: Set<String> = []  // 🆕 Track base movements (prevents Barbell + Smith Machine of same exercise)
         var totalPressCount: Int = 0  // 🆕 Global press cap (max 2 for multi-muscle workouts)
         var hasShoulderExercise: Bool = false  // 🆕 Track if we have at least 1 shoulder exercise when requested
@@ -1912,66 +1928,30 @@ class WorkoutGeneratorService: ObservableObject {
             return baseName
         }
         
+        // 📦 Use the centralized ExerciseBundleEngine for family detection
+        // This ensures auto-gen, programs, and swaps all use the SAME classification
+        let bundleEngine = ExerciseBundleEngine.shared
+        
         func getExerciseFamily(_ name: String) -> String {
-            let n = name.lowercased()
-            // Specific exercise families - order matters (check specific first)
-            
-            // 🎯 ALL CHEST PRESSES grouped together (bench, incline, decline, chest press = same family!)
-            // This prevents workouts with 5 different press variations
-            // 🆕 REVERSE GRIP PRESSES are ALL grouped together to prevent stacking
-            if n.contains("reverse grip") && n.contains("press") { return "reverse_grip_press" }
-            if n.contains("close grip") && n.contains("press") { return "chest_press" }
-            if n.contains("bench press") { return "chest_press" }
-            if n.contains("incline press") && !n.contains("shoulder") { return "chest_press" }
-            if n.contains("decline press") { return "chest_press" }
-            if n.contains("chest press") { return "chest_press" }
-            if n.contains("lever") && n.contains("press") && (n.contains("chest") || n.contains("pec")) { return "chest_press" }
-            // Shoulder presses are separate (includes "shoulders press" for plural variation)
-            if n.contains("overhead press") || n.contains("shoulder press") || n.contains("shoulders press") || n.contains("military press") || n.contains("arnold press") { return "shoulder_press" }
-            // JM Press and Skull Crushers are tricep-focused bench variants
-            if n.contains("jm press") || n.contains("jm bench") { return "skull_crusher" }
-            if n.contains("lying") && n.contains("extension") && n.contains("tricep") { return "skull_crusher" }
-            // Specific curl variations BEFORE generic bicep_curl
-            if n.contains("concentration curl") { return "concentration_curl" }
-            if n.contains("hammer curl") { return "hammer_curl" }
-            if n.contains("preacher curl") { return "preacher_curl" }
-            if n.contains("incline") && n.contains("curl") { return "incline_curl" }
-            if n.contains("cable") && n.contains("curl") && !n.contains("preacher") { return "cable_curl" }
-            // Generic bicep curl (standing curl, etc.)
-            if n.contains("bicep curl") || n.contains("biceps curl") { return "bicep_curl" }
-            if n.contains("tricep extension") || n.contains("triceps extension") { return "tricep_extension" }
-            if n.contains("tricep pushdown") || n.contains("triceps pushdown") || n.contains("rope press") { return "tricep_pushdown" }
-            if n.contains("skull crusher") { return "skull_crusher" }
-            if n.contains("cable fly") || n.contains("cable flye") { return "cable_fly" }
-            if n.contains("dumbbell fly") || n.contains("dumbbell flye") { return "dumbbell_fly" }
-            if n.contains("pec deck") || n.contains("pec fly") { return "pec_fly" }
-            if n.contains("lat pulldown") { return "lat_pulldown" }
-            if n.contains("pull up") || n.contains("pullup") || n.contains("chin up") || n.contains("chinup") { return "pullup" }
-            if n.contains("seated row") { return "seated_row" }
-            // Group ALL bent-over row variations together (paused, regular, wide, etc.)
-            if n.contains("bent over") && n.contains("row") { return "bent_row" }
-            if n.contains("cable row") { return "cable_row" }
-            if n.contains("lateral raise") || n.contains("side raise") { return "lateral_raise" }
-            if n.contains("front raise") { return "front_raise" }
-            if n.contains("rear delt") || n.contains("reverse fly") || n.contains("face pull") { return "rear_delt" }
-            if n.contains("squat") { return "squat" }
-            if n.contains("leg press") { return "leg_press" }
-            if n.contains("leg curl") || n.contains("hamstring curl") { return "leg_curl" }
-            if n.contains("leg extension") { return "leg_extension" }
-            if n.contains("deadlift") { return "deadlift" }
-            if n.contains("lunge") { return "lunge" }
-            // Dips and push-ups (compound chest/tricep movements)
-            if n.contains("dip") { return "dip" }
-            if n.contains("push up") || n.contains("pushup") || n.contains("push-up") { return "pushup" }
-            // Generic fallbacks - include ALL row variations (narrow grip, wide grip, etc.)
-            if n.contains("press") { return "press_other" }
-            if n.contains("curl") { return "curl_other" }
-            if n.contains("fly") || n.contains("flye") { return "fly_other" }
-            // CRITICAL: Check for " row" to avoid matching "narrow" in leg press names
-            if (n.contains(" row") || n.hasPrefix("row")) && !n.contains("upright") { return "row_other" }
-            if n.contains("raise") { return "raise_other" }
-            if n.contains("extension") { return "extension_other" }
-            return "other"
+            return bundleEngine.detectExerciseFamily(name)
+        }
+        
+        /// 📦 Check if adding this exercise would exceed its bundle's max-per-workout limit.
+        /// Bundles group SIMILAR exercises (bench press ≈ chest press ≈ smith press ≈ push-ups).
+        /// This prevents chest workouts from having 3 different press variations.
+        func wouldExceedBundleLimit(_ exerciseName: String) -> Bool {
+            let family = bundleEngine.detectExerciseFamily(exerciseName)
+            guard let bundle = bundleEngine.bundleForFamily(family) else { return false }
+            let currentCount = usedExerciseBundles[bundle.id, default: 0]
+            return currentCount >= bundle.maxPerWorkout
+        }
+        
+        /// 📦 Record that an exercise was selected (update bundle tracking).
+        func recordBundleSelection(_ exerciseName: String) {
+            let family = bundleEngine.detectExerciseFamily(exerciseName)
+            if let bundle = bundleEngine.bundleForFamily(family) {
+                usedExerciseBundles[bundle.id, default: 0] += 1
+            }
         }
         
         // 🆕 Helper: Check if exercise is a combo/core/plank move (not foundational)
@@ -2377,6 +2357,14 @@ class WorkoutGeneratorService: ObservableObject {
                         continue
                     }
                     
+                    // 📦 BUNDLE CHECK - Prevent similar exercises (bench press ≈ chest press ≈ push-up)
+                    if wouldExceedBundleLimit(name) {
+                        #if DEBUG
+                        print("   ⏭️ [PHASE 0 BUNDLE] Skipping '\(name)': bundle limit reached")
+                        #endif
+                        continue
+                    }
+                    
                     // SELECT THIS EXERCISE for required pattern
                     let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
                     let generated = GeneratedExercise(
@@ -2395,6 +2383,7 @@ class WorkoutGeneratorService: ObservableObject {
                     usedNames.insert(nameLower)
                     usedBaseMovements.insert(baseMovement)
                     usedExerciseFamilies[exerciseFamily, default: 0] += 1
+                    recordBundleSelection(name)  // 📦 Track bundle usage
                     requiredPatternsFulfilled.insert(requiredPattern)
                     
                     // Track equipment type
@@ -2515,6 +2504,11 @@ class WorkoutGeneratorService: ObservableObject {
                             continue  // Already have one from this family
                         }
                         
+                        // 📦 BUNDLE CHECK - Prevent similar exercises
+                        if wouldExceedBundleLimit(name) {
+                            continue
+                        }
+                        
                         // Found it - add it to results
                         let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
                         let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
@@ -2537,6 +2531,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let baseMovement = getBaseMovement(nameLower)
                         usedBaseMovements.insert(baseMovement)
                         usedExerciseFamilies[exerciseFamily, default: 0] += 1
+                        recordBundleSelection(name)  // 📦 Track bundle usage
                         requiredPatternsFulfilled.insert(missingPattern)
                         
                         #if DEBUG
@@ -2645,6 +2640,14 @@ class WorkoutGeneratorService: ObservableObject {
                             print("   🚫 [FAMILY CAP] Skipping '\(name)': family '\(exerciseFamily)' already has \(familyCount) exercises (max: \(maxPerFamily))")
                             #endif
                             continue  // Already have max from this family
+                        }
+                        
+                        // 📦 BUNDLE CHECK - Chest press ≈ bench press ≈ smith press = same bundle
+                        if wouldExceedBundleLimit(name) {
+                            #if DEBUG
+                            print("   📦 [BUNDLE] Skipping '\(name)': bundle limit reached")
+                            #endif
+                            continue
                         }
                         
                         // 🆕 EQUIPMENT MIX CHECK: Enforce balanced mix (machines, cables, free weights)
@@ -2956,6 +2959,7 @@ class WorkoutGeneratorService: ObservableObject {
                         usedNormalizedMuscles[normalizedMuscle] = (usedNormalizedMuscles[normalizedMuscle] ?? 0) + 1
                         usedEquipmentTypes[equipType] = (usedEquipmentTypes[equipType] ?? 0) + 1
                         usedExerciseFamilies[exerciseFamily] = (usedExerciseFamilies[exerciseFamily] ?? 0) + 1
+                        recordBundleSelection(name)  // 📦 Track bundle usage
                         usedMovementKeywords[movementKeyword] = (usedMovementKeywords[movementKeyword] ?? 0) + 1
                         equipmentTypesRepresented.insert(equipType)
                         takenPerType[equipType] = currentCount + 1
@@ -3173,6 +3177,9 @@ class WorkoutGeneratorService: ObservableObject {
                     let familyCount = usedExerciseFamilies[exerciseFamily] ?? 0
                     if exerciseFamily != "other" && familyCount >= 1 { continue }
                     
+                    // 📦 BUNDLE CHECK - Chest press ≈ bench press = same bundle
+                    if wouldExceedBundleLimit(name) { continue }
+                    
                     let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
                     let equipmentLower = (exercise.equipment ?? "").lowercased()
                     let exerciseEquipType = getEquipmentType(equipmentLower)
@@ -3197,6 +3204,7 @@ class WorkoutGeneratorService: ObservableObject {
                     usedNormalizedMuscles[normalizedMuscle] = (usedNormalizedMuscles[normalizedMuscle] ?? 0) + 1
                     usedEquipmentTypes[exerciseEquipType] = (usedEquipmentTypes[exerciseEquipType] ?? 0) + 1
                     usedExerciseFamilies[exerciseFamily] = (usedExerciseFamilies[exerciseFamily] ?? 0) + 1
+                    recordBundleSelection(name)  // 📦 Track bundle usage
                     
                     // 🆕 Track global press count and shoulder exercises
                     if nameLower.contains("press") {
@@ -3258,6 +3266,17 @@ class WorkoutGeneratorService: ObservableObject {
             if exerciseFamily != "other" && familyCount >= 1 {
                 #if DEBUG
                 print("   🚫 [FAMILY] Skipping '\(name)': already have 1 from \(exerciseFamily) family")
+                #endif
+                continue
+            }
+            
+            // 📦 BUNDLE CHECK - Bench press ≈ chest press ≈ smith press ≈ dips = same "horizontal_press" bundle
+            // This is THE key check that prevents a chest workout from having 3 press variations
+            if wouldExceedBundleLimit(name) {
+                #if DEBUG
+                if let bundle = bundleEngine.bundleForExercise(named: name) {
+                    print("   📦 [BUNDLE] Skipping '\(name)': \(bundle.displayName) bundle at max (\(usedExerciseBundles[bundle.id, default: 0])/\(bundle.maxPerWorkout))")
+                }
                 #endif
                 continue
             }
@@ -3420,6 +3439,7 @@ class WorkoutGeneratorService: ObservableObject {
             usedMovementKeywords[movementKeyword] = movementKeywordCount + 1
             usedEquipmentTypes[exerciseEquipType] = equipTypeCount + 1
             usedExerciseFamilies[exerciseFamily] = familyCount + 1  // 🆕 Track exercise family
+            recordBundleSelection(nameLower)  // 📦 Track exercise bundle
             if let pattern = exercise.movementPattern?.lowercased() {
                 usedMovementPatterns[pattern] = (usedMovementPatterns[pattern] ?? 0) + 1
             }
@@ -3680,6 +3700,12 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         #endif
+        
+        // 📦 Record selected exercises to cooldown tracker for cross-session variety
+        // Next time user generates a workout, these exercises will be penalized
+        // to encourage fresh movement and equipment variations
+        let completedNames = sortedResult.map { $0.name }
+        ExerciseCooldownTracker.shared.recordWorkoutExercises(completedNames)
         
         return sortedResult
     }

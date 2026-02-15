@@ -256,14 +256,25 @@ final class ExerciseIntelligenceEngine {
     
     // MARK: - Initialization
     
+    /// Track whether a load is already in flight to prevent duplicate network requests
+    private var isLoading = false
+    
     private init() {
         loadExerciseData()
     }
     
     func loadExerciseData() {
+        // BUG FIX: Guard against double-loading. init() calls this, and then
+        // Fit33App.runIntelligenceInit() calls it again explicitly.
+        // Without this guard, exercises are fetched from Supabase twice (~6500 each time),
+        // wasting network bandwidth and holding ~2x memory during the overlap.
+        guard !isInitialized && !isLoading else { return }
+        isLoading = true
+        
         // Load in background with low priority to not block UI
         Task(priority: .background) {
             await loadFromDatabase()
+            await MainActor.run { self.isLoading = false }
         }
     }
     

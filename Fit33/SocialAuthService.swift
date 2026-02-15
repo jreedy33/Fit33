@@ -99,7 +99,11 @@ class SocialAuthService: NSObject, ObservableObject {
         var randomBytes = [UInt8](repeating: 0, count: length)
         let errorCode = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
         if errorCode != errSecSuccess {
-            fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+            // Fallback to arc4random if SecRandomCopyBytes fails (extremely rare)
+            print("⚠️ [AUTH] SecRandomCopyBytes failed with OSStatus \(errorCode), using fallback")
+            for i in 0..<length {
+                randomBytes[i] = UInt8(arc4random_uniform(256))
+            }
         }
         
         let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")

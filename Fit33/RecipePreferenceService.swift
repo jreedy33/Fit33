@@ -43,9 +43,120 @@ class RecipePreferenceService: ObservableObject {
         loadLocalPreferences()
         hasPreferencesSet = !likedIngredients.isEmpty || !dislikedIngredients.isEmpty
         
-        // Sync from cloud in background
+        // Sync from cloud in background and learn from food history
         Task {
             await syncPreferencesFromCloud()
+            await learnFromFoodHistory()
+        }
+    }
+    
+    // MARK: - Learn From Food History (Auto-detect preferences)
+    
+    /// Analyze user's food logging history to automatically learn their ingredient preferences
+    /// This powers the "smart" recipe recommendations based on what users actually eat
+    func learnFromFoodHistory() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        let frequentFoods = FoodDatabaseService.shared.frequentFoods
+        guard !frequentFoods.isEmpty else {
+            print("📊 [RECIPE PREFS] No food history yet - using defaults")
+            return
+        }
+        
+        print("📊 [RECIPE PREFS] Learning from \(frequentFoods.count) frequently logged foods...")
+        
+        // Extract ingredient categories from user's most logged foods
+        var detectedIngredients: [String: Int] = [:] // ingredient -> weight
+        
+        for food in frequentFoods {
+            let foodName = food.name.lowercased()
+            let weight = food.usageCount
+            
+            // Smart ingredient extraction from food names
+            let ingredientMappings: [(keywords: [String], ingredient: String)] = [
+                // Proteins
+                (["chicken breast", "chicken thigh", "chicken wing", "chicken drumstick", "rotisserie chicken", "chicken, ground"], "chicken"),
+                (["salmon", "smoked salmon"], "salmon"),
+                (["tuna"], "tuna"),
+                (["tilapia", "cod", "halibut", "mahi", "trout", "fish"], "fish"),
+                (["shrimp", "prawn"], "shrimp"),
+                (["ground beef", "steak", "sirloin", "ribeye", "filet", "brisket", "beef"], "beef"),
+                (["turkey breast", "turkey, ground", "turkey bacon", "turkey sausage", "turkey"], "turkey"),
+                (["pork tenderloin", "pork chop", "bacon", "ham", "pork"], "pork"),
+                (["egg", "eggs"], "eggs"),
+                (["tofu", "tempeh"], "tofu"),
+                
+                // Grains & Carbs
+                (["rice", "white rice", "brown rice", "jasmine rice", "basmati"], "rice"),
+                (["oatmeal", "oats", "overnight oats"], "oats"),
+                (["quinoa"], "quinoa"),
+                (["pasta", "spaghetti", "penne", "noodle"], "pasta"),
+                (["bread", "toast", "bagel", "english muffin"], "bread"),
+                (["sweet potato"], "sweet potato"),
+                (["potato"], "potato"),
+                
+                // Dairy
+                (["greek yogurt", "yogurt"], "yogurt"),
+                (["cottage cheese"], "cottage cheese"),
+                (["cheese", "cheddar", "mozzarella", "parmesan"], "cheese"),
+                (["milk"], "milk"),
+                
+                // Vegetables
+                (["broccoli"], "broccoli"),
+                (["spinach"], "spinach"),
+                (["avocado"], "avocado"),
+                (["bell pepper", "pepper"], "bell pepper"),
+                (["asparagus"], "asparagus"),
+                
+                // Fruits
+                (["banana"], "banana"),
+                (["apple"], "apple"),
+                (["berries", "blueberries", "strawberries", "raspberries"], "berries"),
+                
+                // Nuts & Seeds
+                (["almonds", "almond butter"], "almonds"),
+                (["peanut butter", "peanuts"], "peanut butter"),
+                
+                // Supplements
+                (["protein powder", "whey", "protein shake"], "protein"),
+            ]
+            
+            for mapping in ingredientMappings {
+                if mapping.keywords.contains(where: { foodName.contains($0) }) {
+                    detectedIngredients[mapping.ingredient, default: 0] += weight
+                    break // Only match first category per food
+                }
+            }
+        }
+        
+        // Sort by weight (most logged ingredients first)
+        let sortedIngredients = detectedIngredients.sorted { $0.value > $1.value }
+        let topIngredients = sortedIngredients.prefix(8).map { $0.key }
+        
+        if !topIngredients.isEmpty {
+            // Merge detected preferences with implicit tracking
+            for (ingredient, weight) in sortedIngredients {
+                ingredientCounts[ingredient, default: 0] += weight * 3 // Triple weight for actual logged foods
+            }
+            
+            // If user has no explicit likes set, auto-set from history
+            if likedIngredients.isEmpty {
+                // Use top 5 as auto-detected likes
+                let autoLikes = Array(topIngredients.prefix(5))
+                likedIngredients = autoLikes
+                hasPreferencesSet = true
+                saveLocalPreferences()
+                
+                print("🧠 [RECIPE PREFS] Auto-detected preferences from food history:")
+                for (i, ingredient) in autoLikes.enumerated() {
+                    let weight = detectedIngredients[ingredient] ?? 0
+                    print("  \(i+1). \(ingredient) (logged \(weight)x)")
+                }
+            } else {
+                // Boost existing likes with food history data
+                saveLocalPreferences()
+                print("🧠 [RECIPE PREFS] Boosted existing preferences with food history data")
+            }
         }
     }
     
@@ -283,8 +394,14 @@ class RecipePreferenceService: ObservableObject {
     
     /// Get recipes based on user's preferred ingredients (both explicit and implicit)
     /// Uses SMART MATCHING - finds recipes that USE your ingredients, not require ALL of them
+    /// Enhanced: pulls from actual food logging history for accuracy
     func getPersonalizedRecipes(count: Int = 10) async -> [SpoonacularRecipe] {
         isLoadingRecommendations = true
+        
+        // Re-learn from food history if we haven't recently
+        if ingredientCounts.isEmpty || likedIngredients.isEmpty {
+            await learnFromFoodHistory()
+        }
         
         // LOG: User preferences at start
         logger.logPreferences(liked: likedIngredients, disliked: dislikedIngredients)
@@ -292,11 +409,11 @@ class RecipePreferenceService: ObservableObject {
         // Combine explicit likes with implicit preferences
         var preferredIngredients: [String] = []
         
-        // Add explicit likes first (highest priority)
+        // Add explicit likes first (highest priority - includes auto-detected from food history)
         preferredIngredients.append(contentsOf: likedIngredients)
         
-        // Add top implicit ingredients (from behavior)
-        let implicitIngredients = getTopIngredients(limit: 3)
+        // Add top implicit ingredients (from search/behavior tracking)
+        let implicitIngredients = getTopIngredients(limit: 5)
         for ingredient in implicitIngredients {
             if !preferredIngredients.contains(where: { $0.lowercased() == ingredient.lowercased() }) {
                 preferredIngredients.append(ingredient)

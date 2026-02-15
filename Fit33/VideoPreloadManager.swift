@@ -24,15 +24,17 @@ final class VideoPreloadManager: ObservableObject {
     static let shared = VideoPreloadManager()
     
     // MARK: - Configuration
+    // ⚡️ MEMORY FIX: Aggressively reduced to prevent 600MB+ footprint.
+    // Each AVPlayer with buffered video = 20-50MB. We had 3 caching systems competing.
     private struct Config {
-        static let maxCachedPlayers = 10          // Reduced for stability
-        static let prefetchAhead = 5              // Reduced for performance
-        static let prefetchBehind = 2             // Reduced for performance
-        static let maxConcurrentDownloads = 2     // Reduced to prevent overload
-        static let bufferDuration: TimeInterval = 2.0  // Reduced buffer
-        static let lowMemoryThreshold = 8         // More aggressive memory management
-        static let scrollVelocityThreshold: CGFloat = 50 // More reasonable threshold
-        static let debounceInterval: TimeInterval = 0.3 // Debounce rapid updates
+        static let maxCachedPlayers = 3           // Was 10 — only cache what's visible
+        static let prefetchAhead = 2              // Was 5
+        static let prefetchBehind = 0             // Was 2 — don't cache what user already scrolled past
+        static let maxConcurrentDownloads = 1     // Was 2 — one at a time to avoid memory spikes
+        static let bufferDuration: TimeInterval = 1.5  // Was 2.0 — less buffer = less RAM
+        static let lowMemoryThreshold = 1         // Was 8 — on low memory, keep only 1
+        static let scrollVelocityThreshold: CGFloat = 50
+        static let debounceInterval: TimeInterval = 0.3
     }
     
     // MARK: - State
@@ -497,49 +499,14 @@ final class VideoPreloadManager: ObservableObject {
     
     // MARK: - Database Loading
     
+    // ⚡️ MEMORY FIX: Removed duplicate Supabase fetch. VideoPreloadManager was fetching
+    // 2000+ exercise→video mappings into its own dictionaries, duplicating what
+    // VideoStreamingService already fetches and caches. Now we just rely on
+    // VideoStreamingService.shared.videoFilenameCache via getVideoFilename() fallback.
     private func loadVideoMappingsFromDatabase() {
-        prefetchLog("Starting to load video mappings from database...", level: "DB")
-        
-        Task {
-            do {
-                prefetchLog("Fetching from Supabase...", level: "DB")
-                
-                // Limit initial fetch to prevent overwhelming the system
-                let response = try await SupabaseManager.shared.supabaseClient
-                    .from("exercises")
-                    .select("name, video_filename, video_code")
-                    .not("video_filename", operator: .is, value: "null")
-                    .limit(2000) // Limit initial load for faster startup
-                    .execute()
-                
-                struct VideoMapping: Codable {
-                    let name: String
-                    let video_filename: String?
-                    let video_code: String?
-                }
-                
-                let mappings = try JSONDecoder().decode([VideoMapping].self, from: response.data)
-                
-                prefetchLog("Decoded \(mappings.count) mappings, caching...", level: "DB")
-                
-                // Cache mappings in batches to prevent blocking
-                await MainActor.run {
-                    var successCount = 0
-                    for mapping in mappings {
-                        if let filename = mapping.video_filename, !filename.isEmpty {
-                            self.videoFilenameCache[mapping.name.lowercased()] = filename
-                            if let code = mapping.video_code {
-                                self.videoCodeCache[code] = filename
-                            }
-                            successCount += 1
-                        }
-                    }
-                    prefetchLog("✅ Cached \(successCount) video mappings", level: "DB")
-                }
-            } catch {
-                prefetchLog("❌ Failed to load mappings: \(error)", level: "ERROR")
-            }
-        }
+        prefetchLog("Skipping duplicate mapping fetch — using VideoStreamingService cache", level: "DB")
+        // No-op: videoFilenameCache and videoCodeCache are no longer populated here.
+        // getVideoFilename() already falls back to VideoStreamingService.shared.videoFilenameCache.
     }
     
     // MARK: - Memory Management

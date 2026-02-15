@@ -43,6 +43,13 @@ final class ProfilePhotoCache {
         print("🗑️ Profile photo cache cleared")
     }
     
+    /// ⚡️ MEMORY FIX: Clear only in-memory image (disk stays for fast reload).
+    /// Called by MemoryPressureHandler during emergency cleanup.
+    func clearMemoryOnly() {
+        memoryCache = nil
+        print("💾 Profile photo memory cache cleared (disk retained)")
+    }
+    
     private func loadFromDisk() {
         guard let url = cacheURL,
               fileManager.fileExists(atPath: url.path),

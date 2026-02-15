@@ -37,7 +37,7 @@ struct AutoWorkoutPreviewView: View {
     // ⚡️ Warmup service for instant "Go!" transitions
     @StateObject private var warmupService = PreviewWarmupService.shared
     
-    private let themeColor: Color = .purple
+    private let themeColor: Color = .blue
     
     init(primaryMuscles: [String], secondaryMuscles: [String], equipment: [String], initialExercises: [GeneratedExercise], targetDurationMinutes: Int = 45, restBetweenSets: Int = 60) {
         self.primaryMuscles = primaryMuscles
@@ -318,10 +318,8 @@ struct AutoWorkoutPreviewView: View {
         }
         .onAppear {
             // 🚀 PERF: Fallback prefetch (primary prefetch happens in generator before navigation)
-            // This ensures videos are prefetched even if navigating from elsewhere
-            // VideoStreamingService skips already-prefetching videos, so this is safe to call
-            let exerciseNames = exercises.map { $0.name }
-            VideoStreamingService.shared.prefetchVideos(for: exerciseNames)
+            // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand in detail view.
+            // Was prefetching all exercises at once, creating multiple AVPlayers.
             
             // ⚡️ WARMUP: Pre-load all data for ActiveWorkoutView while user browses preview
             // This ensures instant "Go!" transitions with no lag
@@ -401,9 +399,8 @@ struct AutoWorkoutPreviewView: View {
             .disabled(isRegenerating)
         }
         .padding(14)
-        .background(Color.cardBackground)
+        .sleekCard(cornerRadius: 24, accentColor: themeColor)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 8, x: 0, y: 3)
     }
     
     // MARK: - Helper Functions
@@ -819,11 +816,8 @@ struct AutoExerciseCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 25)
-                .fill(Color.cardBackground)
-                .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
-        )
+        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 
@@ -1127,8 +1121,7 @@ struct ExerciseDataDetailView: View {
             }
         }
         .onAppear {
-            // Prefetch video for this exercise
-            VideoStreamingService.shared.prefetchVideos(for: [exerciseData.name])
+            // ⚡️ MEMORY FIX: Disabled — video loads on-demand via RemoteVideoPlayerView
         }
     }
     
@@ -1170,10 +1163,8 @@ struct ExerciseDataDetailView: View {
             content()
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(colorScheme == .dark ? Color(.systemGray6).opacity(0.5) : Color(.systemGray6).opacity(0.5))
-        )
+        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     
     // MARK: - Muscle Tag
@@ -1374,8 +1365,7 @@ struct GeneratedExerciseDetailView: View {
         .navigationTitle("Exercise Details")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Prefetch video for this exercise
-            VideoStreamingService.shared.prefetchVideos(for: [exercise.name])
+            // ⚡️ MEMORY FIX: Disabled — video loads on-demand via RemoteVideoPlayerView
         }
     }
     
@@ -1399,9 +1389,7 @@ struct GeneratedExerciseDetailView: View {
             content()
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(colorScheme == .dark ? Color(.systemGray6).opacity(0.5) : Color(.systemGray6).opacity(0.5))
-        )
+        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

@@ -64,6 +64,14 @@ class RealtimeService: ObservableObject {
             return
         }
         
+        // BUG FIX: Disconnect existing channels BEFORE creating new ones.
+        // Without this, calling connect() twice (e.g. from .task + .active scenePhase)
+        // creates duplicate channels, causing "postgresChange after joining" warnings.
+        if isConnected || friendshipsChannel != nil {
+            print("🔄 [REALTIME] Cleaning up existing channels before reconnecting...")
+            await disconnect()
+        }
+        
         print("🔄 [REALTIME] Connecting to realtime channels...")
         
         // Subscribe to all relevant channels
@@ -306,15 +314,17 @@ class RealtimeService: ObservableObject {
             }
         }
         
+        // Route MY status changes (e.g. I accepted a challenge) to the proper handler
         Task {
             for await action in participantStatusChanges {
-                await handleChallengeProgress(action, userId: userId)
+                await handleParticipantStatusChange(action, userId: userId)
             }
         }
         
+        // Route ALL participant updates (opponent accepting, progress changes) to the proper handler
         Task {
             for await action in allParticipantUpdates {
-                await handleChallengeProgress(action, userId: userId)
+                await handleAllParticipantUpdates(action, userId: userId)
             }
         }
         
@@ -361,17 +371,25 @@ class RealtimeService: ObservableObject {
         let oldRecord = action.oldRecord as? [String: Any]
         let oldStatus = (oldRecord?["status"] as? String) ?? ""
         let newStatus = (record["status"] as? String) ?? ""
+        let totalProgress = (record["total_progress"] as? Int) ?? 0
+        let oldTotalProgress = (oldRecord?["total_progress"] as? Int) ?? 0
         
-        print("🔔 [REALTIME] MY challenge participant status: \(oldStatus) → \(newStatus) (challenge: \(challengeId))")
+        print("🔔 [REALTIME] MY challenge participant: status \(oldStatus) → \(newStatus), progress \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))")
         
         if oldStatus == "pending" && newStatus == "accepted" {
-            print("✅ [REALTIME] I accepted a challenge - refreshing all lists")
+            print("✅ [REALTIME] I accepted a challenge - refreshing all lists (1v1 + group)")
             await ChallengeService.shared.fetchPendingInvites()  // Remove from pending
-            await ChallengeService.shared.fetchActiveChallenges()  // Add to active
+            await ChallengeService.shared.fetchActiveChallenges()  // Add to active (1v1)
+            await ChallengeService.shared.fetchActiveGroupChallenges()  // Add to active (group)
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
             print("❌ [REALTIME] I declined a challenge")
             await ChallengeService.shared.fetchPendingInvites()
+        } else if totalProgress != oldTotalProgress {
+            // My progress was confirmed in DB — refresh group challenges to show DB-backed values
+            print("📊 [REALTIME] My own progress confirmed in DB: \(totalProgress) — refreshing")
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchActiveGroupChallenges()
         }
     }
     
@@ -383,20 +401,28 @@ class RealtimeService: ObservableObject {
         let oldRecord = action.oldRecord as? [String: Any]
         let oldStatus = (oldRecord?["status"] as? String) ?? ""
         let newStatus = (record["status"] as? String) ?? ""
+        let totalProgress = (record["total_progress"] as? Int) ?? 0
+        let oldTotalProgress = (oldRecord?["total_progress"] as? Int) ?? 0
         
-        // Skip if it's my own update (already handled above)
+        // Skip if it's my own update (already handled by handleParticipantStatusChange)
         guard participantUserId != userId.uuidString else { return }
         
-        print("🔔 [REALTIME] OPPONENT challenge participant: \(oldStatus) → \(newStatus) (challenge: \(challengeId))")
+        print("🔔 [REALTIME] OPPONENT challenge participant: \(oldStatus) → \(newStatus), progress: \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))")
         
         if oldStatus == "pending" && newStatus == "accepted" {
-            print("✅ [REALTIME] Opponent ACCEPTED my challenge - moving from sent → active")
+            print("✅ [REALTIME] Opponent ACCEPTED my challenge - moving from sent → active (1v1 + group)")
             await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from sent
-            await ChallengeService.shared.fetchActiveChallenges()  // Add to active
+            await ChallengeService.shared.fetchActiveChallenges()  // Add to active (1v1)
+            await ChallengeService.shared.fetchActiveGroupChallenges()  // Add to active (group)
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
             print("❌ [REALTIME] Opponent DECLINED my challenge - removing from sent")
             await ChallengeService.shared.fetchPendingSentChallenges()
+        } else if totalProgress != oldTotalProgress {
+            // Opponent's progress changed (they logged new steps/hydration/etc.)
+            print("📊 [REALTIME] Opponent progress changed: \(oldTotalProgress) → \(totalProgress) - refreshing all challenges")
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.fetchActiveGroupChallenges()
         }
     }
     
@@ -468,11 +494,13 @@ class RealtimeService: ObservableObject {
         // Refresh all challenge states - this handles when opponent accepts/declines/cancels
         print("🔄 [REALTIME] Refreshing all challenge data...")
         await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
         await ChallengeService.shared.fetchPendingInvites()  // This will remove cancelled challenges
         await ChallengeService.shared.fetchPendingSentChallenges()
         
         print("✅ [REALTIME] Challenge data refreshed")
-        print("   Active: \(ChallengeService.shared.activeChallenges.count)")
+        print("   Active 1v1: \(ChallengeService.shared.activeChallenges.count)")
+        print("   Active Group: \(ChallengeService.shared.activeGroupChallenges.count)")
         print("   Pending Invites: \(ChallengeService.shared.pendingInvites.count)")
         print("   Pending Sent: \(ChallengeService.shared.pendingSentChallenges.count)")
     }
@@ -522,22 +550,30 @@ class RealtimeService: ObservableObject {
     
     private func handleDailyProgressChange(_ record: [String: Any]?, userId: UUID) async {
         guard let record = record,
-              let opponentUserId = record["user_id"] as? String,
-              opponentUserId != userId.uuidString, // Only process OPPONENT's updates, not my own
+              let recordUserId = record["user_id"] as? String,
               let challengeIdString = record["challenge_id"] as? String,
               let challengeId = UUID(uuidString: challengeIdString),
               let progressValue = record["progress_value"] as? Int else {
             return
         }
         
+        let isOwnUpdate = recordUserId == userId.uuidString
         let targetHit = record["target_hit"] as? Bool ?? false
         let progressDate = record["progress_date"] as? String ?? ""
         
+        if isOwnUpdate {
+            // Own progress was written to DB — refresh group challenges so widget shows updated data
+            print("📊 [REALTIME] Own daily progress confirmed in DB: \(progressValue) — refreshing group challenges")
+            await ChallengeService.shared.fetchActiveGroupChallenges()
+            return
+        }
+        
+        // Opponent's daily progress changed
         print("🎯 [REALTIME] Opponent daily progress: \(progressValue), target hit: \(targetHit)")
         
         let payload = DailyProgressPayload(
             challengeId: challengeId,
-            opponentId: UUID(uuidString: opponentUserId) ?? UUID(),
+            opponentId: UUID(uuidString: recordUserId) ?? UUID(),
             progressDate: progressDate,
             progressValue: progressValue,
             targetHit: targetHit
@@ -546,8 +582,9 @@ class RealtimeService: ObservableObject {
         // Trigger callback (ChallengeDetailView listens to this)
         onOpponentDailyProgressUpdated?(payload)
         
-        // Refresh active challenges so the list view also updates
+        // Refresh BOTH 1v1 and group challenges so all widgets update
         await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
         
         // Haptic feedback when opponent hits their daily target
         if targetHit {

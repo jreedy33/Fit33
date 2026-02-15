@@ -120,12 +120,15 @@ GRANT EXECUTE ON FUNCTION get_active_challenges(TEXT) TO authenticated;
 
 
 -- ============================================================================
--- FIX 2: get_active_group_challenges — same ambiguity fix
+-- FIX 2: get_active_group_challenges — ambiguity fix + timezone support
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS get_active_group_challenges();
+DROP FUNCTION IF EXISTS get_active_group_challenges(TEXT);
 
-CREATE OR REPLACE FUNCTION get_active_group_challenges()
+CREATE OR REPLACE FUNCTION get_active_group_challenges(
+    p_timezone TEXT DEFAULT 'UTC'
+)
 RETURNS TABLE (
     challenge_id UUID,
     title TEXT,
@@ -158,7 +161,8 @@ BEGIN
         RAISE EXCEPTION 'Not authenticated';
     END IF;
 
-    today_date := CURRENT_DATE;
+    -- Use timezone-aware current date (consistent with get_active_challenges)
+    today_date := (NOW() AT TIME ZONE COALESCE(p_timezone, 'UTC'))::DATE;
 
     RETURN QUERY
     SELECT
@@ -206,7 +210,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_active_group_challenges() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_active_group_challenges(TEXT) TO authenticated;
 
 
 -- ============================================================================

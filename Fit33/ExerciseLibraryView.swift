@@ -1178,6 +1178,12 @@ struct ExerciseLibraryView: View {
                     
                     // Compact search and filters
                     compactFiltersView
+                    
+                    // Banner ad - integrated below filters for free users
+                    if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
+                        BannerAdView()
+                            .padding(.top, 8)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -1201,8 +1207,7 @@ struct ExerciseLibraryView: View {
                             }
                         }
                         .padding(.horizontal, 16)
-                        // Add extra top padding when ad banner is showing to prevent overlap
-                        .padding(.top, (!PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled) ? 70 : 4)
+                        .padding(.top, 4)
                         .padding(.bottom, 20)
                     }
                     .scrollDismissesKeyboard(.immediately)
@@ -1224,16 +1229,7 @@ struct ExerciseLibraryView: View {
             .background(
                 AnimatedOrbBackground.exercises(colorScheme: colorScheme)
             )
-            // Banner ad overlay - floats on top, scroll content has space reserved
-            .overlay(alignment: .top) {
-                if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
-                    VStack {
-                        Spacer().frame(height: 290) // Position below filters
-                        BannerAdView()
-                            .padding(.horizontal, 16)
-                    }
-                }
-            }
+            // Banner ad is now integrated into the fixed header section above
             .navigationBarHidden(true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -1611,23 +1607,14 @@ struct ExerciseLibraryView: View {
     
     // MARK: - 🚀 Smart Video Prefetching
     
-    /// Prefetch video when exercise becomes visible in list
+    /// ⚡️ MEMORY FIX: DISABLED scroll-based video prefetching.
+    /// This was creating AVPlayers for every visible exercise row on scroll (~8 rows × 3 prefetches = 24 players).
+    /// Each player leaks ~20-50MB through iOS's XPC video process that can't be reclaimed fast enough.
+    /// Videos now load on-demand only when user taps into ExerciseDetailView (via RemoteVideoPlayerView).
+    /// Poster frames from VideoThumbnailService provide instant visual feedback instead.
     private func prefetchVisibleExercise(exercise: Exercise, index: Int) {
-        guard let name = exercise.name else { return }
-        
-        // Prefetch this exercise and adjacent ones
-        var namesToPrefetch = [name]
-        
-        // Get next 2 exercises for prefetch
-        let exercises = filteredExercises
-        if index + 1 < exercises.count, let nextName = exercises[index + 1].name {
-            namesToPrefetch.append(nextName)
-        }
-        if index + 2 < exercises.count, let nextName2 = exercises[index + 2].name {
-            namesToPrefetch.append(nextName2)
-        }
-        
-        VideoPlaybackEngine.shared.prefetchVisible(exercises: namesToPrefetch)
+        // NO-OP: Scroll prefetching disabled to prevent memory pressure.
+        // Video loads on-demand in ExerciseDetailView.
     }
 }
 

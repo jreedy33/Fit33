@@ -453,11 +453,13 @@ class FoodDatabaseService: ObservableObject {
         }
     }
     
-    /// Load globally popular foods
+    /// Load globally popular foods across all users
+    /// Uses both food_items.log_count and aggregated user_food_history
     func loadPopularFoods(limit: Int = 20) async {
         await MainActor.run { isLoadingPopular = true }
         
         do {
+            // Strategy 1: Try food_items with log_count (fast, pre-computed)
             let foods: [CloudFood] = try await supabase
                 .from("food_items")
                 .select()
@@ -468,12 +470,62 @@ class FoodDatabaseService: ObservableObject {
                 .execute()
                 .value
             
-            await MainActor.run {
-                self.popularFoods = foods
-                self.isLoadingPopular = false
+            if !foods.isEmpty {
+                await MainActor.run {
+                    self.popularFoods = foods
+                    self.isLoadingPopular = false
+                }
+                print("✅ [CLOUD] Loaded \(foods.count) globally popular foods")
+                return
             }
             
-            print("✅ [CLOUD] Loaded \(foods.count) popular foods")
+            // Strategy 2: Fallback - aggregate from user_food_history directly
+            struct PopularFoodRow: Codable {
+                let fdcId: Int
+                let foodName: String
+                let totalLogs: Int
+                let uniqueUsers: Int
+                
+                enum CodingKeys: String, CodingKey {
+                    case fdcId = "fdc_id"
+                    case foodName = "food_name"
+                    case totalLogs = "total_logs"
+                    case uniqueUsers = "unique_users"
+                }
+            }
+            
+            let popularRows: [PopularFoodRow] = try await supabase
+                .rpc("get_global_food_popularity", params: ["limit_count": limit])
+                .execute()
+                .value
+            
+            if !popularRows.isEmpty {
+                // Convert to CloudFood by looking up food_items
+                let fdcIds = popularRows.map { $0.fdcId }
+                let foodItems: [CloudFood] = try await supabase
+                    .from("food_items")
+                    .select()
+                    .in("fdc_id", values: fdcIds)
+                    .execute()
+                    .value
+                
+                // Maintain popularity order
+                let orderedFoods = fdcIds.compactMap { fdcId in
+                    foodItems.first(where: { $0.fdcId == fdcId })
+                }
+                
+                await MainActor.run {
+                    self.popularFoods = orderedFoods
+                    self.isLoadingPopular = false
+                }
+                print("✅ [CLOUD] Loaded \(orderedFoods.count) popular foods from aggregation")
+                return
+            }
+            
+            await MainActor.run {
+                self.popularFoods = []
+                self.isLoadingPopular = false
+            }
         } catch {
             print("❌ [CLOUD] Error loading popular foods: \(error)")
             await MainActor.run {
@@ -648,8 +700,68 @@ class FoodDatabaseService: ObservableObject {
             }
         }
         
-        // Refresh frequent foods in background (debounced - don't refresh every time)
-        // This will be refreshed on next app launch or can be triggered manually
+        // Immediately update frequent foods list with the new entry
+        // This ensures the user sees their logged food in "Quick Add" right away
+        await MainActor.run {
+            let newItem = FrequentFoodItem(
+                fdcId: fdcId,
+                name: foodName,
+                calories: calories,
+                protein: protein,
+                carbs: carbs,
+                fat: fat,
+                servingSize: quantity,
+                servingUnit: servingUnit,
+                usageCount: (fdcId > 0 ? foodUsageCount[fdcId] : foodNameUsageCount[foodName.lowercased()]) ?? 1
+            )
+            
+            // Update or insert into frequent foods
+            if let existingIdx = frequentFoods.firstIndex(where: { $0.fdcId == fdcId && fdcId > 0 || $0.name.lowercased() == foodName.lowercased() }) {
+                // Update count on existing entry
+                let existing = frequentFoods[existingIdx]
+                frequentFoods[existingIdx] = FrequentFoodItem(
+                    fdcId: existing.fdcId,
+                    name: existing.name,
+                    calories: calories, // Use latest nutrition
+                    protein: protein,
+                    carbs: carbs,
+                    fat: fat,
+                    servingSize: quantity,
+                    servingUnit: servingUnit,
+                    usageCount: existing.usageCount + 1
+                )
+            } else {
+                // Add as new frequent food
+                frequentFoods.insert(newItem, at: 0)
+                // Keep max 15 items
+                if frequentFoods.count > 15 {
+                    frequentFoods = Array(frequentFoods.prefix(15))
+                }
+            }
+            
+            // Re-sort by usage count
+            frequentFoods.sort { $0.usageCount > $1.usageCount }
+        }
+        
+        // Also increment global popularity count in background
+        await incrementGlobalFoodPopularity(fdcId: fdcId, foodName: foodName)
+    }
+    
+    /// Increment the global log_count on food_items for cross-user popularity
+    private func incrementGlobalFoodPopularity(fdcId: Int, foodName: String) async {
+        guard fdcId > 0 else { return }
+        
+        do {
+            // Try to increment log_count on the food_items table
+            // This tracks how popular a food is across ALL users
+            try await supabase.rpc("increment_food_log_count", params: ["fdc_id_param": fdcId])
+                .execute()
+            print("📊 [CLOUD] Incremented global popularity for FDC \(fdcId)")
+        } catch {
+            // Non-critical - just log and continue
+            // The RPC might not exist yet, we'll create it
+            print("⚠️ [CLOUD] Could not increment global popularity: \(error.localizedDescription)")
+        }
     }
     
     /// Remove the most recent entry for a food from history (when meal is deleted)

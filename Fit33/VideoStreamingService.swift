@@ -80,10 +80,10 @@ class VideoStreamingService: ObservableObject {
     }
     
     // 🚀 SMART PREFETCH SYSTEM
-    // In-memory cache of pre-buffered players (LRU - keeps last 10)
+    // ⚡️ MEMORY FIX: Reduced from 10 → 3 to prevent ~200MB of idle AVPlayers
     private var preloadedPlayers: [String: AVPlayer] = [:]
     private var preloadOrder: [String] = [] // Track order for LRU eviction
-    private let maxPreloadedPlayers = 10
+    private let maxPreloadedPlayers = 3
     
     // Prefetch queue for background loading
     private let prefetchQueue = DispatchQueue(label: "video.prefetch", qos: .utility)
@@ -313,38 +313,12 @@ class VideoStreamingService: ObservableObject {
     
     // MARK: - 🚀 Smart Prefetch API
     
-    /// Call this when exercises become visible (e.g., in a list)
-    /// Prefetches videos in background for instant playback
+    /// ⚡️ MEMORY FIX: DISABLED. Was called by multiple views on scroll, creating AVPlayers
+    /// for every visible exercise. Each player = 20-50MB through iOS XPC video processes.
+    /// Videos now load on-demand via RemoteVideoPlayerView.
     func prefetchVideos(for exerciseNames: [String]) {
-        let prefetchCount = min(exerciseNames.count, 5)
-        SessionLogManager.shared.log(.debug, category: .data, message: "Video prefetch started", metadata: [
-            "requested": exerciseNames.count,
-            "prefetching": prefetchCount
-        ])
-        
-        prefetchQueue.async { [weak self] in
-            guard let self = self else { return }
-            var prefetched = 0
-            
-            for name in exerciseNames.prefix(5) { // Prefetch up to 5 at a time
-                guard !self.prefetchingExercises.contains(name),
-                      self.preloadedPlayers[name] == nil,
-                      let url = self.getVideoURL(for: name) else { continue }
-                
-                self.prefetchingExercises.insert(name)
-                prefetched += 1
-                
-                DispatchQueue.main.async {
-                    self.preloadPlayer(for: name, url: url)
-                }
-            }
-            
-            if prefetched > 0 {
-                SessionLogManager.shared.log(.debug, category: .data, message: "Videos prefetching", metadata: [
-                    "count": prefetched
-                ])
-            }
-        }
+        // NO-OP: Scroll-based prefetching disabled to prevent 600MB+ memory usage.
+        return
     }
     
     /// Prefetch a single video (call when user hovers/scrolls near an exercise)
@@ -359,28 +333,25 @@ class VideoStreamingService: ObservableObject {
     
     // MARK: - 🏋️ Program-Aware Prefetching
     
-    /// Prefetch videos for an active program (today + next 2 days)
-    /// Call this when app launches with an active program or when program is started
+    /// Prefetch videos for an active program (today only, limited)
+    /// ⚡️ MEMORY FIX: Was prefetching 3 days × ~5 exercises = 15 players (~300MB).
+    /// Now only prefetches today's first 3 exercises.
     func prefetchActiveProgramVideos(program: FullCloudProgram, currentDay: Int) {
         prefetchQueue.async { [weak self] in
             guard let self = self else { return }
             
             var exercisesToPrefetch: [String] = []
             
-            // Get exercises for today and next 2 days
-            let daysToPreload = [currentDay, currentDay + 1, currentDay + 2]
-            
-            for dayNumber in daysToPreload {
-                if let day = program.days.first(where: { $0.day.dayNumber == dayNumber }) {
-                    let exerciseNames = day.exercises.compactMap { $0.exercise.exerciseName }
-                    exercisesToPrefetch.append(contentsOf: exerciseNames)
-                }
+            // Only prefetch today's exercises (was today + next 2 days)
+            if let day = program.days.first(where: { $0.day.dayNumber == currentDay }) {
+                let exerciseNames = day.exercises.compactMap { $0.exercise.exerciseName }
+                exercisesToPrefetch.append(contentsOf: exerciseNames)
             }
             
-            // Remove duplicates and limit to first 15
-            let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(15)
+            // Limit to first 3 (was 15)
+            let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(3)
             
-            print("🏋️ Prefetching \(uniqueExercises.count) program exercises (days \(daysToPreload))")
+            print("🏋️ Prefetching \(uniqueExercises.count) program exercises (day \(currentDay) only)")
             
             DispatchQueue.main.async {
                 self.prefetchVideos(for: Array(uniqueExercises))
@@ -394,20 +365,22 @@ class VideoStreamingService: ObservableObject {
         prefetchVideos(for: exercises)
     }
     
-    /// Prefetch videos for program preview (first few days when user views program details)
+    /// Prefetch videos for program preview (limited to save memory)
+    /// ⚡️ MEMORY FIX: Was prefetching 3 days × ~5 exercises = 10 players.
+    /// Now only prefetches first 2 exercises from day 1.
     func prefetchProgramPreview(program: FullCloudProgram) {
         prefetchQueue.async { [weak self] in
             guard let self = self else { return }
             
             var exercisesToPrefetch: [String] = []
             
-            // Get exercises from first 3 days for preview
-            for day in program.days.prefix(3) {
-                let exerciseNames = day.exercises.compactMap { $0.exercise.exerciseName }
+            // Only first day, limited exercises (was first 3 days, 10 exercises)
+            if let firstDay = program.days.first {
+                let exerciseNames = firstDay.exercises.compactMap { $0.exercise.exerciseName }
                 exercisesToPrefetch.append(contentsOf: exerciseNames)
             }
             
-            let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(10)
+            let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(2)
             
             print("👀 Prefetching \(uniqueExercises.count) exercises for program preview")
             
@@ -449,7 +422,7 @@ class VideoStreamingService: ObservableObject {
         let player = createOptimizedPlayer(url: url)
         
         // Start buffering immediately
-        player.currentItem?.preferredForwardBufferDuration = 5 // Buffer 5 seconds
+        player.currentItem?.preferredForwardBufferDuration = 2 // Buffer 2 seconds (was 5 — saves ~3s of video RAM per player)
         
         addToCache(exerciseName, player: player)
         prefetchingExercises.remove(exerciseName)
@@ -470,8 +443,8 @@ class VideoStreamingService: ObservableObject {
         let keys = ["playable", "duration"]
         let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: keys)
         
-        // Optimize for streaming
-        playerItem.preferredForwardBufferDuration = 3 // Buffer 3 seconds ahead
+        // Optimize for streaming — reduced buffer to save memory
+        playerItem.preferredForwardBufferDuration = 2 // Buffer 2 seconds ahead (was 3)
         
         let player = AVPlayer(playerItem: playerItem)
         player.automaticallyWaitsToMinimizeStalling = false // Start playing ASAP
@@ -498,6 +471,7 @@ class VideoStreamingService: ObservableObject {
     func clearPreloadCache() {
         for player in preloadedPlayers.values {
             player.pause()
+            player.replaceCurrentItem(with: nil)  // ⚡️ MEMORY FIX: Release the AVPlayerItem to free video buffers
         }
         preloadedPlayers.removeAll()
         preloadOrder.removeAll()
@@ -788,6 +762,7 @@ struct RemoteVideoPlayerView: View {
     @StateObject private var playerManager = RemoteVideoPlayerManager()
     @State private var hasAppeared = false
     @State private var showPlayer = false
+    @State private var posterImage: UIImage?  // 🖼️ YouTube-style poster frame
     
     private var backgroundColor: Color {
         .white // Pure white to match exercise video content backgrounds
@@ -799,20 +774,38 @@ struct RemoteVideoPlayerView: View {
             backgroundColor
             
             if let player = playerManager.player, showPlayer {
-                // 🎬 Video ready - show immediately with quick fade, aligned to top
-                // Custom video view without native controls
+                // 🎬 Video ready — crossfade from poster to live video
                 VideoPlayerLayerView(player: player)
                     .aspectRatio(16/9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .transition(.opacity.animation(.easeIn(duration: 0.1)))
+                    .transition(.opacity.animation(.easeIn(duration: 0.15)))
+            } else if let poster = posterImage {
+                // 🖼️ YOUTUBE TRICK: Show poster frame INSTANTLY while video loads behind it.
+                // User sees the exercise form immediately — perceives zero load time.
+                Image(uiImage: poster)
+                    .resizable()
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity)
             } else if playerManager.isLoading {
-                // ⏳ Very brief loading (should be <500ms with new engine)
-                VStack(spacing: 10) {
-                    // Subtle pulsing animation
+                // ⏳ No poster frame cached yet (first time playing this exercise)
+                // Show a clean gradient with subtle play icon — NOT a spinner
+                ZStack {
+                    LinearGradient(
+                        colors: [categoryColor.opacity(0.08), categoryColor.opacity(0.03)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 48))
-                        .foregroundColor(categoryColor.opacity(0.4))
-                        .symbolEffect(.pulse)
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [categoryColor.opacity(0.4), categoryColor.opacity(0.25)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -835,12 +828,15 @@ struct RemoteVideoPlayerView: View {
             guard !hasAppeared else { return }
             hasAppeared = true
             
-            // 🚀 Load video using high-performance engine
+            // 🖼️ Step 1: Show poster frame INSTANTLY (from cache — 0ms)
+            posterImage = VideoThumbnailService.shared.getPosterFrame(for: exerciseName)
+            
+            // 🎬 Step 2: Load real video in background
             playerManager.loadVideo(for: exerciseName, videoFilename: videoFilename)
             
-            // Quick reveal after player is ready
+            // 🔀 Step 3: Crossfade from poster to live video when ready
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                withAnimation(.easeIn(duration: 0.1)) {
+                withAnimation(.easeIn(duration: 0.15)) {
                     showPlayer = true
                 }
             }
@@ -848,12 +844,19 @@ struct RemoteVideoPlayerView: View {
         .onDisappear {
             playerManager.pause()
         }
+        // 🖼️ Auto-capture poster frame when video finishes loading
+        .onReceive(playerManager.$isLoading) { isLoading in
+            // When loading transitions from true → false and we have a player, capture the poster
+            if !isLoading, let player = playerManager.player {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    VideoThumbnailService.shared.capturePosterFrame(from: player, exerciseName: exerciseName)
+                }
+            }
+        }
         .task {
             // Periodic check to ensure looping stays active while view is visible
-            // Only check every 10 seconds to avoid spam
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 10_000_000_000) // Every 10 seconds
-                // Only check if player exists and video should be playing
                 if playerManager.player?.timeControlStatus == .paused {
                     playerManager.ensureLooping()
                 }

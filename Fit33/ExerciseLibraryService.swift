@@ -19,7 +19,10 @@ class ExerciseLibraryService: ObservableObject {
     
     private let viewContext = PersistenceController.shared.container.viewContext
     
-    private let defaultExercises: [ExerciseData] = ComprehensiveExerciseDatabase.exercises
+    // ⚡️ MEMORY FIX: Changed from `let` to lazy computed.
+    // The full ComprehensiveExerciseDatabase (7800 lines, 400+ exercises) was loaded on init
+    // and held permanently in memory even though it's only used once during initial setup.
+    private var defaultExercises: [ExerciseData] { ComprehensiveExerciseDatabase.exercises }
     
     // MARK: - Loading State (for UI to know when exercises are ready)
     @Published var isExercisesReady: Bool = false
@@ -541,7 +544,10 @@ class ExerciseLibraryService: ObservableObject {
         
         let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
-        request.returnsObjectsAsFaults = false
+        // ⚡️ MEMORY FIX: Use faults (true = default). The old `false` setting forced all 7000+
+        // exercises to load ALL properties into memory at once (~50-100MB). Core Data faulting
+        // loads properties on demand, which is far more memory efficient.
+        // request.returnsObjectsAsFaults = false  // REMOVED — was forcing full materialization
         
         do {
             let exercises = try viewContext.fetch(request)

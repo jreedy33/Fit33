@@ -120,6 +120,9 @@ struct Fit33App: App {
         // 🚀 PERFORMANCE: Initialize performance optimizations (memory monitoring, throttling)
         initializePerformanceOptimizations()
         
+        // 🌐 Pre-warm CDN connection for instant video playback (1 tiny HEAD request)
+        VideoThumbnailService.shared.prewarmCDNConnection()
+        
         // ⚡ Pre-warm haptic generators for instant tap feedback
         HapticManager.shared.prepareAll()
         
@@ -574,10 +577,11 @@ struct Fit33App: App {
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         
                         // 🔄 Reconnect to Realtime when app becomes active
+                        // BUG FIX: Setup callbacks BEFORE connect() so we don't miss events
                         Task {
                             if supabaseManager.isAuthenticated && !realtimeService.isConnected {
-                                await realtimeService.connect()
                                 realtimeService.setupDefaultCallbacks()
+                                await realtimeService.connect()
                             }
                         }
                         
@@ -635,6 +639,14 @@ struct Fit33App: App {
                         Task {
                             await realtimeService.disconnect()
                         }
+                        
+                        // ⚡️ MEMORY FIX: Aggressively free video players when backgrounded.
+                        // iOS will kill network requests if memory stays high while backgrounded.
+                        // Video players are the single biggest memory consumer (~20-50MB each).
+                        VideoPlaybackEngine.shared.clearAllCaches()
+                        VideoPreloadManager.shared.clearCache()
+                        VideoStreamingService.shared.clearPreloadCache()
+                        FriendPhotoCache.shared.clearMemoryCache()
                         
                         // ⚡️ PERSISTENCE: Ensure workout state is saved before background
                         WorkoutManager.shared.saveWorkoutStateOnBackground()

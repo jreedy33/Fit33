@@ -47,8 +47,19 @@ class InBodyService: ObservableObject {
     
     // MARK: - OAuth Flow
     
+    /// Check if InBody integration is properly configured (not using placeholder credentials)
+    var isConfigured: Bool {
+        clientId != "YOUR_INBODY_CLIENT_ID" && clientSecret != "YOUR_INBODY_CLIENT_SECRET"
+    }
+    
     /// Get the authorization URL to start OAuth flow
     func getAuthorizationURL() -> URL? {
+        // Guard against using placeholder credentials
+        guard isConfigured else {
+            print("⚠️ [InBody] Cannot start OAuth — using placeholder credentials. Set real credentials in AppConfig.swift")
+            connectionError = "InBody integration not configured"
+            return nil
+        }
         var components = URLComponents(string: "\(baseURL)/oauth/authorize")
         components?.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
@@ -242,12 +253,18 @@ class InBodyService: ObservableObject {
             throw InBodyError.notAuthenticated
         }
         
-        var components = URLComponents(string: "\(baseURL)\(endpoint)")!
+        guard var components = URLComponents(string: "\(baseURL)\(endpoint)") else {
+            throw InBodyError.networkError
+        }
         if !queryItems.isEmpty {
             components.queryItems = queryItems
         }
         
-        var request = URLRequest(url: components.url!)
+        guard let url = components.url else {
+            throw InBodyError.networkError
+        }
+        
+        var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         

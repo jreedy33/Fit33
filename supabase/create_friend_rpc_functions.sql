@@ -34,7 +34,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
-DECLARE
+DECLAREad
     current_user_uuid UUID;
 BEGIN
     -- Get the current authenticated user's ID

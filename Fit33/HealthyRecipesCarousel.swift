@@ -130,30 +130,60 @@ struct HealthyRecipesCarousel: View {
         }
     }
     
-    // MARK: - Recipe Carousel
+    // MARK: - Recipe Carousel (Two Rows)
     private var recipeCarousel: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
-                ForEach(Array(displayedRecipes.prefix(12).enumerated()), id: \.element.id) { index, recipe in
-                    // First 2 recipes are always free, rest require premium
-                    let isLocked = !premiumManager.isPremiumUser && index >= freeRecipeLimit
-                    
-                    PremiumRecipeCard(
-                        recipe: recipe,
-                        isLocked: isLocked,
-                        onTap: {
-                            if isLocked {
-                                // Show premium upgrade
-                                showingPremiumUpgrade = true
-                            } else {
-                                selectedRecipe = recipe
-                                showingRecipeDetail = true
-                                viewedRecipeCount += 1
-                                // Track view interaction
-                                preferenceService.trackRecipeView(recipe: recipe)
+        let allRecipes = Array(displayedRecipes.prefix(16))
+        let midpoint = allRecipes.count / 2
+        let topRow = Array(allRecipes.prefix(max(midpoint, 1)))
+        let bottomRow = allRecipes.count > midpoint ? Array(allRecipes.suffix(from: midpoint)) : []
+        
+        return ScrollView(.horizontal, showsIndicators: false) {
+            VStack(spacing: 12) {
+                // Top Row
+                HStack(spacing: 16) {
+                    ForEach(Array(topRow.enumerated()), id: \.element.id) { index, recipe in
+                        let isLocked = !premiumManager.isPremiumUser && index >= freeRecipeLimit
+                        
+                        PremiumRecipeCard(
+                            recipe: recipe,
+                            isLocked: isLocked,
+                            onTap: {
+                                if isLocked {
+                                    showingPremiumUpgrade = true
+                                } else {
+                                    selectedRecipe = recipe
+                                    showingRecipeDetail = true
+                                    viewedRecipeCount += 1
+                                    preferenceService.trackRecipeView(recipe: recipe)
+                                }
                             }
+                        )
+                    }
+                }
+                
+                // Bottom Row
+                if !bottomRow.isEmpty {
+                    HStack(spacing: 16) {
+                        ForEach(Array(bottomRow.enumerated()), id: \.element.id) { index, recipe in
+                            let globalIndex = midpoint + index
+                            let isLocked = !premiumManager.isPremiumUser && globalIndex >= freeRecipeLimit
+                            
+                            PremiumRecipeCard(
+                                recipe: recipe,
+                                isLocked: isLocked,
+                                onTap: {
+                                    if isLocked {
+                                        showingPremiumUpgrade = true
+                                    } else {
+                                        selectedRecipe = recipe
+                                        showingRecipeDetail = true
+                                        viewedRecipeCount += 1
+                                        preferenceService.trackRecipeView(recipe: recipe)
+                                    }
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -191,15 +221,18 @@ struct HealthyRecipesCarousel: View {
         Task {
             // Check if we should refresh or use cached
             if preferenceService.shouldRefreshCarousel() || displayedRecipes.isEmpty {
-                // Try to get personalized recommendations (fetch more for variety)
-                let personalized = await preferenceService.getRotatedCarouselRecipes(count: 15)
+                // Fetch more recipes for 2-row layout (16 total = 8 per row)
+                let targetCount = 16
+                
+                // Try to get personalized recommendations based on food history
+                let personalized = await preferenceService.getRotatedCarouselRecipes(count: targetCount)
                 
                 if !personalized.isEmpty {
                     displayedRecipes = personalized
                     isPersonalized = preferenceService.hasPreferencesSet
                 } else {
                     // Fall back to time-based suggestions
-                    let timeBased = await preferenceService.getMealSuggestionsForCurrentTime(count: 15)
+                    let timeBased = await preferenceService.getMealSuggestionsForCurrentTime(count: targetCount)
                     
                     if !timeBased.isEmpty {
                         displayedRecipes = timeBased
@@ -212,7 +245,7 @@ struct HealthyRecipesCarousel: View {
                     }
                 }
                 
-                print("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes (personalized: \(isPersonalized))")
+                print("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes for 2-row layout (personalized: \(isPersonalized))")
             }
         }
     }

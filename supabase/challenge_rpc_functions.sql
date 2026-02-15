@@ -907,10 +907,14 @@ GRANT EXECUTE ON FUNCTION get_active_challenges(TEXT) TO authenticated;
 -- ============================================================================
 -- FUNCTION 9: get_active_group_challenges
 -- Returns active group challenges (3+ participants) with member details.
+-- Now accepts timezone parameter for correct "today" date calculation.
 -- ============================================================================
 DROP FUNCTION IF EXISTS get_active_group_challenges();
+DROP FUNCTION IF EXISTS get_active_group_challenges(TEXT);
 
-CREATE OR REPLACE FUNCTION get_active_group_challenges()
+CREATE OR REPLACE FUNCTION get_active_group_challenges(
+    p_timezone TEXT DEFAULT 'UTC'
+)
 RETURNS TABLE (
     challenge_id UUID,
     title TEXT,
@@ -943,7 +947,8 @@ BEGIN
         RAISE EXCEPTION 'Not authenticated';
     END IF;
 
-    today_date := CURRENT_DATE;
+    -- Use timezone-aware current date (consistent with get_active_challenges)
+    today_date := (NOW() AT TIME ZONE COALESCE(p_timezone, 'UTC'))::DATE;
 
     RETURN QUERY
     SELECT
@@ -989,7 +994,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_active_group_challenges() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_active_group_challenges(TEXT) TO authenticated;
 
 
 -- ============================================================================
@@ -1236,12 +1241,15 @@ GRANT EXECUTE ON FUNCTION nudge_group_challenge_member(TEXT, TEXT) TO authentica
 
 -- ============================================================================
 -- FUNCTION 15: log_group_challenge_progress
+-- Now accepts timezone parameter for correct "today" date calculation.
 -- ============================================================================
 DROP FUNCTION IF EXISTS log_group_challenge_progress(TEXT, INT);
+DROP FUNCTION IF EXISTS log_group_challenge_progress(TEXT, INT, TEXT);
 
 CREATE OR REPLACE FUNCTION log_group_challenge_progress(
     p_challenge_id TEXT,
-    p_progress INT
+    p_progress INT,
+    p_timezone TEXT DEFAULT 'UTC'
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -1252,20 +1260,35 @@ DECLARE
     current_user_uuid UUID;
     challenge_uuid UUID;
     today_date DATE;
+    v_daily_target INT;
+    v_target_hit BOOLEAN;
 BEGIN
     current_user_uuid := auth.uid();
     challenge_uuid := p_challenge_id::UUID;
-    today_date := CURRENT_DATE;
+    -- Use timezone-aware date (consistent with log_challenge_progress 1v1)
+    today_date := (NOW() AT TIME ZONE COALESCE(p_timezone, 'UTC'))::DATE;
+
+    -- Get daily target for target_hit tracking
+    SELECT daily_target INTO v_daily_target
+    FROM group_challenges
+    WHERE id = challenge_uuid;
+    
+    v_target_hit := (v_daily_target IS NOT NULL AND p_progress >= v_daily_target);
 
     -- Upsert daily progress
     INSERT INTO challenge_daily_progress (
-        challenge_id, user_id, progress_date, progress_value, source, updated_at
+        challenge_id, user_id, progress_date, progress_value, target_hit, source, updated_at
     ) VALUES (
-        challenge_uuid, current_user_uuid, today_date, p_progress, 'healthkit', NOW()
+        challenge_uuid, current_user_uuid, today_date, p_progress, v_target_hit, 'healthkit', NOW()
     )
     ON CONFLICT (challenge_id, user_id, progress_date)
     DO UPDATE SET
         progress_value = GREATEST(challenge_daily_progress.progress_value, EXCLUDED.progress_value),
+        target_hit = CASE 
+            WHEN EXCLUDED.progress_value > challenge_daily_progress.progress_value 
+            THEN EXCLUDED.target_hit
+            ELSE challenge_daily_progress.target_hit
+        END,
         updated_at = NOW()
     WHERE EXCLUDED.progress_value > challenge_daily_progress.progress_value;
 
@@ -1291,7 +1314,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION log_group_challenge_progress(TEXT, INT) TO authenticated;
+GRANT EXECUTE ON FUNCTION log_group_challenge_progress(TEXT, INT, TEXT) TO authenticated;
 
 
 -- ============================================================================

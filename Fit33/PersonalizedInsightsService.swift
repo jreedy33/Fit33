@@ -126,6 +126,36 @@ struct StreakData: Codable {
         case totalDaysAchieved = "total_days_achieved"
         case lastAchievedDate = "last_achieved_date"
     }
+    
+    // BUG FIX: Server returns "2026-02-14" (yyyy-MM-dd) which isn't valid ISO8601.
+    // Default Date decoding fails with "Invalid date format: 2026-02-14".
+    // Custom init handles yyyy-MM-dd, ISO8601, and nil gracefully.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        streakType = try container.decode(String.self, forKey: .streakType)
+        currentStreak = try container.decode(Int.self, forKey: .currentStreak)
+        longestStreak = try container.decode(Int.self, forKey: .longestStreak)
+        totalDaysAchieved = try container.decode(Int.self, forKey: .totalDaysAchieved)
+        
+        // Try decoding as string first, then parse flexibly
+        if let dateString = try container.decodeIfPresent(String.self, forKey: .lastAchievedDate) {
+            // Try yyyy-MM-dd first (what the server actually sends)
+            let plainFormatter = DateFormatter()
+            plainFormatter.dateFormat = "yyyy-MM-dd"
+            plainFormatter.locale = Locale(identifier: "en_US_POSIX")
+            
+            if let date = plainFormatter.date(from: dateString) {
+                lastAchievedDate = date
+            } else {
+                // Fallback: try ISO8601
+                let isoFormatter = ISO8601DateFormatter()
+                isoFormatter.formatOptions = [.withInternetDateTime]
+                lastAchievedDate = isoFormatter.date(from: dateString)
+            }
+        } else {
+            lastAchievedDate = nil
+        }
+    }
 }
 
 struct CorrelationResult {

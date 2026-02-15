@@ -783,10 +783,12 @@ struct RecipeDetailView: View {
         }
         
         // Calculate nutrition per serving (divide recipe total by recipe servings)
-        let caloriesPerServing = detail.calories / detail.servings
-        let proteinPerServing = detail.protein / Double(detail.servings)
-        let carbsPerServing = detail.carbs / Double(detail.servings)
-        let fatPerServing = detail.fat / Double(detail.servings)
+        // Guard against division by zero if API returns 0 servings
+        let safeServings = max(detail.servings, 1)
+        let caloriesPerServing = detail.calories / safeServings
+        let proteinPerServing = detail.protein / Double(safeServings)
+        let carbsPerServing = detail.carbs / Double(safeServings)
+        let fatPerServing = detail.fat / Double(safeServings)
         
         // Calculate adjusted nutrition based on portion servings consumed
         let adjustedCalories = caloriesPerServing * portionServings

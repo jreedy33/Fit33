@@ -228,18 +228,19 @@ struct PersistenceController {
         // Also clear any keys with dynamic prefixes
         let allKeys = UserDefaults.standard.dictionaryRepresentation().keys
         for key in allKeys {
+            // BUG FIX: Added parentheses — without them, && binds tighter than ||,
+            // causing "user_manually_signed_out" to be incorrectly deleted
             if key.hasPrefix("cached") || 
                key.hasPrefix("program_") || 
                key.hasPrefix("workout_") ||
                key.hasPrefix("smart_") ||
                key.hasPrefix("generated") ||
                key.hasPrefix("active") ||
-               key.hasPrefix("user_") && key != "user_manually_signed_out" {
+               (key.hasPrefix("user_") && key != "user_manually_signed_out") {
                 UserDefaults.standard.removeObject(forKey: key)
             }
         }
         
-        UserDefaults.standard.synchronize()
         print("🗑️ UserDefaults cleared")
         
         // 3. Reset the view context

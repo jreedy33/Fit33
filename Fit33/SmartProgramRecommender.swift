@@ -399,8 +399,32 @@ class SmartProgramRecommender {
     
     private func getDefaultProgram() -> ProgramRecommendation {
         guard let defaultProgram = WorkoutProgramEngine.shared.getAllPrograms().first else {
-            // Create a fallback recommendation if no programs exist
-            fatalError("No programs available - WorkoutProgramEngine must have at least one program")
+            // Return a safe fallback instead of crashing
+            print("⚠️ [RECOMMENDER] No programs available — returning empty recommendation")
+            let fallbackProgram = WorkoutProgram(
+                id: "fallback",
+                name: "Custom Workout",
+                description: "Build your own workout",
+                duration: 7,
+                difficulty: .beginner,
+                focus: .fullBody,
+                schedule: [:],
+                restDays: [4, 7],
+                icon: "figure.strengthtraining.traditional",
+                color: "blue",
+                workoutsPerWeek: 3,
+                estimatedTimePerWorkout: 45,
+                equipment: [],
+                benefits: ["General fitness"],
+                preview: "A flexible workout plan"
+            )
+            return ProgramRecommendation(
+                program: fallbackProgram,
+                matchScore: 0,
+                reasons: ["No programs loaded — try restarting the app"],
+                equipmentCompatibility: .good,
+                difficultyMatch: .comfortable
+            )
         }
         return ProgramRecommendation(
             program: defaultProgram,

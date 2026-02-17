@@ -30,7 +30,40 @@ class FriendRankingService: ObservableObject {
     // Cache duration (refresh every 5 minutes)
     private let cacheDuration: TimeInterval = 300
     
-    private init() {}
+    // MARK: - Cache Keys
+    private let rankedFriendsCacheKey = "fit33_cached_ranked_friends"
+    
+    private init() {
+        // Load cached ranked friends immediately for instant Friends tab display
+        loadCachedRankedFriends()
+    }
+    
+    // MARK: - Local Caching (instant display on cold start)
+    
+    private func cacheRankedFriends() {
+        guard !rankedFriends.isEmpty else { return }
+        do {
+            let data = try JSONEncoder().encode(rankedFriends)
+            UserDefaults.standard.set(data, forKey: rankedFriendsCacheKey)
+            print("💾 [RANKING] Cached \(rankedFriends.count) ranked friends")
+        } catch {
+            print("⚠️ [RANKING] Failed to cache: \(error)")
+        }
+    }
+    
+    private func loadCachedRankedFriends() {
+        guard let data = UserDefaults.standard.data(forKey: rankedFriendsCacheKey) else { return }
+        do {
+            let cached = try JSONDecoder().decode([RankedFriend].self, from: data)
+            if !cached.isEmpty {
+                rankedFriends = cached
+                print("⚡️ [RANKING] Loaded \(cached.count) cached ranked friends (instant)")
+            }
+        } catch {
+            print("⚠️ [RANKING] Failed to load cache: \(error)")
+            UserDefaults.standard.removeObject(forKey: rankedFriendsCacheKey)
+        }
+    }
     
     // MARK: - Fetch Ranked Friends
     
@@ -54,6 +87,7 @@ class FriendRankingService: ObservableObject {
             
             rankedFriends = result
             lastRefreshed = Date()
+            cacheRankedFriends() // Persist for instant display on next launch
             print("✅ [RANKING] Fetched \(result.count) ranked friends")
             
             // Log top 3 for debugging

@@ -151,6 +151,7 @@ struct DashboardView: View {
     
     // Challenge creation flow states
     @State private var navigateToChallengeFlow = false
+    @State private var showCommunityHub = false
     
     // Widget settings
     @State private var showingWidgetSettings = false
@@ -510,15 +511,19 @@ struct DashboardView: View {
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
             
-            // Load friend data for notification indicator
+            // Load friend data — also populates Friends tab cache for instant display
             await FriendService.shared.loadPendingRequests()
             await FriendService.shared.loadReceivedWorkouts()
+            await FriendService.shared.fetchFriends() // ⚡️ Pre-fetch for Friends tab (caches to disk)
             
             // Load active challenges, pending invites, and pending sent challenges
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
             await ChallengeService.shared.fetchPendingInvites()
             await ChallengeService.shared.fetchPendingSentChallenges()
+            
+            // Pre-fetch ranked friends for Friends tab (caches to disk)
+            await FriendRankingService.shared.fetchRankedFriends()
             
             // Load profile photo for home icon
             await loadProfilePhoto()
@@ -4058,36 +4063,32 @@ struct DashboardView: View {
         print("📱 [PHONE PROMPT] User skipped phone verification")
     }
     
-    // MARK: - Get Started Challenge Widget (First Time Users) - Highlights Friend Challenges
+    // MARK: - Get Started Challenge Widget - "Challenge a Friend!" entry point
     
     private var getStartedChallengeWidget: some View {
         let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
-        let hasFriends = !friendService.friends.isEmpty
         
-        return VStack(spacing: 0) {
-            // Header - NavigationLink (matching autogen style)
-            NavigationLink(destination: ChallengeFlowStartView()) {
-                HStack(alignment: .center, spacing: 10) {
-                    // Trophy icon in hollow circle (matching progress ring style)
+        return NavigationLink(destination: ChallengeFlowStartView()) {
+            VStack(spacing: 0) {
+                // Top row: Trophy + Title + Chevron
+                HStack(alignment: .center, spacing: 12) {
                     ZStack {
                         Circle()
                             .stroke(challengeColor.opacity(0.3), lineWidth: 4)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 48, height: 48)
                         
                         Text("🏆")
-                            .font(.system(size: 20))
+                            .font(.system(size: 22))
                     }
                     
-                    // Challenge info
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Challenge a Friend!")
-                            .font(.subheadline)
+                            .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
-                            .lineLimit(1)
                         
                         Text("Compete head-to-head on fitness goals")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
@@ -4097,85 +4098,77 @@ struct DashboardView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            
-            // Inner challenge card - NavigationLink (matching autogen style)
-            NavigationLink(destination: ChallengeFlowStartView()) {
-                HStack(spacing: 0) {
-                    // Left accent bar
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                
+                // Bottom row: Activity info + Challenge button (inner card)
+                HStack(spacing: 10) {
+                    // Green accent bar
                     RoundedRectangle(cornerRadius: 2)
                         .fill(challengeColor)
-                        .frame(width: 4)
-                        .padding(.vertical, 4)
+                        .frame(width: 4, height: 36)
                     
-                    HStack(spacing: 10) {
-                        // Challenge info - compact layout
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Steps, Workouts & More")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                            
-                            HStack(spacing: 4) {
-                                Text("7-30 days")
-                                Text("•")
-                                Text("Daily goals")
-                                    .foregroundColor(challengeColor)
-                            }
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        }
-                        .padding(.leading, 10)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Steps, Workouts & More")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
-                        Spacer(minLength: 8)
-                        
-                        // Button text changes based on friend status
                         HStack(spacing: 4) {
-                            Image(systemName: hasFriends ? "bolt.fill" : "person.2.fill")
-                                .font(.system(size: 10, weight: .bold))
-                            Text(hasFriends ? "Challenge" : "Find Friends")
+                            Text("7-30 days")
                                 .font(.caption)
-                                .fontWeight(.bold)
+                                .foregroundColor(.secondary)
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Daily goals")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(challengeColor)
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [challengeColor, Color(red: 0.0, green: 0.8, blue: 0.85)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                        )
                     }
+                    
+                    Spacer()
+                    
+                    // Teal Challenge button (compact)
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Challenge")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [challengeColor, Color.mint],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
                 }
-                .padding(10)
+                .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(challengeColor.opacity(0.2), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
                         )
                 )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-                .contentShape(Rectangle())
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-            .buttonStyle(.plain)
         }
+        .buttonStyle(.plain)
         .background(
             ZStack {
-                // Main card background with gradient
                 RoundedRectangle(cornerRadius: 24)
                     .fill(
                         LinearGradient(
@@ -4187,19 +4180,18 @@ struct DashboardView: View {
                         )
                     )
                 
-                // Animated glowing border (teal — consistent with all challenge widgets)
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
-                                challengeColor.opacity(0.7),
+                                Color.teal.opacity(0.7),
                                 Color.teal.opacity(0.5),
-                                challengeColor.opacity(0.3),
+                                Color.teal.opacity(0.3),
                                 Color.clear,
                                 Color.clear,
-                                challengeColor.opacity(0.2),
+                                Color.teal.opacity(0.2),
                                 Color.mint.opacity(0.4),
-                                challengeColor.opacity(0.6)
+                                Color.teal.opacity(0.6)
                             ]),
                             center: .center,
                             angle: .degrees(challengeGlowPhase)
@@ -4208,11 +4200,10 @@ struct DashboardView: View {
                     )
                     .blur(radius: 2)
                 
-                // Inner border for definition
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            colors: [Color.teal.opacity(0.5), Color.teal.opacity(0.3), Color.teal.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -4220,14 +4211,47 @@ struct DashboardView: View {
                     )
             }
         )
-        // Subtle soft glow (reduced intensity)
-        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: Color.teal.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.teal.opacity(0.08), radius: 25, x: 0, y: 4)
         .onAppear {
             withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
                 challengeGlowPhase = 360
             }
         }
+    }
+    
+    // MARK: - Challenge Type Button Helper
+    
+    private func challengeTypeButton(emoji: String, title: String, subtitle: String, gradient: [Color]) -> some View {
+        VStack(spacing: 6) {
+            Text(emoji)
+                .font(.system(size: 26))
+            
+            Text(title)
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            
+            Text(subtitle)
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(
+                            LinearGradient(colors: [gradient[0].opacity(0.4), gradient[1].opacity(0.2)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                )
+        )
     }
     
     // MARK: - Recommended For You Widget (Returning Users) - Uses SmartProgramEngine

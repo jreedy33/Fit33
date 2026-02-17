@@ -174,7 +174,22 @@ class VideoStreamingService: ObservableObject {
         }
     }
     
+    /// How often video mappings should be re-fetched. They rarely change.
+    private static let videoMappingSyncInterval: TimeInterval = 12 * 60 * 60 // 12 hours
+    
     private func fetchVideoFilenamesFromServer() async {
+        // ⚡️ PERFORMANCE: Skip if we recently fetched video mappings.
+        // Video mappings are static data (exercise name → video file) that rarely changes.
+        // Fetching 6500+ mappings in 6 paginated calls is expensive on startup.
+        let lastFetch = UserDefaults.standard.object(forKey: "lastVideoMappingFetch") as? Date
+        let cacheAge = lastFetch.map { Date().timeIntervalSince($0) } ?? .infinity
+        
+        if !genderVideoCache.isEmpty && cacheAge < Self.videoMappingSyncInterval {
+            let hoursAgo = String(format: "%.1f", cacheAge / 3600)
+            print("⚡️ [VIDEO] Skipping mapping fetch — \(genderVideoCache.count) cached, fetched \(hoursAgo)h ago")
+            return
+        }
+        
         do {
             struct VideoMapping: Codable {
                 let name: String
@@ -258,6 +273,10 @@ class VideoStreamingService: ObservableObject {
                 }
                 
                 self.videosLoaded = true
+                
+                // Record fetch timestamp so we can skip on next launch
+                UserDefaults.standard.set(Date(), forKey: "lastVideoMappingFetch")
+                
                 #if DEBUG
                 print("📹 Loaded \(mappings.count) video mappings from database")
                 print("📹 Gender-aware cache has \(self.genderVideoCache.count) exercises")

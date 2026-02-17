@@ -490,6 +490,13 @@ struct WorkoutProgressView: View {
     @State private var cachedLongestWorkoutMinutes: Int = 0
     @State private var hasComputedPRs = false
     
+    /// When true, renders only the stats content sections (no NavigationView/ScrollView/background)
+    let isEmbedded: Bool
+    
+    init(isEmbedded: Bool = false) {
+        self.isEmbedded = isEmbedded
+    }
+    
     enum TimeFrame: String, CaseIterable {
         case week = "Week"
         case month = "Month"
@@ -497,7 +504,100 @@ struct WorkoutProgressView: View {
         case all = "All Time"
     }
     
+    // MARK: - Embedded Stats Content (used in Workout tab)
+    
+    @ViewBuilder
+    var statsContent: some View {
+        // Section header
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your Stats")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("Track your fitness journey")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .foregroundStyle(
+                    LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .font(.title3)
+        }
+        .padding(.horizontal, 4)
+        
+        // Health Insights Quick Access
+        healthInsightsCard
+        
+        // Fitness Rings Section
+        fitnessRingsSection
+        
+        // Hero Stats Section (Total Workouts)
+        heroStatsSection
+        
+        // Activity Calendar
+        activityCalendarSection
+        
+        // Streak & Motivation Section
+        streakSection
+        
+        // Time Frame Picker
+        timeFramePicker
+        
+        // Workout Frequency Chart
+        workoutFrequencyChart
+        
+        // Comprehensive Stats Grid
+        comprehensiveStatsGrid
+        
+        // Progress Timeline
+        progressTimeline
+        
+        // Personal Records
+        personalRecordsSection
+        
+        // Achievements Gallery
+        achievementsGallery
+        
+        // Monthly Summary
+        monthlySummary
+    }
+    
     var body: some View {
+        if isEmbedded {
+            // Embedded mode: LIGHTWEIGHT version for Workout tab.
+            // Only show the key stats sections — skip achievements, calendar, charts etc.
+            // These are EXPENSIVE and the user can always see them by scrolling up on the
+            // dedicated Stats sections. The Workout tab should stay fast.
+            LazyVStack(spacing: 20) {
+                // Section header
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your Stats")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Text("Track your fitness journey")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundStyle(
+                            LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .font(.title3)
+                }
+                .padding(.horizontal, 4)
+                
+                // Only the lightweight sections (no charts, no calendar, no achievements)
+                heroStatsSection
+                fitnessRingsSection
+                streakSection
+                comprehensiveStatsGrid
+            }
+            // NO deferred computation tasks — keep the Workout tab snappy
+        } else {
         NavigationView {
             ScrollViewReader { scrollProxy in
                 ScrollView {
@@ -510,44 +610,7 @@ struct WorkoutProgressView: View {
                             .padding(.bottom, 16)
                         
                         LazyVStack(spacing: 20) {
-                            // Health Insights Quick Access
-                            healthInsightsCard
-                            
-                            // Fitness Rings Section
-                            fitnessRingsSection
-                            
-                            // Hero Stats Section (Total Workouts)
-                            heroStatsSection
-                            
-                            // Activity Calendar
-                            activityCalendarSection
-                            
-                            // Streak & Motivation Section
-                            streakSection
-                            
-                            // Time Frame Picker
-                            timeFramePicker
-                            
-                            // Workout Frequency Chart
-                            workoutFrequencyChart
-                            
-                            // Comprehensive Stats Grid
-                            comprehensiveStatsGrid
-                            
-                            // Muscle Group Analytics - Removed per user request
-                            // muscleGroupAnalytics
-                            
-                            // Progress Timeline
-                            progressTimeline
-                            
-                            // Personal Records
-                            personalRecordsSection
-                            
-                            // Achievements Gallery
-                            achievementsGallery
-                            
-                            // Monthly Summary
-                            monthlySummary
+                            statsContent
                         }
                     }
                     .padding(.horizontal, 16)
@@ -597,6 +660,7 @@ struct WorkoutProgressView: View {
             if !hasLoadedAchievements {
                 await computeAchievementsInBackground()
             }
+        }
         }
     }
     
@@ -4796,6 +4860,14 @@ struct MiniDayRing: View {
             }
             .frame(width: size, height: size)
         }
+    }
+}
+
+// MARK: - Embedded Stats View (for Workout Tab)
+/// Lightweight wrapper that renders WorkoutProgressView stats inline
+struct WorkoutStatsEmbeddedView: View {
+    var body: some View {
+        WorkoutProgressView(isEmbedded: true)
     }
 }
 

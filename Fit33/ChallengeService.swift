@@ -204,18 +204,21 @@ class ChallengeService: ObservableObject {
         async let activesTask: () = fetchActiveChallenges()
         async let groupTask: () = fetchActiveGroupChallenges()
         async let templatesTask: () = fetchTemplates()
+        async let communityTask: () = CommunityChallengeService.shared.fetchMyChallenges()
         
-        _ = await (invitesTask, sentTask, activesTask, groupTask, templatesTask)
+        _ = await (invitesTask, sentTask, activesTask, groupTask, templatesTask, communityTask)
     }
     
     // MARK: - Fetch Pending Invites
     
     func fetchPendingInvites() async {
         do {
-            let result: [ChallengeInvite] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_pending_challenge_invites")
-                .execute()
-                .value
+            let result: [ChallengeInvite] = try await withCancelRetry(label: "pending_invites") {
+                try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_pending_challenge_invites")
+                    .execute()
+                    .value
+            }
             
             self.pendingInvites = result
             cachePendingInvites() // Cache for instant display on next app launch
@@ -265,10 +268,12 @@ class ChallengeService: ObservableObject {
         }
         
         do {
-            let result: [PendingSentChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_pending_sent_challenges")
-                .execute()
-                .value
+            let result: [PendingSentChallenge] = try await withCancelRetry(label: "pending_sent") {
+                try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_pending_sent_challenges")
+                    .execute()
+                    .value
+            }
             
             // Update on main thread
             await MainActor.run {
@@ -342,6 +347,35 @@ class ChallengeService: ObservableObject {
         }
     }
     
+    // MARK: - Retry Helper (handles -999 cancelled errors from network congestion)
+    
+    /// Retries an async operation up to `maxRetries` times if it fails with a URLError.cancelled (-999).
+    /// This is critical at startup when many concurrent requests compete for the network layer.
+    private func withCancelRetry<T>(
+        label: String,
+        maxRetries: Int = 2,
+        retryDelay: UInt64 = 1_500_000_000, // 1.5 seconds
+        operation: () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        for attempt in 0...maxRetries {
+            do {
+                return try await operation()
+            } catch {
+                lastError = error
+                let nsError = error as NSError
+                // Only retry on -999 cancelled errors (network congestion)
+                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                    print("🔄 [CHALLENGES] \(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(retryDelay / 1_000_000_000)s...")
+                    try? await Task.sleep(nanoseconds: retryDelay)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? NSError(domain: "ChallengeService", code: -1)
+    }
+    
     // MARK: - Fetch Active Challenges
     
     func fetchActiveChallenges() async {
@@ -350,12 +384,14 @@ class ChallengeService: ObservableObject {
                 let p_timezone: String
             }
             
-            let result: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_active_challenges", params: TimezoneParams(
-                    p_timezone: TimeZone.current.identifier
-                ))
-                .execute()
-                .value
+            let result: [ActiveChallenge] = try await withCancelRetry(label: "active_challenges") {
+                try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_active_challenges", params: TimezoneParams(
+                        p_timezone: TimeZone.current.identifier
+                    ))
+                    .execute()
+                    .value
+            }
             
             self.activeChallenges = result
             cacheActiveChallenges() // Cache for instant display on next app launch
@@ -898,12 +934,14 @@ class ChallengeService: ObservableObject {
                 let p_timezone: String
             }
             
-            let result: [ActiveGroupChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_active_group_challenges", params: TimezoneParams(
-                    p_timezone: TimeZone.current.identifier
-                ))
-                .execute()
-                .value
+            let result: [ActiveGroupChallenge] = try await withCancelRetry(label: "group_challenges") {
+                try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_active_group_challenges", params: TimezoneParams(
+                        p_timezone: TimeZone.current.identifier
+                    ))
+                    .execute()
+                    .value
+            }
             
             activeGroupChallenges = result
             print("✅ [CHALLENGES] Fetched \(result.count) active group challenges")
@@ -1683,6 +1721,9 @@ class ChallengeService: ObservableObject {
         // Refresh to show latest
         await fetchActiveChallenges()
         await fetchActiveGroupChallenges()
+        
+        // Also sync community challenges
+        await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
         
         print("✅ [CHALLENGES] Universal tracking sync complete")
     }

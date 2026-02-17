@@ -153,6 +153,17 @@ struct WorkoutTabView: View {
                 deepLinkManager.pendingDestination = nil
                 print("🏆 Deep link: Navigating to challenge detail \(challengeId)")
                 
+            // Community challenge destinations
+            case .communityChallenge(let slug):
+                deepLinkManager.pendingCommunitySlug = slug
+                deepLinkManager.showCommunityJoinSheet = true
+                deepLinkManager.pendingDestination = nil
+                print("🌍 Deep link: Opening community challenge \(slug)")
+            case .communityChallengeBrowse:
+                navigationPath.append("CommunityChallenges")
+                deepLinkManager.pendingDestination = nil
+                print("🌍 Deep link: Navigating to community challenges")
+                
             // These destinations are handled by MainTabView (tab switching)
             case .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker, .workoutHistory, .personalRecord, .streakInfo:
                 // Already handled by MainTabView, just clear the destination
@@ -264,6 +275,9 @@ struct WorkoutTabView: View {
             FriendsListView(initialTab: 1)  // Navigate directly to Requests tab
         case "FriendsSearch":
             FriendsListView(initialTab: 2)  // Navigate directly to Search tab (for adding friends)
+        case "CommunityChallenges":
+            CommunityChallengesHubView()
+                .environmentObject(userManager)
         default:
             if destination.hasPrefix("ProgramDetail:") {
                 let programId = String(destination.dropFirst("ProgramDetail:".count))
@@ -327,12 +341,9 @@ struct WorkoutHomeView: View {
                         recommendedWorkoutSection
                     }
                     
-                    // Next Goals (Revamped "Almost There!")
-                    nextGoalsSection
-                    
-                    // Recent Activity
-                    recentActivitySection
-                        .id(forceRenderID)
+                    // Your Stats (embedded from Stats tab)
+                    WorkoutStatsEmbeddedView()
+                        .environmentObject(userManager)
                 }
             }
             .padding(.horizontal, 16)

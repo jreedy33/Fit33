@@ -5,6 +5,7 @@ struct ExerciseLibraryView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var exerciseLibrary = ExerciseLibraryService.shared
     @State private var exercises: [Exercise] = []
     @State private var searchText = ""
     
@@ -42,318 +43,12 @@ struct ExerciseLibraryView: View {
         case all = "All Exercises"
     }
     
-    // MARK: - Top 500 Recommended Exercises (Curated from database)
-    // Comprehensive list covering all major movements, equipment types, and fitness levels
-    private let recommendedExercises: Set<String> = [
-        // ═══════════════════════════════════════════════════════════
-        // CHEST - 65 exercises (all equipment variations)
-        // ═══════════════════════════════════════════════════════════
-        // Barbell Bench Press Variations
-        "bench press", "incline bench press", "decline bench press", "close grip bench press",
-        "wide bench press", "reverse grip bench press", "floor press", "pin bench press",
-        "paused bench press", "tempo bench press", "board press", "guillotine bench press",
-        "jm bench press", "feet flat bench press", "explosive bench press", "banded bench press",
-        "weighted chains bench press", "reverse grip decline bench press", "reverse grip incline bench press",
-        "wide reverse grip bench press", "pullover with bench press", "pin chest press",
-        // Dumbbell Chest
-        "dumbbell press", "dumbbell bench press", "incline dumbbell press", "decline dumbbell press",
-        "dumbbell fly", "incline dumbbell fly", "decline dumbbell fly", "lying fly on floor",
-        "neutral grip bench press", "single arm dumbbell press", "alternating dumbbell press",
-        "dumbbell pullover", "squeeze bench press", "squeeze press", "hex press",
-        "incline squeeze press", "decline hammer press", "incline hammer press", "hammer press",
-        "incline palm in press", "rotational bench press", "glute bridge chest press",
-        "2 point bench press", "3 point bench press", "lying one arm press",
-        // Cable & Machine Chest
-        "cable fly", "cable crossover", "low cable fly", "high cable fly",
-        "incline cable fly", "single arm cable fly", "standing cable press",
-        "low chest press", "seated single arm chest press", "standing single arm chest press",
-        // Machine & Smith Machine Chest
-        "machine chest press", "pec deck", "machine fly", "smith bench press",
-        "smith incline bench press", "smith decline bench press", "smith close grip bench press",
-        "smith wide grip bench press", "smith jm bench press",
-        // Bodyweight & Landmine Chest
-        "push up", "decline push up", "diamond push up", "wide push up", "archer push up",
-        "pike push up", "chest dip", "ring dip", "deficit push up", "clap push up",
-        "landmine press", "landmine single arm press",
-        
-        // ═══════════════════════════════════════════════════════════
-        // BACK - 95 exercises (lats, traps, rhomboids, lower back)
-        // ═══════════════════════════════════════════════════════════
-        // Pull-Ups & Chin-Ups
-        "pull up", "chin up", "wide grip pull up", "close grip chin up",
-        "neutral grip pull up", "weighted pull up", "weighted chin up", "assisted pull up",
-        "assisted chin up", "l sit pull up", "l sit chin up", "wide chin up",
-        "reverse grip pull up", "corn cob pull up", "shoulder grip pull up",
-        // Lat Pulldowns
-        "lat pulldown", "wide grip lat pulldown", "close grip pulldown", "close grip front lat pulldown",
-        "neutral grip pulldown", "reverse grip pulldown", "single arm pulldown", "one arm lat pulldown",
-        "straight arm pulldown", "rope pulldown", "lat pulldown full range of motion",
-        "neutral grip lat pulldown", "seated wide lat pulldown", "underhand pulldown",
-        "cross lat pulldown", "twin handle parallel grip lat pulldown",
-        // Rows - Barbell
-        "barbell row", "bent over row", "pendlay row", "underhand bent over row",
-        "yates row", "seal row", "lying seal row", "chest supported row",
-        "reverse grip bent over row", "paused bent over row", "t-bar row",
-        "incline row", "incline rear delt row",
-        // Rows - Dumbbell
-        "dumbbell row", "single arm row", "one arm row", "chest supported dumbbell row",
-        "kroc row", "renegade row", "plank row", "gorilla row",
-        "bent over single arm row", "head supported row", "prone incline seal row",
-        "hammer grip incline bench row", "reverse grip incline row",
-        // Rows - Cable & Machine
-        "cable row", "seated cable row", "seated row", "single arm cable row",
-        "high cable row", "low cable row", "rope seated row", "low seated row",
-        "machine row", "meadows row", "v-bar row", "straight back seated row",
-        "front seated row", "neutral grip seated row", "high row",
-        // Deadlifts & Lower Back
-        "deadlift", "conventional deadlift", "sumo deadlift", "romanian deadlift",
-        "stiff leg deadlift", "trap bar deadlift", "deficit deadlift", "deadlift from deficit",
-        "rack pull", "snatch grip deadlift", "jefferson deadlift", "jefferson squat",
-        "single leg romanian deadlift", "staggered stance romanian deadlift",
-        "good morning", "back extension", "hyperextension", "45 degree hyperextension",
-        "reverse hyperextension", "superman", "bird dog", "dimel deadlift",
-        "hook grip deadlift", "mixed grip deadlift", "reeves deadlift",
-        "sumo romanian deadlift", "staggered stance deadlift",
-        // Smith Machine Back
-        "smith deadlift", "smith bent over row", "smith staggered stance romanian deadlift",
-        // Face Pulls & Other
-        "face pull", "standing face pull", "seated face pull", "inverted row",
-        "bodyweight row", "trx row", "ring row", "australian pull up",
-        
-        // ═══════════════════════════════════════════════════════════
-        // SHOULDERS - 70 exercises (front/side/rear delts)
-        // ═══════════════════════════════════════════════════════════
-        // Overhead Press - Barbell
-        "overhead press", "military press", "standing military press", "seated overhead press",
-        "seated military press", "standing shoulder press", "push press", "behind the neck press",
-        "behind head military press", "close grip military press", "reverse grip overhead press",
-        "half kneeling shoulders press", "incline shoulders press",
-        // Overhead Press - Dumbbell
-        "dumbbell shoulder press", "seated shoulder press", "arnold press",
-        "single arm shoulder press", "one arm shoulder press", "alternating shoulder press",
-        "seated alternate press", "kneeling arnold press", "kneeling opposite shoulder press",
-        "alternate z press", "z press", "w press", "seated w press",
-        // Cable & Machine Shoulders
-        "machine shoulder press", "smith standing military press",
-        "smith standing behind head military press", "shoulder press",
-        "landmine shoulder to shoulder press", "landmine shoulders press",
-        "landmine kneeling single arm shoulder press",
-        // Front Raises
-        "front raise", "barbell front raise", "dumbbell front raise",
-        "plate front raise", "cable front raise", "alternating front raise",
-        "seated half circle front raise",
-        // Lateral Raises
-        "lateral raise", "dumbbell lateral raise", "cable lateral raise",
-        "single arm lateral raise", "leaning lateral raise", "seated lateral raise",
-        "machine lateral raise", "incline lateral raise",
-        // Upright Rows
-        "upright row", "wide grip upright row", "cable upright row",
-        "shoulder grip upright row", "smith upright row",
-        // Rear Delts
-        "rear delt fly", "rear delt row", "reverse fly", "bent over lateral raise",
-        "cable reverse fly", "pec deck reverse fly", "chest supported rear delt fly",
-        "face pull", "band pull apart", "reverse pec deck", "lying rear delt row",
-        "incline rear delt row", "prone rear delt raise",
-        
-        // ═══════════════════════════════════════════════════════════
-        // BICEPS - 50 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Barbell & EZ Bar Curls
-        "bicep curl", "barbell curl", "curl", "standing barbell curl", "ez bar curl",
-        "wide grip curl", "close grip curl", "reverse curl", "drag curl",
-        "cheat curl", "spider curl", "preacher curl", "scott curl",
-        // Dumbbell Curls
-        "dumbbell curl", "alternate biceps curl", "alternating dumbbell curl", "hammer curl",
-        "cross body hammer curl", "incline dumbbell curl", "incline hammer curl",
-        "concentration curl", "seated dumbbell curl", "zottman curl", "waiter curl",
-        "hammer preacher curl", "single arm preacher curl", "standing reverse curl",
-        // Cable & Machine Curls
-        "cable curl", "low cable curl", "high cable curl",
-        "single arm cable curl", "rope cable curl", "machine curl",
-        "preacher curl machine", "bayesian curl", "seated unilateral biceps curl",
-        // Specialty Curls
-        "incline curl", "decline curl", "prone incline curl", "lying cable curl",
-        "standing single arm curl", "alternate curl", "21s",
-        // Wrist Curls (Forearm/Bicep)
-        "wrist curl", "reverse wrist curl", "barbell wrist curl", "dumbbell wrist curl",
-        
-        // ═══════════════════════════════════════════════════════════
-        // TRICEPS - 50 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Extensions - Overhead
-        "tricep extension", "overhead tricep extension", "french press", "standing french press",
-        "dumbbell overhead extension", "single arm overhead extension",
-        "cable overhead extension", "rope overhead extension",
-        "ez bar overhead extension", "seated overhead triceps extension",
-        // Extensions - Lying
-        "skull crusher", "lying tricep extension", "lying triceps extension",
-        "ez bar skull crusher", "dumbbell skull crusher", "close grip floor press",
-        "lying back of the head triceps extension", "decline close grip to skull press",
-        "incline triceps extension", "pronate grip triceps extension",
-        // Pushdowns
-        "tricep pushdown", "triceps pushdown", "cable pushdown", "pushdown",
-        "rope pushdown", "straight bar pushdown", "v-bar pushdown", "single arm pushdown",
-        "reverse grip pushdown", "reverse grip triceps pushdown",
-        "standing one arm triceps pushdown", "incline pushdown",
-        "jack hammer pushdown", "single arm triceps pushdown",
-        // Kickbacks & Dips
-        "tricep kickback", "kickback", "dumbbell kickback", "cable kickback",
-        "single arm kickback", "standing kickback",
-        "tricep dip", "dip", "bench dip", "weighted dip", "ring dip", "machine dip",
-        // Press Variations for Triceps
-        "close grip press", "jm press", "tate press",
-        "diamond push up", "tricep push up", "decline close grip bench press",
-        "close grip bench press", "california press",
-        
-        // ═══════════════════════════════════════════════════════════
-        // LEGS - QUADS - 70 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Squats - Barbell
-        "squat", "back squat", "high bar squat", "low bar squat",
-        "front squat", "pause squat", "tempo squat", "pin squat",
-        "box squat", "anderson squat", "zercher squat", "overhead squat",
-        "safety bar squat", "clean grip front squat", "elevated heel squat",
-        "elevated heel clean grip squat", "narrow stance squat", "wide squat",
-        "banded bench squat", "squat 2 sec hold", "full squat",
-        // Squats - Dumbbell & Goblet
-        "goblet squat", "dumbbell squat", "goblet sumo squat", "sumo goblet squat",
-        "dumbbell front squat", "elevated heel goblet squat", "elevated heel front squat",
-        "goblet 2 sec hold squat", "goblet pulse squat", "narrow squat",
-        // Squats - Machine & Smith
-        "hack squat", "hack squat machine", "reverse hack squat", "linear hack squat",
-        "pendulum squat", "vertical squat", "belt squat", "seated squat",
-        "smith squat", "smith front squat", "smith hack squat", "smith low bar squat",
-        "smith sumo squat", "smith frankenstein squat", "pistol squat",
-        // Leg Press
-        "leg press", "45 degree leg press", "angled leg press", "horizontal leg press",
-        "single leg press", "narrow stance leg press", "wide stance leg press",
-        "vertical leg press", "sled leg press", "smith leg press",
-        "seated leg press", "bench leg press",
-        // Leg Extensions
-        "leg extension", "single leg extension", "seated leg extension",
-        "squat to leg extension",
-        // Lunges & Step Ups
-        "lunge", "forward lunge", "reverse lunge", "rear lunge", "walking lunge",
-        "stationary lunge", "static lunge", "lateral lunge", "side lunge",
-        "curtsey lunge", "curtsy lunge", "goblet lunge", "front rack lunge",
-        "step up", "step up with knee raise", "high step up", "lateral step up",
-        
-        // ═══════════════════════════════════════════════════════════
-        // LEGS - HAMSTRINGS - 40 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Romanian Deadlifts
-        "romanian deadlift", "dumbbell romanian deadlift", "single leg romanian deadlift",
-        "stiff leg deadlift", "stiff legged deadlift", "straight leg deadlift",
-        "b stance romanian deadlift", "staggered stance romanian deadlift",
-        "landmine romanian deadlift", "landmine single leg romanian deadlift",
-        "sumo romanian deadlift", "belt romanian deadlift",
-        "romanian deadlift to row", "romanian deadlift to squat",
-        "ipsilateral single leg stiff leg deadlift",
-        // Leg Curls
-        "leg curl", "lying leg curl", "seated leg curl",
-        "standing leg curl", "single leg curl", "seated single leg curl",
-        "decline lying leg curl", "kneeling leg curl",
-        "stability ball leg curl", "slider leg curl",
-        // Nordic & GHR
-        "glute ham raise", "nordic curl", "nordic hamstring curl",
-        "inverse leg curl", "assisted inverse leg curl",
-        // Good Mornings
-        "good morning", "seated good morning", "safety bar good morning",
-        "good morning on the hack squat machine",
-        // Other Hamstring
-        "cable pull through", "kettlebell swing", "single leg deadlift",
-        "deficit stiff leg deadlift", "stiff leg deadlift from stepbox",
-        
-        // ═══════════════════════════════════════════════════════════
-        // LEGS - GLUTES - 40 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Hip Thrusts & Bridges
-        "hip thrust", "barbell hip thrust", "single leg hip thrust",
-        "banded hip thrust", "pause hip thrust", "banded single leg hip thrust",
-        "staggered stance hip thrust", "one leg hip thrust",
-        "glute bridge", "single leg glute bridge", "elevated glute bridge",
-        "banded glute bridge", "frog pump", "hip thrust machine",
-        "smith hip thrust", "landmine single leg hip thrust",
-        "glute bridge chest press",
-        // Bulgarian & Split Squats
-        "bulgarian split squat", "split squat", "rear foot elevated split squat",
-        "goblet bulgarian split squat", "dumbbell bulgarian split squat",
-        "front rack split squat", "split squat front foot elevated",
-        "goblet split squat", "zercher bulgarian split squat",
-        "smith split squat", "smith elevated split squat",
-        // Hip Abduction & Kickbacks
-        "cable kickback", "cable hip abduction", "machine hip abduction",
-        "donkey kick", "fire hydrant", "clamshell",
-        "side lying hip abduction", "banded abduction", "monster walk",
-        // Squats & Lunges (Glute Focus)
-        "sumo squat", "wide stance squat", "sumo deadlift",
-        "deficit bulgarian split squat", "walking lunge", "deficit reverse lunge",
-        "cossack squat", "cossack squats",
-        
-        // ═══════════════════════════════════════════════════════════
-        // CALVES - 20 exercises
-        // ═══════════════════════════════════════════════════════════
-        "calf raise", "standing calf raise", "seated calf raise",
-        "single leg calf raise", "donkey calf raise", "smith machine calf raise",
-        "leg press calf raise", "dumbbell calf raise", "hack squat calf raise",
-        "rotary calf", "sled calf press", "seated single calf press",
-        "outward calf raise", "one leg floor calf raise",
-        "tibialis raise", "toe walk", "calf raise clap",
-        
-        // ═══════════════════════════════════════════════════════════
-        // ABS & CORE - 50 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Crunches
-        "crunch", "bicycle crunch", "reverse crunch", "cable crunch",
-        "weighted crunch", "decline crunch", "rope crunch", "kneeling crunch",
-        "cross body crunch", "oblique crunch", "twisting crunch",
-        "side crunch", "tuck reverse crunch", "starfish crunch",
-        // Leg Raises
-        "leg raise", "hanging leg raise", "lying leg raise", "weighted hanging leg raise",
-        "captain's chair leg raise", "decline leg raise", "scissor kick",
-        "flutter kick", "vertical leg raise", "lying bent legs raise",
-        // Planks & Holds
-        "plank", "forearm plank", "front elbow plank", "extended plank",
-        "plank to pike", "plank jack", "plank up down", "side plank",
-        "plank row", "side plank row", "single leg plank",
-        "hollow body hold", "dead bug", "bird dog",
-        // Sit Ups & V-Ups
-        "sit up", "v up", "tuck up", "knee touch crunch",
-        // Rotational & Anti-Rotation
-        "russian twist", "wood chop", "pallof press", "half kneeling pallof press",
-        "vertical pallof press", "cable wood chop",
-        // Other Core
-        "ab wheel rollout", "mountain climber", "med ball slam",
-        "l sit", "hanging knee raise",
-        
-        // ═══════════════════════════════════════════════════════════
-        // COMPOUND / OLYMPIC / FUNCTIONAL - 35 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Olympic Lifts
-        "clean", "power clean", "hang clean", "clean and press",
-        "clean and jerk", "push jerk", "split jerk", "snatch",
-        "power snatch", "hang snatch", "muscle snatch", "high pull",
-        "clean high pull", "full clean", "hang clean below the knees",
-        "hang power clean", "hang snatch below the knees",
-        // Functional & Full Body
-        "thruster", "burpee", "man maker", "turkish get up",
-        "kettlebell swing", "american kettlebell swing", "single arm swing",
-        "devil press", "devils press", "dumbbell snatch", "single arm clean and press",
-        "farmer walk", "farmer carry", "suitcase carry", "overhead carry",
-        "yoke walk", "sandbag carry", "bear crawl", "sled push",
-        
-        // ═══════════════════════════════════════════════════════════
-        // TRAPS & NECK - 20 exercises
-        // ═══════════════════════════════════════════════════════════
-        // Shrugs
-        "shrug", "barbell shrug", "dumbbell shrug", "trap bar shrug",
-        "behind the back shrug", "cable shrug", "smith machine shrug",
-        "overhead shrug", "snatch grip shrug", "incline shrug",
-        "decline shrug", "seated reverse shrug", "smith back shrug",
-        // Other Trap Work
-        "high pull", "snatch grip high pull", "power shrug",
-        "upright row", "face pull", "farmer walk", "dead hang"
-    ]
+    // MARK: - Recommended Exercise Names
+    // Now uses the shared top-200 curated list from ExerciseLibraryFilterCache
+    // (single source of truth — no duplicate lists)
+    private var recommendedExercises: Set<String> {
+        ExerciseLibraryFilterCache.shared.recommendedExerciseNames
+    }
     
     // Categories filtered by selected exercise types (combines all selected)
     private var categories: [String] {
@@ -678,15 +373,22 @@ struct ExerciseLibraryView: View {
             lastFilterKey = filterKey
             searchResultsCache.removeAll() // Invalidate search cache
             
-            // ⚡️ OPTIMIZED: Use fast filter for default "Recommended" + no selections
-            if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended {
-                // Use optimized recommended filter with precomputed name set
+            // ⚡️ INSTANT: For default "Recommended" with no extra filters, use the pre-computed list
+            // This was built at startup by TabPreloader — zero work here, just pointer assignment
+            let filterCache = ExerciseLibraryFilterCache.shared
+            if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended && filterCache.isReady {
+                preFilteredExercises = filterCache.preFilteredRecommended
+                #if DEBUG
+                print("⚡️ [PERF] INSTANT recommended from pre-computed cache: \(preFilteredExercises.count) exercises (0ms)")
+                #endif
+            } else if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended {
+                // Fallback: cache not ready yet (very early cold start), compute inline
                 preFilteredExercises = applyOptimizedRecommendedFilter(to: exercises)
                 #if DEBUG
-                print("⚡️ [PERF] Optimized recommended filter: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                print("⚡️ [PERF] Optimized recommended filter (fallback): \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
                 #endif
             } else {
-                // Standard filter path
+                // Standard filter path for non-default filters
                 preFilteredExercises = applyFiltersOnly(to: exercises)
                 #if DEBUG
                 print("⚡️ [PERF] Rebuilt filter cache: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
@@ -1200,6 +902,12 @@ struct ExerciseLibraryView: View {
                                     CompactExerciseRowContent(exercise: exercise, showChevron: true)
                                 }
                                 .buttonStyle(PlainButtonStyle())
+                                .simultaneousGesture(TapGesture().onEnded {
+                                    // ⚡️ Track exercise selection for dynamic popularity ranking
+                                    if let name = exercise.name {
+                                        ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
+                                    }
+                                })
                                 // 🚀 Smart prefetch: preload video when exercise becomes visible
                                 .onAppear {
                                     prefetchVisibleExercise(exercise: exercise, index: index)
@@ -1254,6 +962,13 @@ struct ExerciseLibraryView: View {
                 
                 // Load exercises from cache first
                 loadExercises()
+                
+                // Re-compute recommended filter cache if it was built with 0 exercises
+                // (happens when tab preloader ran before cloud sync completed)
+                let filterCache = ExerciseLibraryFilterCache.shared
+                if !exercises.isEmpty && filterCache.preFilteredRecommended.isEmpty {
+                    filterCache.precomputeRecommendedList(allExercises: exercises)
+                }
                 
                 // ⚡️ HIGH-PERFORMANCE: Initialize filter cache immediately
                 updateFilteredExercises()
@@ -1319,6 +1034,25 @@ struct ExerciseLibraryView: View {
                         loadExercises()
                         updateFilteredExercises()
                     }
+                }
+            }
+            // 🔄 Reload when exercises become ready after cloud sync
+            .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
+                if isReady {
+                    print("✅ [LIBRARY] Exercises now ready after sync - reloading list")
+                    viewContext.refreshAllObjects()
+                    loadExercises()
+                    
+                    // Re-compute the recommended filter cache with actual exercises
+                    // (it was pre-computed at startup when Core Data was empty)
+                    if !exercises.isEmpty {
+                        ExerciseLibraryFilterCache.shared.precomputeRecommendedList(allExercises: exercises)
+                    }
+                    
+                    lastFilterKey = "" // Force filter rebuild
+                    searchResultsCache.removeAll()
+                    updateFilteredExercises()
+                    forceRenderID = UUID()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FavoriteExerciseChanged"))) { _ in
@@ -1602,6 +1336,11 @@ struct ExerciseLibraryView: View {
     }
     
     private func loadExercises() {
+        // Only load if exercises are ready (have valid names from cloud sync)
+        guard exerciseLibrary.isExercisesReady else {
+            print("⏳ [LIBRARY] Waiting for exercises to be ready...")
+            return
+        }
         exercises = ExerciseLibraryService.shared.getAllExercises()
     }
     
@@ -1636,7 +1375,6 @@ struct CompactExerciseRowContent: View {
                         )
                     )
                     .frame(width: 40, height: 40)
-                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 if exercise.category?.lowercased() == "core" {
                     CoreIcon(size: 22, color: .white)
@@ -1695,61 +1433,22 @@ struct CompactExerciseRowContent: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        // ⚡️ PERF: Simplified background — was 5 stacked shapes + 2 shadows = 7 compositing layers per row.
+        // Now just 1 fill + 1 stroke + 1 shadow = 3 layers. ~3x less GPU work per row.
         .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - category colored (subtle)
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(categoryGradient[0].opacity(colorScheme == .dark ? 0.06 : 0.03))
-                    .offset(y: 4)
-                    .blur(radius: 2)
-                
-                // Middle shadow layer (subtle)
-                RoundedRectangle(cornerRadius: 26)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
-                    .offset(y: 2)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
-                                : [Color.white, Color.white.opacity(0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.white.opacity(0.3), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-                
-                // Subtle accent border
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                categoryGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
-                                categoryGradient[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(white: 0.13) : Color.white)
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.05), radius: 6, x: 0, y: 3)
-        .shadow(color: categoryGradient[0].opacity(colorScheme == .dark ? 0.08 : 0.04), radius: 8, x: 0, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    colorScheme == .dark
+                        ? Color.white.opacity(0.06)
+                        : Color.black.opacity(0.06),
+                    lineWidth: 0.5
+                )
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 4, x: 0, y: 2)
     }
     
     private var categoryColor: Color {

@@ -26,6 +26,10 @@ class DeepLinkManager: ObservableObject {
         case challengeInvite(challengeId: String)
         case challengeDetail(challengeId: String)
         
+        // Community Challenges
+        case communityChallenge(slug: String)    // Join/view a community challenge
+        case communityChallengeBrowse            // Browse/discover community challenges
+        
         // Dashboard Widgets (navigate to Home + scroll to widget)
         case hydration          // Home tab > Hydration widget
         case stepTracker        // Home tab > Step tracker widget
@@ -41,6 +45,8 @@ class DeepLinkManager: ObservableObject {
     @Published var showSharedWorkoutSheet = false
     @Published var pendingSharedWorkoutId: String?
     @Published var pendingReceivedWorkoutId: String?
+    @Published var pendingCommunitySlug: String?          // Community challenge to join on open
+    @Published var showCommunityJoinSheet = false
     
     private init() {}
     
@@ -219,6 +225,35 @@ class DeepLinkManager: ObservableObject {
             }
             return true
             
+        case "community-challenge", "community":
+            // Format: fit33://community-challenge/{slug} or fit33://community
+            let path = url.path
+            let slug = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            
+            if !slug.isEmpty {
+                pendingCommunitySlug = slug
+                pendingDestination = .communityChallenge(slug: slug)
+                showCommunityJoinSheet = true
+                print("🌍 [DEEPLINK] Navigating to community challenge: \(slug)")
+            } else {
+                pendingDestination = .communityChallengeBrowse
+                print("🌍 [DEEPLINK] Navigating to community challenges browse")
+            }
+            return true
+            
+        case "join":
+            // Format: fit33://join/{code} — shorthand for joining a community challenge
+            let path = url.path
+            let code = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            
+            if !code.isEmpty {
+                pendingCommunitySlug = code
+                pendingDestination = .communityChallenge(slug: code)
+                showCommunityJoinSheet = true
+                print("🌍 [DEEPLINK] Join community challenge via code: \(code)")
+            }
+            return true
+            
         default:
             return false
         }
@@ -247,6 +282,31 @@ class DeepLinkManager: ObservableObject {
             pendingDestination = .dashboard
             return true
             
+        case "c", "challenge", "community":
+            // Format: https://fit33.app/c/{slug}
+            // This is the shareable community challenge URL
+            if pathComponents.count >= 2 {
+                let slug = pathComponents[1]
+                pendingCommunitySlug = slug
+                pendingDestination = .communityChallenge(slug: slug)
+                showCommunityJoinSheet = true
+                print("🌍 [DEEPLINK] Universal link to community challenge: \(slug)")
+                return true
+            }
+            return false
+            
+        case "join":
+            // Format: https://fit33.app/join/{code}
+            if pathComponents.count >= 2 {
+                let code = pathComponents[1]
+                pendingCommunitySlug = code
+                pendingDestination = .communityChallenge(slug: code)
+                showCommunityJoinSheet = true
+                print("🌍 [DEEPLINK] Universal link join: \(code)")
+                return true
+            }
+            return false
+            
         default:
             return false
         }
@@ -257,6 +317,8 @@ class DeepLinkManager: ObservableObject {
         pendingDestination = nil
         pendingSharedWorkoutId = nil
         showSharedWorkoutSheet = false
+        pendingCommunitySlug = nil
+        showCommunityJoinSheet = false
     }
 }
 

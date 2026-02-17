@@ -259,6 +259,18 @@ struct AdaptiveGradient {
         }
     }
     
+    static func friends(for colorScheme: ColorScheme) -> LinearGradient {
+        if colorScheme == .dark {
+            return universalDark
+        } else {
+            return LinearGradient(
+                gradient: Gradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.2), Color.purple.opacity(0.1), Color.white]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+    
     /// Universal background that can be used anywhere
     static func universal(for colorScheme: ColorScheme) -> LinearGradient {
         if colorScheme == .dark {
@@ -357,6 +369,14 @@ struct AnimatedOrbBackground: View {
             baseGradient: AdaptiveGradient.stats(for: colorScheme),
             primaryOrbColor: .blue,
             secondaryOrbColor: .cyan
+        )
+    }
+    
+    static func friends(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.friends(for: colorScheme),
+            primaryOrbColor: .cyan,
+            secondaryOrbColor: .purple
         )
     }
     

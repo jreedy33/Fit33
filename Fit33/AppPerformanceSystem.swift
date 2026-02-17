@@ -362,15 +362,15 @@ final class SmartPrefetch: ObservableObject {
     // MARK: - Tab-Based Prefetch
     
     /// Call when user shows intent to visit a tab (gesture, hover)
+    /// NOTE: Progress tab prefetch (achievements) was removed — too expensive to run on every switch
     func prefetchForTab(_ tab: LazyTabManager.Tab) {
         switch tab {
         case .exercises:
             prefetchExerciseLibrary()
-        case .progress:
-            prefetchProgressData()
         case .nutrition:
             prefetchNutritionData()
         default:
+            // .progress (now Friends tab) and others — let them load on-demand
             break
         }
     }
@@ -769,13 +769,13 @@ extension View {
         }
     }
     
-    /// Optimized for tab content - reduces unnecessary updates
-    /// ⚡️ Enhanced: Also disables animation when tabs are preloaded for instant switching
+    /// Optimized for tab content - reduces unnecessary updates during active tab transitions
     func tabContentOptimized() -> some View {
         self
             .transaction { transaction in
-                // Disable animations during tab switch OR when preloading is complete for instant feel
-                if TabSwitchOptimizer.shared.isTransitioning || TabPreloader.shared.isPreloadingComplete {
+                // Only disable animations during an ACTIVE tab transition (not permanently)
+                // Previously this also checked isPreloadingComplete which killed ALL animations forever
+                if TabSwitchOptimizer.shared.isTransitioning {
                     transaction.animation = nil
                 }
             }

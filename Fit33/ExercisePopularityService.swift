@@ -168,7 +168,8 @@ final class ExercisePopularityService {
         return favoritedCache.contains(key)
     }
     
-    /// Get popularity boost for workout scoring (0-200 points)
+    /// Get popularity boost for workout scoring (0-250 points)
+    /// Blends community popularity + user's personal usage history
     func getPopularityBoost(for exerciseName: String) -> Int {
         let baseScore = getPopularityScore(for: exerciseName)
         var boost = 0
@@ -188,7 +189,21 @@ final class ExercisePopularityService {
             boost += 50
         }
         
-        return min(boost, 200)
+        // ⚡️ Personal usage boost: exercises the user actually does get prioritized
+        // This makes auto-gen and programs favor exercises the user likes over time
+        let personalCount = personalUsageCount(for: exerciseName.lowercased())
+        if personalCount > 0 {
+            // 1-5 uses: +10, 6-15 uses: +25, 16+ uses: +50
+            if personalCount >= 16 {
+                boost += 50
+            } else if personalCount >= 6 {
+                boost += 25
+            } else {
+                boost += 10
+            }
+        }
+        
+        return min(boost, 250)
     }
     
     /// Get top N most popular exercises
@@ -203,6 +218,12 @@ final class ExercisePopularityService {
     func getTopExercises(for category: String, count: Int = 10) -> [String] {
         // This would filter by category - for now return overall top
         return getTopExercises(count: count)
+    }
+    
+    /// Read personal usage count directly from UserDefaults (thread-safe, no MainActor needed)
+    private func personalUsageCount(for exerciseName: String) -> Int {
+        guard let data = UserDefaults.standard.dictionary(forKey: "exerciseUsageCounts") as? [String: Int] else { return 0 }
+        return data[exerciseName] ?? 0
     }
     
     // MARK: - Data Refresh

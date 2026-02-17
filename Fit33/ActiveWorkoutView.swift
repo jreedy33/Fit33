@@ -1056,6 +1056,26 @@ struct ActiveWorkoutView: View {
             )
         }
         
+        // ⚡️ Track exercise completions for dynamic popularity ranking
+        // Exercises the user actually completes rise to the top of the Recommended list over time
+        Task { @MainActor in
+            let filterCache = ExerciseLibraryFilterCache.shared
+            for exercise in capturedExercises {
+                guard let exerciseId = exercise.id?.uuidString,
+                      let exerciseName = exercise.name,
+                      let sets = capturedSetsData[exerciseId] else { continue }
+                let completedSets = sets.filter { $0.isCompleted }.count
+                if completedSets > 0 {
+                    // Each completed set adds weight to this exercise's ranking
+                    for _ in 0..<completedSets {
+                        filterCache.trackExerciseCompletion(exerciseName: exerciseName)
+                    }
+                }
+            }
+            // Re-sort recommended list so next tab visit reflects updated rankings
+            filterCache.refreshSort()
+        }
+        
         // 🧠 Update the learning engine with this workout data
         // This helps the recommendation engine learn user preferences over time
         Task {

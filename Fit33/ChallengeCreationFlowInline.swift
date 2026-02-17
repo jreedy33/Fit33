@@ -294,6 +294,9 @@ struct ChallengeCreationFlowInline: View {
         case .steps: return 10000
         case .calories: return 500
         case .protein: return 150
+        case .activeMinutes: return 30
+        case .workoutStreak: return 1
+        case .sleep: return 7
         }
     }
     

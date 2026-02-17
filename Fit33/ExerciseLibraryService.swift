@@ -62,6 +62,13 @@ class ExerciseLibraryService: ObservableObject {
             if validCount > 100 {
                 self?.isExercisesReady = true
                 print("✅ [ExerciseLibrary] Exercises ready: \(validCount) valid exercises")
+                
+                // ⚡️ Also pre-compute the recommended list for instant Exercise tab loading
+                // This is a safety net — TabPreloader also does this, but whichever runs first wins
+                let filterCache = ExerciseLibraryFilterCache.shared
+                if !filterCache.isReady {
+                    filterCache.precomputeRecommendedList(allExercises: exercises)
+                }
             } else {
                 print("⚠️ [ExerciseLibrary] Only \(validCount) valid exercises - waiting for sync")
             }
@@ -212,6 +219,13 @@ class ExerciseLibraryService: ObservableObject {
     /// Force sync exercises - clears old data and pulls fresh from cloud
     func forceSyncExercises() async {
         print("🔄 FORCE SYNC: Clearing old exercise data...")
+        
+        // ⚠️ Mark as not ready FIRST so UI shows loading state
+        // and onChange(isExercisesReady) fires when sync completes
+        await MainActor.run {
+            isExercisesReady = false
+        }
+        
         await MainActor.run {
             let viewContext = PersistenceController.shared.container.viewContext
             let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
@@ -235,12 +249,38 @@ class ExerciseLibraryService: ObservableObject {
         print("✅ FORCE SYNC complete - fresh data loaded!")
     }
     
+    /// How often exercises should be fully re-synced from cloud.
+    /// Exercises rarely change — a 6-hour window is plenty.
+    private static let exerciseSyncInterval: TimeInterval = 6 * 60 * 60 // 6 hours
+    
     func syncExercisesFromCloud() async {
         // 🛡️ CRITICAL: Never sync exercises during an active workout!
-        // This would delete the exercise objects the workout is referencing,
-        // causing exercise cards to show "Exercise" and lose all data.
         if WorkoutManager.shared.isWorkoutActive {
             print("⚠️ [SYNC] Skipping exercise sync - workout is active")
+            return
+        }
+        
+        // ⚡️ PERFORMANCE: Skip full exercise re-sync if Core Data is fresh.
+        // The exercise database rarely changes (new exercises added weekly at most).
+        // A full re-sync downloads 6500+ exercises, deletes Core Data, and re-inserts — VERY expensive.
+        // Only re-sync if cache is stale (>6 hours) or explicitly forced.
+        let lastSync = UserDefaults.standard.object(forKey: "lastExerciseCloudSync") as? Date
+        let cacheAge = lastSync.map { Date().timeIntervalSince($0) } ?? .infinity
+        
+        // Check if we have a reasonable number of exercises cached
+        let cachedCount = await MainActor.run { () -> Int in
+            let req: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+            return (try? PersistenceController.shared.container.viewContext.count(for: req)) ?? 0
+        }
+        
+        if cachedCount > 1000 && cacheAge < Self.exerciseSyncInterval {
+            let hoursAgo = String(format: "%.1f", cacheAge / 3600)
+            print("⚡️ [SYNC] Skipping exercise sync — \(cachedCount) exercises cached, synced \(hoursAgo)h ago")
+            
+            // Still mark exercises as ready if they aren't
+            if !isExercisesReady {
+                await preloadAll()
+            }
             return
         }
         
@@ -266,6 +306,9 @@ class ExerciseLibraryService: ObservableObject {
             let cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
             print("✅ Fetched \(cloudExercises.count) exercises from cloud")
             await performSync(with: cloudExercises)
+            
+            // Record sync timestamp
+            UserDefaults.standard.set(Date(), forKey: "lastExerciseCloudSync")
         } catch {
             print("❌ Failed to fetch exercises from cloud: \(error)")
         }

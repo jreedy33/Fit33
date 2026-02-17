@@ -82,6 +82,9 @@ enum ChallengeActivityType: String, CaseIterable {
     case steps = "Steps"
     case calories = "Calories"
     case protein = "Protein"
+    case activeMinutes = "Active Minutes"
+    case workoutStreak = "Workout Streak"
+    case sleep = "Sleep"
     
     var emoji: String {
         switch self {
@@ -92,6 +95,9 @@ enum ChallengeActivityType: String, CaseIterable {
         case .steps: return "👣"
         case .calories: return "🔥"
         case .protein: return "🥩"
+        case .activeMinutes: return "⏱️"
+        case .workoutStreak: return "🔥"
+        case .sleep: return "😴"
         }
     }
     
@@ -104,6 +110,9 @@ enum ChallengeActivityType: String, CaseIterable {
         case .steps: return [.purple, .blue]
         case .calories: return [.orange, .red]
         case .protein: return [.pink, .purple]
+        case .activeMinutes: return [.cyan, .blue]
+        case .workoutStreak: return [.red, .orange]
+        case .sleep: return [.indigo, .purple]
         }
     }
 }
@@ -704,6 +713,9 @@ struct ChallengeCreationFlow: View {
         case .steps: return "steps"
         case .calories: return "calories"
         case .protein: return "grams"
+        case .activeMinutes: return "minutes"
+        case .workoutStreak: return "workouts"
+        case .sleep: return "hours"
         }
     }
     
@@ -716,6 +728,9 @@ struct ChallengeCreationFlow: View {
         case .steps: return 10000
         case .calories: return 500
         case .protein: return 150
+        case .activeMinutes: return 30
+        case .workoutStreak: return 1
+        case .sleep: return 7
         }
     }
     
@@ -728,6 +743,9 @@ struct ChallengeCreationFlow: View {
         case .hydrate: return "Track your daily water intake goal"
         case .calories: return "Set your daily active calorie burn target"
         case .protein: return "Hit your daily protein intake goal"
+        case .activeMinutes: return "Total active minutes from any workout"
+        case .workoutStreak: return "Complete at least one workout per day"
+        case .sleep: return "Get enough sleep every night"
         }
     }
     
@@ -775,6 +793,23 @@ struct ChallengeCreationFlow: View {
                 ChallengeOption(title: "🍗 Muscle Fuel", description: "150g daily — building phase", dailyTarget: 150, unit: "grams", isPreset: true, isCustom: false),
                 ChallengeOption(title: "🥩 Gains Machine", description: "200g daily — max protein", dailyTarget: 200, unit: "grams", isPreset: true, isCustom: false)
             ]
+        case .activeMinutes:
+            return [
+                ChallengeOption(title: "🧘 Gentle Movement", description: "15 active minutes daily", dailyTarget: 15, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "⏱️ WHO Standard", description: "30 active minutes daily", dailyTarget: 30, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🔋 Power Hour", description: "60 active minutes daily", dailyTarget: 60, unit: "minutes", isPreset: true, isCustom: false)
+            ]
+        case .workoutStreak:
+            return [
+                ChallengeOption(title: "🎯 Daily Grinder", description: "1 workout every day — no excuses", dailyTarget: 1, unit: "workouts", isPreset: true, isCustom: false),
+                ChallengeOption(title: "💪 Double Down", description: "2 sessions a day — morning & evening", dailyTarget: 2, unit: "workouts", isPreset: true, isCustom: false)
+            ]
+        case .sleep:
+            return [
+                ChallengeOption(title: "💤 Early Bird", description: "Get at least 6 hours of sleep", dailyTarget: 6, unit: "hours", isPreset: true, isCustom: false),
+                ChallengeOption(title: "😴 Sleep Well", description: "7 hours — the science-backed sweet spot", dailyTarget: 7, unit: "hours", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🛏️ Recovery King", description: "8+ hours for peak performance", dailyTarget: 8, unit: "hours", isPreset: true, isCustom: false)
+            ]
         }
     }
     
@@ -809,6 +844,9 @@ struct ChallengeCreationFlow: View {
         case .steps: challengeType = .steps
         case .calories: challengeType = .calories
         case .protein: challengeType = .protein
+        case .activeMinutes: challengeType = .activeMinutes
+        case .workoutStreak: challengeType = .workoutStreak
+        case .sleep: challengeType = .steps // Sleep stored as custom type, resolved by unit
         }
         
         print("🔄 [CHALLENGE FLOW] Mapped to ChallengeType: \(challengeType.rawValue)")
@@ -1077,6 +1115,9 @@ struct CustomTargetCard: View {
         case .steps: return 500 // steps
         case .calories: return 50 // calories
         case .protein: return 10 // grams
+        case .activeMinutes: return 5 // minutes
+        case .workoutStreak: return 1 // workouts
+        case .sleep: return 1 // hours
         }
     }
     
@@ -1088,6 +1129,9 @@ struct CustomTargetCard: View {
         case .steps: return 1000
         case .calories: return 100
         case .protein: return 50
+        case .activeMinutes: return 5
+        case .workoutStreak: return 1
+        case .sleep: return 4
         }
     }
     
@@ -1099,6 +1143,9 @@ struct CustomTargetCard: View {
         case .steps: return 30000
         case .calories: return 2000
         case .protein: return 400
+        case .activeMinutes: return 180
+        case .workoutStreak: return 5
+        case .sleep: return 12
         }
     }
     
@@ -1293,6 +1340,9 @@ struct CustomTargetCard: View {
         case .steps: return "steps per day"
         case .calories: return "calories per day"
         case .protein: return "grams per day"
+        case .activeMinutes: return "minutes per day"
+        case .workoutStreak: return "workouts per day"
+        case .sleep: return "hours per night"
         }
     }
     
@@ -1304,6 +1354,9 @@ struct CustomTargetCard: View {
         case .steps: return "steps"
         case .calories: return "calories"
         case .protein: return "grams"
+        case .activeMinutes: return "minutes"
+        case .workoutStreak: return "workouts"
+        case .sleep: return "hours"
         }
     }
 }

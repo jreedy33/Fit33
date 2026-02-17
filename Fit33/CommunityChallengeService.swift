@@ -1,0 +1,610 @@
+//
+//  CommunityChallengeService.swift
+//  Fit33
+//
+//  Community Challenge System — open challenges anyone can join,
+//  with real-time leaderboards, shareable invite links, and unlimited participants.
+//  Think "10K Steps Daily" that thousands of users can opt into.
+//
+
+import Foundation
+import SwiftUI
+
+// MARK: - Community Challenge Models
+
+struct CommunityChallenge: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let joinCode: String
+    let inviteSlug: String
+    let isRecurring: Bool
+    let isFeatured: Bool
+    let isOfficial: Bool
+    let myTodayProgress: Int?
+    let myDaysCompleted: Int?
+    let myCurrentStreak: Int?
+    let myRank: Int?
+    let createdBy: UUID?
+    let creatorName: String?
+    let creatorUsername: String?
+    
+    var id: UUID { challengeId }
+    
+    var displayEmoji: String { emoji ?? "🌍" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    /// Shareable URL for this challenge
+    var shareURL: URL? {
+        URL(string: "https://fit33.app/c/\(inviteSlug)")
+    }
+    
+    /// Deep link URL
+    var deepLinkURL: URL? {
+        URL(string: "fit33://community-challenge/\(inviteSlug)")
+    }
+    
+    /// Progress percentage for today (0.0 to 1.0)
+    var todayProgressPercentage: Double {
+        guard dailyTarget > 0 else { return 0 }
+        return min(1.0, Double(myTodayProgress ?? 0) / Double(dailyTarget))
+    }
+    
+    /// Whether today's target is hit
+    var targetHitToday: Bool {
+        (myTodayProgress ?? 0) >= dailyTarget
+    }
+    
+    /// Formatted participant count (e.g., "1.2K" or "347")
+    var formattedParticipantCount: String {
+        if participantCount >= 10000 {
+            return String(format: "%.1fK", Double(participantCount) / 1000)
+        } else if participantCount >= 1000 {
+            return String(format: "%.1fK", Double(participantCount) / 1000)
+        }
+        return "\(participantCount)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case isRecurring = "is_recurring"
+        case isFeatured = "is_featured"
+        case isOfficial = "is_official"
+        case myTodayProgress = "my_today_progress"
+        case myDaysCompleted = "my_days_completed"
+        case myCurrentStreak = "my_current_streak"
+        case myRank = "my_rank"
+        case createdBy = "created_by"
+        case creatorName = "creator_name"
+        case creatorUsername = "creator_username"
+    }
+}
+
+struct FeaturedCommunityChallenge: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let totalCompletions: Int
+    let joinCode: String
+    let inviteSlug: String
+    let isFeatured: Bool
+    let isOfficial: Bool
+    let isRecurring: Bool
+    let category: String?
+    let createdBy: UUID?
+    let creatorName: String?
+    let creatorUsername: String?
+    let alreadyJoined: Bool
+    
+    var id: UUID { challengeId }
+    var displayEmoji: String { emoji ?? "🌍" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    var formattedParticipantCount: String {
+        if participantCount >= 1000 {
+            return String(format: "%.1fK", Double(participantCount) / 1000)
+        }
+        return "\(participantCount)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case totalCompletions = "total_completions"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case isFeatured = "is_featured"
+        case isOfficial = "is_official"
+        case isRecurring = "is_recurring"
+        case category
+        case createdBy = "created_by"
+        case creatorName = "creator_name"
+        case creatorUsername = "creator_username"
+        case alreadyJoined = "already_joined"
+    }
+}
+
+struct CommunityLeaderboardEntry: Codable, Identifiable {
+    let rank: Int
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    let todayProgress: Int
+    let daysCompleted: Int
+    let currentStreak: Int
+    let targetHitToday: Bool
+    
+    var id: UUID { userId }
+    
+    var displayName: String {
+        if let name = name, !name.isEmpty { return name }
+        if let username = username, !username.isEmpty { return "@\(username)" }
+        return "Anonymous"
+    }
+    
+    var firstName: String {
+        name?.components(separatedBy: " ").first ?? username ?? "User"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case rank
+        case userId = "user_id"
+        case name, username
+        case profilePhotoUrl = "profile_photo_url"
+        case todayProgress = "today_progress"
+        case daysCompleted = "days_completed"
+        case currentStreak = "current_streak"
+        case targetHitToday = "target_hit_today"
+    }
+}
+
+struct CommunityLeaderboardResponse: Codable {
+    let challengeId: UUID
+    let challengeTitle: String
+    let challengeEmoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let joinCode: String
+    let inviteSlug: String
+    let leaderboard: [CommunityLeaderboardEntry]?
+    let myRank: Int
+    let myTodayProgress: Int
+    let myDaysCompleted: Int
+    let myCurrentStreak: Int
+    let myBestStreak: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case challengeTitle = "challenge_title"
+        case challengeEmoji = "challenge_emoji"
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case leaderboard
+        case myRank = "my_rank"
+        case myTodayProgress = "my_today_progress"
+        case myDaysCompleted = "my_days_completed"
+        case myCurrentStreak = "my_current_streak"
+        case myBestStreak = "my_best_streak"
+    }
+}
+
+struct CommunityChallengePreview: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let joinCode: String
+    let inviteSlug: String
+    let isRecurring: Bool
+    let isFeatured: Bool
+    let isOfficial: Bool
+    let creatorName: String?
+    let creatorUsername: String?
+    let creatorPhotoUrl: String?
+    let alreadyJoined: Bool
+    let status: String
+    
+    var id: UUID { challengeId }
+    var displayEmoji: String { emoji ?? "🌍" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case isRecurring = "is_recurring"
+        case isFeatured = "is_featured"
+        case isOfficial = "is_official"
+        case creatorName = "creator_name"
+        case creatorUsername = "creator_username"
+        case creatorPhotoUrl = "creator_photo_url"
+        case alreadyJoined = "already_joined"
+        case status
+    }
+}
+
+
+// MARK: - Community Challenge Service
+
+@MainActor
+class CommunityChallengeService: ObservableObject {
+    static let shared = CommunityChallengeService()
+    
+    @Published var myChallenges: [CommunityChallenge] = []
+    @Published var featuredChallenges: [FeaturedCommunityChallenge] = []
+    @Published var isLoading = false
+    
+    private init() {}
+    
+    // MARK: - Fetch My Community Challenges
+    
+    func fetchMyChallenges() async {
+        do {
+            struct TimezoneParams: Encodable {
+                let p_timezone: String
+            }
+            
+            let result: [CommunityChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_my_community_challenges", params: TimezoneParams(
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+            
+            myChallenges = result
+            print("✅ [COMMUNITY] Fetched \(result.count) community challenges")
+        } catch {
+            print("❌ [COMMUNITY] Error fetching my challenges: \(error)")
+        }
+    }
+    
+    // MARK: - Fetch Featured / Discover
+    
+    func fetchFeaturedChallenges(category: String? = nil) async {
+        do {
+            struct FeaturedParams: Encodable {
+                let p_limit: Int
+                let p_category: String?
+            }
+            
+            let result: [FeaturedCommunityChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_featured_community_challenges", params: FeaturedParams(
+                    p_limit: 30,
+                    p_category: category
+                ))
+                .execute()
+                .value
+            
+            featuredChallenges = result
+            print("✅ [COMMUNITY] Fetched \(result.count) featured challenges")
+        } catch {
+            print("❌ [COMMUNITY] Error fetching featured: \(error)")
+        }
+    }
+    
+    // MARK: - Create Community Challenge
+    
+    func createChallenge(
+        challengeType: String,
+        title: String,
+        description: String? = nil,
+        emoji: String = "🌍",
+        dailyTarget: Int,
+        targetUnit: String,
+        isRecurring: Bool = true,
+        endDate: String? = nil,
+        maxParticipants: Int? = nil,
+        visibility: String = "public",
+        category: String = "fitness"
+    ) async -> UUID? {
+        do {
+            struct CreateParams: Encodable {
+                let p_challenge_type: String
+                let p_title: String
+                let p_description: String?
+                let p_emoji: String
+                let p_daily_target: Int
+                let p_target_unit: String
+                let p_is_recurring: Bool
+                let p_end_date: String?
+                let p_max_participants: Int?
+                let p_visibility: String
+                let p_category: String
+            }
+            
+            let id: UUID = try await SupabaseManager.shared.supabaseClient
+                .rpc("create_community_challenge", params: CreateParams(
+                    p_challenge_type: challengeType,
+                    p_title: title,
+                    p_description: description,
+                    p_emoji: emoji,
+                    p_daily_target: dailyTarget,
+                    p_target_unit: targetUnit,
+                    p_is_recurring: isRecurring,
+                    p_end_date: endDate,
+                    p_max_participants: maxParticipants,
+                    p_visibility: visibility,
+                    p_category: category
+                ))
+                .execute()
+                .value
+            
+            print("✅ [COMMUNITY] Created community challenge: \(id)")
+            await fetchMyChallenges()
+            return id
+        } catch {
+            print("❌ [COMMUNITY] Error creating challenge: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Join Challenge
+    
+    func joinChallenge(code: String? = nil, slug: String? = nil, referredBy: String? = nil) async -> UUID? {
+        do {
+            struct JoinParams: Encodable {
+                let p_join_code: String?
+                let p_invite_slug: String?
+                let p_referred_by: String?
+            }
+            
+            let id: UUID = try await SupabaseManager.shared.supabaseClient
+                .rpc("join_community_challenge", params: JoinParams(
+                    p_join_code: code,
+                    p_invite_slug: slug,
+                    p_referred_by: referredBy
+                ))
+                .execute()
+                .value
+            
+            print("✅ [COMMUNITY] Joined community challenge: \(id)")
+            HapticManager.notification(.success)
+            await fetchMyChallenges()
+            return id
+        } catch {
+            print("❌ [COMMUNITY] Error joining challenge: \(error)")
+            HapticManager.notification(.error)
+            return nil
+        }
+    }
+    
+    // MARK: - Leave Challenge
+    
+    func leaveChallenge(challengeId: UUID) async -> Bool {
+        do {
+            struct LeaveParams: Encodable {
+                let p_challenge_id: String
+            }
+            
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("leave_community_challenge", params: LeaveParams(
+                    p_challenge_id: challengeId.uuidString
+                ))
+                .execute()
+                .value
+            
+            myChallenges.removeAll { $0.challengeId == challengeId }
+            print("✅ [COMMUNITY] Left community challenge: \(challengeId)")
+            return true
+        } catch {
+            print("❌ [COMMUNITY] Error leaving challenge: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Log Progress
+    
+    func logProgress(challengeId: UUID, progressValue: Int) async -> Bool {
+        do {
+            struct LogParams: Encodable {
+                let p_challenge_id: String
+                let p_progress: Int
+                let p_timezone: String
+            }
+            
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("log_community_challenge_progress", params: LogParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_progress: progressValue,
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+            
+            print("✅ [COMMUNITY] Logged progress: \(progressValue) for \(challengeId)")
+            return true
+        } catch {
+            print("❌ [COMMUNITY] Error logging progress: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Get Leaderboard
+    
+    func getLeaderboard(challengeId: UUID, limit: Int = 20) async -> CommunityLeaderboardResponse? {
+        do {
+            struct LeaderboardParams: Encodable {
+                let p_challenge_id: String
+                let p_limit: Int
+                let p_timezone: String
+            }
+            
+            let results: [CommunityLeaderboardResponse] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_community_challenge_leaderboard", params: LeaderboardParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_limit: limit,
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+            
+            return results.first
+        } catch {
+            print("❌ [COMMUNITY] Error fetching leaderboard: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Lookup Challenge by Code/Slug
+    
+    func lookupChallenge(code: String) async -> CommunityChallengePreview? {
+        do {
+            struct LookupParams: Encodable {
+                let p_code: String
+            }
+            
+            let results: [CommunityChallengePreview] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_community_challenge_by_code", params: LookupParams(
+                    p_code: code
+                ))
+                .execute()
+                .value
+            
+            return results.first
+        } catch {
+            print("❌ [COMMUNITY] Error looking up challenge: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Auto-Sync Progress to Community Challenges
+    
+    /// Syncs HealthKit/tracking data to all active community challenges
+    /// Called alongside the existing challenge sync
+    func syncAllTrackingToCommunityChallenges() async {
+        guard !myChallenges.isEmpty else { return }
+        
+        print("🔄 [COMMUNITY] Syncing tracking data to \(myChallenges.count) community challenges...")
+        
+        for challenge in myChallenges {
+            let progressValue = await calculateProgress(for: challenge)
+            
+            if progressValue > 0 {
+                let _ = await logProgress(challengeId: challenge.challengeId, progressValue: progressValue)
+            }
+        }
+        
+        // Refresh to show updated progress
+        await fetchMyChallenges()
+        print("✅ [COMMUNITY] Community challenge sync complete")
+    }
+    
+    /// Calculate progress from HealthKit/services for a community challenge
+    private func calculateProgress(for challenge: CommunityChallenge) async -> Int {
+        let healthKit = HealthKitService.shared
+        let healthKitManager = HealthKitManager.shared
+        
+        switch challenge.challengeType {
+        case "steps":
+            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKit.todaySteps
+            return steps
+            
+        case "walk":
+            if challenge.targetUnit == "minutes" {
+                let walkMinutes = healthKit.recentWorkouts
+                    .filter { $0.workoutType == .walking && Calendar.current.isDateInToday($0.startDate) }
+                    .reduce(0) { $0 + $1.durationMinutes }
+                return walkMinutes
+            }
+            return 0
+            
+        case "run":
+            if challenge.targetUnit == "minutes" {
+                let runMinutes = healthKit.recentWorkouts
+                    .filter { $0.workoutType == .running && Calendar.current.isDateInToday($0.startDate) }
+                    .reduce(0) { $0 + $1.durationMinutes }
+                return runMinutes
+            }
+            return 0
+            
+        case "lift", "workout_streak":
+            return 0 // Tracked via manual workout completions
+            
+        case "active_minutes":
+            return healthKit.todayActiveMinutes
+            
+        case "hydrate":
+            let totalMl = HydrationService.shared.todayTotal
+            if challenge.targetUnit.lowercased() == "oz" {
+                return Int(Double(totalMl) / 29.5735)
+            }
+            return totalMl
+            
+        case "protein":
+            return MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+            
+        case "calories":
+            let hkCal = healthKit.todayCalories
+            let mealCal = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
+            return max(hkCal, mealCal)
+            
+        case "sleep":
+            let sleepHours = healthKit.lastNightSleep ?? 0
+            return Int(sleepHours * 60) // Convert to minutes for comparison
+            
+        default:
+            return 0
+        }
+    }
+    
+    // MARK: - Share Helper
+    
+    /// Generate a share message for a community challenge
+    func shareMessage(for challenge: CommunityChallenge) -> String {
+        let url = challenge.shareURL?.absoluteString ?? "https://fit33.app"
+        return "\(challenge.displayEmoji) Join me on the \"\(challenge.title)\" challenge on Fit33! \(challenge.formattedParticipantCount) people are already in. Can you hit \(challenge.dailyTarget) \(challenge.targetUnit) daily?\n\n\(url)"
+    }
+    
+    /// Generate a share message when you hit your target
+    func celebrationShareMessage(for challenge: CommunityChallenge) -> String {
+        let url = challenge.shareURL?.absoluteString ?? "https://fit33.app"
+        let rank = challenge.myRank ?? 0
+        return "🎉 I just crushed my \(challenge.title) goal! Ranked #\(rank) out of \(challenge.formattedParticipantCount) people on Fit33.\n\nThink you can beat me? \(url)"
+    }
+}

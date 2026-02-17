@@ -3687,7 +3687,7 @@ class SupabaseManager: ObservableObject {
     /// 🔒 Sync state tracking to prevent duplicate syncs
     private static var isSyncInProgress = false
     private static var lastSyncTime: Date?
-    private static let minSyncInterval: TimeInterval = 30 // Minimum 30 seconds between syncs
+    private static let minSyncInterval: TimeInterval = 300 // Minimum 5 minutes between full syncs
     
     /// Syncs all user data from cloud to Core Data
     /// ⚡️ PERFORMANCE: Now with deduplication, throttling, and heavy work signaling

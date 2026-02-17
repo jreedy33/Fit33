@@ -452,9 +452,10 @@ struct ExerciseDetailView: View {
     
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Exercise Name with gradient text
+            // Exercise Name with gradient text - auto-sized to fit without truncation
             Text(exercise.displayName)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.6)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.primary, .primary.opacity(0.8)],

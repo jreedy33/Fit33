@@ -48,6 +48,7 @@ struct ChallengeFlowStartView: View {
     @State private var loadingFriendRequests: Set<UUID> = []
     @State private var sentFriendRequests: Set<UUID> = []
     @State private var showingQRScanner = false
+    @State private var showCommunityHub = false
     
     private var filteredFriends: [Friend] {
         if searchText.isEmpty {
@@ -1113,6 +1114,51 @@ struct ChallengeFlowStartView: View {
                         }
                     )
                 }
+                
+                // Community Challenges option
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    showCommunityHub = true
+                }) {
+                    HStack(spacing: 14) {
+                        Text("🌍")
+                            .font(.system(size: 32))
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Community Challenges")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                            
+                            Text("Join global leaderboards — unlimited players")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "globe.americas.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.purple)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(
+                                        LinearGradient(colors: [.purple.opacity(0.5), .blue.opacity(0.3)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showCommunityHub) {
+                    CommunityChallengesHubView()
+                }
             }
         }
     }
@@ -1567,6 +1613,9 @@ struct ChallengeFlowStartView: View {
         case .steps: return 10000
         case .calories: return 500
         case .protein: return 150
+        case .activeMinutes: return 30
+        case .workoutStreak: return 1
+        case .sleep: return 7
         }
     }
     
@@ -1578,6 +1627,9 @@ struct ChallengeFlowStartView: View {
         case .steps: return "steps"
         case .calories: return "calories"
         case .protein: return "grams"
+        case .activeMinutes: return "minutes"
+        case .workoutStreak: return "workouts"
+        case .sleep: return "hours"
         }
     }
     
@@ -1590,6 +1642,9 @@ struct ChallengeFlowStartView: View {
         case .hydrate: return "Track your daily water intake goal"
         case .calories: return "Set your daily active calorie burn target"
         case .protein: return "Hit your daily protein intake goal"
+        case .activeMinutes: return "Total active minutes from any workout"
+        case .workoutStreak: return "Complete at least one workout per day"
+        case .sleep: return "Get enough sleep every night"
         }
     }
     
@@ -1637,6 +1692,23 @@ struct ChallengeFlowStartView: View {
                 ChallengeOption(title: "🍗 Muscle Fuel", description: "150g daily — building phase", dailyTarget: 150, unit: "grams", isPreset: true, isCustom: false),
                 ChallengeOption(title: "🥩 Gains Machine", description: "200g daily — max protein", dailyTarget: 200, unit: "grams", isPreset: true, isCustom: false)
             ]
+        case .activeMinutes:
+            return [
+                ChallengeOption(title: "🧘 Gentle Movement", description: "15 active minutes daily", dailyTarget: 15, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "⏱️ WHO Standard", description: "30 active minutes daily", dailyTarget: 30, unit: "minutes", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🔋 Power Hour", description: "60 active minutes daily", dailyTarget: 60, unit: "minutes", isPreset: true, isCustom: false)
+            ]
+        case .workoutStreak:
+            return [
+                ChallengeOption(title: "🎯 Daily Grinder", description: "1 workout every day — no excuses", dailyTarget: 1, unit: "workouts", isPreset: true, isCustom: false),
+                ChallengeOption(title: "💪 Double Down", description: "2 sessions a day — morning & evening", dailyTarget: 2, unit: "workouts", isPreset: true, isCustom: false)
+            ]
+        case .sleep:
+            return [
+                ChallengeOption(title: "💤 Early Bird", description: "Get at least 6 hours of sleep", dailyTarget: 6, unit: "hours", isPreset: true, isCustom: false),
+                ChallengeOption(title: "😴 Sleep Well", description: "7 hours — the science-backed sweet spot", dailyTarget: 7, unit: "hours", isPreset: true, isCustom: false),
+                ChallengeOption(title: "🛏️ Recovery King", description: "8+ hours for peak performance", dailyTarget: 8, unit: "hours", isPreset: true, isCustom: false)
+            ]
         }
     }
     
@@ -1664,6 +1736,9 @@ struct ChallengeFlowStartView: View {
         case .steps: challengeType = .steps
         case .calories: challengeType = .calories
         case .protein: challengeType = .protein
+        case .activeMinutes: challengeType = .activeMinutes
+        case .workoutStreak: challengeType = .workoutStreak
+        case .sleep: challengeType = .steps // Sleep stored as custom, resolved by unit
         }
         
         let title = "\(mode.titlePrefix) \(activity.emoji) \(option.title)"

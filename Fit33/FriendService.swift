@@ -39,7 +39,44 @@ class FriendService: ObservableObject {
     /// Track last known request IDs for detecting new friend requests
     private var lastCheckedRequestIds: Set<UUID> = []
     
-    private init() {}
+    // MARK: - Cache Keys
+    private let friendsCacheKey = "fit33_cached_friends"
+    private let friendsCacheDateKey = "fit33_friends_cache_date"
+    
+    private init() {
+        // Load cached friends immediately so Friends tab never shows empty state
+        loadCachedFriends()
+    }
+    
+    // MARK: - Local Friend Caching (instant display on cold start)
+    
+    /// Cache friends to UserDefaults for instant display on next app launch
+    private func cacheFriends() {
+        guard !friends.isEmpty else { return }
+        do {
+            let data = try JSONEncoder().encode(friends)
+            UserDefaults.standard.set(data, forKey: friendsCacheKey)
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: friendsCacheDateKey)
+            print("💾 [FRIENDS] Cached \(friends.count) friends")
+        } catch {
+            print("⚠️ [FRIENDS] Failed to cache friends: \(error)")
+        }
+    }
+    
+    /// Load cached friends from UserDefaults (called on init for instant display)
+    private func loadCachedFriends() {
+        guard let data = UserDefaults.standard.data(forKey: friendsCacheKey) else { return }
+        do {
+            let cached = try JSONDecoder().decode([Friend].self, from: data)
+            if !cached.isEmpty {
+                friends = cached
+                print("⚡️ [FRIENDS] Loaded \(cached.count) cached friends (instant)")
+            }
+        } catch {
+            print("⚠️ [FRIENDS] Failed to load cached friends: \(error)")
+            UserDefaults.standard.removeObject(forKey: friendsCacheKey)
+        }
+    }
     
     // MARK: - Refresh Friend Data (Event-Driven)
     
@@ -183,6 +220,8 @@ class FriendService: ObservableObject {
                 .value
             
             self.friends = result
+            cacheFriends() // Persist for instant display on next launch
+            
             logger.log(.info, category: .social, message: "Fetched \(result.count) friends", metadata: result.isEmpty ? nil : [
                 "friends": result.prefix(5).map { $0.friendName ?? $0.friendUsername ?? "?" }.joined(separator: ", ")
             ])

@@ -184,13 +184,15 @@ struct ContentView: View {
             
             // 🔄 ONE-TIME FORCE SYNC: Check if we need to refresh exercise data
             // This ensures users get the latest improved exercise data
-            let needsRefresh = UserDefaults.standard.string(forKey: "exerciseDataVersion") != "v2.0"
+            // Bump version when exercise DB schema/data changes (e.g., CSV updates)
+            let currentExerciseVersion = "v2.1" // Bumped: exercise classification data update
+            let needsRefresh = UserDefaults.standard.string(forKey: "exerciseDataVersion") != currentExerciseVersion
             
             if needsRefresh && SupabaseManager.shared.isAuthenticated {
                 print("🔄 Detected new exercise data version - forcing fresh sync...")
                 await ExerciseLibraryService.shared.forceSyncExercises()
-                UserDefaults.standard.set("v2.0", forKey: "exerciseDataVersion")
-                print("✅ Exercise data updated to v2.0")
+                UserDefaults.standard.set(currentExerciseVersion, forKey: "exerciseDataVersion")
+                print("✅ Exercise data updated to \(currentExerciseVersion)")
             }
         }
     }
@@ -408,7 +410,7 @@ struct MainTabView: View {
         TabItem(icon: "book", selectedIcon: "book.fill", title: "Exercises", color: .blue),
         TabItem(icon: "dumbbell", selectedIcon: "dumbbell.fill", title: "Workout", color: .green),
         TabItem(icon: "leaf", selectedIcon: "leaf.fill", title: "Nutrition", color: .mint),
-        TabItem(icon: "chart.line.uptrend.xyaxis", selectedIcon: "chart.line.uptrend.xyaxis", title: "Stats", color: .purple)
+        TabItem(icon: "person.2", selectedIcon: "person.2.fill", title: "Friends", color: .cyan)
     ]
     
     private var currentTabColor: Color {
@@ -488,9 +490,11 @@ struct MainTabView: View {
                 }
                 .tag(3)
                 
-                // Tab 4: Progress (preloaded for instant stats)
+                // Tab 4: Friends (social hub)
                 LazyTabContent(tab: .progress) {
-                    WorkoutProgressView()
+                    FriendsTabView()
+                        .environmentObject(workoutManager)
+                        .environmentObject(userManager)
                 }
                 .tabContentOptimized()
                 .tabItem {
@@ -502,12 +506,7 @@ struct MainTabView: View {
                 }
                 .tag(4)
             }
-            // ⚡️ INSTANT TRANSITIONS: Disable animation when tabs are preloaded
-            .transaction { transaction in
-                if tabPreloader.isPreloadingComplete {
-                    transaction.animation = nil
-                }
-            }
+            // Animations managed per-tab via tabContentOptimized() during active transitions only
         .tint(currentTabColor)
         .onChange(of: workoutManager.shouldNavigateToWorkoutTab) { _, shouldNavigate in
             if shouldNavigate {
@@ -773,7 +772,7 @@ struct MainTabView: View {
         case .statsTab, .personalRecord:
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Stats tab")
+            print("🔗 [DEEPLINK] Switched to Friends tab")
             
         // Dashboard Widget Navigation (Home tab + scroll to widget)
         case .hydration:
@@ -816,17 +815,29 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             print("🔗 [DEEPLINK] Navigating to Streak Info")
             
-        // Social - handled by WorkoutTabView
-        case .friends, .friendRequests, .receivedWorkouts, .receivedWorkout, .sharedWorkout:
-            selectedTab = 2
-            // Don't clear - WorkoutTabView handles the navigation
-            print("🔗 [DEEPLINK] Switched to Workout tab for social feature")
+        // Social - handled by Friends tab
+        case .friends, .friendRequests:
+            selectedTab = 4
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Friends tab for social feature")
             
-        // Challenges - handled by WorkoutTabView
-        case .challenges, .challengeInvite, .challengeDetail:
+        // Received workouts - handled by WorkoutTabView
+        case .receivedWorkouts, .receivedWorkout, .sharedWorkout:
             selectedTab = 2
             // Don't clear - WorkoutTabView handles the navigation
-            print("🔗 [DEEPLINK] Switched to Workout tab for challenge feature")
+            print("🔗 [DEEPLINK] Switched to Workout tab for shared workout")
+            
+        // Challenges - handled by Friends tab
+        case .challenges, .challengeInvite, .challengeDetail:
+            selectedTab = 4
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Friends tab for challenge feature")
+            
+        // Community Challenges - handled by WorkoutTabView
+        case .communityChallenge, .communityChallengeBrowse:
+            selectedTab = 2
+            // Don't clear - WorkoutTabView handles the navigation
+            print("🔗 [DEEPLINK] Switched to Workout tab for community challenge")
         }
     }
     
@@ -1049,7 +1060,7 @@ struct SimpleMealPlanView: View {
             MacroGoalsExplainerView()
         }
         .sheet(isPresented: $showMealPlanGenerator) {
-            MealPlanGeneratorSheet()
+            SmartMealPlannerView()
                 .environmentObject(userManager)
         }
         .sheet(isPresented: $showRecipeImport) {

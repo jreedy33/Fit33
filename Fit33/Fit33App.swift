@@ -126,24 +126,30 @@ struct Fit33App: App {
         // ⚡ Pre-warm haptic generators for instant tap feedback
         HapticManager.shared.prepareAll()
         
-        // 🚀 PERFORMANCE: Pre-warm startup cache (critical data for instant tab loads)
+        // ═══════════════════════════════════════════════════════════════
+        // ⚡️ STAGED STARTUP PIPELINE (Senior Engineer Approach)
+        // 
+        // Stage 0 (NOW): Show UI immediately — Core Data, haptics, appearance
+        // Stage 1 (0.5s): StartupCache — lightweight user stats for Dashboard
+        // Stage 2 (3s):   TabPreloader — background data for other tabs  
+        // Stage 3 (8s):   Intelligence — learning engine, mappings, etc.
+        //
+        // Key principles:
+        //   - ONE coordinated pipeline, not scattered concurrent Tasks
+        //   - Each stage waits for the previous to finish
+        //   - Dashboard data loads via DashboardView.task (not duplicated here)
+        //   - Exercise cloud sync skipped if cache is fresh (<6 hours)
+        //   - Video mapping fetch skipped if cache is fresh (<12 hours)
+        // ═══════════════════════════════════════════════════════════════
+        
         Task(priority: .userInitiated) {
+            // Stage 1: Warm up StartupCache (user stats for Dashboard)
             let context = PersistenceController.shared.container.viewContext
             await StartupCache.shared.warmUp(context: context)
             
-            // ⚡️ INSTANT TAB SWITCHING: Enable eager mode after startup cache is warmed
-            await MainActor.run {
-                LazyTabManager.shared.enableEagerMode()
-            }
-        }
-        
-        // ⚡️ INSTANT TAB SWITCHING: Begin aggressive preloading for all tabs
-        // This runs in parallel with startup cache and pre-fetches ALL tab data
-        Task(priority: .userInitiated) {
-            // Short delay to let the UI appear first
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
-            
-            let context = PersistenceController.shared.container.viewContext
+            // Stage 2: Tab preloading (lightweight — no exercise faulting)
+            // Delay to let Dashboard render and user data load first
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s
             await TabPreloader.shared.beginPreloading(context: context)
         }
         
@@ -277,12 +283,14 @@ struct Fit33App: App {
     }
     
     /// ⚡️ PERFORMANCE: Coordinated startup sequence
-    /// Staggers heavy operations to prevent CPU spikes and maintain smooth UI
+    /// Intelligence init is HEAVY (10+ seconds). Defer until app is fully settled.
     private func scheduleIntelligenceInit() {
-        // Wait for essential phase to complete (user data synced)
         Task { @MainActor in
             StartupCoordinator.shared.onPhaseComplete(.intelligence) {
-                Task(priority: .utility) {
+                // Extra delay: don't start until 8s after intelligence phase is reached
+                // This ensures the user can interact smoothly before heavy CPU work begins
+                Task(priority: .background) {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000) // 8s extra delay
                     await self.runIntelligenceInit()
                 }
             }
@@ -570,52 +578,38 @@ struct Fit33App: App {
                     case .active:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became active")
                         
-                        // Smart notification check - cancel unnecessary reminders
+                        // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
-                        
-                        // ⚡️ PERSISTENCE: Check if workout expired while app was closed
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
-                        
-                        // 🔄 Reconnect to Realtime when app becomes active
-                        // BUG FIX: Setup callbacks BEFORE connect() so we don't miss events
-                        Task {
-                            if supabaseManager.isAuthenticated && !realtimeService.isConnected {
-                                realtimeService.setupDefaultCallbacks()
-                                await realtimeService.connect()
-                            }
-                        }
-                        
-                        // 📬 Check for new shared workouts from friends
-                        Task {
-                            await FriendService.shared.checkForNewWorkouts()
-                        }
-                        
-                        // 📱 Re-check push notification registration (in case user enabled in Settings)
-                        Task {
-                            await pushNotificationService.recheckAndRegister()
-                        }
-                        
-                        // 🏥 Re-check HealthKit authorization (in case user enabled in Settings during onboarding)
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()
                         
-                        // ☁️ Retry profile sync if user completed onboarding but sync may have failed
+                        // ═══ FOREGROUND TASKS (single coordinated Task) ═══
+                        // Consolidate into ONE Task to prevent 7+ concurrent Tasks
+                        // competing for CPU on every foreground event
                         Task {
-                            if SupabaseManager.shared.isAuthenticated,
-                               UserManager.shared.hasCompletedOnboarding {
+                            guard supabaseManager.isAuthenticated else { return }
+                            
+                            // Priority 1: Reconnect realtime (instant social updates)
+                            if !realtimeService.isConnected {
+                                realtimeService.setupDefaultCallbacks()
+                                await realtimeService.connect()
+                            }
+                            
+                            // Priority 2: Check for new social data (staggered)
+                            await FriendService.shared.checkForNewWorkouts()
+                            
+                            // Priority 3: Background work (lower urgency)
+                            await pushNotificationService.recheckAndRegister()
+                            await DailyResetService.shared.checkAndPerformDailyResetIfNeeded()
+                            
+                            // Priority 4: Health sync (has internal throttling)
+                            await HealthDataService.shared.syncAllHealthData()
+                            
+                            // Priority 5: Profile sync (only if needed)
+                            if UserManager.shared.hasCompletedOnboarding {
                                 try? await UserManager.shared.syncProfileToCloud()
                             }
-                        }
-                        
-                        // 📊 Sync all health data (Fitbit, Strava, etc.) - throttled to prevent excessive syncs
-                        // This single call handles Fitbit, Strava, and aggregated health data
-                        Task {
-                            await HealthDataService.shared.syncAllHealthData()
-                        }
-                        
-                        // 🌙 DAILY RESET: Check if new day and perform daily archival/reset
-                        Task {
-                            await DailyResetService.shared.checkAndPerformDailyResetIfNeeded()
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

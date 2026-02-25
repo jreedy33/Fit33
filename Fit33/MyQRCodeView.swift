@@ -10,7 +10,7 @@ struct MyQRCodeView: View {
     @State private var qrCodeImage: UIImage?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 AnimatedOrbBackground.stats(colorScheme: colorScheme)

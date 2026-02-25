@@ -353,7 +353,7 @@ struct SharedWorkoutPreviewView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         SharedWorkoutPreviewView(
             friend: Friend(
                 friendshipId: UUID(),

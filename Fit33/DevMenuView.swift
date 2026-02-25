@@ -176,6 +176,9 @@ struct DevMenuView: View {
                     
                     AppHealthDiagnosticsView()
                         .tag(4)
+                    
+                    SocialSystemSimulatorView()
+                        .tag(5)
                     #else
                     Text("Learning Engine Debug (Debug builds only)")
                         .tag(2)
@@ -185,6 +188,9 @@ struct DevMenuView: View {
                     
                     Text("App Health (Debug builds only)")
                         .tag(4)
+                    
+                    Text("Social Sim (Debug builds only)")
+                        .tag(5)
                     #endif
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -230,6 +236,7 @@ struct DevMenuView: View {
                 tabButton(title: "Learning", icon: "brain.head.profile", index: 2, colors: [.purple, .pink])
                 tabButton(title: "QA Test", icon: "checkmark.seal.fill", index: 3, colors: [.orange, .red])
                 tabButton(title: "Health", icon: "waveform.path.ecg", index: 4, colors: [.green, .cyan])
+                tabButton(title: "Social Sim", icon: "person.2.wave.2.fill", index: 5, colors: [.cyan, .blue])
             }
         }
         .padding(.horizontal)

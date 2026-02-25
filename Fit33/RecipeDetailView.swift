@@ -58,24 +58,12 @@ struct RecipeDetailView: View {
                     Button {
                         withAnimation(.spring(response: 0.3)) {
                             isFavorite.toggle()
-                            // Save favorite state
                             saveFavoriteState()
                         }
                     } label: {
                         Image(systemName: isFavorite ? "star.fill" : "star")
                             .font(.body)
-                            .foregroundColor(isFavorite ? .yellow : .primary)
-                    }
-                    
-                    // Save/Bookmark button
-                    Button {
-                        withAnimation(.spring(response: 0.3)) {
-                            toggleSaveMeal()
-                        }
-                    } label: {
-                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
-                            .font(.body)
-                            .foregroundColor(isSaved ? .orange : .primary)
+                            .foregroundColor(isFavorite ? .yellow : .white)
                     }
                     
                     // Share button
@@ -84,11 +72,13 @@ struct RecipeDetailView: View {
                         ShareLink(item: url) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.body)
+                                .foregroundColor(.white)
                         }
                     }
                 }
             }
         }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             await loadRecipeDetail()
             loadFavoriteState()
@@ -113,7 +103,7 @@ struct RecipeDetailView: View {
     private func recipeContent(_ detail: RecipeDetail) -> some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Hero Image
+                // Hero Image — full bleed behind nav bar
                 heroImage(detail)
                 
                 // Content
@@ -153,6 +143,7 @@ struct RecipeDetailView: View {
             }
         }
         .scrollIndicators(.hidden)
+        .ignoresSafeArea(edges: .top)
     }
     
     // MARK: - Hero Image
@@ -285,107 +276,141 @@ struct RecipeDetailView: View {
     // MARK: - Nutrition Card
     private func nutritionCard(_ detail: RecipeDetail) -> some View {
         VStack(spacing: 16) {
-            // Servings adjuster
-            HStack {
-                Text("Per Serving")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+            // Header: label + stepper
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(servings == 1 ? "Per Serving" : "For \(servings) Servings")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    Text("Tap ± to adjust")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.45))
+                }
                 
                 Spacer()
                 
-                // Serving stepper
-                HStack(spacing: 12) {
+                // Pill stepper
+                HStack(spacing: 4) {
                     Button {
-                        if servings > 1 { servings -= 1 }
+                        if servings > 1 { withAnimation(.spring(response: 0.2)) { servings -= 1 } }
                     } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(servings > 1 ? .orange : .gray)
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(servings > 1 ? 0.18 : 0.07))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "minus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(servings > 1 ? .white : .white.opacity(0.3))
+                        }
                     }
                     .disabled(servings <= 1)
                     
                     Text("\(servings)")
-                        .font(.headline)
-                        .frame(minWidth: 30)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(minWidth: 28)
+                        .multilineTextAlignment(.center)
                     
                     Button {
-                        if servings < 10 { servings += 1 }
+                        if servings < detail.servings { withAnimation(.spring(response: 0.2)) { servings += 1 } }
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(servings < 10 ? .orange : .gray)
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(servings < detail.servings ? 0.18 : 0.07))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(servings < detail.servings ? .white : .white.opacity(0.3))
+                        }
                     }
-                    .disabled(servings >= 10)
+                    .disabled(servings >= detail.servings)
                 }
             }
             
-            // Main macros
-            HStack(spacing: 0) {
-                NutrientCircle(
-                    value: detail.calories * servings,
-                    unit: "",
+            // Macro tiles
+            HStack(spacing: 8) {
+                RecipeMacroTile(
+                    value: "\(detail.calories * servings)",
                     label: "Calories",
-                    color: .orange,
-                    icon: "flame.fill"
+                    unit: "",
+                    color: Color(red: 1.0, green: 0.55, blue: 0.1)
                 )
-                
-                Spacer()
-                
-                NutrientCircle(
-                    value: Int(detail.protein * Double(servings)),
-                    unit: "g",
+                RecipeMacroTile(
+                    value: "\(Int(detail.protein * Double(servings)))",
                     label: "Protein",
-                    color: .blue,
-                    icon: "p.circle.fill"
-                )
-                
-                Spacer()
-                
-                NutrientCircle(
-                    value: Int(detail.carbs * Double(servings)),
                     unit: "g",
+                    color: Color(red: 0.35, green: 0.6, blue: 1.0)
+                )
+                RecipeMacroTile(
+                    value: "\(Int(detail.carbs * Double(servings)))",
                     label: "Carbs",
-                    color: .green,
-                    icon: "c.circle.fill"
-                )
-                
-                Spacer()
-                
-                NutrientCircle(
-                    value: Int(detail.fat * Double(servings)),
                     unit: "g",
+                    color: Color(red: 0.25, green: 0.85, blue: 0.5)
+                )
+                RecipeMacroTile(
+                    value: "\(Int(detail.fat * Double(servings)))",
                     label: "Fat",
-                    color: .purple,
-                    icon: "f.circle.fill"
+                    unit: "g",
+                    color: Color(red: 0.72, green: 0.42, blue: 1.0)
                 )
             }
             
-            // Additional nutrients
-            Divider()
+            // Divider
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 1)
             
-            HStack(spacing: 20) {
-                MiniNutrientBadge(label: "Fiber", value: "\(Int(detail.fiber * Double(servings)))g", color: .brown)
-                MiniNutrientBadge(label: "Sugar", value: "\(Int(detail.sugar * Double(servings)))g", color: .pink)
-                MiniNutrientBadge(label: "Sodium", value: "\(Int(detail.sodium * Double(servings)))mg", color: .cyan)
+            // Secondary nutrients
+            HStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 3) {
+                    Text("\(Int(detail.fiber * Double(servings)))g")
+                        .font(.subheadline).fontWeight(.semibold).foregroundColor(.white)
+                    Text("Fiber")
+                        .font(.caption2).foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
+                Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1, height: 28)
+                Spacer()
+                VStack(spacing: 3) {
+                    Text("\(Int(detail.sugar * Double(servings)))g")
+                        .font(.subheadline).fontWeight(.semibold).foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.65))
+                    Text("Sugar")
+                        .font(.caption2).foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
+                Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1, height: 28)
+                Spacer()
+                VStack(spacing: 3) {
+                    Text("\(Int(detail.sodium * Double(servings)))mg")
+                        .font(.subheadline).fontWeight(.semibold).foregroundColor(.cyan)
+                    Text("Sodium")
+                        .font(.caption2).foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
             }
         }
-        .padding(20)
+        .padding(18)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
-                .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+            ZStack {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.13, green: 0.15, blue: 0.24),
+                                Color(red: 0.09, green: 0.10, blue: 0.17)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.09), lineWidth: 1)
+            }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(
-                    LinearGradient(
-                        colors: [.orange.opacity(0.3), .red.opacity(0.2)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
+        .shadow(color: Color.blue.opacity(0.35), radius: 20, x: 0, y: 8)
     }
     
     // MARK: - Diet Tags Section
@@ -614,13 +639,7 @@ struct RecipeDetailView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color(white: 0.08), Color(white: 0.05)]
-                : [Color(red: 0.98, green: 0.96, blue: 0.94), .white],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        AdaptiveGradient.universal(for: colorScheme)
     }
     
     // MARK: - Helper Methods
@@ -630,7 +649,7 @@ struct RecipeDetailView: View {
         
         if let detail = await spoonacularService.fetchRecipeDetail(recipeId: recipeId) {
             recipeDetail = detail
-            servings = detail.servings
+            servings = 1  // Always start at 1 (per-serving view)
             
             // Track that user viewed this recipe detail
             preferenceService.trackRecipeDetailView(recipe: detail)
@@ -655,7 +674,7 @@ struct RecipeDetailView: View {
     private func addToMealButton(_ detail: RecipeDetail) -> some View {
         VStack(spacing: 12) {
             Button {
-                portionServings = 1 // Reset to 1 serving when opening
+                portionServings = servings // Pre-fill with whatever user set in the card
                 showingMealPicker = true
             } label: {
                 HStack(spacing: 12) {
@@ -782,19 +801,12 @@ struct RecipeDetailView: View {
             return
         }
         
-        // Calculate nutrition per serving (divide recipe total by recipe servings)
-        // Guard against division by zero if API returns 0 servings
-        let safeServings = max(detail.servings, 1)
-        let caloriesPerServing = detail.calories / safeServings
-        let proteinPerServing = detail.protein / Double(safeServings)
-        let carbsPerServing = detail.carbs / Double(safeServings)
-        let fatPerServing = detail.fat / Double(safeServings)
-        
-        // Calculate adjusted nutrition based on portion servings consumed
-        let adjustedCalories = caloriesPerServing * portionServings
-        let adjustedProtein = Int(proteinPerServing * Double(portionServings))
-        let adjustedCarbs = Int(carbsPerServing * Double(portionServings))
-        let adjustedFat = Int(fatPerServing * Double(portionServings))
+        // detail.calories/protein/carbs/fat are already per-serving values from Spoonacular
+        // Multiply by portionServings to get total for what the user actually ate
+        let adjustedCalories = detail.calories * portionServings
+        let adjustedProtein = Int(detail.protein * Double(portionServings))
+        let adjustedCarbs = Int(detail.carbs * Double(portionServings))
+        let adjustedFat = Int(detail.fat * Double(portionServings))
         
         // Create a FoodEntry from the recipe
         let foodEntry = FoodEntry(
@@ -910,6 +922,37 @@ struct RecipeDetailView: View {
 }
 
 // MARK: - Supporting Views
+
+struct RecipeMacroTile: View {
+    let value: String
+    let label: String
+    let unit: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(color)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(color.opacity(0.7))
+                }
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(color.opacity(0.12))
+        )
+    }
+}
 
 struct InfoBadge: View {
     let icon: String
@@ -1170,21 +1213,21 @@ struct SmartServingSelectorSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedMealType: MealType = .breakfast
     
-    // Calculate nutrition per serving
+    // Spoonacular returns per-serving values — use them directly
     private var caloriesPerServing: Int {
-        recipe.calories / recipeDefaultServings
+        recipe.calories
     }
     
     private var proteinPerServing: Double {
-        recipe.protein / Double(recipeDefaultServings)
+        recipe.protein
     }
     
     private var carbsPerServing: Double {
-        recipe.carbs / Double(recipeDefaultServings)
+        recipe.carbs
     }
     
     private var fatPerServing: Double {
-        recipe.fat / Double(recipeDefaultServings)
+        recipe.fat
     }
     
     // Calculate nutrition for selected portion

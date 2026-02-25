@@ -585,7 +585,7 @@ struct ActivityRingsDetailView: View {
     private let fatColor = Color.purple
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background gradient
                 LinearGradient(

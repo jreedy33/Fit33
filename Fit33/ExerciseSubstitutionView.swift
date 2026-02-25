@@ -78,7 +78,7 @@ struct ExerciseSubstitutionView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Animated blue/cyan orb background
                 AnimatedOrbBackground.exercises(colorScheme: colorScheme)

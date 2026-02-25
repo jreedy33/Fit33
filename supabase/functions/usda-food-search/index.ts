@@ -7,7 +7,7 @@
 // supabase functions deploy usda-food-search
 //
 // Set secret:
-// supabase secrets set USDA_API_KEY=QNZnzcALuiyekVr86WpdzYfJzWWwEa3BvEcLdfkS
+// supabase secrets set USDA_API_KEY=<your-usda-api-key>
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -64,8 +64,9 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error("Error:", error);
-    // Return a response that iOS can decode (with source, foods, etc.)
-    // This prevents decoding errors when the edge function encounters an issue
+    // Return 500 for genuine server errors so clients can distinguish
+    // failures from empty results. Include the standard response shape
+    // so iOS can still decode without crashing.
     return new Response(
       JSON.stringify({ 
         source: "error",
@@ -74,7 +75,7 @@ serve(async (req) => {
         query: "",
         error: error.message 
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

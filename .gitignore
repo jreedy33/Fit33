@@ -87,6 +87,7 @@ Desktop.ini
 .env
 .env.local
 secrets.json
+Fit33/Secrets.swift
 
 # Large files (videos should be in cloud storage)
 All Workout Videos/

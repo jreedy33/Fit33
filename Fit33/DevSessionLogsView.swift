@@ -159,7 +159,7 @@ struct DevSessionLogsView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         DevSessionLogsView()
     }
 }

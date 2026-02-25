@@ -22,7 +22,7 @@ struct ImportedRecipeDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 backgroundGradient
@@ -806,7 +806,7 @@ struct ImportedRecipeMealPickerSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()

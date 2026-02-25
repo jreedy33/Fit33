@@ -23,7 +23,7 @@ struct HealthKitSettingsView: View {
     private let healthColor = Color(red: 1.0, green: 0.23, blue: 0.19) // Apple Health red
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))

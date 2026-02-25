@@ -652,7 +652,7 @@ struct NotificationPreviewCard: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         NotificationSettingsView()
     }
 }

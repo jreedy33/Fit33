@@ -853,7 +853,7 @@ struct LogWeightSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Weight input
@@ -1059,7 +1059,7 @@ struct WeightDetailView: View {
     private let gradient: [Color] = [.orange, .yellow]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Dark background - matches Steps/Hydration detail
                 Color(red: 0.06, green: 0.07, blue: 0.09)
@@ -1719,7 +1719,7 @@ struct SetWeightGoalSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Goal Type") {
                     Picker("I want to", selection: $goalType) {

@@ -466,7 +466,7 @@ struct DebugFlowLayout: Layout {
 // MARK: - Preview
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         LearningEngineDebugView()
     }
 }

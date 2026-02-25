@@ -31,7 +31,7 @@ struct SharedWorkoutView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(
@@ -331,25 +331,11 @@ struct SharedWorkoutView: View {
     private func loadWorkout() async {
         isLoading = true
         
-        // Try to load from local storage first
-        let context = PersistenceController.shared.container.viewContext
-        let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "id == %@", workoutId)
-        fetchRequest.fetchLimit = 1
-        
-        do {
-            if let workout = try context.fetch(fetchRequest).first {
-                let exercises = (workout.exercises?.allObjects as? [WorkoutExercise])?
-                    .sorted { $0.order < $1.order }
-                    .compactMap { $0.exercise } ?? []
-                
-                workoutDetails = SharedWorkoutDetails(workout: workout, exercises: exercises)
-            } else {
-                // TODO: Try to load from Supabase if not found locally
-                error = "This workout is not available on this device. It may have been shared from another account."
-            }
-        } catch {
-            self.error = "Failed to load workout: \(error.localizedDescription)"
+        // Use WorkoutSharingService which tries local first, then cloud fallback
+        if let details = await WorkoutSharingService.shared.loadSharedWorkout(workoutId: workoutId) {
+            workoutDetails = details
+        } else {
+            error = "This workout could not be found. The link may have expired or the workout was removed."
         }
         
         isLoading = false

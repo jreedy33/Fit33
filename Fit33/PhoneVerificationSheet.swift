@@ -32,7 +32,7 @@ struct PhoneVerificationSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Animated orb background
                 AnimatedOrbBackground.stats(colorScheme: colorScheme)

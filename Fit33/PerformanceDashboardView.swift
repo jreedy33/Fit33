@@ -13,7 +13,7 @@ struct PerformanceDashboardView: View {
     @State private var selectedTab = 0
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Animated blue/cyan orb background
                 AnimatedOrbBackground.stats(colorScheme: colorScheme)

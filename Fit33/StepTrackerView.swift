@@ -341,7 +341,7 @@ struct StepTrackerDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Dark background
                 Color(red: 0.06, green: 0.07, blue: 0.09)
@@ -640,7 +640,7 @@ struct StepGoalEditorView: View {
     let presetGoals = [5000, 8000, 10000, 12000, 15000, 20000]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     Text("Set your daily step goal")

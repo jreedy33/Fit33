@@ -191,11 +191,9 @@ class WorkoutSharingService: ObservableObject {
         return true
     }
     
-    /// Load full workout details from the server
+    /// Load full workout details — tries cloud first, then local fallback.
     func loadSharedWorkout(workoutId: String) async -> SharedWorkoutDetails? {
-        // TODO: Implement Supabase query to load shared workout
-        // For now, check local storage
-        
+        // Step 1: Try local Core Data (fast path — works if workout is on this device)
         let context = PersistenceController.shared.container.viewContext
         let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "id == %@", workoutId)
@@ -203,16 +201,75 @@ class WorkoutSharingService: ObservableObject {
         
         do {
             if let workout = try context.fetch(fetchRequest).first {
-                return SharedWorkoutDetails(
-                    workout: workout,
-                    exercises: (workout.exercises?.allObjects as? [WorkoutExercise])?.compactMap { $0.exercise } ?? []
-                )
+                let exercises = (workout.exercises?.allObjects as? [WorkoutExercise])?
+                    .compactMap { $0.exercise } ?? []
+                print("✅ [SHARE] Loaded shared workout from local storage")
+                return SharedWorkoutDetails(workout: workout, exercises: exercises)
             }
         } catch {
-            print("❌ [SHARE] Error loading shared workout: \(error)")
+            print("⚠️ [SHARE] Local fetch error (will try cloud): \(error)")
         }
         
+        // Step 2: Fetch from Supabase cloud (cross-account shared workouts)
+        do {
+            let response: [CloudSharedWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                .from("shared_workouts")
+                .select("id, workout_name, description, exercises_data, sender_name, created_at")
+                .eq("id", value: workoutId)
+                .limit(1)
+                .execute()
+                .value
+            
+            if let dto = response.first, let exercisesJson = dto.exercises_data {
+                // Create a temporary workout in Core Data for display
+                let workout = Workout(context: context)
+                workout.id = UUID(uuidString: workoutId) ?? UUID()
+                workout.name = dto.workout_name ?? "Shared Workout"
+                workout.date = Date()
+                workout.isCompleted = false
+                
+                // Parse exercises from JSON and map to local Exercise entities
+                let exerciseNames = parseExerciseNames(from: exercisesJson)
+                let exercises = fetchLocalExercises(named: exerciseNames, in: context)
+                
+                print("✅ [SHARE] Loaded shared workout from cloud (\(exercises.count) exercises)")
+                return SharedWorkoutDetails(workout: workout, exercises: exercises)
+            }
+        } catch {
+            print("❌ [SHARE] Cloud fetch error: \(error)")
+        }
+        
+        print("⚠️ [SHARE] Workout not found locally or in cloud: \(workoutId)")
         return nil
+    }
+    
+    /// Parse exercise names from the shared_workouts exercises_data JSON
+    private func parseExerciseNames(from jsonString: String) -> [String] {
+        guard let data = jsonString.data(using: .utf8) else { return [] }
+        do {
+            if let exercises = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                return exercises.compactMap { $0["exercise_name"] as? String ?? $0["name"] as? String }
+            }
+        } catch {
+            print("⚠️ [SHARE] Could not parse exercises JSON: \(error)")
+        }
+        return []
+    }
+    
+    /// Fetch local Exercise entities by name (for building workout from shared data)
+    private func fetchLocalExercises(named names: [String], in context: NSManagedObjectContext) -> [Exercise] {
+        guard !names.isEmpty else { return [] }
+        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        request.predicate = NSPredicate(format: "name IN %@", names)
+        do {
+            let found = try context.fetch(request)
+            // Preserve the original order from the shared workout
+            let lookup = Dictionary(grouping: found, by: { $0.name ?? "" })
+            return names.compactMap { lookup[$0]?.first }
+        } catch {
+            print("⚠️ [SHARE] Could not fetch local exercises: \(error)")
+            return []
+        }
     }
     
     // MARK: - Helper Methods
@@ -259,6 +316,16 @@ class WorkoutSharingService: ObservableObject {
 }
 
 // MARK: - Supporting Data Structures
+
+/// DTO for decoding shared workout data from Supabase
+private struct CloudSharedWorkoutDTO: Codable {
+    let id: String
+    let workout_name: String?
+    let description: String?
+    let exercises_data: String?
+    let sender_name: String?
+    let created_at: String?
+}
 
 struct SharedWorkoutData: Identifiable {
     let id = UUID()

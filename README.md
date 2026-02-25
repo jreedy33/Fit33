@@ -1,213 +1,133 @@
-# Built. Simple. - iOS Workout App
+# Fit33 — iOS Fitness App
 
-**"Your workout, your way."**
+**Your workout, your way.**
 
-A minimalist, smart workout tracker designed to compete with apps like Strong, but with a focus on simplicity, personalization, and gamification.
-
-## 🎯 Vision
-
-To create the most intuitive, minimalist, and smart workout tracker that adapts to every user's fitness goals—without the bloat, subscriptions, or intimidation.
-
-## ✨ Key Features
-
-### 🧠 Smart & Personalized
-- **Onboarding Quiz**: Personalizes experience from day 1
-- **AI Workout Suggestions**: Recommends workouts based on goals, equipment, and history
-- **Adaptive Planning**: Learns from your workout patterns
-
-### 🔥 Gamified Experience
-- **Streak Tracking**: Build and maintain workout streaks
-- **XP & Leveling System**: Earn experience points and level up
-- **Achievement Badges**: Unlock milestones and celebrate progress
-- **Progress Visualization**: Beautiful charts and muscle heatmaps
-
-### 💪 Comprehensive Tracking
-- **Exercise Library**: 20+ exercises categorized by muscle groups and equipment
-- **Workout Logger**: Clean, fast logging of sets, reps, and weights
-- **Progress Analytics**: Track muscle group balance and workout frequency
-- **Offline Support**: Works without internet connection
-
-### 🎨 Beautiful & Simple
-- **Minimal UI**: Clean design focused on essential features
-- **Intuitive Navigation**: Tab-based interface with logical flow
-- **Modern SwiftUI**: Native iOS experience with smooth animations
-
-## 🏗️ Technical Architecture
-
-### Core Technologies
-- **SwiftUI**: Modern declarative UI framework
-- **Core Data**: Local data persistence
-- **iOS 17+**: Latest iOS features and optimizations
-
-### App Structure
-```
-BuiltSimple/
-├── Views/
-│   ├── OnboardingView.swift         # User setup and personalization
-│   ├── DashboardView.swift          # Main home screen
-│   ├── WorkoutView.swift            # Workout logging interface
-│   ├── ExerciseLibraryView.swift    # Browse and search exercises
-│   ├── ProgressView.swift           # Analytics and progress tracking
-│   └── SmartSuggestionView.swift    # AI workout recommendations
-├── Services/
-│   ├── PersistenceController.swift  # Core Data management
-│   ├── UserManager.swift            # User state and progress
-│   ├── ExerciseLibraryService.swift # Exercise data and filtering
-│   └── WorkoutSuggestionService.swift # Smart recommendation engine
-├── Models/
-│   └── DataModel.xcdatamodeld       # Core Data schema
-└── Assets.xcassets                  # App icons and colors
-```
-
-### Data Model
-- **User**: Profile, preferences, and progress tracking
-- **Workout**: Individual workout sessions with metadata
-- **Exercise**: Exercise definitions with muscle groups and equipment
-- **WorkoutExercise**: Exercises within a specific workout
-- **WorkoutSet**: Individual sets with reps, weight, and completion status
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Xcode 15.0+
-- iOS 17.0+ (for deployment)
-- macOS 14.0+ (for development)
-
-### Installation
-1. Clone or download the project
-2. Open `BuiltSimple.xcodeproj` in Xcode
-3. Select your target device or simulator
-4. Build and run (⌘+R)
-
-### First Launch
-1. Complete the onboarding quiz (name, age, goals, equipment, experience)
-2. Explore the dashboard and features
-3. Try the "What should I do today?" smart suggestion
-4. Log your first workout!
-
-## 📱 App Flow
-
-### 1. Onboarding (First Launch)
-- Welcome screen with app introduction
-- Personal information collection
-- Fitness goal selection (Bulk, Cut, Tone, Strength, Cardio)
-- Experience level assessment
-- Equipment availability
-- Workout frequency preference
-
-### 2. Dashboard (Main Hub)
-- Personalized greeting with current level
-- Streak counter and key stats
-- Quick workout start options
-- Smart suggestion button
-- Recent workout history
-- Motivational content
-
-### 3. Workout Logging
-- Custom workout creation
-- Smart workout suggestions
-- Exercise selection from library
-- Set/rep/weight tracking
-- Real-time timer
-- Progress saving
-
-### 4. Exercise Library
-- Categorized exercise database
-- Search and filter functionality
-- Detailed exercise instructions
-- Equipment-based filtering
-- Muscle group organization
-
-### 5. Progress Tracking
-- XP and level progression
-- Workout frequency charts
-- Muscle group heatmap
-- Achievement showcase
-- Statistical summaries
-
-## 🎮 Gamification Elements
-
-### XP System
-- Base XP for completing workouts
-- Bonus XP for streaks and milestones
-- Level progression every 100 XP
-
-### Achievements
-- **Week Warrior**: 7-day workout streak
-- **Getting Strong**: Complete 10 workouts
-- **Level Up**: Reach level 5
-- More achievements unlock with progress
-
-### Streak Tracking
-- Daily workout streak counter
-- Longest streak record
-- Visual streak indicators
-
-## 🔮 Future Enhancements
-
-### Phase 2 Features
-- Apple Watch integration
-- Voice-controlled logging
-- Social challenges and friends
-- Audio coaching cues
-- Advanced analytics
-
-### Monetization Strategy
-- **Free Tier**: All essential features
-- **Pro Tier**: Advanced analytics, premium exercises, special themes
-
-## 🎨 Design Philosophy
-
-### Core Principles
-1. **Simplicity First**: Every feature must serve a clear purpose
-2. **User-Centric**: Design around user goals, not app complexity
-3. **Motivation-Driven**: Encourage consistency through positive reinforcement
-4. **Accessibility**: Inclusive design for all fitness levels
-
-### Visual Design
-- Clean, modern interface with plenty of whitespace
-- Blue and purple gradient accents
-- Consistent iconography and typography
-- Smooth animations and transitions
-
-## 🛠️ Development Notes
-
-### Architecture Patterns
-- MVVM with SwiftUI and ObservableObject
-- Repository pattern for data access
-- Service layer for business logic
-- Dependency injection for testability
-
-### Performance Considerations
-- Lazy loading for large exercise lists
-- Efficient Core Data queries
-- Memory management for workout sessions
-- Smooth UI animations
-
-### Testing Strategy
-- Unit tests for business logic
-- UI tests for critical user flows
-- Performance testing for data operations
-
-## 📊 Competitive Analysis
-
-| Feature | Built. Simple. | Strong | Fitbod | Hevy |
-|---------|----------------|--------|--------|------|
-| Free Core Features | ✅ | ❌ | ❌ | ✅ |
-| Smart Suggestions | ✅ | ❌ | ✅ (Paid) | ❌ |
-| Gamification | ✅ | ❌ | ❌ | ❌ |
-| Beginner Friendly | ✅ | ❌ | ✅ | ⚠️ |
-| Minimal UI | ✅ | ⚠️ | ❌ | ✅ |
-| Offline Support | ✅ | ✅ | ✅ | ✅ |
-
-## 📄 License
-
-This project is created for educational and portfolio purposes. All rights reserved.
-
-## 🤝 Contributing
-
-This is a personal project, but feedback and suggestions are welcome! Feel free to open issues or reach out with ideas.
+A smart, social workout tracker for iOS — personalized workout generation, real-time challenges with friends, nutrition tracking, health integrations, and gamified progress.
 
 ---
 
-**Built. Simple.** - Because the best workout is the one you actually do. 💪
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| UI | SwiftUI (iOS 17+) |
+| Local Data | Core Data |
+| Cloud Backend | Supabase (Postgres + Auth + Realtime + Edge Functions) |
+| Notifications | APNs via Supabase Edge Function |
+| Phone Verify | Twilio Verify |
+| Nutrition API | USDA FoodData Central (proxied via Edge Function) |
+| Recipes | Spoonacular API |
+| Health | Apple HealthKit, Strava, Fitbit, InBody |
+| Ads | Google AdMob |
+| Payments | StoreKit 2 |
+
+---
+
+## App Architecture
+
+```
+Fit33App.swift                    ← Entry point, lifecycle, staged startup pipeline
+  └─ ContentView.swift            ← Root: onboarding vs main app
+       ├─ NewOnboardingView       ← Auth + profile setup (13 steps)
+       └─ MainTabView             ← 5 tabs: Home, Workout, Friends, Meals, Stats
+            ├─ DashboardView      ← Widgets: streak, hydration, weight, steps, programs
+            ├─ WorkoutTabView     ← Workout generator, active workout, history
+            ├─ FriendsTabView     ← Social hub: friends, rankings, challenges
+            ├─ MealPlanView       ← Nutrition tracking, food search, recipes
+            └─ WorkoutProgressView← XP, charts, muscle heatmap, achievements
+```
+
+### Key Services (Singletons)
+
+| Service | Responsibility |
+|---------|---------------|
+| `SupabaseManager` | Auth, cloud sync, profile, workout history |
+| `UserManager` | Local user state (Core Data), onboarding status |
+| `WorkoutManager` | Active workout state, persistence, timer |
+| `WorkoutGeneratorService` | AI workout generation with smart exercise selection |
+| `SmartProgramEngine` | Multi-day program generation |
+| `FriendService` | Friends list, sent/received workouts |
+| `ChallengeService` | 1v1 and group challenge lifecycle |
+| `RealtimeService` | Supabase Realtime subscriptions |
+| `MealService` | Daily meal tracking (Core Data) |
+| `FoodDatabaseService` | USDA food search via Edge Function |
+| `HealthKitService` | Apple Health integration |
+| `HealthDataService` | Aggregated health sync (HK + Strava + Fitbit) |
+| `PushNotificationService` | APNs token registration + delivery |
+| `DeepLinkManager` | URL scheme + universal link routing |
+| `ExerciseLibraryService` | Exercise DB sync + caching |
+
+### Backend (Supabase)
+
+```
+supabase/
+  ├── functions/
+  │   ├── send-push-notification/    APNs delivery
+  │   ├── notify-contacts-user-joined/ Contact-joined push
+  │   ├── send-verification/          Twilio SMS send
+  │   ├── verify-code/                Twilio SMS verify
+  │   └── usda-food-search/           USDA API proxy + caching
+  └── *.sql                          Schema migrations & RPC functions
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Xcode 15.0+
+- iOS 17.0+
+- macOS 14.0+
+- Supabase project (URL + anon key configured)
+
+### Setup
+1. Clone the repo.
+2. Copy `Fit33/Secrets.template.swift` → `Fit33/Secrets.swift` and fill in API keys.
+3. Open `Fit33.xcodeproj` in Xcode.
+4. Build and run (⌘+R).
+
+### First Launch
+1. Sign up or sign in (email, Apple, Google, Facebook).
+2. Complete onboarding quiz (goals, equipment, experience, schedule).
+3. Explore Dashboard, generate a workout, or start a challenge.
+
+---
+
+## Key Features
+
+- **Smart Workout Generation** — AI selects exercises based on goals, equipment, history, and limitations.
+- **Multi-Day Programs** — Personalized 7/14/30-day strength programs.
+- **Active Workout Tracking** — Set/rep/weight logging with timer, rest periods, exercise swaps.
+- **Social & Challenges** — Friend system, 1v1/group challenges, community challenges, shared workouts.
+- **Nutrition Tracking** — USDA-backed food search, macro tracking, recipe recommendations.
+- **Health Integrations** — HealthKit, Strava, Fitbit, InBody body composition.
+- **Gamification** — XP, levels, streaks, streak shields, achievements, personal records.
+- **Running & Cardio** — GPS-tracked outdoor runs, cardio equipment workouts.
+
+---
+
+## Development
+
+### Secrets Management
+API secrets are stored in `Fit33/Secrets.swift` which is **gitignored**.
+See `Fit33/Secrets.template.swift` for the required schema.
+
+### Logging
+- All `print()` calls are automatically silenced in production builds via `Logger.swift`.
+- Use `AppLogger.error()` / `AppLogger.warning()` for production-important logs (routed to `os_log`).
+- Use `print()` freely in debug — it's a no-op in release.
+
+### Design System
+- Colors: `AdaptiveColors.swift` — adaptive dark/light colors.
+- Components: `DesignSystem.swift` — typography tokens, spacing, card components, gradients.
+- Cards: `SleekCardBackground`, `AdaptiveCardStyle`, `DSCard`.
+
+### SQL Migrations
+SQL files in `supabase/` are run manually via Supabase SQL Editor.
+See `supabase/DEPLOYMENT_ORDER.md` for ordering.
+
+---
+
+## License
+
+All rights reserved.

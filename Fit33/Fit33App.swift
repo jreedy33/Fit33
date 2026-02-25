@@ -88,6 +88,10 @@ struct Fit33App: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
+        // 🔄 Background challenge sync — HealthKit background delivery + BGTask periodic refresh
+        // Must be called before app finishes launching (BGTaskScheduler requirement)
+        BackgroundChallengeSyncService.shared.setup()
+        
         // 🔧 DEV: Check for crash from previous session
         #if DEBUG
         SessionLogManager.shared.checkForCrashLog()
@@ -628,6 +632,9 @@ struct Fit33App: App {
                         #endif
                         // End session when app goes to background (logs cleared unless bug report pending)
                         SessionLogManager.shared.endSession()
+                        
+                        // 📅 Schedule next background challenge sync
+                        BackgroundChallengeSyncService.shared.scheduleNextBackgroundSync()
                         
                         // 🔌 Disconnect from Realtime to save battery (will reconnect on .active)
                         Task {

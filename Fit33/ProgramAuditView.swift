@@ -418,7 +418,7 @@ struct ProgramAuditView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         ProgramAuditView()
     }
 }

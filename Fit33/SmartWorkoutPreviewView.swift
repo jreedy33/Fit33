@@ -427,7 +427,7 @@ struct SmartExercisePreviewRow: View {
 #if DEBUG
 struct SmartWorkoutPreviewView_Previews: PreviewProvider {
     static var previews: some View {
-        NavigationView {
+        NavigationStack {
             SmartWorkoutPreviewView(
                 day: DynamicProgramGenerator.GeneratedProgramDay(
                     id: "test",

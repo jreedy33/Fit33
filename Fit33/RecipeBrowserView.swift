@@ -1178,7 +1178,7 @@ struct MacroLabel: View {
 
 // MARK: - Preview
 #Preview {
-    NavigationView {
+    NavigationStack {
         RecipeBrowserView()
     }
 }

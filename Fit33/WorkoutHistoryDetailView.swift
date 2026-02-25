@@ -1375,7 +1375,7 @@ struct RepeatWorkoutPreviewView: View {
         }
         .sheet(isPresented: $showingExerciseDetail) {
             if let exercise = selectedExercise {
-                NavigationView {
+                NavigationStack {
                     ExerciseDetailView(exercise: exercise)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {

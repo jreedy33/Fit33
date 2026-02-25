@@ -64,10 +64,16 @@
 	</dict>
 	<key>CFBundleGetInfoString</key>
 	<string></string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.gofit.app.challengeSync</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>bluetooth-central</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

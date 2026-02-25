@@ -20,7 +20,7 @@ struct RecipeImportSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Premium gradient background
                 LinearGradient(
@@ -644,7 +644,7 @@ struct RestaurantSearchSheet: View {
     @State private var showingMealPicker = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()
@@ -830,7 +830,7 @@ struct MenuItemAddSheet: View {
     @State private var servings: Int = 1
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()

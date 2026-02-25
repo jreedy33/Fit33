@@ -37,19 +37,17 @@ enum AppConfig {
     }
     
     // MARK: - API Keys (Centralized)
+    // Actual secret values live in Secrets.swift (gitignored).
+    // See Secrets.template.swift for the schema.
     
     /// Spoonacular API key for recipe services
-    static let spoonacularApiKey: String = {
-        // In production, retrieve from secure storage
-        return "69f4b06727ac448d88841e2ce717a228"
-    }()
+    static let spoonacularApiKey: String = Secrets.spoonacularApiKey
     
     // MARK: - Strava Configuration
     
     enum Strava {
         static let clientId = "198007"
-        /// Note: Client secret should ideally be server-side only
-        static let clientSecret = "fa5151258db944c5878d653c3166e7f08e2b92f3"
+        static let clientSecret = Secrets.stravaClientSecret
         /// IMPORTANT: In Strava API settings (https://www.strava.com/settings/api),
         /// set "Authorization Callback Domain" to: localhost
         /// This allows custom URL scheme redirects to work
@@ -64,8 +62,7 @@ enum AppConfig {
     
     enum Fitbit {
         static let clientId = "23TRK9"
-        /// Note: Client secret should ideally be server-side only
-        static let clientSecret = "fce0600b5906701e6922142e56d44ce3"
+        static let clientSecret = Secrets.fitbitClientSecret
         static let redirectUri = "fit33://fitbit"
         static let authorizationUrl = "https://www.fitbit.com/oauth2/authorize"
         static let tokenUrl = "https://api.fitbit.com/oauth2/token"
@@ -77,9 +74,8 @@ enum AppConfig {
     // MARK: - InBody Configuration
     
     enum InBody {
-        static let clientId = "YOUR_INBODY_CLIENT_ID"
-        /// Note: Client secret should ideally be server-side only
-        static let clientSecret = "YOUR_INBODY_CLIENT_SECRET"
+        static let clientId = Secrets.inbodyClientId
+        static let clientSecret = Secrets.inbodyClientSecret
         static let redirectUri = "fit33://inbody"
         static let authUrl = "https://api.inbody.com/oauth/authorize"
         static let tokenUrl = "https://api.inbody.com/oauth/token"
@@ -120,8 +116,10 @@ enum AppConfig {
 }
 
 // MARK: - Logging Helper
+// NOTE: Production-safe logging is now in Logger.swift → AppLogger.
+// The debugLog() function below is kept for backward compatibility.
+// Prefer AppLogger.debug() for new code.
 
-/// Production-safe logging that only outputs in debug/testflight builds
 func debugLog(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
     #if DEBUG
     let filename = (file as NSString).lastPathComponent

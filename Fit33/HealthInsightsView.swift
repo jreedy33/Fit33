@@ -713,7 +713,7 @@ struct HealthInsightsView: View {
 // MARK: - Preview
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         HealthInsightsView()
     }
 }

@@ -385,7 +385,7 @@ struct WidgetStat: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         TrainingHubView()
     }
     .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)

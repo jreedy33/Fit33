@@ -60,7 +60,7 @@ struct SmartExerciseSwapView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 backgroundGradient

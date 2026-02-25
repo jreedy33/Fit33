@@ -380,7 +380,7 @@ struct MealPlanGeneratorSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))

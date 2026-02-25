@@ -545,7 +545,7 @@ struct ExerciseSelectionView: View {
             updateFilteredExercises() 
         }
         .sheet(item: $selectedExerciseForDetail) { exercise in
-            NavigationView {
+            NavigationStack {
                 ExerciseDetailView(exercise: exercise)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {

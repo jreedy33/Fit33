@@ -708,7 +708,9 @@ struct EquipmentWorkoutView: View {
         timer?.invalidate()
         
         if let summary = bluetoothManager.stopWorkoutRecording() {
-            // TODO: Save workout to history
+            // NOTE: Bluetooth equipment workout saving will be implemented
+            // when the BLE integration goes live. Requires mapping BLE workout
+            // data → CardioWorkoutData and calling SupabaseManager.saveCardioWorkout().
             print("Workout completed: \(summary)")
         }
         

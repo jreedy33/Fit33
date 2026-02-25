@@ -15,7 +15,7 @@ struct QRCodeScannerView: View {
     @State private var torchOn = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Camera view
                 QRCodeCameraView(
@@ -362,7 +362,7 @@ private struct ScannedUserSheet: View {
     let onClose: () -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 // User Avatar
                 userAvatar

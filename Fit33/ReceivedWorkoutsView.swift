@@ -562,7 +562,7 @@ struct ReceivedWorkoutDetailView: View {
         }
         .sheet(isPresented: $showingExerciseDetail) {
             if let exercise = selectedCoreDataExercise {
-            NavigationView {
+            NavigationStack {
                     ExerciseDetailView(exercise: exercise)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {
@@ -1120,7 +1120,7 @@ struct EditableExerciseCard: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         ReceivedWorkoutsView()
             .environmentObject(WorkoutManager.shared)
             .environmentObject(UserManager())

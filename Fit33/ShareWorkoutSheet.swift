@@ -42,7 +42,7 @@ struct ShareWorkoutSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 (colorScheme == .dark ? Color(white: 0.08) : Color(.systemGroupedBackground))

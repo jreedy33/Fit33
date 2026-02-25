@@ -13,7 +13,7 @@ struct ShoppingListSheet: View {
     @State private var showRecipePicker = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()
@@ -315,7 +315,7 @@ struct RecipePickerSheet: View {
     let onGenerate: () -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()
@@ -431,7 +431,7 @@ struct MyShoppingListView: View {
     @ObservedObject private var savedMealsService = SavedMealsService.shared
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()

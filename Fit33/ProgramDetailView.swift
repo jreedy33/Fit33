@@ -624,7 +624,7 @@ struct UpcomingWorkoutRow: View {
         consistencyScore: 1.0
     )
     
-    NavigationView {
+    NavigationStack {
         SmartProgramOverviewView(program: testProgram, template: nil)
             .environmentObject(WorkoutManager.shared)
             .environmentObject(UserManager.shared)

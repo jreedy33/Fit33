@@ -713,7 +713,7 @@ struct CardioWorkoutDetailView: View {
 #if DEBUG
 struct CardioWorkoutDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        NavigationView {
+        NavigationStack {
             CardioWorkoutDetailView(cardioWorkout: CardioWorkoutDTO(
                 id: "preview-1",
                 activityType: "outdoor_run",

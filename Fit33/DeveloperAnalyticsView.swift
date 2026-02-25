@@ -658,7 +658,7 @@ class DeveloperAnalyticsViewModel: ObservableObject {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         DeveloperAnalyticsView()
     }
 }

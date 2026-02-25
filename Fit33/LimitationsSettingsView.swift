@@ -358,7 +358,7 @@ struct AddLimitationSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color(.systemBackground) : Color(.systemGroupedBackground))
                     .ignoresSafeArea()
@@ -495,7 +495,7 @@ struct EditLimitationSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color(.systemBackground) : Color(.systemGroupedBackground))
                     .ignoresSafeArea()

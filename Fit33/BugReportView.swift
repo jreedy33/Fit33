@@ -25,7 +25,7 @@ struct BugReportView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(
@@ -485,7 +485,7 @@ struct SessionLogPreviewView: View {
     @State private var logFileURL: URL?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 Text(logText)
                     .font(.system(.caption, design: .monospaced))
@@ -568,7 +568,7 @@ struct ManualBugReportView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(

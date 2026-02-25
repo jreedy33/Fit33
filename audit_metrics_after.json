@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-02-25T13:10:17.988498",
+  "swift_files": 243,
+  "sql_files": 31,
+  "total_swift_lines": 240549,
+  "largest_swift_file_lines": 8727,
+  "largest_swift_file_name": "DashboardView.swift",
+  "top5_largest_files": [
+    [
+      "DashboardView.swift",
+      8727
+    ],
+    [
+      "NewOnboardingView.swift",
+      8622
+    ],
+    [
+      "ComprehensiveExerciseDatabase.swift",
+      7795
+    ],
+    [
+      "ContentView.swift",
+      5299
+    ],
+    [
+      "WorkoutProgressView.swift",
+      4878
+    ]
+  ],
+  "files_over_1000_lines": 76,
+  "files_over_3000_lines": 12,
+  "print_call_sites": 3496,
+  "navigation_view_count": 54,
+  "navigation_stack_count": 84,
+  "async_trigger_points": 326,
+  "force_unwrap_count": 0,
+  "fatal_error_count": 5,
+  "hardcoded_secrets_swift": 0,
+  "todo_fixme_count": 1,
+  "sql_functions_defined": 51,
+  "sql_duplicate_definitions": 14,
+  "test_files": 21,
+  "inline_color_definitions": 309,
+  "inline_font_definitions": 1590
+}

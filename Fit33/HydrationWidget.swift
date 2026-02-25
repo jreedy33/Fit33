@@ -827,7 +827,7 @@ struct AddWaterSheet: View {
     private let quickAddAmountsMl = [100, 200, 250, 300, 500, 750]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Unit Toggle
@@ -999,7 +999,7 @@ struct WaterIntakeDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Dark background - matches Steps detail
                 Color(red: 0.06, green: 0.07, blue: 0.09)
@@ -1547,7 +1547,7 @@ struct WaterGoalInfoSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if userWeight > 0 {

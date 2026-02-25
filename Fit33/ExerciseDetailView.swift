@@ -19,6 +19,7 @@ struct ExerciseDetailView: View {
     // Favorite state
     @State private var isFavorite: Bool = false
     
+    
     // Extract primary and secondary muscles from exercise data
     private var primaryMuscle: String {
         // Try to get from muscleGroups array first
@@ -173,6 +174,9 @@ struct ExerciseDetailView: View {
             // Main content
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // Spacer for navigation buttons (back + favorite)
+                    Color.clear.frame(height: 56)
+                    
                     // Video Section (with stable ID to prevent recreation)
                     videoSection
                     
@@ -242,21 +246,30 @@ struct ExerciseDetailView: View {
                 
                 // Favorite star button
                 Button(action: toggleFavorite) {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(isFavorite ? .yellow : .black)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            ZStack {
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                Circle()
-                                    .fill(Color.white.opacity(0.9))
-                                Circle()
-                                    .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
-                            }
-                        )
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                    ZStack {
+                        // Black outline behind the filled star for visibility
+                        if isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.black.opacity(0.5))
+                                .offset(x: 0.3, y: 0.3) // Slight offset for shadow-like outline
+                        }
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(isFavorite ? .yellow : .black)
+                    }
+                    .frame(width: 40, height: 40)
+                    .background(
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                            Circle()
+                                .fill(Color.white.opacity(0.9))
+                            Circle()
+                                .stroke(isFavorite ? Color.yellow.opacity(0.4) : Color.white.opacity(0.5), lineWidth: 0.5)
+                        }
+                    )
+                    .shadow(color: isFavorite ? .yellow.opacity(0.3) : .black.opacity(0.15), radius: 8, x: 0, y: 2)
                 }
             }
             .padding(.horizontal, 16)
@@ -422,30 +435,80 @@ struct ExerciseDetailView: View {
     // MARK: - Video Section
     
     private var videoSection: some View {
-        ZStack(alignment: .top) {
-            // Video with white background - contained within frame
-            RemoteVideoPlayerView(
-                exerciseName: exercise.name ?? "",
-                categoryColor: categoryColor,
-                videoFilename: exercise.videoFilename
-            )
-            .id(exercise.id) // Stable ID prevents video from being recreated
-            
-            // Subtle gradient at top for status bar visibility
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.15),
-                    Color.black.opacity(0.05),
-                    Color.clear
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 60)
-            .allowsHitTesting(false)
-        }
-        .background(Color.white)
-        .clipped() // Ensure nothing bleeds outside
+        // Video inside a 3D floating card — matches app widget/card style
+        RemoteVideoPlayerView(
+            exerciseName: exercise.name ?? "",
+            categoryColor: categoryColor,
+            videoFilename: exercise.videoFilename
+        )
+        .id(exercise.id) // Stable ID prevents video from being recreated
+        .aspectRatio(16/9, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(
+            ZStack {
+                // Layer 1: Deep colored shadow (3D depth)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(categoryColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 10)
+                    .blur(radius: 6)
+                
+                // Layer 2: Middle depth shadow
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.05))
+                    .offset(y: 5)
+                
+                // Layer 3: Main card background
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Layer 4: Inner highlight — top edge glow
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                // Layer 5: Accent border — subtle category color tint
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                categoryColor.opacity(colorScheme == .dark ? 0.4 : 0.25),
+                                categoryColor.opacity(colorScheme == .dark ? 0.2 : 0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        // Subtle category-colored glow around the card
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.2), lineWidth: 1.5)
+                .blur(radius: 4)
+        )
+        // External shadows for 3D floating effect + colored glow
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
+        .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 20, x: 0, y: 4)
+        .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 30, x: 0, y: 0)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
     
     // MARK: - Header Section

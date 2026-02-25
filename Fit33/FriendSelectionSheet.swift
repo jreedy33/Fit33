@@ -30,7 +30,7 @@ struct FriendSelectionSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color(colorScheme == .dark ? .black : UIColor.systemGroupedBackground)
                     .ignoresSafeArea()

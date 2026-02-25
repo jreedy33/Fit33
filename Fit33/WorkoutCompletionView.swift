@@ -340,7 +340,7 @@ struct WorkoutCompletionView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // "Workout Complete!" celebration text

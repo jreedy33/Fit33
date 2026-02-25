@@ -5,7 +5,7 @@ struct WorkoutInsightsView: View {
     let insights: WorkoutInsights?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background gradient matching app aesthetic
                 LinearGradient(

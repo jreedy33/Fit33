@@ -3,12 +3,34 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 
+// ═══════════════════════════════════════════════════
+// SECURITY HELPERS
+// ═══════════════════════════════════════════════════
+
+// Sanitize search input — escape SQL LIKE wildcards to prevent pattern injection
+function sanitizeSearch(input: string): string {
+  return input
+    .replace(/\\/g, '\\\\')  // escape backslashes first
+    .replace(/%/g, '\\%')     // escape % wildcard
+    .replace(/_/g, '\\_')     // escape _ wildcard
+    .trim()
+    .substring(0, 200)        // cap length
+}
+
+// Cap pagination limit to prevent data dumping
+function safeLimit(limit: number | undefined, max: number = 100): number {
+  const n = Number(limit) || 50
+  return Math.min(Math.max(1, n), max)
+}
+
 // Verify the request has a valid admin session
 async function verifyAdmin(req: NextRequest): Promise<boolean> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return false
 
   const token = authHeader.split(' ')[1]
+  if (!token || token.length < 10) return false
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -57,14 +79,16 @@ export async function POST(req: NextRequest) {
       // SEARCH USERS
       // ═══════════════════════════════════════════════════
       case 'search_users': {
-        const { query, page = 0, limit = 50 } = params
+        const { query, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
         let dbQuery = admin.from('user_profiles')
           .select('id, name, email, username, phone_number, gender, age, fitness_goal, experience_level, current_streak, longest_streak, total_workouts, xp, profile_photo_url, has_completed_onboarding, created_at, updated_at, last_workout_date')
           .order('created_at', { ascending: false })
-          .range(page * limit, (page + 1) * limit - 1)
+          .range(pg * lim, (pg + 1) * lim - 1)
 
         if (query && query.trim()) {
-          const q = query.trim()
+          const q = sanitizeSearch(query)
           // Search across email, username, name, phone
           dbQuery = dbQuery.or(`email.ilike.%${q}%,username.ilike.%${q}%,name.ilike.%${q}%,phone_number.ilike.%${q}%`)
         }
@@ -733,16 +757,17 @@ export async function POST(req: NextRequest) {
           severity: filterSeverity,
           report_type: filterType,
           search,
-          limit = 100,
           offset = 0,
           app_version: filterVersion,
           fingerprint: filterFingerprint,
         } = params
+        const crashLimit = safeLimit(params.limit, 200)
+        const crashOffset = Math.max(0, Number(offset) || 0)
 
         let query = admin.from('crash_reports')
           .select('*')
           .order('created_at', { ascending: false })
-          .range(offset, offset + limit - 1)
+          .range(crashOffset, crashOffset + crashLimit - 1)
 
         if (filterStatus) query = query.eq('status', filterStatus)
         if (filterSeverity) query = query.eq('severity', filterSeverity)
@@ -750,7 +775,8 @@ export async function POST(req: NextRequest) {
         if (filterVersion) query = query.eq('app_version', filterVersion)
         if (filterFingerprint) query = query.eq('fingerprint', filterFingerprint)
         if (search) {
-          query = query.or(`error_message.ilike.%${search}%,user_email.ilike.%${search}%,user_name.ilike.%${search}%,error_domain.ilike.%${search}%`)
+          const s = sanitizeSearch(search)
+          query = query.or(`error_message.ilike.%${s}%,user_email.ilike.%${s}%,user_name.ilike.%${s}%,error_domain.ilike.%${s}%`)
         }
 
         const { data, error, count } = await query

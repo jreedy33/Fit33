@@ -119,58 +119,91 @@ class BackgroundChallengeSyncService {
     
     /// Observer queries that iOS will wake the app for.
     /// These are separate from the foreground observers in HealthKitManager.
+    ///
+    /// CRITICAL: The HKObserverQuery completionHandler MUST be called when
+    /// processing is finished. If you don't call it, iOS assumes the app hung
+    /// and will eventually STOP delivering background updates entirely.
     private func setupBackgroundObserverQueries() {
-        // Steps observer — syncs step challenges
+        // Steps observer — syncs step challenges (throttled — high frequency)
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        let stepObserver = HKObserverQuery(sampleType: stepType, predicate: nil) { [weak self] _, _, error in
-            guard error == nil else { return }
-            self?.handleBackgroundHealthUpdate(source: "steps")
+        let stepObserver = HKObserverQuery(sampleType: stepType, predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else { completionHandler(); return }
+            self?.handleBackgroundHealthUpdate(source: "steps", isHighPriority: false) {
+                completionHandler()
+            }
         }
         healthStore.execute(stepObserver)
         
         // Workout observer — syncs lift/run/walk/streak challenges
-        let workoutObserver = HKObserverQuery(sampleType: .workoutType(), predicate: nil) { [weak self] _, _, error in
-            guard error == nil else { return }
-            self?.handleBackgroundHealthUpdate(source: "workout")
+        // HIGH PRIORITY: Workouts sync IMMEDIATELY (no throttle) because the user
+        // just finished a Dance, Walk, Run, etc. in another app and expects to see it.
+        let workoutObserver = HKObserverQuery(sampleType: .workoutType(), predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else { completionHandler(); return }
+            self?.handleBackgroundHealthUpdate(source: "workout", isHighPriority: true) {
+                completionHandler()
+            }
         }
         healthStore.execute(workoutObserver)
         
-        // Active energy observer — syncs active minutes/calorie challenges
+        // Active energy observer — syncs active minutes/calorie challenges (throttled)
         let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-        let energyObserver = HKObserverQuery(sampleType: energyType, predicate: nil) { [weak self] _, _, error in
-            guard error == nil else { return }
-            self?.handleBackgroundHealthUpdate(source: "active_energy")
+        let energyObserver = HKObserverQuery(sampleType: energyType, predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else { completionHandler(); return }
+            self?.handleBackgroundHealthUpdate(source: "active_energy", isHighPriority: false) {
+                completionHandler()
+            }
         }
         healthStore.execute(energyObserver)
         
-        // Distance observer — syncs walk/run challenges
+        // Distance observer — syncs walk/run challenges (throttled)
         let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
-        let distanceObserver = HKObserverQuery(sampleType: distanceType, predicate: nil) { [weak self] _, _, error in
-            guard error == nil else { return }
-            self?.handleBackgroundHealthUpdate(source: "distance")
+        let distanceObserver = HKObserverQuery(sampleType: distanceType, predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else { completionHandler(); return }
+            self?.handleBackgroundHealthUpdate(source: "distance", isHighPriority: false) {
+                completionHandler()
+            }
         }
         healthStore.execute(distanceObserver)
+        
+        // Exercise time observer — syncs active minutes challenges (throttled)
+        if let exerciseType = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
+            let exerciseObserver = HKObserverQuery(sampleType: exerciseType, predicate: nil) { [weak self] _, completionHandler, error in
+                guard error == nil else { completionHandler(); return }
+                self?.handleBackgroundHealthUpdate(source: "exercise_time", isHighPriority: false) {
+                    completionHandler()
+                }
+            }
+            healthStore.execute(exerciseObserver)
+        }
     }
     
     /// Called when HealthKit delivers new data in the background.
-    /// Throttled to prevent excessive syncing (max once per 10 minutes).
-    private func handleBackgroundHealthUpdate(source: String) {
+    ///
+    /// - `isHighPriority`: Workout completions sync immediately (no throttle).
+    ///   Continuous data (steps, energy) is throttled to prevent excessive syncing.
+    /// - `onComplete`: MUST be called when processing is finished — this is the
+    ///   HKObserverQuery completionHandler. If not called, iOS stops delivering.
+    private func handleBackgroundHealthUpdate(source: String, isHighPriority: Bool, onComplete: @escaping () -> Void) {
         let now = Date()
         let lastSync = UserDefaults.standard.double(forKey: lastSyncKey)
         let lastSyncDate = Date(timeIntervalSince1970: lastSync)
+        let elapsed = now.timeIntervalSince(lastSyncDate)
         
-        // Throttle: don't sync more often than every 10 minutes
-        guard now.timeIntervalSince(lastSyncDate) >= minimumSyncInterval else {
-            print("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(now.timeIntervalSince(lastSyncDate)))s ago")
+        // High-priority events (workout completions) always sync immediately.
+        // Low-priority events (steps, energy) throttle to once per 10 minutes.
+        if !isHighPriority && elapsed < minimumSyncInterval {
+            print("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (throttled)")
+            onComplete()
             return
         }
         
-        print("🔄 [BG SYNC] HealthKit background update: \(source)")
+        print("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")")
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: lastSyncKey)
         
-        // Perform the sync on a background task
+        // Perform the sync and call the completion handler when done
         Task {
             await performChallengeSyncInBackground()
+            onComplete()
         }
     }
     
@@ -230,9 +263,16 @@ class BackgroundChallengeSyncService {
     // MARK: - Core Sync Logic
     // ═══════════════════════════════════════════════════════════
     
-    /// The actual sync: fetches latest HealthKit data and pushes to all active challenges.
-    /// This runs both from HealthKit background delivery and BGTask periodic refresh.
-    /// Also callable from the simulator for testing.
+    /// The actual sync: fetches latest health data from ALL connected sources
+    /// (HealthKit, Strava, Fitbit) and pushes to Supabase + active challenges.
+    ///
+    /// Runs from:
+    /// - HealthKit background delivery (workout/step/energy observer)
+    /// - BGTask periodic refresh (~15 min)
+    /// - Simulator testing
+    ///
+    /// After this completes, the Dashboard's `.onChange(of: healthKitService.lastSyncDate)`
+    /// will fire to refresh the UI (recent activity cards + stats).
     @MainActor
     func performChallengeSyncInBackground() async {
         guard SupabaseManager.shared.isAuthenticated else {
@@ -241,13 +281,30 @@ class BackgroundChallengeSyncService {
         }
         
         let start = Date()
-        print("🔄 [BG SYNC] Starting background challenge sync...")
+        print("🔄 [BG SYNC] Starting background sync (all sources)...")
         
-        // Step 1: Refresh HealthKit data (steps, workouts, active minutes, distance)
+        // ── Step 1: Refresh HealthKit data ──
+        // syncAllData now also persists workouts to Supabase (`cardio_workouts`)
+        // and updates `lastSyncDate` which triggers Dashboard UI refresh
         await HealthKitService.shared.syncAllData(force: true)
-        print("   └─ HealthKit data refreshed: \(HealthKitService.shared.todaySteps) steps, \(HealthKitService.shared.todayActiveMinutes) active min")
+        print("   └─ HealthKit: \(HealthKitService.shared.todaySteps) steps, \(HealthKitService.shared.recentWorkouts.count) workouts")
         
-        // Step 2: Refresh the list of active challenges (need to know what to sync to)
+        // ── Step 2: Refresh Strava data (if connected) ──
+        // Strava workouts also write to HealthKit, but fetching from Strava API
+        // gives us richer data (route, splits, elevation) for the cardio_workouts table
+        if StravaService.shared.isConnected {
+            await StravaService.shared.syncActivities(daysBack: 7)
+            print("   └─ Strava: synced recent activities")
+        }
+        
+        // ── Step 3: Refresh Fitbit data (if connected) ──
+        // Fitbit does NOT write to HealthKit, so we must pull from their API
+        if FitbitService.shared.isConnected {
+            await FitbitService.shared.syncAllData(force: true)
+            print("   └─ Fitbit: synced recent data")
+        }
+        
+        // ── Step 4: Refresh active challenges ──
         await ChallengeService.shared.fetchActiveChallenges()
         await ChallengeService.shared.fetchActiveGroupChallenges()
         
@@ -255,13 +312,14 @@ class BackgroundChallengeSyncService {
         let groupCount = ChallengeService.shared.activeGroupChallenges.count
         
         guard activeCount > 0 || groupCount > 0 else {
-            print("⏭️ [BG SYNC] No active challenges — skipping sync")
+            let duration = Date().timeIntervalSince(start)
+            print("✅ [BG SYNC] Sync complete in \(String(format: "%.1f", duration))s (no active challenges)")
             return
         }
         
-        // Step 3: Push HealthKit data to all active challenges
-        // This calls log_challenge_progress for each relevant challenge
-        await ChallengeService.shared.syncHealthKitDataToChallenges()
+        // ── Step 5: Push ALL health data to challenges ──
+        // This calls log_challenge_progress for each relevant challenge type
+        await ChallengeService.shared.syncAllTrackingToChallenges()
         
         let duration = Date().timeIntervalSince(start)
         print("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s")

@@ -205,16 +205,21 @@ final class HealthKitService: ObservableObject {
             group.addTask { await self.syncWeeklyData() }
         }
         
-        lastSyncDate = Date()
-        UserDefaults.standard.set(lastSyncDate, forKey: "healthkit_last_sync")
-        
         isLoading = false
         isSyncing = false
         
         print("✅ [HEALTHKIT] Full sync complete")
         
+        // Persist HealthKit workouts & activity to Supabase (cardio_workouts + daily_activity_summary)
+        // This ensures "Sync Now" saves data to the database so it appears in Recent Activity
+        await HealthDataService.shared.persistHealthKitDataToSupabase()
+        
         // Sync HealthKit data to active challenges
         await ChallengeService.shared.syncHealthKitDataToChallenges()
+        
+        // Update lastSyncDate AFTER persist + challenge sync so UI observers fire with data ready
+        lastSyncDate = Date()
+        UserDefaults.standard.set(lastSyncDate, forKey: "healthkit_last_sync")
     }
     
     // MARK: - Sync Today's Stats

@@ -222,11 +222,19 @@ class DailyResetService: ObservableObject {
     private func refreshChallengesForNewDay() async {
         logStep("🏆 Refreshing challenges for new day...")
         
-        // Fetch challenges - the database handles resetting today_progress
+        // Clear stale cached challenges so any temporary display between now and
+        // the fresh fetch won't show yesterday's today-progress values.
+        ChallengeService.shared.clearCache()
+        
+        // Force fetch fresh challenge data from server.
+        // The server's get_active_challenges uses (NOW() AT TIME ZONE p_timezone)::DATE
+        // to determine "today", so fetching after midnight local time will return
+        // today_progress = 0 for both users (clean daily reset).
         await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
         await ChallengeService.shared.fetchPendingInvites()
         
-        // Sync HealthKit data which updates challenge progress
+        // Sync HealthKit data which updates challenge progress for the new day
         await HealthKitService.shared.syncAllData(force: true)
         
         logStep("✅ Challenges refreshed - today's progress starts at 0")

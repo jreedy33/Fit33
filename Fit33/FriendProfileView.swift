@@ -553,10 +553,10 @@ struct FriendProfileView: View {
                 VStack(spacing: 2) {
                     Text(challenge.amWinning ? "🏆" : "")
                         .font(.system(size: 10))
-                    Text("\(resolver.formattedProgress(for: challenge)) - \(resolver.formatValue(challenge.opponentTotalProgress, unit: challenge.targetUnit, type: resolvedType))")
+                    Text("\(resolver.formattedProgress(for: challenge)) - \(resolver.formatValue(challenge.opponentTodayProgress ?? 0, unit: challenge.targetUnit, type: resolvedType))")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(challenge.amWinning ? .green : (challenge.opponentTotalProgress > challenge.myTotalProgress ? .red : .primary))
+                        .foregroundColor(challenge.amWinning ? .green : ((challenge.opponentTodayProgress ?? 0) > (challenge.myTodayProgress ?? 0) ? .red : .primary))
                 }
                 
                 Image(systemName: "chevron.right")

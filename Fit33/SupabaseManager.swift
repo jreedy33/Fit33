@@ -1871,8 +1871,12 @@ class SupabaseManager: ObservableObject {
     
     // MARK: - Profile Sync from Core Data
     
+    /// Tracks when the app last pushed a profile to cloud, so we can detect CMS/admin edits
+    private static let lastProfilePushKey = "lastProfilePushTime"
+    
     /// Syncs the local Core Data user profile to Supabase cloud
     /// Uses UPSERT to ensure data is saved even if profile row is missing or empty
+    /// ⚠️ IMPORTANT: Checks cloud updated_at first to avoid overwriting admin CMS changes
     func syncCoreDataProfile(from user: User) async throws {
         guard let authUser = currentUser else {
             print("⚠️ [SYNC] No authenticated Supabase user - cannot sync profile")
@@ -1881,6 +1885,32 @@ class SupabaseManager: ObservableObject {
         
         print("☁️ [SYNC] Starting profile sync for user: \(authUser.id.uuidString)")
         print("☁️ [SYNC] Core Data user: name=\(user.name ?? "nil"), email=\(user.email ?? "nil")")
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // ADMIN CMS GUARD: Check if cloud was updated more recently by admin
+        // If so, pull from cloud instead of pushing (prevents overwriting CMS edits)
+        // ═══════════════════════════════════════════════════════════════════
+        let lastPushTime = UserDefaults.standard.object(forKey: SupabaseManager.lastProfilePushKey) as? Date ?? Date.distantPast
+        
+        if let cloudProfile = try? await fetchUserProfile(),
+           let cloudUpdatedStr = cloudProfile.updatedAt {
+            // Parse the cloud updated_at timestamp
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let fallbackFormatter = ISO8601DateFormatter()
+            fallbackFormatter.formatOptions = [.withInternetDateTime]
+            
+            if let cloudUpdated = formatter.date(from: cloudUpdatedStr) ?? fallbackFormatter.date(from: cloudUpdatedStr) {
+                if cloudUpdated > lastPushTime {
+                    print("☁️ [SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))")
+                    print("☁️ [SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing")
+                    await syncUserProfileToCoreData(profile: cloudProfile)
+                    // Update last push time so we don't keep pulling every sync cycle
+                    UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
+                    return
+                }
+            }
+        }
         
         struct ProfileSync: Encodable {
             let name: String?
@@ -2027,6 +2057,8 @@ class SupabaseManager: ObservableObject {
                 .execute()
             
             print("✅ [SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)")
+            // Track when we last pushed so we can detect CMS/admin edits
+            UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         } catch {
             print("❌ [SYNC] UPSERT FAILED: \(error)")
             print("❌ [SYNC] Error details: \(error.localizedDescription)")
@@ -2108,6 +2140,9 @@ class SupabaseManager: ObservableObject {
             .update(fullUpdate)
             .eq("id", value: userId.uuidString)
             .execute()
+        
+        // Track push time so we can detect CMS/admin edits
+        UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         
         print("✅ [FORCE SYNC] Profile force synced successfully!")
         print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil")")
@@ -3471,6 +3506,22 @@ class SupabaseManager: ObservableObject {
         
         print("✅ [CARDIO] Fetched \(response.count) workouts")
         return response
+    }
+    
+    /// Fetch total cardio workout count (all-time) for the current user.
+    /// Lightweight query — only fetches IDs, not full workout data.
+    func fetchCardioWorkoutCount() async throws -> Int {
+        guard let userId = currentUser?.id else { return 0 }
+        
+        struct IdOnly: Codable { let id: String }
+        let rows: [IdOnly] = try await client
+            .from("cardio_workouts")
+            .select("id")
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+            .value
+        
+        return rows.count
     }
     
     /// Fetch cardio statistics for a date range

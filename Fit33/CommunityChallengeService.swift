@@ -9,8 +9,79 @@
 
 import Foundation
 import SwiftUI
+import Supabase
+import Realtime
 
 // MARK: - Community Challenge Models
+
+/// A leaderboard snippet entry returned inline with community challenge data.
+/// Used for rendering mini-leaderboard widgets without a separate RPC call.
+struct LeaderboardSnippetEntry: Codable, Identifiable {
+    let rank: Int
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    let todayProgress: Int
+    let daysCompleted: Int
+    let currentStreak: Int
+    let bestStreak: Int
+    let targetHitToday: Bool
+    let isCurrentUser: Bool
+    
+    var id: UUID { userId }
+    
+    var displayName: String {
+        if let name = name, !name.isEmpty { return name }
+        if let username = username, !username.isEmpty { return "@\(username)" }
+        return "Anonymous"
+    }
+    
+    var firstName: String {
+        name?.components(separatedBy: " ").first ?? username ?? "User"
+    }
+    
+    var initial: String {
+        String(firstName.prefix(1)).uppercased()
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case rank
+        case userId = "user_id"
+        case name, username
+        case profilePhotoUrl = "profile_photo_url"
+        case todayProgress = "today_progress"
+        case daysCompleted = "days_completed"
+        case currentStreak = "current_streak"
+        case bestStreak = "best_streak"
+        case targetHitToday = "target_hit_today"
+        case isCurrentUser = "is_current_user"
+    }
+}
+
+/// Lightweight friend info shown as avatar on community widgets
+struct CommunityFriendInfo: Codable, Identifiable {
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    
+    var id: UUID { userId }
+    
+    var displayName: String {
+        name ?? username ?? "Friend"
+    }
+    
+    var initial: String {
+        String((name ?? username ?? "?").prefix(1)).uppercased()
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case name, username
+        case profilePhotoUrl = "profile_photo_url"
+    }
+}
 
 struct CommunityChallenge: Codable, Identifiable {
     let challengeId: UUID
@@ -21,6 +92,7 @@ struct CommunityChallenge: Codable, Identifiable {
     let dailyTarget: Int
     let targetUnit: String
     let participantCount: Int
+    let maxParticipants: Int?
     let joinCode: String
     let inviteSlug: String
     let isRecurring: Bool
@@ -29,10 +101,14 @@ struct CommunityChallenge: Codable, Identifiable {
     let myTodayProgress: Int?
     let myDaysCompleted: Int?
     let myCurrentStreak: Int?
+    let myBestStreak: Int?
     let myRank: Int?
     let createdBy: UUID?
     let creatorName: String?
     let creatorUsername: String?
+    let topParticipants: [LeaderboardSnippetEntry]?
+    let friendsIn: [CommunityFriendInfo]?
+    let friendsCount: Int?
     
     var id: UUID { challengeId }
     
@@ -73,6 +149,27 @@ struct CommunityChallenge: Codable, Identifiable {
         return "\(participantCount)"
     }
     
+    /// How many of the top participants to show based on community size
+    var leaderboardDisplayCount: Int {
+        if participantCount >= 100 { return 10 }
+        if participantCount >= 20 { return 7 }
+        return 5
+    }
+    
+    /// Capacity string (e.g. "47/200")
+    var capacityString: String {
+        if let max = maxParticipants {
+            return "\(participantCount)/\(max)"
+        }
+        return "\(participantCount)"
+    }
+    
+    /// Is the community nearly full?
+    var isNearlyFull: Bool {
+        guard let max = maxParticipants else { return false }
+        return Double(participantCount) / Double(max) >= 0.9
+    }
+    
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description, emoji
@@ -80,6 +177,7 @@ struct CommunityChallenge: Codable, Identifiable {
         case dailyTarget = "daily_target"
         case targetUnit = "target_unit"
         case participantCount = "participant_count"
+        case maxParticipants = "max_participants"
         case joinCode = "join_code"
         case inviteSlug = "invite_slug"
         case isRecurring = "is_recurring"
@@ -88,10 +186,162 @@ struct CommunityChallenge: Codable, Identifiable {
         case myTodayProgress = "my_today_progress"
         case myDaysCompleted = "my_days_completed"
         case myCurrentStreak = "my_current_streak"
+        case myBestStreak = "my_best_streak"
         case myRank = "my_rank"
         case createdBy = "created_by"
         case creatorName = "creator_name"
         case creatorUsername = "creator_username"
+        case topParticipants = "top_participants"
+        case friendsIn = "friends_in"
+        case friendsCount = "friends_count"
+    }
+}
+
+/// A community challenge that the user's friends are in but the user hasn't joined yet.
+/// Powers the "Your friends are in these communities" discovery widget.
+struct DiscoverableCommunityChallenge: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let maxParticipants: Int?
+    let joinCode: String
+    let inviteSlug: String
+    let isRecurring: Bool
+    let isFeatured: Bool
+    let isOfficial: Bool
+    let createdBy: UUID?
+    let friendsInChallenge: [CommunityFriendInfo]?
+    let friendsCount: Int
+    
+    var id: UUID { challengeId }
+    var displayEmoji: String { emoji ?? "🌍" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    var formattedParticipantCount: String {
+        if participantCount >= 1000 {
+            return String(format: "%.1fK", Double(participantCount) / 1000)
+        }
+        return "\(participantCount)"
+    }
+    
+    var capacityString: String {
+        if let max = maxParticipants {
+            return "\(participantCount)/\(max)"
+        }
+        return "\(participantCount)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case maxParticipants = "max_participants"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case isRecurring = "is_recurring"
+        case isFeatured = "is_featured"
+        case isOfficial = "is_official"
+        case createdBy = "created_by"
+        case friendsInChallenge = "friends_in_challenge"
+        case friendsCount = "friends_count"
+    }
+}
+
+/// Enriched detail response for community challenge detail view
+struct CommunityDetailResponse: Codable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let participantCount: Int
+    let maxParticipants: Int?
+    let joinCode: String
+    let inviteSlug: String
+    let isRecurring: Bool
+    let totalCompletions: Int
+    // My stats
+    let myTodayProgress: Int
+    let myDaysCompleted: Int
+    let myCurrentStreak: Int
+    let myBestStreak: Int
+    let myRank: Int
+    let myTotalProgress: Int
+    // Community stats
+    let avgTodayProgress: Int
+    let topTodayProgress: Int
+    let avgStreak: Double
+    let totalActiveToday: Int
+    let completionRateToday: Double
+    // Friends
+    let friendsIn: [CommunityFriendInfo]?
+    let friendsCount: Int
+    // Leaderboard + encouragement
+    let topLeaderboard: [LeaderboardSnippetEntry]?
+    let encouragement: String?
+    
+    var displayEmoji: String { emoji ?? "🌍" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    var todayProgressPercentage: Double {
+        guard dailyTarget > 0 else { return 0 }
+        return min(1.0, Double(myTodayProgress) / Double(dailyTarget))
+    }
+    
+    var targetHitToday: Bool {
+        myTodayProgress >= dailyTarget
+    }
+    
+    var capacityString: String {
+        if let max = maxParticipants {
+            return "\(participantCount)/\(max)"
+        }
+        return "\(participantCount)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case participantCount = "participant_count"
+        case maxParticipants = "max_participants"
+        case joinCode = "join_code"
+        case inviteSlug = "invite_slug"
+        case isRecurring = "is_recurring"
+        case totalCompletions = "total_completions"
+        case myTodayProgress = "my_today_progress"
+        case myDaysCompleted = "my_days_completed"
+        case myCurrentStreak = "my_current_streak"
+        case myBestStreak = "my_best_streak"
+        case myRank = "my_rank"
+        case myTotalProgress = "my_total_progress"
+        case avgTodayProgress = "avg_today_progress"
+        case topTodayProgress = "top_today_progress"
+        case avgStreak = "avg_streak"
+        case totalActiveToday = "total_active_today"
+        case completionRateToday = "completion_rate_today"
+        case friendsIn = "friends_in"
+        case friendsCount = "friends_count"
+        case topLeaderboard = "top_leaderboard"
+        case encouragement
     }
 }
 
@@ -160,7 +410,10 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
     let todayProgress: Int
     let daysCompleted: Int
     let currentStreak: Int
+    let bestStreak: Int?
     let targetHitToday: Bool
+    let totalProgress: Int?
+    let isCurrentUser: Bool?
     
     var id: UUID { userId }
     
@@ -174,6 +427,10 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
         name?.components(separatedBy: " ").first ?? username ?? "User"
     }
     
+    var initial: String {
+        String(firstName.prefix(1)).uppercased()
+    }
+    
     enum CodingKeys: String, CodingKey {
         case rank
         case userId = "user_id"
@@ -182,7 +439,10 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
         case todayProgress = "today_progress"
         case daysCompleted = "days_completed"
         case currentStreak = "current_streak"
+        case bestStreak = "best_streak"
         case targetHitToday = "target_hit_today"
+        case totalProgress = "total_progress"
+        case isCurrentUser = "is_current_user"
     }
 }
 
@@ -219,6 +479,10 @@ struct CommunityLeaderboardResponse: Codable {
         case myDaysCompleted = "my_days_completed"
         case myCurrentStreak = "my_current_streak"
         case myBestStreak = "my_best_streak"
+    }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
     }
 }
 
@@ -278,9 +542,48 @@ class CommunityChallengeService: ObservableObject {
     
     @Published var myChallenges: [CommunityChallenge] = []
     @Published var featuredChallenges: [FeaturedCommunityChallenge] = []
+    @Published var discoverableChallenges: [DiscoverableCommunityChallenge] = []
     @Published var isLoading = false
     
+    /// Rank change deltas: challengeId → userId → delta (positive = climbed UP, negative = dropped)
+    /// e.g. +2 means user moved up 2 spots, -1 means dropped 1 spot
+    @Published var rankDeltas: [UUID: [UUID: Int]] = [:]
+    
+    /// Realtime channel for community updates
+    private var communityRealtimeChannel: RealtimeChannelV2?
+    
+    /// Stores previous ranks for delta computation: challengeId → userId → rank
+    private var previousRanks: [UUID: [UUID: Int]] = [:]
+    
+    /// Timestamp of last full refresh to avoid redundant calls
+    private var lastRefreshTime: Date?
+    
     private init() {}
+    
+    // MARK: - Refresh All Community Data
+    
+    /// Central refresh method — call from pull-to-refresh, tab switches, and app foreground.
+    /// Throttled to avoid redundant network calls within 10 seconds.
+    func refreshAll(force: Bool = false) async {
+        let now = Date()
+        if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
+            #if DEBUG
+            print("⏭️ [COMMUNITY] Skipping refresh — last refresh was \(Int(now.timeIntervalSince(last)))s ago")
+            #endif
+            return
+        }
+        lastRefreshTime = now
+        
+        // Fetch in parallel for speed
+        async let challenges: () = fetchMyChallenges()
+        async let featured: () = fetchFeaturedChallenges()
+        async let discoverable: () = fetchDiscoverableChallenges()
+        _ = await (challenges, featured, discoverable)
+        
+        #if DEBUG
+        print("✅ [COMMUNITY] Full refresh completed")
+        #endif
+    }
     
     // MARK: - Fetch My Community Challenges
     
@@ -297,10 +600,86 @@ class CommunityChallengeService: ObservableObject {
                 .execute()
                 .value
             
+            // Compute rank deltas before updating myChallenges
+            computeRankDeltas(newChallenges: result)
+            
             myChallenges = result
+            #if DEBUG
             print("✅ [COMMUNITY] Fetched \(result.count) community challenges")
+            #endif
         } catch {
             print("❌ [COMMUNITY] Error fetching my challenges: \(error)")
+        }
+    }
+    
+    /// Computes rank change deltas by comparing new leaderboard data against stored previous ranks.
+    /// A positive delta means the user climbed (e.g. rank 5 → 3 = +2).
+    /// A negative delta means the user dropped (e.g. rank 3 → 5 = -2).
+    private func computeRankDeltas(newChallenges: [CommunityChallenge]) {
+        var newDeltas: [UUID: [UUID: Int]] = [:]
+        var newPreviousRanks: [UUID: [UUID: Int]] = [:]
+        
+        for challenge in newChallenges {
+            let cid = challenge.challengeId
+            guard let entries = challenge.topParticipants, !entries.isEmpty else { continue }
+            
+            // Build current rank map
+            var currentRanks: [UUID: Int] = [:]
+            for entry in entries {
+                currentRanks[entry.userId] = entry.rank
+            }
+            newPreviousRanks[cid] = currentRanks
+            
+            // Compare against previous if we have it
+            guard let prevRanks = previousRanks[cid] else { continue }
+            
+            var challengeDeltas: [UUID: Int] = [:]
+            for entry in entries {
+                if let prevRank = prevRanks[entry.userId] {
+                    // Delta: positive = climbed up (lower rank number is better)
+                    let delta = prevRank - entry.rank
+                    if delta != 0 {
+                        challengeDeltas[entry.userId] = delta
+                    }
+                }
+                // New users (not in previous) get no delta — they're new arrivals
+            }
+            
+            if !challengeDeltas.isEmpty {
+                newDeltas[cid] = challengeDeltas
+            }
+        }
+        
+        // Update stored state
+        previousRanks = newPreviousRanks
+        rankDeltas = newDeltas
+    }
+    
+    // MARK: - Fetch Discoverable (Friends' Communities)
+    
+    /// Fetches community challenges that the user's friends are in,
+    /// but the user hasn't joined yet. Powers the "friends are in these" widget.
+    func fetchDiscoverableChallenges() async {
+        do {
+            struct DiscoverParams: Encodable {
+                let p_timezone: String
+                let p_limit: Int
+            }
+            
+            let result: [DiscoverableCommunityChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_discoverable_community_challenges", params: DiscoverParams(
+                    p_timezone: TimeZone.current.identifier,
+                    p_limit: 10
+                ))
+                .execute()
+                .value
+            
+            discoverableChallenges = result
+            #if DEBUG
+            print("✅ [COMMUNITY] Fetched \(result.count) discoverable friend communities")
+            #endif
+        } catch {
+            print("❌ [COMMUNITY] Error fetching discoverable challenges: \(error)")
         }
     }
     
@@ -322,7 +701,9 @@ class CommunityChallengeService: ObservableObject {
                 .value
             
             featuredChallenges = result
+            #if DEBUG
             print("✅ [COMMUNITY] Fetched \(result.count) featured challenges")
+            #endif
         } catch {
             print("❌ [COMMUNITY] Error fetching featured: \(error)")
         }
@@ -375,7 +756,9 @@ class CommunityChallengeService: ObservableObject {
                 .execute()
                 .value
             
+            #if DEBUG
             print("✅ [COMMUNITY] Created community challenge: \(id)")
+            #endif
             await fetchMyChallenges()
             return id
         } catch {
@@ -403,7 +786,9 @@ class CommunityChallengeService: ObservableObject {
                 .execute()
                 .value
             
+            #if DEBUG
             print("✅ [COMMUNITY] Joined community challenge: \(id)")
+            #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
             return id
@@ -412,6 +797,159 @@ class CommunityChallengeService: ObservableObject {
             HapticManager.notification(.error)
             return nil
         }
+    }
+    
+    // MARK: - Join Challenge (Friend-Gated)
+    
+    /// Join a community challenge through the friend-chain.
+    /// This checks that the user has a friend or FoF in the challenge.
+    func joinChallengeFriendGated(challengeId: UUID, referredBy: String? = nil) async -> UUID? {
+        do {
+            struct JoinFriendsParams: Encodable {
+                let p_challenge_id: String
+                let p_referred_by: String?
+            }
+            
+            let id: UUID = try await SupabaseManager.shared.supabaseClient
+                .rpc("join_community_challenge_friends", params: JoinFriendsParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_referred_by: referredBy
+                ))
+                .execute()
+                .value
+            
+            #if DEBUG
+            print("✅ [COMMUNITY] Joined friend-gated community: \(id)")
+            #endif
+            HapticManager.notification(.success)
+            await fetchMyChallenges()
+            await fetchDiscoverableChallenges()
+            return id
+        } catch {
+            print("❌ [COMMUNITY] Error joining friend-gated challenge: \(error)")
+            HapticManager.notification(.error)
+            return nil
+        }
+    }
+    
+    // MARK: - Get Challenge Detail (Enriched)
+    
+    /// Fetches enriched detail for a community challenge including
+    /// community stats, friend highlights, and encouragement.
+    func getChallengeDetail(challengeId: UUID) async -> CommunityDetailResponse? {
+        do {
+            struct DetailParams: Encodable {
+                let p_challenge_id: String
+                let p_timezone: String
+            }
+            
+            let results: [CommunityDetailResponse] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_community_challenge_detail", params: DetailParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+            
+            return results.first
+        } catch {
+            print("❌ [COMMUNITY] Error fetching challenge detail: \(error)")
+            return nil
+        }
+    }
+    
+    // MARK: - Realtime Subscriptions
+    
+    /// Subscribe to real-time updates for community challenge participant changes.
+    /// When any participant joins, leaves, or logs progress, the widget updates live.
+    func subscribeToRealtimeUpdates() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("community-challenges")
+        
+        // Listen for new participants joining (someone's friend joins → update widgets)
+        let participantInserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "community_challenge_participants"
+        )
+        
+        // Listen for participant updates (progress changes)
+        let participantUpdates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "community_challenge_participants"
+        )
+        
+        // Listen for daily progress changes (live leaderboard updates)
+        let progressInserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "community_challenge_daily_progress"
+        )
+        
+        let progressUpdates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "community_challenge_daily_progress"
+        )
+        
+        // Handle participant changes → refresh widget data
+        Task {
+            for await _ in participantInserts {
+                print("📡 [COMMUNITY-RT] New participant joined a community")
+                await refreshAfterRealtimeUpdate()
+            }
+        }
+        
+        Task {
+            for await _ in participantUpdates {
+                print("📡 [COMMUNITY-RT] Participant updated")
+                await refreshAfterRealtimeUpdate()
+            }
+        }
+        
+        // Handle progress changes → refresh leaderboard data
+        Task {
+            for await _ in progressInserts {
+                print("📡 [COMMUNITY-RT] New progress logged")
+                await refreshAfterRealtimeUpdate()
+            }
+        }
+        
+        Task {
+            for await _ in progressUpdates {
+                print("📡 [COMMUNITY-RT] Progress updated")
+                await refreshAfterRealtimeUpdate()
+            }
+        }
+        
+        await channel.subscribe()
+        communityRealtimeChannel = channel
+        print("📡 [COMMUNITY] Subscribed to real-time community updates")
+    }
+    
+    /// Unsubscribe from real-time updates
+    func unsubscribeFromRealtimeUpdates() async {
+        if let channel = communityRealtimeChannel {
+            await channel.unsubscribe()
+            communityRealtimeChannel = nil
+            print("📡 [COMMUNITY] Unsubscribed from real-time updates")
+        }
+    }
+    
+    /// Debounced refresh after a realtime event
+    private var lastRealtimeRefresh: Date = .distantPast
+    
+    private func refreshAfterRealtimeUpdate() async {
+        // Debounce: don't refresh more than once every 3 seconds
+        let now = Date()
+        guard now.timeIntervalSince(lastRealtimeRefresh) > 3 else { return }
+        lastRealtimeRefresh = now
+        
+        await fetchMyChallenges()
+        await fetchDiscoverableChallenges()
     }
     
     // MARK: - Leave Challenge
@@ -430,7 +968,9 @@ class CommunityChallengeService: ObservableObject {
                 .value
             
             myChallenges.removeAll { $0.challengeId == challengeId }
+            #if DEBUG
             print("✅ [COMMUNITY] Left community challenge: \(challengeId)")
+            #endif
             return true
         } catch {
             print("❌ [COMMUNITY] Error leaving challenge: \(error)")
@@ -457,7 +997,9 @@ class CommunityChallengeService: ObservableObject {
                 .execute()
                 .value
             
+            #if DEBUG
             print("✅ [COMMUNITY] Logged progress: \(progressValue) for \(challengeId)")
+            #endif
             return true
         } catch {
             print("❌ [COMMUNITY] Error logging progress: \(error)")
@@ -520,7 +1062,9 @@ class CommunityChallengeService: ObservableObject {
     func syncAllTrackingToCommunityChallenges() async {
         guard !myChallenges.isEmpty else { return }
         
+        #if DEBUG
         print("🔄 [COMMUNITY] Syncing tracking data to \(myChallenges.count) community challenges...")
+        #endif
         
         for challenge in myChallenges {
             let progressValue = await calculateProgress(for: challenge)
@@ -532,7 +1076,9 @@ class CommunityChallengeService: ObservableObject {
         
         // Refresh to show updated progress
         await fetchMyChallenges()
+        #if DEBUG
         print("✅ [COMMUNITY] Community challenge sync complete")
+        #endif
     }
     
     /// Calculate progress from HealthKit/services for a community challenge

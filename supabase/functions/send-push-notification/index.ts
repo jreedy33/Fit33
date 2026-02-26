@@ -95,6 +95,14 @@ serve(async (req) => {
 
     console.log(`Processing ${pendingNotifications.length} notifications`)
 
+    // ═══ ATOMIC CLAIM: Mark all as 'processing' to prevent duplicate sends ═══
+    // If another invocation runs concurrently, it won't pick up these same rows
+    const claimedIds = pendingNotifications.map((n: { id: string }) => n.id)
+    await supabase
+      .from('push_notification_queue')
+      .update({ status: 'processing' })
+      .in('id', claimedIds)
+
     // Generate APNs JWT token
     const apnsToken = await generateAPNsToken()
     
@@ -139,6 +147,9 @@ serve(async (req) => {
         const apnsHost = getAPNsHost(tokenData.apns_environment)
         console.log(`Using APNs host: ${apnsHost} for user ${notification.recipient_user_id}`)
 
+        // Compute dynamic badge count for this user (pending actionable items)
+        const badgeCount = await computeBadgeCount(supabase, notification.recipient_user_id)
+
         // Send to APNs
         const apnsResponse = await sendToAPNs(
           tokenData.device_token,
@@ -148,7 +159,8 @@ serve(async (req) => {
             data: notification.data || {}
           },
           apnsToken,
-          apnsHost
+          apnsHost,
+          badgeCount
         )
 
         if (apnsResponse.success) {
@@ -210,17 +222,20 @@ async function sendToAPNs(
   deviceToken: string, 
   payload: { title: string; body: string; data: Record<string, unknown> },
   apnsToken: string,
-  apnsHost: string = APNS_HOST_PRODUCTION
+  apnsHost: string = APNS_HOST_PRODUCTION,
+  badgeCount: number = 0
 ): Promise<{ success: boolean; error?: string }> {
   
-  const apnsPayload = {
+  const apnsPayload: Record<string, unknown> = {
     aps: {
       alert: {
         title: payload.title,
         body: payload.body,
       },
       sound: 'default',
-      badge: 1,
+      // Dynamic badge: real count of pending actionable items for this user
+      // 0 clears the badge, >0 shows the count on the app icon
+      badge: badgeCount,
       'mutable-content': 1,
     },
     // Include custom data at the root level
@@ -344,4 +359,47 @@ function isRetriableAPNsError(status: number): boolean {
   // 5xx errors are retriable server errors
   // 429 is rate limiting - retriable
   return status >= 500 || status === 429
+}
+
+// Compute the real badge count for a user based on pending actionable items:
+//   1. Pending friend requests (others → this user)
+//   2. Pending challenge invites (challenge_participants with status='pending')
+//   3. Unread shared workouts
+async function computeBadgeCount(
+  supabase: ReturnType<typeof createClient>,
+  userId: string
+): Promise<number> {
+  try {
+    // 1. Pending friend requests received by this user
+    const { count: friendRequests } = await supabase
+      .from('friend_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('to_user_id', userId)
+      .eq('status', 'pending')
+
+    // 2. Pending challenge invites (1v1 + group — both use challenge_participants)
+    //    A user has a pending invite when they're in challenge_participants with status='pending'
+    //    and they're NOT the creator of the challenge
+    const { count: challengeInvites } = await supabase
+      .from('challenge_participants')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+
+    // 3. Unread shared workouts
+    const { count: unreadWorkouts } = await supabase
+      .from('shared_workouts')
+      .select('*', { count: 'exact', head: true })
+      .eq('to_user_id', userId)
+      .is('viewed_at', null)
+      .eq('status', 'pending')
+
+    const total = (friendRequests || 0) + (challengeInvites || 0) + (unreadWorkouts || 0)
+    console.log(`📛 Badge count for user ${userId}: ${total} (friends=${friendRequests || 0}, challenges=${challengeInvites || 0}, workouts=${unreadWorkouts || 0})`)
+    return total
+  } catch (error) {
+    console.error(`Error computing badge count for user ${userId}:`, error)
+    // On error, return 0 to avoid showing stale badge
+    return 0
+  }
 }

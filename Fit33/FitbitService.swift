@@ -548,6 +548,13 @@ final class FitbitService: ObservableObject {
         
         print("✅ [FITBIT] Saved \(savedCount) activities, skipped \(skippedCount) existing")
         
+        // Notify dashboard to reload cardio workouts so Fitbit workouts appear in Recent Activity
+        if savedCount > 0 {
+            await MainActor.run {
+                NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+            }
+        }
+        
         // Update streak if we synced activities from today
         let calendar = Calendar.current
         let dateFormatter = ISO8601DateFormatter()

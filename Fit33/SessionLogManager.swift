@@ -1808,6 +1808,9 @@ final class SessionLogManager: ObservableObject {
         // Compact log - just one line
         let elemStr = element != nil ? " [\(element!.rawValue)]" : ""
         log(.info, category: .userAction, message: "👆 \(action)\(elemStr) @\(screen.rawValue)", metadata: nil)
+        
+        // 🛡️ Breadcrumb for crash reporting
+        CrashReportingService.shared.addBreadcrumb("tap: \(action)", screen: screen.displayName)
     }
     
     /// Log navigation push (NavigationLink, etc.)
@@ -1823,6 +1826,9 @@ final class SessionLogManager: ObservableObject {
             "stack_depth": navigationStack.count,
             "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000)
         ])
+        
+        // 🛡️ Breadcrumb for crash reporting
+        CrashReportingService.shared.addBreadcrumb("navigate: \(fromScreen.displayName) → \(screen.displayName)", screen: screen.displayName)
     }
     
     /// Log navigation pop (back button)
@@ -1943,6 +1949,9 @@ final class SessionLogManager: ObservableObject {
 
         // Compact log
         log(.info, category: .navigation, message: "📑 [\(fromScreen.rawValue)]→[\(toScreen.rawValue)]")
+        
+        // 🛡️ Breadcrumb for crash reporting
+        CrashReportingService.shared.addBreadcrumb("tab: \(from) → \(to)", screen: toScreen.displayName)
     }
     
     func logAlertPresent(_ alertTitle: String, screen: Screen) {
@@ -2213,6 +2222,9 @@ final class SessionLogManager: ObservableObject {
             "endpoint": endpoint,
             "error": error.localizedDescription
         ])
+        
+        // 🛡️ Breadcrumb for crash reporting
+        CrashReportingService.shared.addBreadcrumb("network error: \(endpoint) — \(error.localizedDescription)")
     }
     
     func logDataSync(type: String, itemCount: Int, direction: String) {

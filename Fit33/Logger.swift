@@ -103,6 +103,19 @@ enum AppLogger {
             os_log("%{public}@", log: log, type: level.osLogType, text)
         }
         #endif
+        
+        // 🛡️ Auto-report errors and critical issues to crash reporting service
+        if level >= .error {
+            let severity: CrashReportingService.ErrorSeverity = level >= .critical ? .critical : .high
+            CrashReportingService.shared.reportError(
+                message: text,
+                domain: category.rawValue,
+                severity: severity,
+                file: file,
+                function: function,
+                line: line
+            )
+        }
     }
 
     // MARK: - Convenience

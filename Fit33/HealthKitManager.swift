@@ -91,8 +91,9 @@ class HealthKitManager: ObservableObject {
             // Update integration status in database
             await SupabaseManager.shared.updateIntegrationStatus(integration: "apple_health", isConnected: true)
             
-            // Start observing steps after authorization
+            // Start observing steps and workouts after authorization
             startObservingSteps()
+            startObservingWorkouts()
             
             // Initial data fetch
             await fetchTodaySteps()
@@ -347,6 +348,7 @@ class HealthKitManager: ObservableObject {
         
         if isAuthorized {
             startObservingSteps()
+            startObservingWorkouts()
             Task {
                 await fetchTodaySteps()
                 await fetchWeeklySteps()
@@ -383,6 +385,40 @@ class HealthKitManager: ObservableObject {
         
         // Note: Background delivery requires special entitlements
         // The observer query above already provides real-time updates when app is active
+    }
+    
+    // MARK: - Real-time Workout Observation
+    
+    /// Observe new workouts in real-time (Apple Watch, Nike Run Club, Strava, etc.)
+    /// When a new workout is recorded in any connected app and synced to Apple Health,
+    /// this observer fires and triggers a sync to create a Recent Activity card.
+    private func startObservingWorkouts() {
+        let workoutType = HKObjectType.workoutType()
+        
+        let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
+            if let error = error {
+                print("❌ [HEALTHKIT] Workout observer error: \(error)")
+                completionHandler()
+                return
+            }
+            
+            print("🏋️ [HEALTHKIT] New workout detected in Apple Health — syncing to Recent Activity...")
+            
+            Task {
+                // Sync HealthKit workouts and persist to Supabase (creates cardio_workouts records)
+                await HealthKitService.shared.syncAllData(force: true)
+                
+                // Post notification so Dashboard reloads cardio workouts immediately
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+                }
+            }
+            
+            completionHandler()
+        }
+        
+        healthStore.execute(query)
+        print("✅ Started observing workout changes (external apps)")
     }
     
     // MARK: - Fetch Step Data
@@ -699,3 +735,11 @@ extension HKWorkoutActivityType {
     }
 }
 
+// MARK: - Notification Names
+
+extension Notification.Name {
+    /// Posted when an external workout (Apple Watch, Nike Run Club, Strava, etc.)
+    /// is detected via HealthKit and synced to cardio_workouts in Supabase.
+    /// Dashboard should reload cardio workouts when this fires.
+    static let externalWorkoutSynced = Notification.Name("externalWorkoutSynced")
+}

@@ -8,6 +8,7 @@ import CoreData
 struct FriendsTabView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
     
@@ -18,6 +19,7 @@ struct FriendsTabView: View {
     @StateObject private var contactsService = ContactsService.shared
     
     @State private var showingFriendsList = false
+    @State private var showingFriendSearch = false
     @State private var showingFriendProfile: Friend?
     @State private var showingCommunityHub = false
     @State private var showingChallengeCreation = false
@@ -26,6 +28,9 @@ struct FriendsTabView: View {
     @State private var showingSentConfirmation = false
     @State private var navigationPath = NavigationPath()
     @State private var sentRequestIds: Set<UUID> = [] // Track sent friend requests for instant UI
+    @State private var selectedCommunityChallenge: CommunityChallenge?
+    @State private var showingAllCommunities = false
+    @State private var hasAppearedBefore = false
     
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -43,14 +48,19 @@ struct FriendsTabView: View {
                         // Top 3 Best Friends spotlight
                         topFriendsSpotlight
                         
+                        // Quick action tiles: Add Friend, New Challenge, Join Community
+                        friendsQuickActionTiles
+                        
                         // Active Challenges carousel
                         activeChallengesCarousel
                         
-                        // Recommended Challenge for You
-                        recommendedChallengeWidget
-                        
-                        // Join Community Challenge
+                        // Community Challenges (leaderboard widgets)
                         communityChallengeWidget
+                        
+                        // Recommended Challenge for You — only when no active community challenges
+                        if communityService.myChallenges.isEmpty {
+                            recommendedChallengeWidget
+                        }
                         
                         // Quick Actions
                         socialQuickActions
@@ -62,6 +72,10 @@ struct FriendsTabView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 20)
+            }
+            .refreshable {
+                // Pull-to-refresh: refresh everything in parallel for speed
+                await refreshAllFriendsData(force: true)
             }
             .background(
                 AnimatedOrbBackground.friends(colorScheme: colorScheme)
@@ -75,6 +89,9 @@ struct FriendsTabView: View {
                     CommunityChallengesHubView()
                 }
             }
+            .navigationDestination(item: $selectedCommunityChallenge) { challenge in
+                CommunityDetailView(challengeId: challenge.challengeId, challengeTitle: challenge.title)
+            }
         }
         .task {
             // ⚡️ INSTANT DISPLAY: FriendService and FriendRankingService load cached
@@ -85,25 +102,24 @@ struct FriendsTabView: View {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
             guard !Task.isCancelled else { return }
             
-            // Refresh friend data (services have internal caching — if data is fresh, these are no-ops)
-            await rankingService.fetchRankedFriends()
-            await friendService.fetchFriends()
-            
-            // Refresh contact suggestions (non-friends from contacts) every time tab loads
-            if contactsService.canAccessContacts {
-                await contactsService.fetchContactsAndFindFriends()
+            await refreshAllFriendsData(force: false)
+            hasAppearedBefore = true
+        }
+        .onAppear {
+            // Auto-refresh when returning to this tab (after initial load)
+            if hasAppearedBefore {
+                Task {
+                    await refreshAllFriendsData(force: false)
+                }
             }
-            
-            // Only fetch challenges if Dashboard hasn't already loaded them
-            if challengeService.activeChallenges.isEmpty {
-                await challengeService.fetchActiveChallenges()
-                await challengeService.fetchActiveGroupChallenges()
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // Auto-refresh when app comes back to foreground
+            if newPhase == .active && oldPhase != .active {
+                Task {
+                    await refreshAllFriendsData(force: false)
+                }
             }
-            
-            // Community challenges last (lowest priority)
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            await communityService.fetchFeaturedChallenges()
         }
         .sheet(item: $showingFriendProfile) { friend in
             NavigationStack {
@@ -115,16 +131,52 @@ struct FriendsTabView: View {
                 FriendsListView()
             }
         }
+        .sheet(isPresented: $showingFriendSearch) {
+            NavigationStack {
+                FriendsListView(initialTab: 2)
+            }
+        }
         .sheet(isPresented: $showingCommunityHub) {
             CommunityChallengesHubView()
         }
-        .sheet(isPresented: $showingChallengeCreation) {
-            ChallengeFlowStartView()
-                .environmentObject(userManager)
+        .sheet(isPresented: $showingAllCommunities) {
+            AllCommunityChallengesView()
+        }
+        .fullScreenCover(isPresented: $showingChallengeCreation) {
+            NavigationStack {
+                ChallengeFlowStartView()
+                    .environmentObject(userManager)
+            }
         }
         .overlay(
             sentConfirmationOverlay
         )
+    }
+    
+    // MARK: - Header
+    
+    // MARK: - Refresh Helper
+    
+    /// Central refresh for all Friends tab data.
+    /// Uses throttling in CommunityChallengeService to avoid redundant calls.
+    private func refreshAllFriendsData(force: Bool) async {
+        // Batch 1: Fast social data (parallel)
+        async let friends: () = friendService.fetchFriends()
+        async let ranked: () = rankingService.fetchRankedFriends()
+        async let pending: () = friendService.fetchPendingRequests()
+        async let invites: () = challengeService.fetchPendingInvites()
+        _ = await (friends, ranked, pending, invites)
+        
+        // Batch 2: Challenge data (parallel)
+        async let active: () = challengeService.fetchActiveChallenges()
+        async let groups: () = challengeService.fetchActiveGroupChallenges()
+        async let community: () = communityService.refreshAll(force: force)
+        _ = await (active, groups, community)
+        
+        // Batch 3: Lower priority
+        if contactsService.canAccessContacts {
+            await contactsService.fetchContactsAndFindFriends()
+        }
     }
     
     // MARK: - Header
@@ -143,24 +195,6 @@ struct FriendsTabView: View {
                 .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
             
             Spacer()
-            
-            // Add Friend button
-            Button(action: {
-                HapticManager.selectionChanged()
-                showingFriendsList = true
-            }) {
-                Image(systemName: "person.badge.plus")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .padding(10)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.cyan.opacity(0.2), radius: 8, x: 0, y: 2)
-                    )
-            }
         }
         .padding(.leading, 4)
     }
@@ -195,83 +229,58 @@ struct FriendsTabView: View {
         
         return Group {
             if !suggestions.isEmpty || contactsService.canAccessContacts {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Header
-                    HStack {
-                        Image(systemName: "person.badge.plus")
-                            .foregroundStyle(
-                                LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .font(.title3)
-                        Text("Add Friends")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        Spacer()
-                        
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        // Search / Find friends circle
                         Button(action: {
                             HapticManager.selectionChanged()
-                            showingFriendsList = true
+                            showingFriendSearch = true
                         }) {
-                            Text("See All")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
-                            // "Find" search circle as first item
-                            Button(action: {
-                                HapticManager.selectionChanged()
-                                showingFriendsList = true
-                            }) {
-                                VStack(spacing: 5) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [.blue.opacity(0.2), .cyan.opacity(0.15)],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
+                            VStack(spacing: 5) {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.blue.opacity(0.2), .cyan.opacity(0.15)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 58, height: 58)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(
+                                                    LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                                    style: StrokeStyle(lineWidth: 2.5, dash: [6, 4])
                                                 )
-                                            )
-                                            .frame(width: 58, height: 58)
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(
-                                                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                                        style: StrokeStyle(lineWidth: 2.5, dash: [6, 4])
-                                                    )
-                                                    .frame(width: 66, height: 66)
-                                            )
-                                        
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 22, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            )
-                                    }
-                                    .frame(width: 64, height: 64)
+                                                .frame(width: 66, height: 66)
+                                        )
                                     
-                                    Text("Find")
-                                        .font(.caption2)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundStyle(
+                                            LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        )
                                 }
-                                .frame(width: 72)
+                                .frame(width: 64, height: 64)
+                                
+                                Text("Find")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
                             }
-                            .buttonStyle(.plain)
-                            
-                            // Contact suggestions
-                            ForEach(suggestions.prefix(12)) { suggestion in
-                                contactSuggestionCircle(suggestion: suggestion)
-                            }
+                            .frame(width: 72)
                         }
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
+                        
+                        // Contact suggestions
+                        ForEach(suggestions.prefix(12)) { suggestion in
+                            contactSuggestionCircle(suggestion: suggestion)
+                        }
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
                 }
             } else if !contactsService.canAccessContacts {
                 // Prompt to enable contacts
@@ -329,7 +338,7 @@ struct FriendsTabView: View {
             }
         }) {
             VStack(spacing: 5) {
-                ZStack(alignment: .bottomTrailing) {
+                ZStack {
                     // Profile photo or initials
                     if let photoUrl = suggestion.profilePhotoUrl, let url = URL(string: photoUrl) {
                         AsyncImage(url: url) { phase in
@@ -347,21 +356,6 @@ struct FriendsTabView: View {
                     } else {
                         suggestionInitialsCircle(suggestion: suggestion)
                     }
-                    
-                    // "+" badge overlay
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .frame(width: 22, height: 22)
-                            .shadow(color: .blue.opacity(0.4), radius: 4, x: 0, y: 1)
-                        
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .offset(x: 2, y: 2)
                 }
                 .frame(width: 64, height: 64)
                 .overlay(
@@ -395,6 +389,36 @@ struct FriendsTabView: View {
             Text(suggestion.initials)
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(.white)
+        }
+    }
+    
+    // MARK: - Quick Action Tiles (Add Friend, New Challenge, Join Community)
+    
+    private var friendsQuickActionTiles: some View {
+        HStack(spacing: 12) {
+            // Add Friend → opens friends list on Search tab
+            FriendsQuickTile(
+                icon: "person.badge.plus",
+                title: "Add\nFriend",
+                gradient: [.cyan, .blue],
+                action: { showingFriendSearch = true }
+            )
+            
+            // New Challenge → same flow as "Challenge a Friend" on home screen
+            FriendsQuickTile(
+                icon: "trophy.fill",
+                title: "New\nChallenge",
+                gradient: [.orange, .red],
+                action: { showingChallengeCreation = true }
+            )
+            
+            // Join Community → community challenges hub
+            FriendsQuickTile(
+                icon: "globe.americas.fill",
+                title: "Join\nCommunity",
+                gradient: [.green, .mint],
+                action: { showingCommunityHub = true }
+            )
         }
     }
     
@@ -586,11 +610,12 @@ struct FriendsTabView: View {
         let activeChallenges = challengeService.activeChallenges
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let totalCards = activeChallenges.count + groupChallenges.count
+        let safePageIndex = totalCards > 0 ? min(max(0, activeChallengePageIndex), totalCards - 1) : 0
         
         return Group {
             if totalCards > 0 {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Header OUTSIDE the card
+                VStack(spacing: 4) {
+                    // Header — same style as home screen
                     HStack {
                         Image(systemName: "flame.fill")
                             .foregroundStyle(
@@ -615,20 +640,66 @@ struct FriendsTabView: View {
                             )
                     }
                     
-                    // Card with carousel inside
-                    TabView(selection: $activeChallengePageIndex) {
-                        ForEach(Array(activeChallenges.enumerated()), id: \.element.id) { index, challenge in
-                            activeChallengeCard(challenge: challenge)
-                                .tag(index)
+                    if totalCards > 1 {
+                        // Multiple cards — swipeable GeometryReader (same as home screen)
+                        GeometryReader { geometry in
+                            let cardWidth = geometry.size.width
+                            let spacing: CGFloat = 16
+                            
+                            HStack(spacing: spacing) {
+                                ForEach(Array(activeChallenges.enumerated()), id: \.element.id) { index, challenge in
+                                    activeChallengeCard(challenge: challenge)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == index ? 1 : 0)
+                                }
+                                
+                                ForEach(Array(groupChallenges.enumerated()), id: \.element.id) { index, group in
+                                    groupChallengeCard(challenge: group)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeChallenges.count + index) ? 1 : 0)
+                                }
+                            }
+                            .offset(x: -CGFloat(safePageIndex) * (cardWidth + spacing))
                         }
+                        .frame(height: 156)
+                        .animation(.easeOut(duration: 0.2), value: safePageIndex)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 && totalCards > 0 {
+                                        HapticManager.impact(.medium)
+                                        if horizontalAmount < 0 && activeChallengePageIndex < totalCards - 1 {
+                                            activeChallengePageIndex += 1
+                                        } else if horizontalAmount > 0 && activeChallengePageIndex > 0 {
+                                            activeChallengePageIndex -= 1
+                                        }
+                                    }
+                                }
+                        )
                         
-                        ForEach(Array(groupChallenges.enumerated()), id: \.element.id) { index, group in
-                            groupChallengeCard(challenge: group)
-                                .tag(activeChallenges.count + index)
+                        // Page indicators (dash and dot style — same as home)
+                        HStack(spacing: 6) {
+                            ForEach(0..<totalCards, id: \.self) { index in
+                                Capsule()
+                                    .fill(safePageIndex == index ? Color.blue : Color.gray.opacity(0.3))
+                                    .frame(width: safePageIndex == index ? 20 : 8, height: 6)
+                                    .animation(.easeOut(duration: 0.2), value: safePageIndex)
+                                    .onTapGesture {
+                                        HapticManager.impact(.light)
+                                        activeChallengePageIndex = index
+                                    }
+                            }
                         }
+                        .padding(.vertical, 4)
+                    } else if let challenge = activeChallenges.first {
+                        // Single 1v1 challenge
+                        activeChallengeCard(challenge: challenge)
+                    } else if let group = groupChallenges.first {
+                        // Single group challenge
+                        groupChallengeCard(challenge: group)
                     }
-                    .tabViewStyle(.page(indexDisplayMode: totalCards > 1 ? .automatic : .never))
-                    .frame(height: 175)
                 }
             } else {
                 noChallengesCard
@@ -637,18 +708,19 @@ struct FriendsTabView: View {
     }
     
     private func activeChallengeCard(challenge: ActiveChallenge) -> some View {
+        let isAccountability = challenge.mode == .accountability
         let resolvedType = challenge.resolvedType
+        let typeColor = resolvedType.color
         let typeGradient = resolvedType.gradientColors
         let resolver = ChallengeProgressResolver.shared
         let myProgress = resolver.liveProgress(for: challenge)
-        let oppProgress = (challenge.opponentTodayProgress ?? 0) > 0
-            ? (challenge.opponentTodayProgress ?? 0)
-            : challenge.opponentTotalProgress
+        let oppProgress = challenge.opponentTodayProgress ?? 0
         let amWinning = myProgress > oppProgress
         let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
         
         return VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            // Header row — identical to home screen
+            HStack(alignment: .center, spacing: 10) {
                 ZStack {
                     Circle()
                         .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -664,65 +736,371 @@ struct FriendsTabView: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
-                    Text("vs \(opponentFirst)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text(isAccountability ? "with \(opponentFirst)" : "vs \(opponentFirst)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(challenge.daysRemaining)d left")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(typeColor)
+                    }
                 }
                 
                 Spacer()
                 
-                if amWinning {
-                    HStack(spacing: 4) {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.yellow)
-                        Text("Winning!")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
-                    }
-                    .padding(.horizontal, 8)
+                Text(isAccountability ? "🤝" : "⚔️")
+                    .font(.system(size: 16))
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            
+            // Inner gray status bar — identical to home screen
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
+                    .frame(width: 4)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.green.opacity(0.15)))
+                
+                if isAccountability {
+                    friendsTabAccountabilityBar(challenge: challenge, typeColor: typeColor, typeGradient: typeGradient)
                 } else {
-                    Text("Behind")
+                    friendsTabCompetitionBar(challenge: challenge, typeColor: typeColor, typeGradient: typeGradient)
+                }
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark
+                        ? Color.white.opacity(0.04)
+                        : Color.black.opacity(0.03))
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: typeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: typeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .padding(.horizontal, 4)
+    }
+    
+    // MARK: - Competition Bar (head-to-head with avatars + swords)
+    
+    private func friendsTabCompetitionBar(challenge: ActiveChallenge, typeColor: Color, typeGradient: [Color]) -> some View {
+        let resolver = ChallengeProgressResolver.shared
+        let resolvedType = challenge.resolvedType
+        let myProgress = resolver.liveProgress(for: challenge)
+        let oppProgress = challenge.opponentTodayProgress ?? 0
+        let amWinning = myProgress > oppProgress
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
+        
+        return HStack(spacing: 8) {
+            // Your side
+            HStack(spacing: 8) {
+                friendsChallengeAvatar(
+                    isUser: true,
+                    photoUrl: nil,
+                    name: userManager.currentUser?.name,
+                    done: amWinning,
+                    gradientColors: typeGradient,
+                    size: 36
+                )
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 3) {
+                        Text("You")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        if amWinning {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.yellow)
+                        }
+                    }
+                    
+                    Text(resolver.formatValue(myProgress, unit: challenge.targetUnit, type: resolvedType))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(amWinning ? .green : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: 85, alignment: .leading)
+            }
+            
+            Spacer(minLength: 4)
+            
+            // VS divider with score diff
+            VStack(spacing: 2) {
+                Text("⚔️")
+                    .font(.system(size: 14))
+                
+                if myProgress != oppProgress {
+                    let diff = abs(myProgress - oppProgress)
+                    let diffStr = resolver.formatValue(diff, unit: challenge.targetUnit, type: resolvedType)
+                    Text(amWinning ? "+\(diffStr)" : "-\(diffStr)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(amWinning ? .green : .red)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(minWidth: 30)
+            
+            Spacer(minLength: 4)
+            
+            // Opponent side
+            HStack(spacing: 8) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 3) {
+                        if !amWinning && oppProgress > 0 {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.yellow)
+                        }
+                        Text(opponentFirst)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Text(resolver.formatValue(oppProgress, unit: challenge.targetUnit, type: resolvedType))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(!amWinning && oppProgress > 0 ? .green : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: 85, alignment: .trailing)
+                
+                friendsChallengeAvatar(
+                    isUser: false,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName,
+                    done: !amWinning && oppProgress > 0,
+                    gradientColors: [.orange, .red],
+                    size: 36
+                )
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+    }
+    
+    // MARK: - Accountability Bar (buddy check-in)
+    
+    private func friendsTabAccountabilityBar(challenge: ActiveChallenge, typeColor: Color, typeGradient: [Color]) -> some View {
+        let resolver = ChallengeProgressResolver.shared
+        let resolvedType = challenge.resolvedType
+        let myProgress = resolver.liveProgress(for: challenge)
+        let oppProgress = challenge.opponentTodayProgress ?? 0
+        let myDone = challenge.dailyTarget.map { myProgress >= $0 } ?? false
+        let oppDone = challenge.dailyTarget.map { oppProgress >= $0 } ?? false
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Buddy"
+        let livePercent = resolver.progressPercentage(for: challenge)
+        
+        return HStack(spacing: 12) {
+            // Both avatars together with status
+            HStack(spacing: -8) {
+                friendsChallengeAvatar(
+                    isUser: true,
+                    photoUrl: nil,
+                    name: userManager.currentUser?.name,
+                    done: myDone,
+                    gradientColors: typeGradient,
+                    size: 36
+                )
+                .zIndex(1)
+                
+                friendsChallengeAvatar(
+                    isUser: false,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName,
+                    done: oppDone,
+                    gradientColors: typeGradient,
+                    size: 36
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Live progress value for "my" side
+                HStack(spacing: 4) {
+                    Text(myDone ? "✅" : "⬜")
+                        .font(.system(size: 12))
+                    Text(resolver.formattedProgress(for: challenge))
                         .font(.caption2)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.orange.opacity(0.15)))
-                }
-            }
-            .padding(16)
-            
-            // Progress comparison bar
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("You")
+                        .foregroundColor(myDone ? .green : typeColor)
+                    
+                    Text("·")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text(resolver.formatValue(myProgress, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(amWinning ? .green : .primary)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
+                    
+                    Text(oppDone ? "✅" : "⬜")
+                        .font(.system(size: 12))
                     Text(opponentFirst)
                         .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(resolver.formatValue(oppProgress, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(!amWinning ? .red : .primary)
+                        .foregroundColor(oppDone ? .green : .secondary)
+                        .lineLimit(1)
+                }
+                
+                // Shared streak
+                HStack(spacing: 4) {
+                    if challenge.myCurrentStreak > 0 {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text("\(challenge.myCurrentStreak)-day streak together")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing))
+                    } else {
+                        Text(friendsTabAccountabilityEncouragement(for: resolvedType))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            
+            Spacer(minLength: 4)
+            
+            // Daily progress ring — type-colored with live percentage
+            ZStack {
+                Circle()
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                    .frame(width: 36, height: 36)
+                Circle()
+                    .trim(from: 0, to: livePercent)
+                    .stroke(
+                        LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                    )
+                    .frame(width: 36, height: 36)
+                    .rotationEffect(.degrees(-90))
+                
+                if myDone && oppDone {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.green)
+                } else {
+                    Text("\(Int(livePercent * 100))%")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+            }
         }
-        .sleekCard(cornerRadius: 20, accentColor: resolvedType.color)
-        .padding(.horizontal, 4)
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+    }
+    
+    private func friendsTabAccountabilityEncouragement(for type: ChallengeType) -> String {
+        switch type {
+        case .hydrate: return "Drink up together today!"
+        case .protein: return "Hit your protein today!"
+        case .calories: return "Burn it together!"
+        case .steps: return "Start stepping today!"
+        case .walk: return "Get walking today!"
+        case .run: return "Lace up and go!"
+        case .lift: return "Hit the weights today!"
+        case .activeMinutes: return "Get moving today!"
+        case .workoutStreak: return "Start your streak today!"
+        }
+    }
+    
+    // MARK: - Challenge Avatar Helper (Friends Tab)
+    
+    private func friendsChallengeAvatar(isUser: Bool, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color], size: CGFloat = 36) -> some View {
+        let borderWidth: CGFloat = size > 30 ? 2 : 1.5
+        let fontSize: CGFloat = size * 0.38
+        
+        return Group {
+            if isUser {
+                if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                    Image(uiImage: cachedImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: size, height: size)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: size, height: size)
+                        .overlay(
+                            Text(name?.prefix(1).uppercased() ?? "Y")
+                                .font(.system(size: fontSize, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                }
+            } else {
+                if let photoUrl = photoUrl, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: size, height: size)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                        default:
+                            Circle()
+                                .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: size, height: size)
+                                .overlay(
+                                    Text(name?.prefix(1).uppercased() ?? "F")
+                                        .font(.system(size: fontSize, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                        }
+                    }
+                } else {
+                    Circle()
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: size, height: size)
+                        .overlay(
+                            Text(name?.prefix(1).uppercased() ?? "F")
+                                .font(.system(size: fontSize, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                }
+            }
+        }
     }
     
     private func groupChallengeCard(challenge: ActiveGroupChallenge) -> some View {
@@ -806,7 +1184,7 @@ struct FriendsTabView: View {
     }
     
     private var noChallengesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
             // Header OUTSIDE the card
             HStack {
                 Image(systemName: "flame.fill")
@@ -1064,10 +1442,11 @@ struct FriendsTabView: View {
     // MARK: - Community Challenge Widget
     
     private var communityChallengeWidget: some View {
+        let myChallenges = communityService.myChallenges
         let featured = communityService.featuredChallenges.filter { !$0.alreadyJoined }.prefix(2)
         
         return VStack(alignment: .leading, spacing: 12) {
-            // Header OUTSIDE the card
+            // Header
             HStack {
                 Image(systemName: "globe.americas.fill")
                     .foregroundStyle(
@@ -1084,54 +1463,92 @@ struct FriendsTabView: View {
                     HapticManager.selectionChanged()
                     showingCommunityHub = true
                 }) {
-                    Text("Browse All")
+                    Text("Browse")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.green)
                 }
             }
             
-            if featured.isEmpty {
-                // Loading or empty state
-                VStack(spacing: 12) {
-                    Image(systemName: "globe.americas.fill")
-                        .font(.system(size: 36))
-                        .foregroundColor(.green.opacity(0.4))
-                    
-                    Text("Discover community challenges")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
+            // ── My Active Community Challenges (leaderboard widgets, max 3) ──
+            if !myChallenges.isEmpty {
+                ForEach(myChallenges.prefix(3)) { challenge in
+                    Button {
+                        selectedCommunityChallenge = challenge
+                    } label: {
+                        CommunityLeaderboardWidget(challenge: challenge)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                // "See all" button when 4+ challenges
+                if myChallenges.count > 3 {
                     Button(action: {
-                        HapticManager.impact(.medium)
-                        showingCommunityHub = true
+                        HapticManager.selectionChanged()
+                        showingAllCommunities = true
                     }) {
-                        Text("Browse Challenges")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(
-                                LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .cornerRadius(20)
+                        HStack(spacing: 8) {
+                            Text("See all \(myChallenges.count) challenges")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(colors: [.green.opacity(0.8), .mint.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(20)
-                .sleekCard(cornerRadius: 24, accentColor: .green)
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(Array(featured)) { challenge in
-                        communityChallengeRow(challenge: challenge)
+            }
+            
+            // ── Discover (only show if user has no challenges) ──
+            if myChallenges.isEmpty {
+                if !featured.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(Array(featured)) { challenge in
+                            communityDiscoverRow(challenge: challenge)
+                        }
                     }
+                } else {
+                    // Empty state — no challenges at all
+                    VStack(spacing: 12) {
+                        Image(systemName: "globe.americas.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.green.opacity(0.4))
+                        
+                        Text("Compete on global leaderboards")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Button(action: {
+                            HapticManager.impact(.medium)
+                            showingCommunityHub = true
+                        }) {
+                            Text("Browse Challenges")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .cornerRadius(20)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+                    .sleekCard(cornerRadius: 24, accentColor: .green)
                 }
             }
         }
     }
     
-    private func communityChallengeRow(challenge: FeaturedCommunityChallenge) -> some View {
+    private func communityDiscoverRow(challenge: FeaturedCommunityChallenge) -> some View {
         let resolvedType = challenge.resolvedType
         let typeGradient = resolvedType.gradientColors
         
@@ -1179,6 +1596,7 @@ struct FriendsTabView: View {
                 Task {
                     _ = await communityService.joinChallenge(code: challenge.joinCode)
                     await communityService.fetchFeaturedChallenges()
+                    await communityService.fetchMyChallenges()
                 }
             }) {
                 Text("Join")
@@ -1326,6 +1744,110 @@ struct FriendsTabView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showingSentConfirmation)
             }
         }
+    }
+}
+
+// MARK: - Friends Quick Action Tile (Tall/Skinny – matches Nutrition quick action style)
+
+struct FriendsQuickTile: View {
+    let icon: String
+    let title: String
+    let gradient: [Color]
+    let action: () -> Void
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var cardBg: [Color] {
+        colorScheme == .dark
+            ? [Color(white: 0.14), Color(white: 0.09)]
+            : [Color.white, Color.white.opacity(0.95)]
+    }
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            action()
+        }) {
+            VStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: gradient),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 46, height: 46)
+                        .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 120)
+            .background(
+                ZStack {
+                    // Color glow underneath
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(gradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 6)
+                        .blur(radius: 4)
+                    
+                    // Shadow layer
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 3)
+                    
+                    // Main card
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: cardBg,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Inner highlight
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+                    
+                    // Colored accent border
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [gradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: gradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 16, x: 0, y: 8)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

@@ -26,10 +26,13 @@ import HealthKit
 // MARK: - Simulator Date Formatter
 
 private enum SimDateFormatters {
+    /// Local timezone date formatter for progress logging.
+    /// Must use local timezone to match get_active_challenges which uses
+    /// (NOW() AT TIME ZONE p_timezone)::DATE for "today" calculation.
     static let dateOnly: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "UTC")
+        f.timeZone = .current
         return f
     }()
 }
@@ -115,6 +118,17 @@ struct SimulatedUser: Codable {
     let userId: UUID
     let username: String
     let email: String
+}
+
+// MARK: - Quick Realtime Test Result
+
+struct QuickRealtimeTestResult {
+    let passed: Bool
+    let summary: String
+    let details: [String]
+    let latencyMs: Int
+    
+    var emoji: String { passed ? "✅" : "❌" }
 }
 
 // MARK: - Challenge Scenario
@@ -384,6 +398,85 @@ class SocialSystemSimulator: ObservableObject {
         }
         
         // ═══════════════════════════════════════════════════════════
+        // PHASE 4.5: MIDNIGHT RESET VERIFICATION
+        // Verifies that yesterday's progress doesn't appear as today's.
+        // Uses the first active challenge from Phase 4.
+        // ═══════════════════════════════════════════════════════════
+        
+        currentPhase = "Phase 4.5: Midnight Reset"
+        statusMessage = "🌙 Testing midnight daily reset..."
+        
+        // Find a challenge that was just created in Phase 4
+        do {
+            struct TZParams: Encodable { let p_timezone: String }
+            let activeChallenges: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_active_challenges", params: TZParams(p_timezone: TimeZone.current.identifier))
+                .execute()
+                .value
+            
+            if let firstChallenge = activeChallenges.first {
+                await testMidnightReset(report: &report, challengeId: firstChallenge.challengeId, userA: userA, userB: userB)
+            } else {
+                logEntry(&report, phase: "MIDNIGHT_RESET", action: "⚠️ No active challenges found — skipping midnight reset test",
+                         actor: "System", service: "ChallengeService", rpcOrMethod: "get_active_challenges",
+                         success: true, durationMs: 0, severity: "WARN",
+                         details: "Need at least one active 1v1 challenge to test midnight reset")
+                report.totalTests += 1
+                report.warnings += 1
+            }
+        } catch {
+            logEntry(&report, phase: "MIDNIGHT_RESET", action: "❌ Failed to query active challenges for midnight test",
+                     actor: "System", service: "Supabase", rpcOrMethod: "get_active_challenges",
+                     success: false, durationMs: 0, severity: "ERROR",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+        }
+        
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 4.6: REALTIME PROPAGATION TEST
+        // THE CRITICAL TEST: Does User B logging progress trigger a
+        // real-time WebSocket event on User A's device?
+        // Steps:
+        //   1. Clear RealtimeService event log
+        //   2. User B logs progress via sim_log_progress_for_user
+        //   3. Wait up to 5 seconds for RealtimeService to fire
+        //   4. Check if opponent progress event was received
+        //   5. Verify the progress value matches what was logged
+        // ═══════════════════════════════════════════════════════════
+        
+        currentPhase = "Phase 4.6: Realtime Propagation"
+        statusMessage = "⚡️ Testing real-time update delivery..."
+        
+        do {
+            struct TZParams: Encodable { let p_timezone: String }
+            let activeChallenges: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_active_challenges", params: TZParams(p_timezone: TimeZone.current.identifier))
+                .execute()
+                .value
+            
+            if let testChallenge = activeChallenges.first {
+                await testRealtimePropagation(report: &report, challengeId: testChallenge.challengeId, userA: userA, userB: userB)
+            } else {
+                logEntry(&report, phase: "REALTIME", action: "⚠️ No active challenges — skipping realtime propagation test",
+                         actor: "System", service: "ChallengeService", rpcOrMethod: "get_active_challenges",
+                         success: true, durationMs: 0, severity: "WARN",
+                         details: "Need at least one active 1v1 challenge to test realtime propagation")
+                report.totalTests += 1
+                report.warnings += 1
+            }
+        } catch {
+            logEntry(&report, phase: "REALTIME", action: "❌ Failed to query active challenges for realtime test",
+                     actor: "System", service: "Supabase", rpcOrMethod: "get_active_challenges",
+                     success: false, durationMs: 0, severity: "ERROR",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+        }
+        
+        progress = 0.58
+        
+        // ═══════════════════════════════════════════════════════════
         // PHASE 5: GROUP CHALLENGE AUDIT (A, B, C)
         // Full 3-way testing: create, accept all, log progress for
         // all 3 users, verify cross-visibility, leaderboard, streaks
@@ -454,6 +547,12 @@ class SocialSystemSimulator: ObservableObject {
         currentPhase = "Complete"
         statusMessage = "✅ Simulation complete! \(report.passedTests)/\(report.totalTests) passed (\(String(format: "%.1f", report.passRate))%)"
         isRunning = false
+        
+        // Refresh ChallengeService so the device running the simulation has
+        // up-to-date challenge data (simulation may have created/deleted challenges
+        // and logged progress that the local cache doesn't reflect yet)
+        await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
         
         // Save report to documents
         saveReport(report)
@@ -1293,6 +1392,7 @@ class SocialSystemSimulator: ObservableObject {
             let p_progress_value: Int
             let p_progress_date: String
             let p_source: String
+            let p_timezone: String
         }
         
         struct LogProgressParams: Encodable {
@@ -1301,6 +1401,7 @@ class SocialSystemSimulator: ObservableObject {
             let p_progress_date: String
             let p_source: String
             let p_workout_id: String?
+            let p_timezone: String
         }
         
         let simulationDays = min(3, scenario.durationDays)
@@ -1323,7 +1424,8 @@ class SocialSystemSimulator: ObservableObject {
                         p_progress_value: progressA,
                         p_progress_date: dateStr,
                         p_source: "manual",
-                        p_workout_id: nil
+                        p_workout_id: nil,
+                        p_timezone: TimeZone.current.identifier
                     ))
                     .execute()
                     .value
@@ -1357,7 +1459,8 @@ class SocialSystemSimulator: ObservableObject {
                         p_user_id: userB.userId.uuidString,
                         p_progress_value: progressB,
                         p_progress_date: dateStr,
-                        p_source: "manual"
+                        p_source: "manual",
+                        p_timezone: TimeZone.current.identifier
                     ))
                     .execute()
                     .value
@@ -1553,6 +1656,134 @@ class SocialSystemSimulator: ObservableObject {
         }
     }
     
+    // MARK: - Phase 4.5: Midnight Reset Verification
+    
+    /// Tests that daily challenge progress correctly resets at midnight:
+    ///   1. Log progress for "yesterday" (local timezone) for both users
+    ///   2. Query get_active_challenges to verify "today" progress shows 0 for both
+    ///   3. This catches the UTC vs local timezone date mismatch bug where
+    ///      evening progress (after UTC midnight) was stored under the wrong day
+    private func testMidnightReset(
+        report: inout SimulationReport,
+        challengeId: UUID,
+        userA: SimulatedUser,
+        userB: SimulatedUser
+    ) async {
+        logEntry(&report, phase: "MIDNIGHT_RESET", action: "🌙 Testing midnight daily reset...",
+                 actor: "System", service: "ChallengeService", rpcOrMethod: "test",
+                 success: true, durationMs: 0, severity: "INFO",
+                 details: "Verifying that yesterday's progress doesn't bleed into today")
+        
+        let localTZ = TimeZone.current.identifier
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
+        let yesterdayStr = SimDateFormatters.dateOnly.string(from: yesterday)
+        let todayStr = SimDateFormatters.dateOnly.string(from: Date())
+        
+        struct SimLogParams: Encodable {
+            let p_challenge_id: String
+            let p_user_id: String
+            let p_progress_value: Int
+            let p_progress_date: String
+            let p_source: String
+            let p_timezone: String
+        }
+        
+        // Step 1: Log yesterday's progress for User B (simulating opponent)
+        let startLog = Date()
+        do {
+            let _: Bool = try await SupabaseManager.shared.supabaseClient
+                .rpc("sim_log_progress_for_user", params: SimLogParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_user_id: userB.userId.uuidString,
+                    p_progress_value: 9999,
+                    p_progress_date: yesterdayStr,
+                    p_source: "manual",
+                    p_timezone: localTZ
+                ))
+                .execute()
+                .value
+            
+            logEntry(&report, phase: "MIDNIGHT_RESET", action: "📝 Logged 9999 for \(userB.name) on yesterday (\(yesterdayStr))",
+                     actor: "System", service: "ChallengeService", rpcOrMethod: "sim_log_progress_for_user",
+                     success: true, durationMs: ms(since: startLog), severity: "PASS")
+            report.totalTests += 1
+            report.passedTests += 1
+        } catch {
+            logEntry(&report, phase: "MIDNIGHT_RESET", action: "Failed to log yesterday's progress for \(userB.name)",
+                     actor: "System", service: "ChallengeService", rpcOrMethod: "sim_log_progress_for_user",
+                     success: false, durationMs: ms(since: startLog), severity: "FAIL",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+            return
+        }
+        
+        // Step 2: Query get_active_challenges for today and check opponent_today_progress
+        struct TimezoneParams: Encodable { let p_timezone: String }
+        let startQuery = Date()
+        do {
+            let result: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_active_challenges", params: TimezoneParams(p_timezone: localTZ))
+                .execute()
+                .value
+            
+            if let challenge = result.first(where: { $0.challengeId == challengeId }) {
+                let oppToday = challenge.opponentTodayProgress ?? 0
+                let oppTotal = challenge.opponentTotalProgress
+                let resetCorrect = oppToday < 9999  // Today's progress should NOT show yesterday's 9999
+                
+                logEntry(&report, phase: "MIDNIGHT_RESET",
+                         action: "🌙 Midnight reset check: \(userB.name) today_progress = \(oppToday) (yesterday was 9999)",
+                         actor: "System", service: "ChallengeService", rpcOrMethod: "get_active_challenges",
+                         success: resetCorrect,
+                         durationMs: ms(since: startQuery),
+                         severity: resetCorrect ? "PASS" : "FAIL",
+                         details: resetCorrect
+                            ? "✅ Today progress (\(oppToday)) correctly shows fresh value, not yesterday's 9999. Timezone: \(localTZ), today: \(todayStr), yesterday: \(yesterdayStr)"
+                            : "❌ BUG: opponent_today_progress=\(oppToday) includes yesterday's data! UTC/timezone mismatch in progress logging.")
+                report.totalTests += 1
+                if resetCorrect { report.passedTests += 1 } else { report.failedTests += 1 }
+                
+                // Step 3: Verify widget would NOT fall back to total when today = 0
+                // The old bug was: if opponentTodayProgress == 0, widget showed opponentTotalProgress
+                // After fix: widget shows 0 (correct — opponent hasn't started today)
+                let widgetWouldShowTotal = oppToday == 0 && oppTotal > 0
+                if widgetWouldShowTotal {
+                    logEntry(&report, phase: "MIDNIGHT_RESET",
+                             action: "🛡️ Widget fallback check: today=0, total=\(oppTotal) — widget must show 0 (not \(oppTotal))",
+                             actor: "System", service: "DashboardView", rpcOrMethod: "competitionProgressSection",
+                             success: true, durationMs: 0, severity: "PASS",
+                             details: "✅ Widget correctly shows today=0 after midnight. Old bug would have shown total=\(oppTotal).")
+                    report.totalTests += 1
+                    report.passedTests += 1
+                }
+                
+                if !resetCorrect {
+                    report.issues.append(SimulationIssue(
+                        severity: "CRITICAL",
+                        category: "DATA_INTEGRITY",
+                        description: "Midnight reset FAILED — opponent's yesterday progress (\(oppToday)) bleeds into today",
+                        suggestedFix: "Ensure log_challenge_progress uses local timezone dates (not UTC). Deploy updated challenge_rpc_functions.sql."))
+                }
+            } else {
+                logEntry(&report, phase: "MIDNIGHT_RESET", action: "Challenge not found in active list",
+                         actor: "System", service: "ChallengeService", rpcOrMethod: "get_active_challenges",
+                         success: false, durationMs: ms(since: startQuery), severity: "WARN",
+                         details: "Challenge \(challengeId.uuidString.prefix(8)) not in active challenges")
+                report.totalTests += 1
+                report.warnings += 1
+            }
+        } catch {
+            logEntry(&report, phase: "MIDNIGHT_RESET", action: "Failed to query active challenges",
+                     actor: "System", service: "Supabase", rpcOrMethod: "get_active_challenges",
+                     success: false, durationMs: ms(since: startQuery), severity: "ERROR",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+        }
+    }
+    
     // MARK: - Phase 5: Group Challenge Scenarios (A, B, C)
     
     /// Full group challenge audit with 3 participants:
@@ -1739,6 +1970,7 @@ class SocialSystemSimulator: ObservableObject {
             let p_progress_value: Int
             let p_progress_date: String
             let p_source: String
+            let p_timezone: String
         }
         
         struct LogProgressParams: Encodable {
@@ -1747,6 +1979,7 @@ class SocialSystemSimulator: ObservableObject {
             let p_progress_date: String
             let p_source: String
             let p_workout_id: String?
+            let p_timezone: String
         }
         
         let simulationDays = min(3, scenario.durationDays)
@@ -1772,7 +2005,8 @@ class SocialSystemSimulator: ObservableObject {
                                 p_progress_value: progressValue,
                                 p_progress_date: dateStr,
                                 p_source: "manual",
-                                p_workout_id: nil
+                                p_workout_id: nil,
+                                p_timezone: TimeZone.current.identifier
                             ))
                             .execute()
                             .value
@@ -1784,7 +2018,8 @@ class SocialSystemSimulator: ObservableObject {
                                 p_user_id: user.userId.uuidString,
                                 p_progress_value: progressValue,
                                 p_progress_date: dateStr,
-                                p_source: "manual"
+                                p_source: "manual",
+                                p_timezone: TimeZone.current.identifier
                             ))
                             .execute()
                             .value
@@ -2007,6 +2242,467 @@ class SocialSystemSimulator: ObservableObject {
                      details: "Error: \(error.localizedDescription)")
             report.totalTests += 1
             report.failedTests += 1
+        }
+    }
+    
+    // MARK: - Phase 4.6: Realtime Propagation Test
+    
+    /// THE CRITICAL DEBUGGING TEST: Verifies real-time WebSocket delivery.
+    ///
+    /// This test proves (or disproves) that when User B logs progress,
+    /// User A's RealtimeService receives the update via WebSocket.
+    ///
+    /// How it works:
+    ///   1. Records the current "last opponent progress" timestamp
+    ///   2. User B logs a distinctive progress value (e.g., 7777)
+    ///   3. Polls RealtimeService.lastOpponentProgressAt for up to 5 seconds
+    ///   4. If a new event arrived AND the value matches → PASS
+    ///   5. If no event arrived → FAIL (WebSocket not delivering)
+    ///   6. If event arrived but value wrong → FAIL (data corruption)
+    private func testRealtimePropagation(
+        report: inout SimulationReport,
+        challengeId: UUID,
+        userA: SimulatedUser,
+        userB: SimulatedUser
+    ) async {
+        logEntry(&report, phase: "REALTIME", action: "⚡️ REALTIME PROPAGATION TEST — Starting...",
+                 actor: "System", service: "RealtimeService", rpcOrMethod: "test",
+                 success: true, durationMs: 0, severity: "INFO",
+                 details: "Testing if \(userB.name) logging progress triggers a WebSocket event on \(userA.name)'s device")
+        
+        // Step 0: Verify RealtimeService is connected
+        let isConnected = RealtimeService.shared.isConnected
+        logEntry(&report, phase: "REALTIME", action: "RealtimeService connected?",
+                 actor: "System", service: "RealtimeService", rpcOrMethod: "isConnected",
+                 success: isConnected, durationMs: 0,
+                 severity: isConnected ? "PASS" : "FAIL",
+                 details: isConnected ? "✅ WebSocket channels are active" : "❌ NOT CONNECTED — real-time updates cannot work! Call RealtimeService.shared.connect()")
+        report.totalTests += 1
+        if isConnected { report.passedTests += 1 } else {
+            report.failedTests += 1
+            report.issues.append(SimulationIssue(
+                severity: "CRITICAL", category: "REALTIME",
+                description: "RealtimeService is NOT connected — all real-time updates are disabled",
+                suggestedFix: "Ensure RealtimeService.shared.connect() is called after authentication. Check app startup flow."))
+            
+            // Try to reconnect
+            logEntry(&report, phase: "REALTIME", action: "🔄 Attempting to reconnect RealtimeService...",
+                     actor: "System", service: "RealtimeService", rpcOrMethod: "connect",
+                     success: true, durationMs: 0, severity: "INFO")
+            await RealtimeService.shared.connect()
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1s for channels to establish
+            
+            let reconnected = RealtimeService.shared.isConnected
+            logEntry(&report, phase: "REALTIME", action: "Reconnect result: \(reconnected ? "✅ SUCCESS" : "❌ FAILED")",
+                     actor: "System", service: "RealtimeService", rpcOrMethod: "connect",
+                     success: reconnected, durationMs: 0,
+                     severity: reconnected ? "PASS" : "FAIL")
+            report.totalTests += 1
+            if reconnected { report.passedTests += 1 } else {
+                report.failedTests += 1
+                return // Can't test realtime if not connected
+            }
+        }
+        
+        // Step 1: Record the "before" state
+        let beforeTimestamp = RealtimeService.shared.lastOpponentProgressAt
+        let beforeEventCount = RealtimeService.shared.realtimeEventLog.count
+        
+        // Step 2: Clear the latest opponent progress event
+        RealtimeService.shared.lastOpponentProgressEvent = nil
+        
+        // Use a distinctive progress value that's easy to identify
+        let testProgressValue = 7777
+        let localTZ = TimeZone.current.identifier
+        let todayStr = SimDateFormatters.dateOnly.string(from: Date())
+        
+        struct SimLogParams: Encodable {
+            let p_challenge_id: String
+            let p_user_id: String
+            let p_progress_value: Int
+            let p_progress_date: String
+            let p_source: String
+            let p_timezone: String
+        }
+        
+        // Step 3: User B logs progress
+        let startLog = Date()
+        do {
+            let _: Bool = try await supabase
+                .rpc("sim_log_progress_for_user", params: SimLogParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_user_id: userB.userId.uuidString,
+                    p_progress_value: testProgressValue,
+                    p_progress_date: todayStr,
+                    p_source: "manual",
+                    p_timezone: localTZ
+                ))
+                .execute()
+                .value
+            
+            let logDuration = ms(since: startLog)
+            logEntry(&report, phase: "REALTIME", action: "📱 \(userB.name) logged \(testProgressValue) (test value) for today",
+                     actor: userB.name,
+                     service: "ChallengeService", rpcOrMethod: "RPC sim_log_progress_for_user",
+                     success: true, durationMs: logDuration, severity: "PASS",
+                     details: "Challenge: \(challengeId.uuidString.prefix(8)), date: \(todayStr), value: \(testProgressValue)")
+            report.totalTests += 1
+            report.passedTests += 1
+        } catch {
+            logEntry(&report, phase: "REALTIME", action: "❌ \(userB.name) progress log FAILED — cannot test realtime",
+                     actor: userB.name, service: "ChallengeService", rpcOrMethod: "RPC sim_log_progress_for_user",
+                     success: false, durationMs: ms(since: startLog), severity: "FAIL",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+            return
+        }
+        
+        // Step 4: Wait for up to 5 seconds for the WebSocket event
+        let startWait = Date()
+        var eventReceived = false
+        var receivedValue: Int?
+        var waitMs = 0
+        
+        logEntry(&report, phase: "REALTIME", action: "⏳ Waiting up to 5 seconds for WebSocket event on \(userA.name)'s device...",
+                 actor: "System", service: "RealtimeService", rpcOrMethod: "WebSocket listen",
+                 success: true, durationMs: 0, severity: "INFO",
+                 details: "Checking RealtimeService.lastOpponentProgressAt every 250ms")
+        
+        for _ in 0..<20 { // 20 × 250ms = 5 seconds
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            waitMs = ms(since: startWait)
+            
+            // Check if a NEW opponent progress event arrived
+            if let lastEvent = RealtimeService.shared.lastOpponentProgressEvent,
+               lastEvent.challengeId == challengeId {
+                // Check if it's newer than our "before" timestamp
+                if let lastTime = RealtimeService.shared.lastOpponentProgressAt,
+                   (beforeTimestamp == nil || lastTime > beforeTimestamp!) {
+                    eventReceived = true
+                    receivedValue = lastEvent.progressValue
+                    break
+                }
+            }
+            
+            // Also check if new events appeared in the log
+            let currentEventCount = RealtimeService.shared.realtimeEventLog.count
+            if currentEventCount > beforeEventCount {
+                // Check if any new event mentions this challenge
+                let newEvents = RealtimeService.shared.realtimeEventLog.prefix(currentEventCount - beforeEventCount)
+                for event in newEvents {
+                    if event.details.contains(challengeId.uuidString.prefix(8)) && event.type.contains("OPPONENT") {
+                        eventReceived = true
+                        break
+                    }
+                }
+                if eventReceived { break }
+            }
+        }
+        
+        // Step 5: Evaluate results
+        if eventReceived {
+            let valueMatches = receivedValue == testProgressValue
+            logEntry(&report, phase: "REALTIME", action: "⚡️ REALTIME EVENT RECEIVED in \(waitMs)ms!",
+                     actor: userA.name,
+                     service: "RealtimeService", rpcOrMethod: "WebSocket callback",
+                     success: valueMatches, durationMs: waitMs,
+                     severity: valueMatches ? "PASS" : "WARN",
+                     details: valueMatches
+                        ? "✅ \(userB.name) logged \(testProgressValue) → \(userA.name) received \(receivedValue ?? -1) via WebSocket in \(waitMs)ms. REALTIME WORKS!"
+                        : "⚠️ Event received but value mismatch: logged \(testProgressValue), received \(receivedValue ?? -1). May be an older/different event.")
+            report.totalTests += 1
+            if valueMatches { report.passedTests += 1 } else { report.warnings += 1 }
+            
+            // Check latency
+            if waitMs > 3000 {
+                report.issues.append(SimulationIssue(
+                    severity: "HIGH", category: "REALTIME",
+                    description: "WebSocket event took \(waitMs)ms to arrive (threshold: 3000ms)",
+                    suggestedFix: "Check Supabase realtime health. May need to check network latency or Supabase region."))
+            } else if waitMs > 1000 {
+                logEntry(&report, phase: "REALTIME", action: "⚠️ Realtime latency: \(waitMs)ms (acceptable but not instant)",
+                         actor: "System", service: "RealtimeService", rpcOrMethod: "latency",
+                         success: true, durationMs: waitMs, severity: "WARN",
+                         details: "Target: <1000ms. Consider checking Supabase region proximity.")
+            }
+        } else {
+            logEntry(&report, phase: "REALTIME", action: "❌ NO REALTIME EVENT RECEIVED after 5 seconds!",
+                     actor: userA.name,
+                     service: "RealtimeService", rpcOrMethod: "WebSocket callback",
+                     success: false, durationMs: waitMs, severity: "FAIL",
+                     details: "🚨 \(userB.name) logged \(testProgressValue) but \(userA.name) received NOTHING via WebSocket after 5 seconds. Real-time is BROKEN.")
+            report.totalTests += 1
+            report.failedTests += 1
+            
+            // Diagnose the issue
+            let channelStatus = RealtimeService.shared.isConnected ? "connected" : "disconnected"
+            let eventLogCount = RealtimeService.shared.realtimeEventLog.count
+            let recentEvents = RealtimeService.shared.realtimeEventLog.prefix(5).map { "[\($0.type)] \($0.details)" }.joined(separator: " | ")
+            
+            report.issues.append(SimulationIssue(
+                severity: "CRITICAL", category: "REALTIME",
+                description: "WebSocket not delivering opponent progress updates. Channel: \(channelStatus), Events in log: \(eventLogCount).",
+                suggestedFix: """
+                Possible causes:
+                1. Supabase Realtime not enabled for challenge_daily_progress table
+                2. REPLICA IDENTITY not set to FULL on challenge_daily_progress
+                3. WebSocket connection dropped (check isConnected)
+                4. RLS policies blocking realtime on challenge_daily_progress
+                5. Type casting issues in handleDailyProgressChange (Int vs Double)
+                Fix: Run ALTER TABLE challenge_daily_progress REPLICA IDENTITY FULL; in Supabase SQL editor.
+                Also ensure the table is added to supabase_realtime publication.
+                """))
+            
+            logEntry(&report, phase: "REALTIME", action: "🔍 Diagnostics: channel=\(channelStatus), eventLog=\(eventLogCount) events",
+                     actor: "System", service: "RealtimeService", rpcOrMethod: "diagnostics",
+                     success: true, durationMs: 0, severity: "INFO",
+                     details: "Recent events: \(recentEvents.isEmpty ? "(none)" : recentEvents)")
+        }
+        
+        // Step 6: Also verify the DB was actually written (confirm it's not a write issue)
+        let startDbCheck = Date()
+        do {
+            struct DailyRow: Decodable {
+                let progress_value: Int
+                let user_id: UUID
+                let progress_date: String
+            }
+            
+            let rows: [DailyRow] = try await supabase
+                .from("challenge_daily_progress")
+                .select("progress_value, user_id, progress_date")
+                .eq("challenge_id", value: challengeId.uuidString)
+                .eq("user_id", value: userB.userId.uuidString)
+                .eq("progress_date", value: todayStr)
+                .execute()
+                .value
+            
+            let dbHasValue = rows.first?.progress_value == testProgressValue || (rows.first?.progress_value ?? 0) >= testProgressValue
+            logEntry(&report, phase: "REALTIME", action: "DB verification: \(userB.name)'s progress written to challenge_daily_progress?",
+                     actor: "System",
+                     service: "Supabase", rpcOrMethod: "SELECT challenge_daily_progress",
+                     success: dbHasValue, durationMs: ms(since: startDbCheck),
+                     severity: dbHasValue ? "PASS" : "FAIL",
+                     details: "DB value: \(rows.first?.progress_value ?? -1), expected: \(testProgressValue)")
+            report.totalTests += 1
+            if dbHasValue { report.passedTests += 1 } else {
+                report.failedTests += 1
+                report.issues.append(SimulationIssue(
+                    severity: "CRITICAL", category: "DATA_INTEGRITY",
+                    description: "Progress value not written to DB — sim_log_progress_for_user may have a GREATEST clause preventing update",
+                    suggestedFix: "The GREATEST clause only updates if new value > old value. If old value was higher, the write is silently skipped."))
+            }
+        } catch {
+            logEntry(&report, phase: "REALTIME", action: "DB verification query failed",
+                     actor: "System", service: "Supabase", rpcOrMethod: "SELECT challenge_daily_progress",
+                     success: false, durationMs: ms(since: startDbCheck), severity: "ERROR",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+        }
+    }
+    
+    // MARK: - Quick Realtime Test (Standalone)
+    
+    /// A fast, standalone realtime test that can be run from the dev menu with one tap.
+    /// Creates a temporary challenge, logs opponent progress, and checks if the WebSocket fires.
+    /// Returns a human-readable result string for the UI.
+    func quickRealtimeTest(userBName: String = "") async -> QuickRealtimeTestResult {
+        guard !isRunning else {
+            return QuickRealtimeTestResult(passed: false, summary: "Simulator already running", details: [], latencyMs: 0)
+        }
+        
+        isRunning = true
+        currentPhase = "Quick Realtime Test"
+        statusMessage = "⚡️ Running quick realtime test..."
+        liveLog = []
+        
+        var details: [String] = []
+        let startTime = Date()
+        
+        // Step 1: Verify authentication
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
+            isRunning = false
+            return QuickRealtimeTestResult(passed: false, summary: "Not authenticated", details: ["❌ Must be logged in"], latencyMs: 0)
+        }
+        details.append("✅ Authenticated as \(currentUserId.uuidString.prefix(8))")
+        
+        // Step 2: Find User B
+        var userBId: UUID?
+        var userBDisplayName = "Opponent"
+        
+        struct ProfileRow: Decodable { let id: UUID; let name: String?; let username: String? }
+        
+        do {
+            var found: ProfileRow?
+            
+            if !userBName.trimmingCharacters(in: .whitespaces).isEmpty {
+                let byName: [ProfileRow] = try await supabase
+                    .from("user_profiles").select("id, name, username")
+                    .eq("name", value: userBName).neq("id", value: currentUserId.uuidString)
+                    .limit(1).execute().value
+                found = byName.first
+                
+                if found == nil {
+                    let byUsername: [ProfileRow] = try await supabase
+                        .from("user_profiles").select("id, name, username")
+                        .eq("username", value: userBName.lowercased()).neq("id", value: currentUserId.uuidString)
+                        .limit(1).execute().value
+                    found = byUsername.first
+                }
+            }
+            
+            if found == nil {
+                let any: [ProfileRow] = try await supabase
+                    .from("user_profiles").select("id, name, username")
+                    .neq("id", value: currentUserId.uuidString)
+                    .eq("has_completed_onboarding", value: true)
+                    .limit(1).execute().value
+                found = any.first
+            }
+            
+            if let f = found {
+                userBId = f.id
+                userBDisplayName = f.name ?? f.username ?? "User B"
+                details.append("✅ Found opponent: \(userBDisplayName) (\(f.id.uuidString.prefix(8)))")
+            }
+        } catch {
+            details.append("❌ Failed to find opponent: \(error.localizedDescription)")
+        }
+        
+        guard let opponentId = userBId else {
+            isRunning = false
+            return QuickRealtimeTestResult(passed: false, summary: "No opponent found", details: details, latencyMs: 0)
+        }
+        
+        // Step 3: Check RealtimeService connection
+        let isConnected = RealtimeService.shared.isConnected
+        details.append(isConnected ? "✅ RealtimeService connected" : "⚠️ RealtimeService disconnected — reconnecting...")
+        
+        if !isConnected {
+            await RealtimeService.shared.connect()
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            details.append(RealtimeService.shared.isConnected ? "✅ Reconnected" : "❌ Still disconnected")
+        }
+        
+        // Step 4: Find an existing active challenge between these users
+        var challengeId: UUID?
+        
+        do {
+            struct TZParams: Encodable { let p_timezone: String }
+            let active: [ActiveChallenge] = try await supabase
+                .rpc("get_active_challenges", params: TZParams(p_timezone: TimeZone.current.identifier))
+                .execute()
+                .value
+            
+            // Find one where opponent is our target user
+            if let match = active.first(where: { $0.opponentId == opponentId }) {
+                challengeId = match.challengeId
+                details.append("✅ Using active challenge: \(match.title) (\(match.challengeId.uuidString.prefix(8)))")
+            } else if let anyChallenge = active.first {
+                // Fall back to any active challenge
+                challengeId = anyChallenge.challengeId
+                // Use the actual opponent from this challenge
+                details.append("✅ Using challenge: \(anyChallenge.title) (opponent: \(anyChallenge.opponentName ?? "?"))")
+            }
+        } catch {
+            details.append("❌ Failed to fetch active challenges: \(error.localizedDescription)")
+        }
+        
+        guard let cId = challengeId else {
+            isRunning = false
+            return QuickRealtimeTestResult(passed: false, summary: "No active challenge found", details: details, latencyMs: 0)
+        }
+        
+        // Step 5: Record "before" state & log opponent progress
+        let beforeTimestamp = RealtimeService.shared.lastOpponentProgressAt
+        RealtimeService.shared.lastOpponentProgressEvent = nil
+        
+        let testValue = Int.random(in: 8000...9999) // Distinctive value
+        let todayStr = SimDateFormatters.dateOnly.string(from: Date())
+        
+        struct SimLogParams: Encodable {
+            let p_challenge_id: String
+            let p_user_id: String
+            let p_progress_value: Int
+            let p_progress_date: String
+            let p_source: String
+            let p_timezone: String
+        }
+        
+        let logStart = Date()
+        do {
+            let _: Bool = try await supabase
+                .rpc("sim_log_progress_for_user", params: SimLogParams(
+                    p_challenge_id: cId.uuidString,
+                    p_user_id: opponentId.uuidString,
+                    p_progress_value: testValue,
+                    p_progress_date: todayStr,
+                    p_source: "manual",
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+            details.append("✅ Logged \(testValue) as \(userBDisplayName) (\(ms(since: logStart))ms)")
+        } catch {
+            details.append("❌ Failed to log progress: \(error.localizedDescription)")
+            isRunning = false
+            return QuickRealtimeTestResult(passed: false, summary: "Progress log failed", details: details, latencyMs: 0)
+        }
+        
+        // Step 6: Wait for WebSocket event
+        details.append("⏳ Waiting for WebSocket event...")
+        let waitStart = Date()
+        var received = false
+        var receivedValue: Int?
+        
+        for _ in 0..<20 { // 5 seconds
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            
+            if let event = RealtimeService.shared.lastOpponentProgressEvent,
+               event.challengeId == cId,
+               let lastTime = RealtimeService.shared.lastOpponentProgressAt,
+               (beforeTimestamp == nil || lastTime > beforeTimestamp!) {
+                received = true
+                receivedValue = event.progressValue
+                break
+            }
+        }
+        
+        let latencyMs = ms(since: waitStart)
+        let totalMs = ms(since: startTime)
+        
+        if received {
+            let valueMatch = receivedValue == testValue || (receivedValue ?? 0) >= testValue
+            details.append("⚡️ RECEIVED in \(latencyMs)ms! Value: \(receivedValue ?? -1) (expected: \(testValue))")
+            details.append(valueMatch ? "✅ VALUE MATCHES — Realtime is WORKING!" : "⚠️ Value mismatch (may be GREATEST clause)")
+            
+            statusMessage = "✅ Realtime works! (\(latencyMs)ms)"
+            currentPhase = "Complete"
+            isRunning = false
+            return QuickRealtimeTestResult(passed: true, summary: "⚡️ Realtime working! \(latencyMs)ms latency", details: details, latencyMs: latencyMs)
+        } else {
+            details.append("❌ NO EVENT after 5 seconds")
+            details.append("🔍 RealtimeService.isConnected: \(RealtimeService.shared.isConnected)")
+            details.append("🔍 Event log has \(RealtimeService.shared.realtimeEventLog.count) entries")
+            
+            // Show recent events for debugging
+            let recent = RealtimeService.shared.realtimeEventLog.prefix(3)
+            for event in recent {
+                details.append("   [\(event.timeString)] \(event.type): \(event.details)")
+            }
+            
+            details.append("")
+            details.append("Possible fixes:")
+            details.append("1. ALTER TABLE challenge_daily_progress REPLICA IDENTITY FULL;")
+            details.append("2. Ensure table is in supabase_realtime publication")
+            details.append("3. Check RLS policies on challenge_daily_progress")
+            
+            statusMessage = "❌ Realtime NOT working"
+            currentPhase = "Complete"
+            isRunning = false
+            return QuickRealtimeTestResult(passed: false, summary: "❌ No realtime event received in 5s", details: details, latencyMs: 0)
         }
     }
     

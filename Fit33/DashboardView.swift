@@ -44,6 +44,7 @@ struct DashboardView: View {
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var stravaService = StravaService.shared
+    @ObservedObject private var healthKitService = HealthKitService.shared
     @State private var navigateToCustomWorkout = false
     @State private var navigateToAutoWorkout = false
     @State private var navigateToGeneratedPrograms = false
@@ -59,6 +60,7 @@ struct DashboardView: View {
     
     // Cardio workouts from Supabase
     @State private var recentCardioWorkouts: [CardioWorkoutDTO] = []
+    @State private var totalCardioWorkoutCount: Int = 0  // All-time cardio count (not limited to 5)
     
     // Profile photo for home icon
     @State private var profilePhotoURL: String? = nil
@@ -270,8 +272,8 @@ struct DashboardView: View {
                         .id("stepTracker")
                         .padding(.bottom, 20)
                     
-                    // Recent workouts section
-                    if !recentWorkouts.isEmpty {
+                    // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit)
+                    if !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {
                         recentWorkoutsSection
                             .id("workoutHistory")
                             .padding(.bottom, 20)
@@ -527,6 +529,13 @@ struct DashboardView: View {
             
             // Load profile photo for home icon
             await loadProfilePhoto()
+            
+            // 🚀 COLD START FIX: Push current HealthKit data to all challenges
+            // On cold start the Fit33App.scenePhase handler may fire before auth
+            // is ready, so this ensures health data reaches the server ASAP.
+            // HealthDataService.syncAllHealthData() handles HealthKit fetch + push
+            // to 1v1 AND community challenges in one pass (with internal throttling).
+            await HealthDataService.shared.syncAllHealthData(force: true)
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
             // Refresh recommendation after workout completion (debounced)
@@ -586,6 +595,18 @@ struct DashboardView: View {
                 Task { await loadRecentCardioWorkouts() }
             }
         }
+        .onChange(of: healthKitService.lastSyncDate) { _, newDate in
+            // Reload cardio workouts when HealthKit finishes syncing
+            // (HealthKit workouts are now persisted to Supabase after sync)
+            if newDate != nil {
+                Task { await loadRecentCardioWorkouts() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .externalWorkoutSynced)) { _ in
+            // Reload cardio workouts when an external workout (Apple Watch, Nike Run Club, etc.)
+            // is detected and synced to Supabase via the HealthKit workout observer
+            Task { await loadRecentCardioWorkouts() }
+        }
         .onChange(of: smartProgramEngine.userPrograms.count) { _, _ in
             // Trigger refresh when programs change
         }
@@ -619,10 +640,16 @@ struct DashboardView: View {
     
     private func loadRecentCardioWorkouts() async {
         do {
+            // Fetch recent for display (limited to 5)
             let cardioWorkouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 5)
+            
+            // Fetch total count for "Your Progress" stats (all-time)
+            let allTimeCount = try await SupabaseManager.shared.fetchCardioWorkoutCount()
+            
             await MainActor.run {
                 self.recentCardioWorkouts = cardioWorkouts
-                print("🏃 [DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts")
+                self.totalCardioWorkoutCount = allTimeCount
+                print("🏃 [DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts (\(allTimeCount) total all-time)")
                 for workout in cardioWorkouts {
                     print("   └─ \(workout.activityType): \(workout.completedAt)")
                 }
@@ -1891,7 +1918,7 @@ struct DashboardView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     
-                    Text("\(recentWorkouts.count + recentCardioWorkouts.count) workouts completed")
+                    Text("\(totalCombinedWorkouts) workouts completed")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -2000,6 +2027,16 @@ struct DashboardView: View {
         }
     }
     
+    /// Combined total: in-app workouts + synced cardio/HealthKit workouts
+    private var totalCombinedWorkouts: Int {
+        let inApp = Int(userManager.currentUser?.totalWorkouts ?? 0)
+        // Core Data workouts visible in the recent list (completed, all-time)
+        let coreDataCount = recentWorkouts.count
+        // Use the max of in-app counter vs Core Data count (in-app counter may lag)
+        let strength = max(inApp, coreDataCount)
+        return strength + totalCardioWorkoutCount
+    }
+    
     private var statsOverview: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Your Progress")
@@ -2009,7 +2046,7 @@ struct DashboardView: View {
             HStack(spacing: 12) {
                 StatCard(
                     title: "Workouts",
-                    value: "\(userManager.currentUser?.totalWorkouts ?? 0)",
+                    value: "\(totalCombinedWorkouts)",
                     icon: "dumbbell.fill",
                     color: .blue
                 )
@@ -3202,7 +3239,8 @@ struct DashboardView: View {
     private func accountabilityProgressSection(challenge: ActiveChallenge, challengeColor: Color, typeGradient: [Color]) -> some View {
         let resolver = ChallengeProgressResolver.shared
         let myLiveProgress = resolver.liveProgress(for: challenge)
-        let oppProgress = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
+        // Use today's progress only — 0 means the opponent hasn't started today (correct after midnight reset)
+        let oppProgress = challenge.opponentTodayProgress ?? 0
         let myDone = challenge.dailyTarget.map { myLiveProgress >= $0 } ?? false
         let oppDone = challenge.dailyTarget.map { oppProgress >= $0 } ?? false
         let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Buddy"
@@ -3318,8 +3356,9 @@ struct DashboardView: View {
         let resolver = ChallengeProgressResolver.shared
         let resolvedType = challenge.resolvedType
         // Use live data for my progress, server data for opponent
+        // Use today's progress only — 0 means opponent hasn't started today (correct after midnight reset)
         let myLiveToday = resolver.liveProgress(for: challenge)
-        let oppToday = (challenge.opponentTodayProgress ?? 0) > 0 ? (challenge.opponentTodayProgress ?? 0) : challenge.opponentTotalProgress
+        let oppToday = challenge.opponentTodayProgress ?? 0
         let amWinningNow = myLiveToday > oppToday
         
         return HStack(spacing: 8) {
@@ -4738,40 +4777,251 @@ struct DashboardView: View {
     
     // MARK: - Browse Programs Widget (Fallback)
     
+    /// Get any program to suggest (broader than topRecommendedSmartProgram)
+    private var anyRecommendableProgram: PersonalizedProgram? {
+        personalizedPrograms
+            .filter { $0.isUnlocked }
+            .sorted { $0.matchPercentage > $1.matchPercentage }
+            .first
+    }
+    
     private var browseProgramsWidget: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "list.bullet.clipboard.fill")
-                .font(.system(size: 32))
-                .foregroundColor(.blue)
+        let suggestedProgram = anyRecommendableProgram
+        let template = suggestedProgram?.template
+        let programColor = template?.category.color ?? .blue
+        let totalWeeks = ((template?.totalDays ?? 28) + 6) / 7
+        
+        return VStack(spacing: 0) {
+            // Header - Tap to view all programs (matches active program header style)
+            Button {
+                workoutManager.shouldNavigateToPrograms = true
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    // Category icon in accent circle
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [programColor.opacity(0.2), programColor.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: template?.category.icon ?? "dumbbell.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(programColor)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your Programs")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        Text("Find your next challenge")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(PlainButtonStyle())
             
+            // Inner card - Recommended program or explore prompt
+            if let program = suggestedProgram, let tmpl = template {
+                Button {
+                    if let user = userManager.currentUser {
+                        if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: tmpl.id, for: user) {
+                            if let firstDay = startedProgram.generatedDays.first {
+                                workoutManager.navigateProgramData = startedProgram
+                                workoutManager.navigateProgramDay = firstDay
+                                workoutManager.shouldNavigateToProgramDay = true
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 0) {
+                        // Left accent bar
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(programColor)
+                            .frame(width: 4)
+                            .padding(.vertical, 4)
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(tmpl.baseName)
+                                        .font(.subheadline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                    
+                                    // Match badge
+                                    Text("\(program.matchPercentage)% match")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule()
+                                                .fill(programColor.opacity(0.85))
+                                        )
+                                }
+                                
+                                HStack(spacing: 4) {
+                                    Text("\(totalWeeks) weeks")
+                                    Text("•")
+                                        .font(.caption2)
+                                    Text("\(tmpl.daysPerWeek) days/wk")
+                                    Text("•")
+                                        .font(.caption2)
+                                    Text("\(tmpl.estimatedMinutesPerDay) min")
+                                }
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            }
+                            .padding(.leading, 10)
+                            
+                            Spacer()
+                            
+                            // Start button
+                            HStack(spacing: 4) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Start")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [programColor, programColor.opacity(0.8)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            )
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(programColor.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                // No specific program to suggest - show explore prompt
+                Button {
+                    workoutManager.shouldNavigateToPrograms = true
+                } label: {
+                    HStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(programColor)
+                            .frame(width: 4)
+                            .padding(.vertical, 4)
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
             Text("Explore Programs")
-                .font(.headline)
+                                    .font(.subheadline)
                 .fontWeight(.bold)
+                                    .foregroundColor(.primary)
             
-            Text("Find a program that fits your goals")
+                                Text("10+ programs tailored to your goals")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            
-            NavigationLink(destination: GeneratedProgramsListView()) {
-                Text("Browse Programs")
+                            }
+                            .padding(.leading, 10)
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Text("Browse")
                     .font(.subheadline)
-                    .fontWeight(.semibold)
+                                    .fontWeight(.bold)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
                     .background(
                         Capsule()
-                            .fill(Color.blue)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [programColor, programColor.opacity(0.8)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            )
+                        }
+                    }
+                    .padding(12)
+        .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(programColor.opacity(0.2), lineWidth: 1)
+                            )
                     )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.14) : Color.white)
+            ZStack {
+                // Main card background with gradient
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark 
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                // Subtle accent border
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(
+                        LinearGradient(
+                            colors: [programColor.opacity(0.25), programColor.opacity(0.1), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
+        // Matching shadows from active/recommended program widgets
+        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
     }
     
     // MARK: - Program Recommendations Widget (Legacy - kept for scrolling list)

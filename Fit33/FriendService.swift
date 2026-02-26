@@ -337,6 +337,7 @@ class FriendService: ObservableObject {
                 // Update local state
                 pendingRequests.removeAll { $0.requestId == requestId }
                 await fetchFriends()
+                NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "✅ Friend request ACCEPTED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 print("✅ Friend request accepted")
             }
@@ -358,6 +359,7 @@ class FriendService: ObservableObject {
             if success {
                 // Update local state
                 pendingRequests.removeAll { $0.requestId == requestId }
+                NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "Friend request DECLINED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 print("✅ Friend request declined")
             }
@@ -605,6 +607,7 @@ class FriendService: ObservableObject {
                 .execute()
             
             await fetchReceivedWorkouts()
+            NotificationManager.shared.updateBadgeCount()
             print("✅ Workout marked as viewed")
         } catch {
             print("❌ Error marking workout viewed: \(error)")

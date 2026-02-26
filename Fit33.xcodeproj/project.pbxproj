@@ -43,6 +43,7 @@
 		7C1B0A532F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A522F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift */; };
 		7C1B0A552F4F7D640094AF68 /* SocialSystemSimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A542F4F7D640094AF68 /* SocialSystemSimulator.swift */; };
 		7C1B0A572F4F8BA00094AF68 /* BackgroundChallengeSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A562F4F8BA00094AF68 /* BackgroundChallengeSyncService.swift */; };
+		7C1B0AB92F50DE3C0094AF68 /* CrashReportingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0AB82F50DE3C0094AF68 /* CrashReportingService.swift */; };
 		7C3DF1CA2F2CF7E700A9CDA7 /* SavedMealsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3DF1C92F2CF7E700A9CDA7 /* SavedMealsService.swift */; };
 		7C3DF1CC2F2CF7FF00A9CDA7 /* ImportedRecipeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3DF1CB2F2CF7FF00A9CDA7 /* ImportedRecipeDetailView.swift */; };
 		7C3DF1CF2F2D262D00A9CDA7 /* InBodySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3DF1CE2F2D262D00A9CDA7 /* InBodySettingsView.swift */; };
@@ -313,6 +314,7 @@
 		7C1B0A522F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialSystemSimulatorView.swift; sourceTree = "<group>"; };
 		7C1B0A542F4F7D640094AF68 /* SocialSystemSimulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialSystemSimulator.swift; sourceTree = "<group>"; };
 		7C1B0A562F4F8BA00094AF68 /* BackgroundChallengeSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundChallengeSyncService.swift; sourceTree = "<group>"; };
+		7C1B0AB82F50DE3C0094AF68 /* CrashReportingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReportingService.swift; sourceTree = "<group>"; };
 		7C3DF1C92F2CF7E700A9CDA7 /* SavedMealsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedMealsService.swift; sourceTree = "<group>"; };
 		7C3DF1CB2F2CF7FF00A9CDA7 /* ImportedRecipeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedRecipeDetailView.swift; sourceTree = "<group>"; };
 		7C3DF1CD2F2D262D00A9CDA7 /* InBodyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InBodyService.swift; sourceTree = "<group>"; };
@@ -817,6 +819,7 @@
 				7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */,
 				7C47F9E22EE3BF8600BEC4D7 /* StretchModeView.swift */,
 				61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */,
+				7C1B0AB82F50DE3C0094AF68 /* CrashReportingService.swift */,
 				7C0C42BF2F1951E000F02E84 /* SubtleIndentButtonStyle.swift */,
 				7C558B132ED4D3A000A01E1F /* SupabaseManager.swift */,
 				7C3DF1FB2F2D772D00A9CDA7 /* TabPreloadingSystem.swift */,
@@ -1205,6 +1208,7 @@
 				7CEAFD092EF9C0C400874B57 /* CloudBackupView.swift in Sources */,
 				4D5C65A42F57483C9FAA501B /* AuthView.swift in Sources */,
 				7CB08C5F2ED644E700236ECB /* NutritionScannerView.swift in Sources */,
+				7C1B0AB92F50DE3C0094AF68 /* CrashReportingService.swift in Sources */,
 				7CB08C912EDABA8100236ECB /* SmartRecommendationEngine.swift in Sources */,
 				7CB08CA72EDE398A00236ECB /* DevMenuView.swift in Sources */,
 				7CB08CA02EDCF00100236ECB /* ProgramLibraryService.swift in Sources */,
@@ -1242,7 +1246,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1253,7 +1257,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.17.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1272,7 +1276,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1283,7 +1287,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.17.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1426,7 +1430,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1447,7 +1451,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.17.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1463,7 +1467,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1484,7 +1488,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.17.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

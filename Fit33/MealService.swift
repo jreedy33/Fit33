@@ -138,12 +138,14 @@ class MealService: ObservableObject {
                     }
                 }
                 
-                // ⚡ Re-sync challenge progress with updated (lower) totals
+                // ⚡ Re-sync challenge progress with updated (lower) totals.
+                // allowDecrease: true tells the DB to accept the lower value and
+                // fire a realtime event so the opponent sees the change immediately.
                 Task { @MainActor in
                     let totalProtein = todaysMeals.reduce(0) { $0 + $1.protein }
                     let totalCalories = todaysMeals.reduce(0) { $0 + $1.calories }
-                    await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
-                    await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
+                    await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals", allowDecrease: true)
+                    await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals", allowDecrease: true)
                 }
             }
         } catch {

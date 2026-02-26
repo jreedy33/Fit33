@@ -415,6 +415,13 @@ final class StravaService: ObservableObject {
         
         print("✅ [STRAVA] Synced \(savedCount) activities to cardio_workouts, skipped \(skippedCount)")
         
+        // Notify dashboard to reload cardio workouts so Strava workouts appear in Recent Activity
+        if savedCount > 0 {
+            await MainActor.run {
+                NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+            }
+        }
+        
         // 🔥 Update streak if we synced any activities from today
         // Check if any synced activity was from today
         let calendar = Calendar.current

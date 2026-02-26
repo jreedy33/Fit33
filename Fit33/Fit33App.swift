@@ -88,6 +88,9 @@ struct Fit33App: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
+        // 🛡️ FIRST: Initialize crash reporting (signal handlers must be installed ASAP)
+        CrashReportingService.shared.initialize()
+        
         // 🔄 Background challenge sync — HealthKit background delivery + BGTask periodic refresh
         // Must be called before app finishes launching (BGTaskScheduler requirement)
         BackgroundChallengeSyncService.shared.setup()
@@ -584,6 +587,7 @@ struct Fit33App: App {
                         
                         // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
+                        NotificationManager.shared.clearBadge() // Clear app icon badge immediately on open
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()
@@ -600,20 +604,31 @@ struct Fit33App: App {
                                 await realtimeService.connect()
                             }
                             
-                            // Priority 2: Check for new social data (staggered)
-                            await FriendService.shared.checkForNewWorkouts()
+                            // Priority 2: Refresh actionable social items immediately
+                            // These must load fast so user sees friend requests / challenge invites instantly
+                            async let pendingRequests: () = FriendService.shared.fetchPendingRequests()
+                            async let pendingInvites: () = ChallengeService.shared.fetchPendingInvites()
+                            async let newWorkouts: () = FriendService.shared.checkForNewWorkouts()
+                            _ = await (pendingRequests, pendingInvites, newWorkouts)
                             
-                            // Priority 3: Background work (lower urgency)
+                            // Priority 3: Health sync FIRST so HealthKit values are fresh
+                            // (must run BEFORE community refresh so leaderboard data is current)
+                            await HealthDataService.shared.syncAllHealthData()
+                            
+                            // Priority 4: Community leaderboards (now has up-to-date health data)
+                            await CommunityChallengeService.shared.refreshAll(force: false)
+                            
+                            // Priority 5: Background work (lower urgency)
                             await pushNotificationService.recheckAndRegister()
                             await DailyResetService.shared.checkAndPerformDailyResetIfNeeded()
                             
-                            // Priority 4: Health sync (has internal throttling)
-                            await HealthDataService.shared.syncAllHealthData()
-                            
-                            // Priority 5: Profile sync (only if needed)
+                            // Priority 6: Profile sync (only if needed)
                             if UserManager.shared.hasCompletedOnboarding {
                                 try? await UserManager.shared.syncProfileToCloud()
                             }
+                            
+                            // Priority 7: Update badge with real counts now that data is fresh
+                            await NotificationManager.shared.updateBadgeCount()
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

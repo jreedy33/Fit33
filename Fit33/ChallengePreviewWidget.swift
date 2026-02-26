@@ -503,9 +503,9 @@ struct ActiveChallengeWidget: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    // Opponent progress (from server)
+                    // Opponent today's progress (from server)
                     VStack(spacing: 4) {
-                        Text(resolver.formatValue(challenge.opponentTotalProgress, unit: challenge.targetUnit, type: resolvedType))
+                        Text(resolver.formatValue(challenge.opponentTodayProgress ?? 0, unit: challenge.targetUnit, type: resolvedType))
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(

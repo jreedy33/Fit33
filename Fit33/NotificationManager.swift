@@ -352,6 +352,38 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         }
     }
     
+    // MARK: - App Icon Badge Management
+    
+    /// Clear the app icon badge immediately (call when app becomes active)
+    func clearBadge() {
+        UNUserNotificationCenter.current().setBadgeCount(0) { error in
+            if let error = error {
+                print("❌ [BADGE] Failed to clear badge: \(error)")
+            } else {
+                print("✅ [BADGE] Badge cleared")
+            }
+        }
+    }
+    
+    /// Update the badge to reflect the real count of pending actionable items.
+    /// Queries FriendService and ChallengeService for pending counts.
+    @MainActor
+    func updateBadgeCount() {
+        let pendingFriendRequests = FriendService.shared.pendingRequests.count
+        let pendingChallengeInvites = ChallengeService.shared.pendingInvites.count
+        let unreadWorkouts = FriendService.shared.unreadWorkoutCount
+        
+        let total = pendingFriendRequests + pendingChallengeInvites + unreadWorkouts
+        
+        UNUserNotificationCenter.current().setBadgeCount(total) { error in
+            if let error = error {
+                print("❌ [BADGE] Failed to update badge: \(error)")
+            } else {
+                print("📛 [BADGE] Updated to \(total) (friends=\(pendingFriendRequests), challenges=\(pendingChallengeInvites), workouts=\(unreadWorkouts))")
+            }
+        }
+    }
+    
     // MARK: - Notification Toggle
     func isNotificationEnabled(_ type: NotificationType) -> Bool {
         enabledNotifications.contains(type.rawValue)
@@ -1109,11 +1141,16 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 default:
                     break
                 }
+                
+                // After refreshing data, update the badge to reflect new counts
+                self.updateBadgeCount()
             }
         }
         
         // Show notification even when app is in foreground
-        completionHandler([.banner, .sound, .badge])
+        // NOTE: We manage the badge count ourselves via updateBadgeCount(),
+        // so we don't include .badge here to prevent stale badge values
+        completionHandler([.banner, .sound])
     }
     
     /// Handle notification action (when user taps notification)
@@ -1161,6 +1198,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             default:
                 break
             }
+            
+            // User tapped a notification — clear/update badge since they're entering the app
+            self.clearBadge()
         }
         
         completionHandler()

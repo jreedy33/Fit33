@@ -469,10 +469,12 @@ class HydrationService: ObservableObject {
             print("✅ [Water] Deleted log")
             await loadTodayData()
             
-            // ⚡ Re-sync challenge progress with updated (lower) total
+            // ⚡ Re-sync challenge progress with updated (lower) total.
+            // allowDecrease: true tells the DB to accept the lower value
+            // and fire a realtime event so the opponent sees the change.
             let updatedTotal = todayTotal
             Task {
-                await ChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration")
+                await ChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration", allowDecrease: true)
             }
             
             return true

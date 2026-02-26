@@ -63,7 +63,12 @@ final class HealthDataService: ObservableObject {
             
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
-                print("⏭️ [HEALTH] Skipping sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago")
+                print("⏭️ [HEALTH] Skipping full sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago")
+                // Even when throttled, do a quick HealthKit workout sync to catch new external workouts
+                // This is lightweight: just re-fetches workouts from HealthKit and persists any new ones
+                if HealthKitService.shared.isAuthorized {
+                    await syncHealthKitWorkoutsOnly()
+                }
                 return
             }
         }
@@ -118,14 +123,18 @@ final class HealthDataService: ObservableObject {
     /// Sync all health data sources to active challenges
     private func syncAllSourcesToChallenges() async {
         let challengeService = ChallengeService.shared
+        let communityService = CommunityChallengeService.shared
         
-        // Skip if no active challenges
-        guard !challengeService.activeChallenges.isEmpty else {
+        let has1v1 = !challengeService.activeChallenges.isEmpty
+        let hasCommunity = !communityService.myChallenges.isEmpty
+        
+        // Skip if no active challenges at all
+        guard has1v1 || hasCommunity else {
             print("📊 [CHALLENGES] No active challenges to sync")
             return
         }
         
-        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) active challenges...")
+        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) 1v1 + \(communityService.myChallenges.count) community challenges...")
         
         // HealthKit already syncs via syncHealthKitData -> HealthKitService.syncAllData
         // But let's ensure comprehensive sync from all sources
@@ -137,7 +146,14 @@ final class HealthDataService: ObservableObject {
         
         // Strava already syncs to challenges in syncStravaData -> syncActivities
         // But let's do a final recalculation to ensure accuracy
-        await challengeService.recalculateAllChallengeProgress()
+        if has1v1 {
+            await challengeService.recalculateAllChallengeProgress()
+        }
+        
+        // Also push health data to community challenges
+        if hasCommunity {
+            await communityService.syncAllTrackingToCommunityChallenges()
+        }
         
         print("✅ [CHALLENGES] All health sources synced to challenges")
     }
@@ -240,7 +256,32 @@ final class HealthDataService: ObservableObject {
         // Sync HealthKit's internal data
         await HealthKitService.shared.syncAllData()
         
+        // Persist the in-memory HealthKit data to Supabase
+        await persistHealthKitDataToSupabase()
+    }
+    
+    /// Lightweight sync: only re-fetch HealthKit workouts and persist new ones.
+    /// Called when the full sync is throttled but we still want to catch new external workouts
+    /// (e.g., user just completed a walk on Apple Watch and opens the app).
+    private func syncHealthKitWorkoutsOnly() async {
+        guard HealthKitService.shared.isAuthorized else { return }
+        
+        print("🏃 [HEALTH] Quick workout-only sync (full sync throttled)...")
+        
+        // Force HealthKit to re-fetch recent workouts (bypasses HealthKitService throttle)
+        await HealthKitService.shared.syncAllData(force: true)
+        
+        // Persist any new workouts to Supabase
+        await persistHealthKitDataToSupabase()
+    }
+    
+    /// Persist current in-memory HealthKit data to Supabase.
+    /// Call this after HealthKitService has synced from the HK API.
+    /// Safe to call from anywhere – does NOT re-fetch from HealthKit.
+    func persistHealthKitDataToSupabase() async {
         let healthKit = HealthKitService.shared
+        guard healthKit.isAuthorized else { return }
+        
         let calendar = Calendar.current
         let today = Date()
         
@@ -254,11 +295,13 @@ final class HealthDataService: ObservableObject {
         )
         
         // Save workouts (Nike Run Club runs, Apple Watch workouts, etc.)
+        var savedCount = 0
         for workout in healthKit.recentWorkouts {
-            // Only save workouts from today/recent
+            // Only save workouts from today/recent (7 days)
             if calendar.isDate(workout.startDate, inSameDayAs: today) ||
                workout.startDate > calendar.date(byAdding: .day, value: -7, to: today)! {
                 await saveHealthKitWorkout(workout)
+                savedCount += 1
             }
         }
         
@@ -267,7 +310,12 @@ final class HealthDataService: ObservableObject {
             await saveSleepFromHealthKit(hours: sleepHours)
         }
         
-        print("✅ [HEALTH] HealthKit data synced (steps: \(healthKit.todaySteps), workouts: \(healthKit.recentWorkouts.count))")
+        print("✅ [HEALTH] HealthKit data persisted to Supabase (steps: \(healthKit.todaySteps), workouts saved: \(savedCount)/\(healthKit.recentWorkouts.count))")
+        
+        // Notify dashboard to reload cardio workouts so external workouts appear in Recent Activity
+        if savedCount > 0 {
+            NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+        }
     }
     
     private func saveDailyActivityFromHealthKit(date: Date, steps: Int, calories: Int, distance: Double, restingHR: Int?) async {
@@ -344,10 +392,12 @@ final class HealthDataService: ObservableObject {
                 .from("cardio_workouts")
                 .upsert(insert, onConflict: "user_id,source,external_id")
                 .execute()
+            print("✅ [HEALTH] Saved HealthKit workout: \(sourceName) \(workoutType) (\(Int(workout.duration / 60))m)")
         } catch {
-            // Silently handle duplicates
-            if !error.localizedDescription.contains("duplicate") {
-                print("❌ [HEALTH] Failed to save HealthKit workout: \(error)")
+            // Silently handle duplicates (already exists in DB)
+            if !error.localizedDescription.contains("duplicate") &&
+               !error.localizedDescription.contains("conflict") {
+                print("❌ [HEALTH] Failed to save HealthKit workout (\(sourceName) \(workoutType)): \(error)")
             }
         }
     }

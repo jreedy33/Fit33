@@ -25,6 +25,8 @@ struct SocialSystemSimulatorView: View {
     @State private var selectedChallengeTypes: Set<ChallengeType> = Set(ChallengeType.allCases)
     @State private var showReport = false
     @State private var showFilters = false
+    @State private var realtimeTestResult: QuickRealtimeTestResult?
+    @State private var showRealtimeResult = false
     
     var body: some View {
         ZStack {
@@ -72,6 +74,9 @@ struct SocialSystemSimulatorView: View {
             if let report = simulator.report {
                 SimulationReportDetailView(report: report)
             }
+        }
+        .sheet(isPresented: $showRealtimeResult) {
+            QuickRealtimeTestResultView(result: realtimeTestResult)
         }
     }
     
@@ -204,6 +209,29 @@ struct SocialSystemSimulatorView: View {
                 .padding(.vertical, 14)
                 .background(
                     LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)
+                )
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(simulator.isRunning)
+            
+            // Quick Realtime Test — one-tap test to verify WebSocket updates work
+            Button {
+                Task {
+                    realtimeTestResult = nil
+                    showRealtimeResult = true
+                    realtimeTestResult = await simulator.quickRealtimeTest(userBName: userBName)
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "bolt.fill")
+                    Text("⚡ Quick Realtime Test")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
                 )
                 .foregroundColor(.white)
                 .cornerRadius(12)
@@ -686,6 +714,113 @@ struct SimulationReportDetailView: View {
         }
         
         return text
+    }
+}
+
+// MARK: - Quick Realtime Test Result View
+
+struct QuickRealtimeTestResultView: View {
+    let result: QuickRealtimeTestResult?
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                if let result = result {
+                    // Header with big status indicator
+                    VStack(spacing: 12) {
+                        Text(result.passed ? "⚡️" : "🔌")
+                            .font(.system(size: 60))
+                        
+                        Text(result.summary)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(result.passed ? .green : .red)
+                        
+                        if result.latencyMs > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.caption)
+                                Text("Latency: \(result.latencyMs)ms")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundColor(result.latencyMs < 1000 ? .green : (result.latencyMs < 3000 ? .orange : .red))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(result.latencyMs < 1000 ? Color.green.opacity(0.15) : (result.latencyMs < 3000 ? Color.orange.opacity(0.15) : Color.red.opacity(0.15)))
+                            )
+                        }
+                    }
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        result.passed
+                            ? Color.green.opacity(0.08)
+                            : Color.red.opacity(0.08)
+                    )
+                    
+                    // Detail log
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(result.details.enumerated()), id: \.offset) { _, line in
+                                if line.isEmpty {
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                } else {
+                                    Text(line)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(
+                                            line.hasPrefix("✅") ? .green :
+                                            line.hasPrefix("❌") ? .red :
+                                            line.hasPrefix("⚠️") ? .orange :
+                                            line.hasPrefix("⚡️") ? .blue :
+                                            line.hasPrefix("⏳") ? .secondary :
+                                            .primary
+                                        )
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    .background(colorScheme == .dark ? Color(white: 0.06) : Color(white: 0.97))
+                } else {
+                    // Loading state
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("⚡️ Testing Realtime...")
+                            .font(.headline)
+                        Text("Logging opponent progress and waiting for WebSocket event...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationTitle("Quick Realtime Test")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+                
+                if let result = result {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        ShareLink(
+                            item: result.details.joined(separator: "\n"),
+                            subject: Text("Realtime Test Result"),
+                            message: Text(result.summary)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

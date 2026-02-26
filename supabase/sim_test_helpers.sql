@@ -17,13 +17,15 @@
 
 -- Drop existing versions
 DROP FUNCTION IF EXISTS sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION sim_log_progress_for_user(
     p_challenge_id TEXT,
     p_user_id TEXT,         -- The user to log progress FOR (can be anyone in the challenge)
     p_progress_value INT,
     p_progress_date TEXT DEFAULT NULL,
-    p_source TEXT DEFAULT 'manual'
+    p_source TEXT DEFAULT 'manual',
+    p_timezone TEXT DEFAULT 'UTC'
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -50,11 +52,11 @@ BEGIN
     challenge_uuid := p_challenge_id::UUID;
     target_user_uuid := p_user_id::UUID;
 
-    -- Parse date
+    -- Parse date (timezone-aware default, matching log_challenge_progress)
     IF p_progress_date IS NOT NULL AND p_progress_date != '' THEN
         v_progress_date := p_progress_date::DATE;
     ELSE
-        v_progress_date := CURRENT_DATE;
+        v_progress_date := (NOW() AT TIME ZONE COALESCE(p_timezone, 'UTC'))::DATE;
     END IF;
 
     -- Verify the caller is a participant (security: only challenge members can invoke)
@@ -148,7 +150,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT) TO authenticated;
 
 -- ============================================================================
 -- FUNCTION 2: sim_accept_challenge_for_user
@@ -236,6 +238,6 @@ BEGIN
     RAISE NOTICE '✅ sim_accept_challenge_for_user function created';
     RAISE NOTICE '';
     RAISE NOTICE 'Available simulator helpers:';
-    RAISE NOTICE '  sim_log_progress_for_user(challenge_id, user_id, progress, date, source)';
+    RAISE NOTICE '  sim_log_progress_for_user(challenge_id, user_id, progress, date, source, timezone)';
     RAISE NOTICE '  sim_accept_challenge_for_user(challenge_id, user_id)';
 END $$;

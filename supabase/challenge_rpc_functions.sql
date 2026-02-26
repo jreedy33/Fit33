@@ -304,8 +304,8 @@ BEGIN
             ) VALUES (
                 member_uuid,
                 'challenge_invite',
-                COALESCE(creator_name, 'Someone') || ' invited you to a group challenge! 🏆',
-                'Join the "' || p_title || '" challenge!',
+                'Group Challenge Invite 🏆',
+                COALESCE(creator_name, 'Someone') || ' invited you to "' || p_title || '"',
                 jsonb_build_object(
                     'type', 'challenge_invite',
                     'challenge_id', new_challenge_id::TEXT,
@@ -406,8 +406,8 @@ BEGIN
             ) VALUES (
                 creator_id,
                 'challenge_accepted',
-                COALESCE(opponent_name, opponent_username, 'Your opponent') || ' accepted your challenge! 🎉',
-                'The "' || challenge_record.title || '" challenge is ON!',
+                'Challenge Accepted! 🎉',
+                COALESCE(opponent_name, opponent_username, 'Your opponent') || ' is ready for "' || challenge_record.title || '"',
                 jsonb_build_object(
                     'type', 'challenge_accepted',
                     'challenge_id', challenge_uuid::TEXT,
@@ -440,8 +440,8 @@ BEGIN
             ) VALUES (
                 creator_id,
                 'challenge_declined',
-                COALESCE(opponent_name, opponent_username, 'Your opponent') || ' declined the challenge',
-                'The "' || challenge_record.title || '" challenge was not accepted.',
+                'Challenge Declined',
+                COALESCE(opponent_name, opponent_username, 'Your opponent') || ' passed on "' || challenge_record.title || '"',
                 jsonb_build_object(
                     'type', 'challenge_declined',
                     'challenge_id', challenge_uuid::TEXT,
@@ -522,8 +522,8 @@ BEGIN
             ) VALUES (
                 participant.user_id,
                 'challenge_cancelled',
-                'Challenge cancelled',
-                COALESCE(canceller_name, 'Someone') || ' cancelled the "' || challenge_record.title || '" challenge.',
+                'Challenge Cancelled',
+                COALESCE(canceller_name, 'Someone') || ' ended the "' || challenge_record.title || '" challenge',
                 jsonb_build_object(
                     'type', 'challenge_cancelled',
                     'challenge_id', challenge_uuid::TEXT,
@@ -548,15 +548,21 @@ GRANT EXECUTE ON FUNCTION cancel_challenge(TEXT) TO authenticated;
 -- FUNCTION 5: log_challenge_progress
 -- Log daily progress for a 1v1 challenge.
 -- Uses UPSERT to handle duplicate entries for the same day.
+-- Now accepts p_timezone so "today" is computed in the user's local timezone,
+-- matching get_active_challenges which uses (NOW() AT TIME ZONE p_timezone)::DATE.
+-- This prevents evening progress (after midnight UTC) from being stored under
+-- the wrong date, which caused daily progress to not reset at midnight.
 -- ============================================================================
 DROP FUNCTION IF EXISTS log_challenge_progress(TEXT, INT, TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS log_challenge_progress(TEXT, INT, TEXT, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION log_challenge_progress(
     p_challenge_id TEXT,
     p_progress_value INT,
     p_progress_date TEXT DEFAULT NULL,
     p_source TEXT DEFAULT 'manual',
-    p_workout_id TEXT DEFAULT NULL
+    p_workout_id TEXT DEFAULT NULL,
+    p_timezone TEXT DEFAULT 'UTC'
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -566,7 +572,9 @@ AS $$
 DECLARE
     current_user_uuid UUID;
     challenge_uuid UUID;
-    progress_date DATE;
+    v_progress_date DATE;
+    v_daily_target INT;
+    v_target_hit BOOLEAN;
 BEGIN
     current_user_uuid := auth.uid();
     IF current_user_uuid IS NULL THEN
@@ -575,11 +583,15 @@ BEGIN
 
     challenge_uuid := p_challenge_id::UUID;
 
-    -- Parse date
+    -- Parse date: use timezone-aware "today" when no explicit date given.
+    -- This matches get_active_challenges which computes:
+    --   today_date := (NOW() AT TIME ZONE p_timezone)::DATE
+    -- NOTE: variable is named v_progress_date (not progress_date) to avoid
+    -- ambiguity with the column challenge_daily_progress.progress_date.
     IF p_progress_date IS NOT NULL AND p_progress_date != '' THEN
-        progress_date := p_progress_date::DATE;
+        v_progress_date := p_progress_date::DATE;
     ELSE
-        progress_date := CURRENT_DATE;
+        v_progress_date := (NOW() AT TIME ZONE COALESCE(p_timezone, 'UTC'))::DATE;
     END IF;
 
     -- Verify user is a participant in this challenge
@@ -590,20 +602,29 @@ BEGIN
         RAISE EXCEPTION 'You are not a participant in this challenge';
     END IF;
 
+    -- Get daily target for target_hit tracking
+    SELECT daily_target INTO v_daily_target
+    FROM group_challenges
+    WHERE id = challenge_uuid;
+    
+    v_target_hit := (v_daily_target IS NOT NULL AND p_progress_value >= v_daily_target);
+
     -- Upsert daily progress (update if higher, don't decrease)
     INSERT INTO challenge_daily_progress (
         challenge_id,
         user_id,
         progress_date,
         progress_value,
+        target_hit,
         source,
         workout_id,
         updated_at
     ) VALUES (
         challenge_uuid,
         current_user_uuid,
-        progress_date,
+        v_progress_date,
         p_progress_value,
+        v_target_hit,
         p_source,
         CASE WHEN p_workout_id IS NOT NULL AND p_workout_id != '' THEN p_workout_id::UUID ELSE NULL END,
         NOW()
@@ -611,6 +632,11 @@ BEGIN
     ON CONFLICT (challenge_id, user_id, progress_date)
     DO UPDATE SET
         progress_value = GREATEST(challenge_daily_progress.progress_value, EXCLUDED.progress_value),
+        target_hit = CASE
+            WHEN EXCLUDED.progress_value > challenge_daily_progress.progress_value
+            THEN EXCLUDED.target_hit
+            ELSE challenge_daily_progress.target_hit
+        END,
         source = EXCLUDED.source,
         updated_at = NOW()
     WHERE EXCLUDED.progress_value > challenge_daily_progress.progress_value;
@@ -629,7 +655,7 @@ BEGIN
             JOIN group_challenges gc ON gc.id = cdp.challenge_id
             WHERE cdp.challenge_id = challenge_uuid 
             AND cdp.user_id = current_user_uuid
-            AND cdp.progress_value >= COALESCE(gc.daily_target, 0)
+            AND (cdp.target_hit = TRUE OR cdp.progress_value >= COALESCE(gc.daily_target, 0))
         )
     WHERE challenge_id = challenge_uuid AND user_id = current_user_uuid;
 
@@ -637,7 +663,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION log_challenge_progress(TEXT, INT, TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION log_challenge_progress(TEXT, INT, TEXT, TEXT, TEXT, TEXT) TO authenticated;
 
 
 -- ============================================================================

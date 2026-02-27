@@ -279,6 +279,15 @@ class ChallengeService: ObservableObject {
             
             self.pendingInvites = result
             cachePendingInvites() // Cache for instant display on next app launch
+            
+            // Preload creator photos for instant display on invite widgets
+            let creatorPhotos: [(id: String, url: String?)] = result.map {
+                (id: $0.creatorId.uuidString, url: $0.creatorPhotoUrl)
+            }
+            if !creatorPhotos.isEmpty {
+                FriendPhotoCache.shared.preloadPhotos(for: creatorPhotos)
+            }
+            
             print("✅ [CHALLENGES] Fetched \(result.count) pending challenge invites")
         } catch {
             print("❌ [CHALLENGES] Error fetching pending invites: \(error)")
@@ -452,6 +461,14 @@ class ChallengeService: ObservableObject {
             
             self.activeChallenges = result
             cacheActiveChallenges() // Cache for instant display on next app launch
+            
+            // Preload opponent photos for instant display on challenge widgets
+            let opponentPhotos: [(id: String, url: String?)] = result.map {
+                (id: $0.opponentId.uuidString, url: $0.opponentPhotoUrl)
+            }
+            if !opponentPhotos.isEmpty {
+                FriendPhotoCache.shared.preloadPhotos(for: opponentPhotos)
+            }
             
             // Advanced logging: show exactly what progress values the widget will display
             for c in result {
@@ -1009,6 +1026,20 @@ class ChallengeService: ObservableObject {
             }
             
             activeGroupChallenges = result
+            
+            // Preload member photos for instant display on group challenge widgets
+            var memberPhotos: [(id: String, url: String?)] = []
+            for challenge in result {
+                if let members = challenge.members {
+                    for m in members {
+                        memberPhotos.append((id: m.userId.uuidString, url: m.profilePhotoUrl))
+                    }
+                }
+            }
+            if !memberPhotos.isEmpty {
+                FriendPhotoCache.shared.preloadPhotos(for: memberPhotos)
+            }
+            
             print("✅ [CHALLENGES] Fetched \(result.count) active group challenges")
         } catch {
             print("❌ [CHALLENGES] Error fetching group challenges: \(error)")

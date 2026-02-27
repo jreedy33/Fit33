@@ -643,22 +643,15 @@ private struct FriendSelectionRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Avatar
-            ZStack {
-                if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        avatarPlaceholder
-                    }
-                    .frame(width: 44, height: 44)
-                    .clipShape(Circle())
-                } else {
-                    avatarPlaceholder
-                }
-            }
+            // Avatar (cached)
+            CachedFriendPhoto(
+                friendId: friend.friendId.uuidString,
+                photoUrl: friend.profilePhotoUrl,
+                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                size: 44,
+                showGradientRing: false,
+                gradientColors: [accentColor, accentColor.opacity(0.7)]
+            )
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(friend.displayName)
@@ -711,25 +704,16 @@ private struct RankedFriendSelectionRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Avatar with rank badge
+            // Avatar (cached) with rank badge
             ZStack(alignment: .bottomTrailing) {
-                if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        avatarPlaceholder
-                    }
-                    .frame(width: 44, height: 44)
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(rankGradient, lineWidth: 2)
-                    )
-                } else {
-                    avatarPlaceholder
-                }
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 44,
+                    showGradientRing: true,
+                    gradientColors: [accentColor, accentColor.opacity(0.7)]
+                )
                 
                 // Rank badge
                 Text(rankEmoji)

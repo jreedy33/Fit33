@@ -608,15 +608,18 @@ struct Fit33App: App {
                             // These must load fast so user sees friend requests / challenge invites instantly
                             async let pendingRequests: () = FriendService.shared.fetchPendingRequests()
                             async let pendingInvites: () = ChallengeService.shared.fetchPendingInvites()
+                            async let privateInvites: () = PrivateChallengeService.shared.fetchPendingInvites()
                             async let newWorkouts: () = FriendService.shared.checkForNewWorkouts()
-                            _ = await (pendingRequests, pendingInvites, newWorkouts)
+                            _ = await (pendingRequests, pendingInvites, privateInvites, newWorkouts)
                             
                             // Priority 3: Health sync FIRST so HealthKit values are fresh
-                            // (must run BEFORE community refresh so leaderboard data is current)
+                            // (must run BEFORE community/private refresh so leaderboard data is current)
                             await HealthDataService.shared.syncAllHealthData()
                             
-                            // Priority 4: Community leaderboards (now has up-to-date health data)
-                            await CommunityChallengeService.shared.refreshAll(force: false)
+                            // Priority 4: Community + Private challenge leaderboards (now has up-to-date health data)
+                            async let communityRefresh: () = CommunityChallengeService.shared.refreshAll(force: false)
+                            async let privateRefresh: () = PrivateChallengeService.shared.refreshAll(force: false)
+                            _ = await (communityRefresh, privateRefresh)
                             
                             // Priority 5: Background work (lower urgency)
                             await pushNotificationService.recheckAndRegister()

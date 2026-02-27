@@ -49,6 +49,7 @@ struct ChallengeFlowStartView: View {
     @State private var sentFriendRequests: Set<UUID> = []
     @State private var showingQRScanner = false
     @State private var showCommunityHub = false
+    @State private var showPrivateChallengeFlow = false
     
     private var filteredFriends: [Friend] {
         if searchText.isEmpty {
@@ -1115,6 +1116,52 @@ struct ChallengeFlowStartView: View {
                     )
                 }
                 
+                // Private Challenge option
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    showPrivateChallengeFlow = true
+                }) {
+                    HStack(spacing: 14) {
+                        Text("🔒")
+                            .font(.system(size: 32))
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Private Challenge")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                            
+                            Text("Invite a group of friends to a private challenge community")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.purple)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(
+                                        LinearGradient(colors: [.purple.opacity(0.5), .pink.opacity(0.3)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showPrivateChallengeFlow) {
+                    PrivateChallengeCreationFlow()
+                        .environmentObject(userManager)
+                }
+                
                 // Community Challenges option
                 Button(action: {
                     HapticManager.impact(.medium)
@@ -1139,7 +1186,7 @@ struct ChallengeFlowStartView: View {
                         
                         Image(systemName: "globe.americas.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.purple)
+                            .foregroundColor(.blue)
                     }
                     .padding(16)
                     .background(
@@ -1148,7 +1195,7 @@ struct ChallengeFlowStartView: View {
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
                                     .stroke(
-                                        LinearGradient(colors: [.purple.opacity(0.5), .blue.opacity(0.3)],
+                                        LinearGradient(colors: [.blue.opacity(0.5), .cyan.opacity(0.3)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                                         lineWidth: 1.5
                                     )
@@ -1799,38 +1846,15 @@ struct ChallengeFlowStartView: View {
         let isRequestSent = sentFriendRequests.contains(friend.userId) || friend.hasOutgoingRequest
         
         return HStack(spacing: 14) {
-            // Profile photo or initials with blue ring
-            ZStack {
-                // Blue gradient ring
-                Circle()
-                    .stroke(
-                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2.5
-                    )
-                    .frame(width: 54, height: 54)
-                
-                if let photoUrl = friend.profilePhotoUrl, !photoUrl.isEmpty {
-                    AsyncImage(url: URL(string: photoUrl)) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Circle()
-                                .fill(LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        }
-                    }
-                    .frame(width: 46, height: 46)
-                    .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 46, height: 46)
-                        .overlay(
-                            Text(friend.initials)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                        )
-                }
-            }
+            // Profile photo (cached) with blue ring
+            CachedFriendPhoto(
+                friendId: friend.userId.uuidString,
+                photoUrl: friend.profilePhotoUrl,
+                name: friend.name ?? friend.username ?? "?",
+                size: 46,
+                showGradientRing: true,
+                gradientColors: [.blue, .cyan]
+            )
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(friend.name ?? "Unknown")

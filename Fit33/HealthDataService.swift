@@ -120,21 +120,23 @@ final class HealthDataService: ObservableObject {
     
     // MARK: - Challenge Integration
     
-    /// Sync all health data sources to active challenges
+    /// Sync all health data sources to active challenges (1v1, community, and private)
     private func syncAllSourcesToChallenges() async {
         let challengeService = ChallengeService.shared
         let communityService = CommunityChallengeService.shared
+        let privateService = PrivateChallengeService.shared
         
         let has1v1 = !challengeService.activeChallenges.isEmpty
         let hasCommunity = !communityService.myChallenges.isEmpty
+        let hasPrivate = !privateService.myChallenges.isEmpty
         
         // Skip if no active challenges at all
-        guard has1v1 || hasCommunity else {
+        guard has1v1 || hasCommunity || hasPrivate else {
             print("📊 [CHALLENGES] No active challenges to sync")
             return
         }
         
-        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) 1v1 + \(communityService.myChallenges.count) community challenges...")
+        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) 1v1 + \(communityService.myChallenges.count) community + \(privateService.myChallenges.count) private challenges...")
         
         // HealthKit already syncs via syncHealthKitData -> HealthKitService.syncAllData
         // But let's ensure comprehensive sync from all sources
@@ -150,12 +152,21 @@ final class HealthDataService: ObservableObject {
             await challengeService.recalculateAllChallengeProgress()
         }
         
-        // Also push health data to community challenges
-        if hasCommunity {
-            await communityService.syncAllTrackingToCommunityChallenges()
+        // Push health data to community AND private challenges (parallel for speed)
+        await withTaskGroup(of: Void.self) { group in
+            if hasCommunity {
+                group.addTask {
+                    await communityService.syncAllTrackingToCommunityChallenges()
+                }
+            }
+            if hasPrivate {
+                group.addTask {
+                    await privateService.syncAllTrackingToPrivateChallenges()
+                }
+            }
         }
         
-        print("✅ [CHALLENGES] All health sources synced to challenges")
+        print("✅ [CHALLENGES] All health sources synced to challenges (1v1 + community + private)")
     }
     
     /// Sync Fitbit activities to challenges

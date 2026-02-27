@@ -416,6 +416,8 @@ struct ActiveChallengeWidget: View {
     let challenge: ActiveChallenge
     let onTap: () -> Void
     
+    @State private var showingReactionPicker = false
+    
     private var resolvedType: ChallengeType {
         challenge.resolvedType
     }
@@ -522,7 +524,7 @@ struct ActiveChallengeWidget: View {
                     .frame(maxWidth: .infinity)
                 }
                 
-                // Live progress bar + days remaining
+                // Live progress bar + reaction button row
                 VStack(spacing: 6) {
                     // Type-colored progress bar
                     GeometryReader { geo in
@@ -538,9 +540,9 @@ struct ActiveChallengeWidget: View {
                     .frame(height: 6)
                     
                     HStack {
-                        Text("\(Int(resolver.progressPercentage(for: challenge) * 100))% of daily goal")
-                            .font(.caption2)
-                            .foregroundColor(resolvedType.color)
+                        // Reaction quick button (Battle Cry / Power Up)
+                        ReactionQuickButton(challenge: challenge, showingReactionPicker: $showingReactionPicker)
+                        
                         Spacer()
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
@@ -571,6 +573,11 @@ struct ActiveChallengeWidget: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingReactionPicker) {
+            ReactionPickerSheet(challenge: challenge, onSend: { _ in })
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -974,6 +981,292 @@ struct GroupChallengeInviteWidget: View {
             let key = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
             if UserDefaults.standard.bool(forKey: key) {
                 nudgedUserIds.insert(member.userId)
+            }
+        }
+    }
+}
+
+// MARK: - Private Challenge Invite Widget
+
+/// Shows a private challenge invite with Accept/Decline buttons
+/// Displayed on the dashboard for pending private challenge invitations
+struct PrivateChallengeInviteWidget: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+    
+    let invite: PrivateChallengeInvite
+    
+    @State private var isAccepting = false
+    @State private var isDeclining = false
+    @State private var showingDeclineConfirmation = false
+    @State private var glowRotation: Double = 0
+    @State private var showingDetail = false
+    
+    private let themeColor = Color.purple
+    private var gradientColors: [Color] { [.purple, .blue] }
+    
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color.white
+    }
+    
+    private var challengeType: ChallengeType {
+        ChallengeType(rawValue: invite.challengeType) ?? .steps
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header — who invited you
+            HStack(spacing: 12) {
+                // Inviter avatar
+                CachedFriendPhoto(
+                    friendId: invite.inviterId.uuidString,
+                    photoUrl: invite.inviterPhotoUrl,
+                    name: invite.inviterName ?? "?",
+                    size: 48,
+                    showGradientRing: true,
+                    gradientColors: gradientColors
+                )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("Private Challenge")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(themeColor)
+                        
+                        Text("INVITE")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(themeColor))
+                    }
+                    
+                    Text("\(invite.inviterName ?? "Someone") invited you!")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                Text(invite.challengeEmoji ?? challengeType.emoji)
+                    .font(.system(size: 28))
+            }
+            .padding(16)
+            
+            Divider().padding(.horizontal, 16)
+            
+            // Challenge details row
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(invite.challengeTitle)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    Text("\(invite.dailyTarget) \(invite.targetUnit)/day • \(invite.memberCount) member\(invite.memberCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Lock icon indicating private
+                VStack(spacing: 2) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(
+                            LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    
+                    Text("Private")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            
+            Divider().padding(.horizontal, 16)
+            
+            // Accept / Decline buttons
+            HStack(spacing: 12) {
+                // Decline button
+                Button {
+                    showingDeclineConfirmation = true
+                } label: {
+                    HStack(spacing: 4) {
+                        if isDeclining {
+                            ProgressView().scaleEffect(0.7).tint(.secondary)
+                        } else {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        Text("Decline")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.gray.opacity(0.12))
+                    )
+                }
+                .disabled(isAccepting || isDeclining)
+                
+                // Accept button
+                Button {
+                    acceptInvite()
+                } label: {
+                    HStack(spacing: 4) {
+                        if isAccepting {
+                            ProgressView().scaleEffect(0.7).tint(.white)
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        Text("Join Challenge")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing))
+                    )
+                }
+                .disabled(isAccepting || isDeclining)
+            }
+            .padding(16)
+        }
+        .background(
+            ZStack {
+                // Animated glowing border
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                themeColor.opacity(0.7),
+                                Color.blue.opacity(0.5),
+                                themeColor.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                themeColor.opacity(0.2),
+                                Color.indigo.opacity(0.4),
+                                themeColor.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(glowRotation)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                // Main card background
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(cardBackground)
+                
+                // Inner border for definition
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [themeColor.opacity(0.5), Color.blue.opacity(0.3), themeColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: themeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: themeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .onAppear {
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                glowRotation = 360
+            }
+        }
+        .confirmationDialog(
+            "Decline this private challenge?",
+            isPresented: $showingDeclineConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Decline", role: .destructive) { declineInvite() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't be able to join unless invited again.")
+        }
+    }
+    
+    // MARK: - Actions
+    
+    private func acceptInvite() {
+        HapticManager.impact(.medium)
+        isAccepting = true
+        
+        Task {
+            let challengeId = await privateChallengeService.acceptInvite(inviteId: invite.inviteId)
+            
+            // Refresh to update the dashboard
+            await privateChallengeService.fetchPendingInvites()
+            await privateChallengeService.fetchMyChallenges()
+            
+            HapticManager.notification(.success)
+            isAccepting = false
+            
+            // If accepted successfully, optionally navigate to the challenge
+            if let challengeId = challengeId {
+                print("🔒 [PRIVATE] Successfully joined private challenge: \(challengeId)")
+            }
+        }
+    }
+    
+    private func declineInvite() {
+        HapticManager.impact(.medium)
+        isDeclining = true
+        
+        Task {
+            let success = await privateChallengeService.declineInvite(inviteId: invite.inviteId)
+            
+            // Refresh to remove from pending
+            await privateChallengeService.fetchPendingInvites()
+            
+            HapticManager.notification(success ? .success : .error)
+            isDeclining = false
+        }
+    }
+}
+
+// MARK: - Private Challenge Invite Container
+
+/// Container view that shows pending private challenge invites on the home screen
+struct PrivateChallengeInviteContainer: View {
+    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+    
+    var body: some View {
+        if !privateChallengeService.pendingInvites.isEmpty {
+            VStack(spacing: 12) {
+                // Show each pending private challenge invite
+                ForEach(privateChallengeService.pendingInvites) { invite in
+                    PrivateChallengeInviteWidget(invite: invite)
+                }
+                
+                // If there are many invites, show summary
+                if privateChallengeService.pendingInvites.count > 3 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.purple)
+                        Text("\(privateChallengeService.pendingInvites.count) private challenge invites")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
             }
         }
     }

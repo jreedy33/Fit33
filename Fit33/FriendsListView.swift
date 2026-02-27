@@ -915,39 +915,49 @@ struct FriendsListView: View {
     }
     
     private var suggestedFriendsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Divider with label
-            HStack {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(height: 1)
-                Text("From Your Contacts")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(height: 1)
-            }
-            .padding(.top, 10)
-            
-            // Suggested friends list
-            ForEach(contactsService.suggestedFriends) { friend in
-                SuggestedFriendCard(
-                    friend: friend,
-                    onRespondToRequest: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedTab = 1
+        // Filter out existing friends and people with pending outgoing requests
+        let existingFriendIds = Set(friendService.friends.map { $0.friendId })
+        let filteredSuggestions = contactsService.suggestedFriends.filter { suggestion in
+            !existingFriendIds.contains(suggestion.userId) &&
+            !suggestion.isFriend &&
+            !suggestion.hasOutgoingRequest
+        }
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            if !filteredSuggestions.isEmpty {
+                // Divider with label
+                HStack {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 1)
+                    Text("From Your Contacts")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 1)
+                }
+                .padding(.top, 10)
+                
+                // Suggested friends list (excluding existing friends)
+                ForEach(filteredSuggestions) { friend in
+                    SuggestedFriendCard(
+                        friend: friend,
+                        onRespondToRequest: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                selectedTab = 1
+                            }
+                        },
+                        onActionCompleted: {
+                            // Refresh suggestions and sent requests after sending
+                            Task {
+                                await contactsService.refreshSuggestions()
+                                await friendService.fetchSentRequests()
+                            }
                         }
-                    },
-                    onActionCompleted: {
-                        // Refresh suggestions and sent requests after sending
-                        Task {
-                            await contactsService.refreshSuggestions()
-                            await friendService.fetchSentRequests()
-                        }
-                    }
-                )
+                    )
+                }
             }
         }
     }
@@ -1124,41 +1134,14 @@ struct SuggestedFriendCard: View {
     }
     
     private var avatarView: some View {
-        Group {
-            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 50, height: 50)
-                            .clipShape(Circle())
-                    case .failure(_), .empty:
-                        defaultAvatar
-                    @unknown default:
-                        defaultAvatar
-                    }
-                }
-            } else {
-                defaultAvatar
-            }
-        }
-        .frame(width: 50, height: 50)
-        // Blue gradient ring around avatar
-        .overlay(
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [.blue, .cyan],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2.5
-                )
-                .frame(width: 56, height: 56)
+        CachedFriendPhoto(
+            friendId: friend.userId.uuidString,
+            photoUrl: friend.profilePhotoUrl,
+            name: friend.name ?? friend.username ?? "?",
+            size: 50,
+            showGradientRing: true,
+            gradientColors: [.blue, .cyan]
         )
-        .frame(width: 56, height: 56)
     }
     
     private var defaultAvatar: some View {
@@ -1623,28 +1606,15 @@ struct UserSearchResultCard: View {
     
     var body: some View {
         HStack(spacing: 14) {
-            // Avatar with profile photo
-            ZStack {
-                if let photoUrl = user.profilePhotoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 50)
-                                .clipShape(Circle())
-                        case .failure(_), .empty:
-                            defaultAvatar
-                        @unknown default:
-                            defaultAvatar
-                        }
-                    }
-                } else {
-                    defaultAvatar
-                }
-            }
-            .frame(width: 50, height: 50)
+            // Avatar with cached profile photo
+            CachedFriendPhoto(
+                friendId: user.userId.uuidString,
+                photoUrl: user.profilePhotoUrl,
+                name: user.name ?? user.username ?? "?",
+                size: 50,
+                showGradientRing: false,
+                gradientColors: [.indigo, .purple]
+            )
             
             VStack(alignment: .leading, spacing: 4) {
                 // Username (primary)
@@ -1806,24 +1776,16 @@ struct ContactFriendChip: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 8) {
-                // Avatar
+                // Avatar (cached)
                 ZStack {
-                    if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 56, height: 56)
-                                    .clipShape(Circle())
-                            default:
-                                defaultContactAvatar
-                            }
-                        }
-                    } else {
-                        defaultContactAvatar
-                    }
+                    CachedFriendPhoto(
+                        friendId: friend.friendId.uuidString,
+                        photoUrl: friend.profilePhotoUrl,
+                        name: friend.friendName ?? friend.friendUsername ?? "?",
+                        size: 56,
+                        showGradientRing: false,
+                        gradientColors: [.green, .teal]
+                    )
                     
                     // Contact badge
                     Image(systemName: "person.crop.rectangle.stack.fill")

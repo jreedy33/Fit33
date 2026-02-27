@@ -398,21 +398,14 @@ private struct ScannedUserSheet: View {
     
     private var userAvatar: some View {
         ZStack {
-            // Profile photo or initials
-            if let photoUrl = user.profilePhotoUrl,
-               let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    initialsView
-                }
-                .frame(width: 100, height: 100)
-                .clipShape(Circle())
-            } else {
-                initialsView
-            }
+            // Profile photo (cached) or initials
+            LargeCachedFriendPhoto(
+                friendId: user.userId.uuidString,
+                photoUrl: user.profilePhotoUrl,
+                name: user.userName ?? user.username ?? "?",
+                size: 100,
+                gradientColors: [.blue, .cyan]
+            )
             
             // Status badge
             if user.isAlreadyFriend {

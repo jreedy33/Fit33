@@ -16,6 +16,7 @@ struct FriendsTabView: View {
     @StateObject private var rankingService = FriendRankingService.shared
     @StateObject private var challengeService = ChallengeService.shared
     @StateObject private var communityService = CommunityChallengeService.shared
+    @StateObject private var privateChallengeService = PrivateChallengeService.shared
     @StateObject private var contactsService = ContactsService.shared
     
     @State private var showingFriendsList = false
@@ -28,6 +29,7 @@ struct FriendsTabView: View {
     @State private var showingSentConfirmation = false
     @State private var navigationPath = NavigationPath()
     @State private var sentRequestIds: Set<UUID> = [] // Track sent friend requests for instant UI
+    @State private var requestSentAnimationIds: Set<UUID> = [] // Temporary "Request Sent" animation state
     @State private var selectedCommunityChallenge: CommunityChallenge?
     @State private var showingAllCommunities = false
     @State private var hasAppearedBefore = false
@@ -53,6 +55,11 @@ struct FriendsTabView: View {
                         
                         // Active Challenges carousel
                         activeChallengesCarousel
+                        
+                        // Private Challenges (invite-only communities)
+                        if !privateChallengeService.myChallenges.isEmpty {
+                            privateChallengeWidget
+                        }
                         
                         // Community Challenges (leaderboard widgets)
                         communityChallengeWidget
@@ -108,6 +115,9 @@ struct FriendsTabView: View {
         .onAppear {
             // Auto-refresh when returning to this tab (after initial load)
             if hasAppearedBefore {
+                // Clear sent IDs so stale markers don't block refreshed suggestions
+                sentRequestIds.removeAll()
+                requestSentAnimationIds.removeAll()
                 Task {
                     await refreshAllFriendsData(force: false)
                 }
@@ -158,24 +168,30 @@ struct FriendsTabView: View {
     // MARK: - Refresh Helper
     
     /// Central refresh for all Friends tab data.
-    /// Uses throttling in CommunityChallengeService to avoid redundant calls.
+    /// Uses throttling in CommunityChallengeService/PrivateChallengeService to avoid redundant calls.
     private func refreshAllFriendsData(force: Bool) async {
         // Batch 1: Fast social data (parallel)
         async let friends: () = friendService.fetchFriends()
         async let ranked: () = rankingService.fetchRankedFriends()
         async let pending: () = friendService.fetchPendingRequests()
         async let invites: () = challengeService.fetchPendingInvites()
-        _ = await (friends, ranked, pending, invites)
+        async let privateInvites: () = PrivateChallengeService.shared.fetchPendingInvites()
+        _ = await (friends, ranked, pending, invites, privateInvites)
         
-        // Batch 2: Challenge data (parallel)
+        // Batch 2: Challenge data — all types in parallel
         async let active: () = challengeService.fetchActiveChallenges()
         async let groups: () = challengeService.fetchActiveGroupChallenges()
         async let community: () = communityService.refreshAll(force: force)
-        _ = await (active, groups, community)
+        async let privateChallenges: () = PrivateChallengeService.shared.refreshAll(force: force)
+        _ = await (active, groups, community, privateChallenges)
         
-        // Batch 3: Lower priority
+        // Batch 3: Friend suggestions (contacts + mutual friends in parallel)
+        async let pymk: () = contactsService.fetchPeopleYouMayKnow()
         if contactsService.canAccessContacts {
-            await contactsService.fetchContactsAndFindFriends()
+            async let contactRefresh: () = contactsService.fetchContactsAndFindFriends()
+            _ = await (pymk, contactRefresh)
+        } else {
+            _ = await pymk
         }
     }
     
@@ -202,30 +218,13 @@ struct FriendsTabView: View {
     // MARK: - Add Friends Bar (Non-Friends from Contacts)
     
     private var friendStoriesBar: some View {
-        // Show non-friend contact suggestions with quick-add "+" button
-        // CRITICAL: Cross-reference against actual FriendService.friends to exclude existing friends
-        // The isFriend flag from ContactsService can be stale/incorrect
+        // Combined suggestions: mutual friends (friends-of-friends) first, then contacts
+        // Cross-reference against actual FriendService.friends to exclude existing friends
         let existingFriendIds = Set(friendService.friends.map { $0.friendId })
-        let suggestions = contactsService.suggestedFriends
-            .filter { suggestion in
-                // Exclude: already friends (by ID check against live friend list)
-                guard !existingFriendIds.contains(suggestion.userId) else { return false }
-                // Exclude: already flagged as friend by contacts service
-                guard !suggestion.isFriend else { return false }
-                // Exclude: already sent a request (from contacts service or this session)
-                guard !suggestion.hasOutgoingRequest && !sentRequestIds.contains(suggestion.userId) else { return false }
-                return true
-            }
-            .sorted { a, b in
-                // Prioritize users with profile photos
-                let aHasPhoto = a.profilePhotoUrl != nil && !(a.profilePhotoUrl?.isEmpty ?? true)
-                let bHasPhoto = b.profilePhotoUrl != nil && !(b.profilePhotoUrl?.isEmpty ?? true)
-                if aHasPhoto != bHasPhoto { return aHasPhoto }
-                let aHasUsername = a.username != nil && !(a.username?.isEmpty ?? true)
-                let bHasUsername = b.username != nil && !(b.username?.isEmpty ?? true)
-                if aHasUsername != bHasUsername { return aHasUsername }
-                return (a.name ?? "") < (b.name ?? "")
-            }
+        let suggestions = contactsService.allSuggestions(
+            excludingFriendIds: existingFriendIds,
+            excludingSentIds: sentRequestIds
+        )
         
         return Group {
             if !suggestions.isEmpty || contactsService.canAccessContacts {
@@ -256,7 +255,7 @@ struct FriendsTabView: View {
                                                 .frame(width: 66, height: 66)
                                         )
                                     
-                                    Image(systemName: "magnifyingglass")
+                                    Image(systemName: "person.badge.plus")
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(
                                             LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -264,7 +263,7 @@ struct FriendsTabView: View {
                                 }
                                 .frame(width: 64, height: 64)
                                 
-                                Text("Find")
+                                Text("Add Friends")
                                     .font(.caption2)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -274,9 +273,13 @@ struct FriendsTabView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        // Contact suggestions
-                        ForEach(suggestions.prefix(12)) { suggestion in
+                        // Friend suggestions (mutuals first, then contacts)
+                        ForEach(suggestions.prefix(15)) { suggestion in
                             contactSuggestionCircle(suggestion: suggestion)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .scale(scale: 0.5).combined(with: .opacity)
+                                ))
                         }
                     }
                     .padding(.horizontal, 4)
@@ -325,52 +328,99 @@ struct FriendsTabView: View {
     }
     
     private func contactSuggestionCircle(suggestion: SuggestedFriend) -> some View {
-        Button(action: {
+        let isSent = requestSentAnimationIds.contains(suggestion.userId)
+        
+        return Button(action: {
+            guard !isSent else { return }
             HapticManager.impact(.medium)
+            
+            // Show "Request Sent" animation
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                requestSentAnimationIds.insert(suggestion.userId)
+            }
+            
             // Send friend request
-            sentRequestIds.insert(suggestion.userId)
             Task {
                 let success = await friendService.sendFriendRequest(toUserId: suggestion.userId)
                 if !success {
-                    // Revert if failed
-                    sentRequestIds.remove(suggestion.userId)
+                    // Revert animation if failed
+                    withAnimation(.spring(response: 0.3)) {
+                        requestSentAnimationIds.remove(suggestion.userId)
+                    }
+                } else {
+                    // After brief delay, slide out and replace with next suggestion
+                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        sentRequestIds.insert(suggestion.userId)
+                        requestSentAnimationIds.remove(suggestion.userId)
+                    }
                 }
             }
         }) {
             VStack(spacing: 5) {
                 ZStack {
-                    // Profile photo or initials
-                    if let photoUrl = suggestion.profilePhotoUrl, let url = URL(string: photoUrl) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 58, height: 58)
-                                    .clipShape(Circle())
-                            default:
-                                suggestionInitialsCircle(suggestion: suggestion)
-                            }
+                    // Profile photo (cached) or initials
+                    CachedFriendPhoto(
+                        friendId: suggestion.userId.uuidString,
+                        photoUrl: suggestion.profilePhotoUrl,
+                        name: suggestion.name ?? suggestion.username ?? "?",
+                        size: 58,
+                        showGradientRing: false,
+                        gradientColors: [.blue.opacity(0.6), .cyan.opacity(0.4)]
+                    )
+                    
+                    // "Request Sent" overlay
+                    if isSent {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 58, height: 58)
+                        
+                        VStack(spacing: 2) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.green)
+                            Text("Sent")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.green)
                         }
-                    } else {
-                        suggestionInitialsCircle(suggestion: suggestion)
+                        .transition(.scale.combined(with: .opacity))
                     }
                 }
                 .frame(width: 64, height: 64)
                 .overlay(
                     Circle()
                         .stroke(
-                            LinearGradient(colors: [.blue.opacity(0.5), .cyan.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            LinearGradient(
+                                colors: isSent ? [.green.opacity(0.6), .green.opacity(0.3)] : [.blue.opacity(0.5), .cyan.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
                             lineWidth: 2.5
                         )
                         .frame(width: 66, height: 66)
                 )
+                // Blue + badge (bottom-right corner)
+                .overlay(alignment: .bottomTrailing) {
+                    if !isSent {
+                        ZStack {
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 22, height: 22)
+                            
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                        }
+                        .offset(x: 2, y: 2)
+                    }
+                }
                 
                 Text(suggestion.name?.components(separatedBy: " ").first ?? suggestion.username ?? "Add")
                     .font(.caption2)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                    .foregroundColor(isSent ? .green : .primary)
                     .lineLimit(1)
             }
             .frame(width: 72)
@@ -396,14 +446,6 @@ struct FriendsTabView: View {
     
     private var friendsQuickActionTiles: some View {
         HStack(spacing: 12) {
-            // Add Friend → opens friends list on Search tab
-            FriendsQuickTile(
-                icon: "person.badge.plus",
-                title: "Add\nFriend",
-                gradient: [.cyan, .blue],
-                action: { showingFriendSearch = true }
-            )
-            
             // New Challenge → same flow as "Challenge a Friend" on home screen
             FriendsQuickTile(
                 icon: "trophy.fill",
@@ -907,6 +949,7 @@ struct FriendsTabView: View {
                 
                 friendsChallengeAvatar(
                     isUser: false,
+                    userId: challenge.opponentId.uuidString,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
                     done: !amWinning && oppProgress > 0,
@@ -946,6 +989,7 @@ struct FriendsTabView: View {
                 
                 friendsChallengeAvatar(
                     isUser: false,
+                    userId: challenge.opponentId.uuidString,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
                     done: oppDone,
@@ -1041,9 +1085,8 @@ struct FriendsTabView: View {
     
     // MARK: - Challenge Avatar Helper (Friends Tab)
     
-    private func friendsChallengeAvatar(isUser: Bool, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color], size: CGFloat = 36) -> some View {
+    private func friendsChallengeAvatar(isUser: Bool, userId: String? = nil, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color], size: CGFloat = 36) -> some View {
         let borderWidth: CGFloat = size > 30 ? 2 : 1.5
-        let fontSize: CGFloat = size * 0.38
         
         return Group {
             if isUser {
@@ -1055,50 +1098,26 @@ struct FriendsTabView: View {
                         .clipShape(Circle())
                         .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
                 } else {
-                    Circle()
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: size, height: size)
-                        .overlay(
-                            Text(name?.prefix(1).uppercased() ?? "Y")
-                                .font(.system(size: fontSize, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
+                    CachedFriendPhoto(
+                        friendId: SupabaseManager.shared.currentUser?.id.uuidString ?? "me",
+                        photoUrl: nil,
+                        name: name ?? "You",
+                        size: size,
+                        showGradientRing: false,
+                        gradientColors: gradientColors
+                    )
+                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
                 }
             } else {
-                if let photoUrl = photoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: size, height: size)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
-                        default:
-                            Circle()
-                                .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .frame(width: size, height: size)
-                                .overlay(
-                                    Text(name?.prefix(1).uppercased() ?? "F")
-                                        .font(.system(size: fontSize, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
-                        }
-                    }
-                } else {
-                    Circle()
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: size, height: size)
-                        .overlay(
-                            Text(name?.prefix(1).uppercased() ?? "F")
-                                .font(.system(size: fontSize, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
-                }
+                CachedFriendPhoto(
+                    friendId: userId ?? UUID().uuidString,
+                    photoUrl: photoUrl,
+                    name: name ?? "Friend",
+                    size: size,
+                    showGradientRing: false,
+                    gradientColors: gradientColors
+                )
+                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: borderWidth))
             }
         }
     }
@@ -1440,6 +1459,167 @@ struct FriendsTabView: View {
     }
     
     // MARK: - Community Challenge Widget
+    
+    // MARK: - Private Challenges Widget
+    
+    private var privateChallengeWidget: some View {
+        let challenges = privateChallengeService.myChallenges
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Private Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                if challenges.count > 3 {
+                    Text("\(challenges.count) total")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.purple)
+                }
+            }
+            
+            // Active private challenge cards (max 3)
+            ForEach(challenges.prefix(3)) { challenge in
+                NavigationLink(value: "PrivateChallenge_\(challenge.challengeId.uuidString)") {
+                    privateChallengeRow(challenge: challenge)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .navigationDestination(for: String.self) { value in
+            if value.hasPrefix("PrivateChallenge_") {
+                let idStr = String(value.dropFirst("PrivateChallenge_".count))
+                if let challenge = privateChallengeService.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                    PrivateChallengeDetailView(challenge: challenge)
+                }
+            }
+        }
+    }
+    
+    private func privateChallengeRow(challenge: PrivateChallenge) -> some View {
+        let type = challenge.resolvedType
+        let progress = challenge.todayProgressPercentage
+        
+        return HStack(spacing: 12) {
+            // Emoji + progress ring
+            ZStack {
+                Circle()
+                    .stroke(Color.purple.opacity(0.15), lineWidth: 4)
+                    .frame(width: 48, height: 48)
+                
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 48, height: 48)
+                    .rotationEffect(.degrees(-90))
+                
+                Text(challenge.displayEmoji)
+                    .font(.system(size: 20))
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(challenge.title)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 6) {
+                    // Members
+                    HStack(spacing: 2) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 9))
+                        Text("\(challenge.formattedMemberCount)")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                    
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    // Progress
+                    Text("\(challenge.myTodayProgress ?? 0)/\(challenge.dailyTarget) \(challenge.targetUnit)")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(challenge.targetHitToday ? .green : .secondary)
+                    
+                    if challenge.targetHitToday {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                    }
+                    
+                    // Streak
+                    if let streak = challenge.myCurrentStreak, streak > 0 {
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        HStack(spacing: 2) {
+                            Text("🔥")
+                                .font(.system(size: 9))
+                            Text("\(streak)")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Rank badge
+            if let rank = challenge.myRank, rank > 0 {
+                VStack(spacing: 2) {
+                    Text(rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : "#\(rank)")
+                        .font(.system(size: rank <= 3 ? 16 : 12, weight: .bold))
+                    
+                    if rank > 3 {
+                        Text("rank")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [.purple.opacity(0.3), .pink.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+    }
+    
+    // MARK: - Community Challenges Widget
     
     private var communityChallengeWidget: some View {
         let myChallenges = communityService.myChallenges

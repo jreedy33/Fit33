@@ -400,10 +400,23 @@ struct MainTabView: View {
     @StateObject private var lazyTabManager = LazyTabManager.shared
     @StateObject private var tabSwitchOptimizer = TabSwitchOptimizer.shared
     @StateObject private var tabPreloader = TabPreloader.shared  // ⚡️ For instant tab switching
+    // 🔴 Services observed for Home tab red dot badge
+    @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var challengeService = ChallengeService.shared
+    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
     @State private var selectedTab: Int = 0
     @State private var scrollToTopTrigger: UUID = UUID()
     @State private var showNotificationPermissionPrompt = false
     @State private var hasCheckedNotificationPermission = false
+    
+    /// Total pending requests/invites shown on the Home tab — drives the red dot badge
+    private var homeTabPendingCount: Int {
+        friendService.pendingRequests.count +
+        friendService.unreadWorkoutCount +
+        challengeService.pendingInvites.count +
+        challengeService.activeGroupChallenges.filter(\.isMyInvitePending).count +
+        privateChallengeService.pendingInvites.count
+    }
     
     private let tabs = [
         TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .white),
@@ -436,6 +449,7 @@ struct MainTabView: View {
                         }
                     }
                     .tag(0)
+                    .badge(homeTabPendingCount)
                 
                 // Tab 1: Exercise Library (preloaded for instant access)
                 LazyTabContent(tab: .exercises) {
@@ -693,6 +707,12 @@ struct MainTabView: View {
                 .environmentObject(workoutManager)
             }
         }
+        // Community Join Sheet - shows when user opens a community challenge share link
+        .sheet(isPresented: $deepLinkManager.showCommunityJoinSheet) {
+            if let slug = deepLinkManager.pendingCommunitySlug {
+                CommunityJoinSheet(codeOrSlug: slug)
+            }
+        }
         // MARK: - Notification Permission Prompt
         .task {
             // Check notification permission status on app launch
@@ -833,11 +853,23 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             print("🔗 [DEEPLINK] Switched to Friends tab for challenge feature")
             
-        // Community Challenges - handled by WorkoutTabView
-        case .communityChallenge, .communityChallengeBrowse:
+        // Community Challenges - join sheet is presented from ContentView
+        case .communityChallenge(let slug):
+            deepLinkManager.pendingCommunitySlug = slug
+            deepLinkManager.showCommunityJoinSheet = true
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Showing community join sheet for: \(slug)")
+            
+        case .communityChallengeBrowse:
             selectedTab = 2
-            // Don't clear - WorkoutTabView handles the navigation
-            print("🔗 [DEEPLINK] Switched to Workout tab for community challenge")
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Workout tab for community browse")
+            
+        // Private Challenges - switch to Home tab where invites appear
+        case .privateChallengeDetail, .privateChallengeInvite:
+            selectedTab = 0
+            // Don't clear - WorkoutTabView/DashboardView handles the navigation
+            print("🔗 [DEEPLINK] Switched to Home tab for private challenge")
         }
     }
     

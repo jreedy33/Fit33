@@ -17,9 +17,9 @@ final class FriendPhotoCache {
     }
     
     private init() {
-        // ⚡️ MEMORY FIX: Reduced from 50/50MB to 20/20MB — most users have <20 friends
-        memoryCache.countLimit = 20 // Max 20 friend photos in memory (was 50)
-        memoryCache.totalCostLimit = 20 * 1024 * 1024 // 20MB limit (was 50MB)
+        // Allow enough for community/private challenges with many participants
+        memoryCache.countLimit = 100 // Max 100 photos in memory (community challenges can have 50+)
+        memoryCache.totalCostLimit = 50 * 1024 * 1024 // 50MB limit
         
         // Create cache directory if needed
         if let cacheDir = cacheDirectoryURL {
@@ -101,18 +101,26 @@ final class FriendPhotoCache {
         return nil
     }
     
-    /// Preload photos for multiple friends (also refreshes stale photos)
+    /// Preload photos for multiple friends concurrently (also refreshes stale photos)
     func preloadPhotos(for friends: [(id: String, url: String?)]) {
+        // Filter to only those that need downloading
+        let needsDownload = friends.filter { friend in
+            guard let urlString = friend.url, !urlString.isEmpty else { return false }
+            return getImage(for: friend.id) == nil || isUrlStale(for: friend.id, currentUrl: urlString)
+        }
+        
+        guard !needsDownload.isEmpty else { return }
+        
         Task {
-            for friend in friends {
-                guard let urlString = friend.url, let url = URL(string: urlString) else { continue }
-                
-                // Download if not cached OR if URL changed (friend updated photo)
-                let needsDownload = getImage(for: friend.id) == nil || isUrlStale(for: friend.id, currentUrl: urlString)
-                guard needsDownload else { continue }
-                
-                _ = await downloadAndCache(url: url, friendId: friend.id)
+            await withTaskGroup(of: Void.self) { group in
+                for friend in needsDownload {
+                    guard let urlString = friend.url, let url = URL(string: urlString) else { continue }
+                    group.addTask {
+                        _ = await self.downloadAndCache(url: url, friendId: friend.id)
+                    }
+                }
             }
+            print("📸 [FRIEND CACHE] Preloaded \(needsDownload.count) photos")
         }
     }
     

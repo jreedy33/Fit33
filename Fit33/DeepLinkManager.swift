@@ -30,6 +30,10 @@ class DeepLinkManager: ObservableObject {
         case communityChallenge(slug: String)    // Join/view a community challenge
         case communityChallengeBrowse            // Browse/discover community challenges
         
+        // Private Challenges
+        case privateChallengeDetail(challengeId: String)   // View a private challenge
+        case privateChallengeInvite(challengeId: String)   // Accept/view an invite
+        
         // Dashboard Widgets (navigate to Home + scroll to widget)
         case hydration          // Home tab > Hydration widget
         case stepTracker        // Home tab > Step tracker widget
@@ -47,6 +51,8 @@ class DeepLinkManager: ObservableObject {
     @Published var pendingReceivedWorkoutId: String?
     @Published var pendingCommunitySlug: String?          // Community challenge to join on open
     @Published var showCommunityJoinSheet = false
+    @Published var pendingPrivateChallengeId: String?     // Private challenge to view on open
+    @Published var showPrivateChallengeSheet = false
     
     private init() {}
     
@@ -254,6 +260,35 @@ class DeepLinkManager: ObservableObject {
             }
             return true
             
+        case "private-challenge", "private":
+            // Format: fit33://private-challenge/{challengeId}
+            let path = url.path
+            let challengeId = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            
+            if !challengeId.isEmpty {
+                pendingPrivateChallengeId = challengeId
+                pendingDestination = .privateChallengeDetail(challengeId: challengeId)
+                showPrivateChallengeSheet = true
+                print("🔒 [DEEPLINK] Navigating to private challenge: \(challengeId)")
+            } else {
+                pendingDestination = .dashboard
+                print("🔒 [DEEPLINK] Navigating to dashboard for private challenges")
+            }
+            return true
+            
+        case "private-invite":
+            // Format: fit33://private-invite/{challengeId}
+            let path = url.path
+            let challengeId = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            
+            if !challengeId.isEmpty {
+                pendingPrivateChallengeId = challengeId
+                pendingDestination = .privateChallengeInvite(challengeId: challengeId)
+                showPrivateChallengeSheet = true
+                print("🔒 [DEEPLINK] Navigating to private challenge invite: \(challengeId)")
+            }
+            return true
+            
         default:
             return false
         }
@@ -307,6 +342,18 @@ class DeepLinkManager: ObservableObject {
             }
             return false
             
+        case "p", "private":
+            // Format: https://fit33.app/p/{challengeId}
+            if pathComponents.count >= 2 {
+                let challengeId = pathComponents[1]
+                pendingPrivateChallengeId = challengeId
+                pendingDestination = .privateChallengeDetail(challengeId: challengeId)
+                showPrivateChallengeSheet = true
+                print("🔒 [DEEPLINK] Universal link to private challenge: \(challengeId)")
+                return true
+            }
+            return false
+            
         default:
             return false
         }
@@ -319,6 +366,8 @@ class DeepLinkManager: ObservableObject {
         showSharedWorkoutSheet = false
         pendingCommunitySlug = nil
         showCommunityJoinSheet = false
+        pendingPrivateChallengeId = nil
+        showPrivateChallengeSheet = false
     }
 }
 

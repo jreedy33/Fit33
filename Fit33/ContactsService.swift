@@ -14,6 +14,7 @@ class ContactsService: ObservableObject {
     @Published var contactEmails: [String] = []
     @Published var contactPhoneNumbers: [String] = []
     @Published var suggestedFriends: [SuggestedFriend] = []
+    @Published var peopleYouMayKnow: [SuggestedFriend] = [] // Friends-of-friends
     @Published var isLoading = false
     @Published var hasCheckedContacts = false
     
@@ -404,6 +405,123 @@ class ContactsService: ObservableObject {
         }
     }
     
+    // MARK: - People You May Know (Friends-of-Friends)
+    
+    /// Fetch friends-of-friends with mutual friend counts
+    func fetchPeopleYouMayKnow() async {
+        print("👥 [PYMK] Fetching people you may know...")
+        
+        do {
+            struct PYMKResult: Decodable {
+                let user_id: UUID
+                let name: String?
+                let email: String?
+                let username: String?
+                let profile_photo_url: String?
+                let phone_number: String?
+                let fitness_goal: String?
+                let is_friend: Bool
+                let has_outgoing_request: Bool
+                let has_incoming_request: Bool
+                let mutual_friend_count: Int
+            }
+            
+            let results: [PYMKResult] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_people_you_may_know", params: ["result_limit": 20])
+                .execute()
+                .value
+            
+            // Convert to SuggestedFriend with isMutual flag
+            peopleYouMayKnow = results.map { r in
+                SuggestedFriend(
+                    userId: r.user_id,
+                    name: r.name,
+                    email: r.email,
+                    username: r.username,
+                    profilePhotoUrl: r.profile_photo_url,
+                    phoneNumber: r.phone_number,
+                    fitnessGoal: r.fitness_goal,
+                    isFriend: r.is_friend,
+                    hasOutgoingRequest: r.has_outgoing_request,
+                    hasIncomingRequest: r.has_incoming_request,
+                    mutualFriendCount: r.mutual_friend_count,
+                    isMutual: true
+                )
+            }
+            
+            print("✅ [PYMK] Found \(peopleYouMayKnow.count) people you may know")
+            
+            // Preload photos
+            let photoEntries = peopleYouMayKnow.compactMap { friend -> (id: String, url: String?)? in
+                return (id: friend.userId.uuidString, url: friend.profilePhotoUrl)
+            }
+            FriendPhotoCache.shared.preloadPhotos(for: photoEntries)
+            
+        } catch {
+            print("⚠️ [PYMK] Error fetching people you may know: \(error)")
+            // Non-fatal - just use contact suggestions
+        }
+    }
+    
+    /// Contact-only suggestions, enriched with mutual friend data for sorting.
+    /// Only people in the user's contacts are shown — no random strangers.
+    /// Contacts who are also mutual friends (friends-of-friends) get boosted to the top.
+    func allSuggestions(excludingFriendIds friendIds: Set<UUID>, excludingSentIds sentIds: Set<UUID>) -> [SuggestedFriend] {
+        let excludeIds = friendIds.union(sentIds)
+        
+        // Build a lookup of mutual friend counts from the friends-of-friends query
+        let mutualCountByUserId = Dictionary(
+            uniqueKeysWithValues: peopleYouMayKnow.map { ($0.userId, $0.mutualFriendCount ?? 0) }
+        )
+        
+        // Start with ONLY contact-based suggestions — no randoms
+        let contacts = suggestedFriends.filter { suggestion in
+            guard !excludeIds.contains(suggestion.userId) else { return false }
+            guard !suggestion.isFriend else { return false }
+            guard !suggestion.hasOutgoingRequest else { return false }
+            return true
+        }
+        
+        // Enrich each contact with mutual friend data
+        let enriched: [SuggestedFriend] = contacts.map { contact in
+            let mutualCount = mutualCountByUserId[contact.userId] ?? 0
+            if mutualCount > 0 {
+                // This contact is also a friend-of-a-friend — mark as mutual
+                return SuggestedFriend(
+                    userId: contact.userId,
+                    name: contact.name,
+                    email: contact.email,
+                    username: contact.username,
+                    profilePhotoUrl: contact.profilePhotoUrl,
+                    phoneNumber: contact.phoneNumber,
+                    fitnessGoal: contact.fitnessGoal,
+                    isFriend: contact.isFriend,
+                    hasOutgoingRequest: contact.hasOutgoingRequest,
+                    hasIncomingRequest: contact.hasIncomingRequest,
+                    mutualFriendCount: mutualCount,
+                    isMutual: true
+                )
+            }
+            return contact
+        }
+        
+        // Sort: mutual contacts with photos → mutual contacts without photos → contacts with photos → contacts without
+        return enriched.sorted { a, b in
+            let aMutual = a.isMutual
+            let bMutual = b.isMutual
+            // Mutuals first
+            if aMutual != bMutual { return aMutual }
+            // Within same mutual tier: photos first
+            if a.hasPhoto != b.hasPhoto { return a.hasPhoto }
+            // Within same photo tier: higher mutual count first
+            let aCount = a.mutualFriendCount ?? 0
+            let bCount = b.mutualFriendCount ?? 0
+            if aCount != bCount { return aCount > bCount }
+            // Alphabetical fallback
+            return (a.name ?? "") < (b.name ?? "")
+        }
+    }
+    
     // MARK: - Sync Contacts to Database
     
     /// Sync contact emails to database for "contact joined" notifications
@@ -542,8 +660,14 @@ struct SuggestedFriend: Codable, Identifiable {
     let isFriend: Bool
     let hasOutgoingRequest: Bool
     let hasIncomingRequest: Bool
+    let mutualFriendCount: Int? // Number of mutual friends (friends-of-friends)
+    var isMutual: Bool  // Whether this suggestion came from friends-of-friends
     
     var id: UUID { userId }
+    
+    var hasPhoto: Bool {
+        profilePhotoUrl != nil && !(profilePhotoUrl?.isEmpty ?? true)
+    }
     
     var displayName: String {
         if let username = username, !username.isEmpty {
@@ -577,6 +701,39 @@ struct SuggestedFriend: Codable, Identifiable {
         case isFriend = "is_friend"
         case hasOutgoingRequest = "has_outgoing_request"
         case hasIncomingRequest = "has_incoming_request"
+        case mutualFriendCount = "mutual_friend_count"
+        case isMutual = "is_mutual"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try container.decode(UUID.self, forKey: .userId)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+        username = try container.decodeIfPresent(String.self, forKey: .username)
+        profilePhotoUrl = try container.decodeIfPresent(String.self, forKey: .profilePhotoUrl)
+        phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
+        fitnessGoal = try container.decodeIfPresent(String.self, forKey: .fitnessGoal)
+        isFriend = try container.decodeIfPresent(Bool.self, forKey: .isFriend) ?? false
+        hasOutgoingRequest = try container.decodeIfPresent(Bool.self, forKey: .hasOutgoingRequest) ?? false
+        hasIncomingRequest = try container.decodeIfPresent(Bool.self, forKey: .hasIncomingRequest) ?? false
+        mutualFriendCount = try container.decodeIfPresent(Int.self, forKey: .mutualFriendCount)
+        isMutual = try container.decodeIfPresent(Bool.self, forKey: .isMutual) ?? false
+    }
+    
+    init(userId: UUID, name: String?, email: String?, username: String?, profilePhotoUrl: String?, phoneNumber: String?, fitnessGoal: String?, isFriend: Bool, hasOutgoingRequest: Bool, hasIncomingRequest: Bool, mutualFriendCount: Int? = nil, isMutual: Bool = false) {
+        self.userId = userId
+        self.name = name
+        self.email = email
+        self.username = username
+        self.profilePhotoUrl = profilePhotoUrl
+        self.phoneNumber = phoneNumber
+        self.fitnessGoal = fitnessGoal
+        self.isFriend = isFriend
+        self.hasOutgoingRequest = hasOutgoingRequest
+        self.hasIncomingRequest = hasIncomingRequest
+        self.mutualFriendCount = mutualFriendCount
+        self.isMutual = isMutual
     }
 }
 

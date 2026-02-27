@@ -183,19 +183,38 @@ struct CommunityChallengesHubView: View {
     // MARK: - Discover Tab
     
     private var discoverContent: some View {
-        LazyVStack(spacing: 12) {
-            // ── Friends' Communities (friend-gated discovery) ──
-            if !service.discoverableChallenges.isEmpty {
-                sectionHeader("Friends' Communities", emoji: "👥")
-                Text("Communities your friends are in — join to connect!")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                ForEach(service.discoverableChallenges) { fc in
-                    FriendDiscoveryCard(challenge: fc) {
-                        Task {
-                            let _ = await service.joinChallengeFriendGated(challengeId: fc.id)
+        VStack(spacing: 16) {
+            // ── Recommended For You (top 2 friend-populated communities) ──
+            let recommendedChallenges = Array(service.discoverableChallenges.prefix(2))
+            if !recommendedChallenges.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionHeader("Recommended for You", emoji: "⭐")
+                    Text("Communities your friends are crushing — join them!")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    ForEach(recommendedChallenges) { fc in
+                        FriendDiscoveryCard(challenge: fc) {
+                            Task {
+                                let _ = await service.joinChallengeFriendGated(challengeId: fc.id)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // ── Friends' Communities (remaining, after the top 2) ──
+            let remainingFriendChallenges = Array(service.discoverableChallenges.dropFirst(2))
+            if !remainingFriendChallenges.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionHeader("Friends' Communities", emoji: "👥")
+                    
+                    ForEach(remainingFriendChallenges) { fc in
+                        FriendDiscoveryCard(challenge: fc) {
+                            Task {
+                                let _ = await service.joinChallengeFriendGated(challengeId: fc.id)
+                            }
                         }
                     }
                 }
@@ -205,29 +224,33 @@ struct CommunityChallengesHubView: View {
                 ProgressView()
                     .padding(.top, 40)
             } else {
-                // Official challenges
-                let official = service.featuredChallenges.filter(\.isOfficial)
+                // Official challenges — only show ones the user hasn't joined yet
+                let official = service.featuredChallenges.filter { $0.isOfficial && !$0.alreadyJoined }
                 if !official.isEmpty {
-                    sectionHeader("Official Fit33 Challenges", emoji: "⭐")
-                    ForEach(official) { challenge in
-                        FeaturedChallengeCard(challenge: challenge) {
-                            Task {
-                                let _ = await service.joinChallenge(code: challenge.joinCode)
-                                await service.fetchFeaturedChallenges()
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionHeader("Official Fit33 Challenges", emoji: "🏅")
+                        ForEach(official) { challenge in
+                            FeaturedChallengeCard(challenge: challenge) {
+                                Task {
+                                    let _ = await service.joinChallenge(code: challenge.joinCode)
+                                    await service.fetchFeaturedChallenges()
+                                }
                             }
                         }
                     }
                 }
                 
-                // Community created
-                let community = service.featuredChallenges.filter { !$0.isOfficial }
+                // Community created — only show ones the user hasn't joined yet
+                let community = service.featuredChallenges.filter { !$0.isOfficial && !$0.alreadyJoined }
                 if !community.isEmpty {
-                    sectionHeader("Community Created", emoji: "🌍")
-                    ForEach(community) { challenge in
-                        FeaturedChallengeCard(challenge: challenge) {
-                            Task {
-                                let _ = await service.joinChallenge(code: challenge.joinCode)
-                                await service.fetchFeaturedChallenges()
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionHeader("Community Created", emoji: "🌍")
+                        ForEach(community) { challenge in
+                            FeaturedChallengeCard(challenge: challenge) {
+                                Task {
+                                    let _ = await service.joinChallenge(code: challenge.joinCode)
+                                    await service.fetchFeaturedChallenges()
+                                }
                             }
                         }
                     }
@@ -469,25 +492,16 @@ struct CommunityLeaderboardWidget: View {
         .padding(.bottom, 8)
     }
     
-    /// Friend avatar with photo support — falls back to colored initials
+    /// Friend avatar with photo support — cached for instant loading
     private func friendAvatarCircle(friend: CommunityFriendInfo, index: Int, size: CGFloat) -> some View {
-        Group {
-            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl), !photoUrl.isEmpty {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: size, height: size)
-                            .clipShape(Circle())
-                    } else {
-                        friendInitialCircle(friend: friend, index: index, size: size)
-                    }
-                }
-            } else {
-                friendInitialCircle(friend: friend, index: index, size: size)
-            }
-        }
+        CachedFriendPhoto(
+            friendId: friend.userId.uuidString,
+            photoUrl: friend.profilePhotoUrl,
+            name: friend.displayName,
+            size: size,
+            showGradientRing: false,
+            gradientColors: friendGradient(for: index)
+        )
     }
     
     private func friendInitialCircle(friend: CommunityFriendInfo, index: Int, size: CGFloat) -> some View {
@@ -508,6 +522,13 @@ struct CommunityLeaderboardWidget: View {
     private func avatarColor(for index: Int) -> Color {
         let colors: [Color] = [.blue, .purple, .pink, .orange, .teal]
         return colors[index % colors.count]
+    }
+    
+    private func friendGradient(for index: Int) -> [Color] {
+        let gradients: [[Color]] = [
+            [.blue, .cyan], [.purple, .pink], [.pink, .orange], [.orange, .yellow], [.teal, .green]
+        ]
+        return gradients[index % gradients.count]
     }
     
     // MARK: - My Stats Banner
@@ -668,20 +689,15 @@ struct CommunityLeaderboardWidget: View {
                 }
                 .frame(width: rankDelta != 0 ? 32 : 20, alignment: .center)
                 
-                // Avatar
-                if let photoUrl = entry.profilePhotoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            avatarPlaceholder(initial: entry.initial, isMe: isMe)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                    .clipShape(Circle())
-                } else {
-                    avatarPlaceholder(initial: entry.initial, isMe: isMe)
-                }
+                // Avatar (cached)
+                CachedFriendPhoto(
+                    friendId: entry.userId.uuidString,
+                    photoUrl: entry.profilePhotoUrl,
+                    name: entry.displayName,
+                    size: 22,
+                    showGradientRing: false,
+                    gradientColors: isMe ? [resolvedType.color, resolvedType.color.opacity(0.7)] : [.gray.opacity(0.4), .gray.opacity(0.3)]
+                )
                 
                 // Name
                 HStack(spacing: 3) {
@@ -1366,31 +1382,15 @@ struct CommunityLeaderboardView: View {
             }
             .frame(width: 36, alignment: .center)
             
-            // Avatar
-            if let photoUrl = entry.profilePhotoUrl, let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        Circle().fill(Color.gray.opacity(0.3))
-                    }
-                }
-                .frame(width: 36, height: 36)
-                .clipShape(Circle())
-            } else {
-                Circle()
-                    .fill(
-                        isCurrentUser
-                            ? LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Text(entry.initial)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(isCurrentUser ? .white : .secondary)
-                    )
-            }
+            // Avatar (cached)
+            CachedFriendPhoto(
+                friendId: entry.userId.uuidString,
+                photoUrl: entry.profilePhotoUrl,
+                name: entry.displayName,
+                size: 36,
+                showGradientRing: false,
+                gradientColors: isCurrentUser ? [.blue, .purple] : [.gray.opacity(0.3), .gray.opacity(0.2)]
+            )
             
             // Name + streak detail
             VStack(alignment: .leading, spacing: 2) {
@@ -1941,7 +1941,7 @@ struct FriendDiscoveryCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Top row: emoji + title + participant count
+            // Top row: emoji + title + target
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
@@ -1958,85 +1958,73 @@ struct FriendDiscoveryCard: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
-                    HStack(spacing: 6) {
-                        Label("\(challenge.formattedParticipantCount)", systemImage: "person.2.fill")
-                            .font(.caption2)
-                            .foregroundColor(tc.opacity(0.7))
-                        
-                        Text("•")
-                            .font(.caption2)
-                            .foregroundColor(tc.opacity(0.3))
-                        
-                        Text("\(challenge.dailyTarget) \(challenge.targetUnit)/day")
-                            .font(.caption2)
-                            .foregroundColor(tc.opacity(0.7))
-                    }
+                    Text("\(challenge.dailyTarget) \(challenge.targetUnit)/day")
+                        .font(.caption2)
+                        .foregroundColor(tc.opacity(0.7))
                 }
                 
                 Spacer()
-                
-                // Capacity badge if nearly full
-                if let max = challenge.maxParticipants, Double(challenge.participantCount) / Double(max) >= 0.8 {
-                    Text("\(challenge.capacityString)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundColor(tc)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(tc.opacity(0.12)))
-                }
             }
             
-            // Friend avatars row
-            HStack(spacing: 6) {
-                HStack(spacing: -6) {
-                    ForEach(Array(friends.prefix(4).enumerated()), id: \.element.userId) { index, friend in
+            // Friends row: stacked photos + friend names + Join button
+            HStack(spacing: 8) {
+                // Stacked friend profile photos
+                HStack(spacing: -8) {
+                    ForEach(Array(friends.prefix(5).enumerated()), id: \.element.userId) { index, friend in
+                        CachedFriendPhoto(
+                            friendId: friend.userId.uuidString,
+                            photoUrl: friend.profilePhotoUrl,
+                            name: friend.displayName,
+                            size: 28
+                        )
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                        .zIndex(Double(5 - index))
+                    }
+                    
+                    // "+N" overflow circle if more than 5 friends
+                    if friends.count > 5 {
                         ZStack {
                             Circle()
-                                .fill(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .frame(width: 24, height: 24)
-                            Text(friend.initial)
+                                .fill(tc.opacity(0.2))
+                                .frame(width: 28, height: 28)
+                            Text("+\(friends.count - 5)")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(tc)
                         }
-                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
-                        .zIndex(Double(4 - index))
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
                     }
                 }
                 
+                // Friend name text
                 if friends.count == 1 {
-                    Text("\(friends[0].displayName) is in this community")
+                    Text("\(friends[0].displayName.components(separatedBy: " ").first ?? friends[0].displayName) is in this")
                         .font(.caption)
-                        .foregroundColor(tc.opacity(0.6))
-                } else if friends.count <= 3 {
-                    Text("\(friends.map { $0.displayName.components(separatedBy: " ").first ?? $0.displayName }.joined(separator: " & ")) are in this community")
-                        .font(.caption)
-                        .foregroundColor(tc.opacity(0.6))
+                        .foregroundColor(tc.opacity(0.7))
                         .lineLimit(1)
                 } else {
-                    Text("\(challenge.friendsCount) friends in this community")
+                    let firstNames = friends.prefix(2).map { $0.displayName.components(separatedBy: " ").first ?? $0.displayName }
+                    let extra = friends.count > 2 ? " +\(friends.count - 2)" : ""
+                    Text("\(firstNames.joined(separator: ", "))\(extra) are in this")
                         .font(.caption)
-                        .foregroundColor(tc.opacity(0.6))
+                        .foregroundColor(tc.opacity(0.7))
+                        .lineLimit(1)
                 }
                 
                 Spacer()
-            }
-            
-            // Join button
-            Button(action: onJoin) {
-                HStack {
-                    Image(systemName: "person.badge.plus")
-                    Text("Join Community")
-                        .fontWeight(.semibold)
+                
+                // Join button (compact, inline)
+                Button(action: onJoin) {
+                    Text("Join")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(
+                            LinearGradient(colors: tg, startPoint: .leading, endPoint: .trailing)
+                        )
+                        .clipShape(Capsule())
                 }
-                .font(.subheadline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(
-                    LinearGradient(colors: tg, startPoint: .leading, endPoint: .trailing)
-                )
-                .cornerRadius(10)
-                .shadow(color: tc.opacity(0.35), radius: 6, x: 0, y: 3)
             }
         }
         .padding(14)
@@ -2098,6 +2086,7 @@ struct CommunityDetailView: View {
     @State private var isLoading = true
     @State private var showingLeaveConfirmation = false
     @State private var isLeaving = false
+    @State private var showShareSheet = false
     
     /// Previous leaderboard ranks for computing deltas locally
     @State private var previousDetailRanks: [UUID: Int] = [:]
@@ -2221,8 +2210,24 @@ struct CommunityDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    HStack(spacing: 12) {
+                        if detail != nil {
+                            Button(action: { showShareSheet = true }) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 15, weight: .medium))
+                            }
+                        }
+                        Button("Done") { dismiss() }
+                    }
                 }
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let detail, let url = detail.shareURL {
+                ShareSheet(items: [
+                    CommunityChallengeService.shared.shareMessage(for: detail),
+                    url
+                ])
             }
         }
         .task {
@@ -2539,23 +2544,14 @@ struct CommunityDetailView: View {
     
     /// Friend avatar with photo support for detail view
     private func detailFriendAvatar(friend: CommunityFriendInfo, type: ChallengeType, size: CGFloat) -> some View {
-        Group {
-            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl), !photoUrl.isEmpty {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: size, height: size)
-                            .clipShape(Circle())
-                    } else {
-                        detailFriendInitialCircle(initial: friend.initial, type: type, size: size)
-                    }
-                }
-            } else {
-                detailFriendInitialCircle(initial: friend.initial, type: type, size: size)
-            }
-        }
+        CachedFriendPhoto(
+            friendId: friend.userId.uuidString,
+            photoUrl: friend.profilePhotoUrl,
+            name: friend.displayName,
+            size: size,
+            showGradientRing: false,
+            gradientColors: type.gradientColors
+        )
     }
     
     private func detailFriendInitialCircle(initial: String, type: ChallengeType, size: CGFloat) -> some View {
@@ -2688,25 +2684,16 @@ struct CommunityDetailView: View {
         .overlay(themedOutline(color: type.color))
     }
     
-    /// Leaderboard avatar with photo support for detail view
+    /// Leaderboard avatar with cached photo support for detail view
     private func leaderboardAvatar(entry: LeaderboardSnippetEntry, type: ChallengeType, size: CGFloat) -> some View {
-        Group {
-            if let photoUrl = entry.profilePhotoUrl, let url = URL(string: photoUrl), !photoUrl.isEmpty {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: size, height: size)
-                            .clipShape(Circle())
-                    } else {
-                        leaderboardInitialCircle(entry: entry, type: type, size: size)
-                    }
-                }
-            } else {
-                leaderboardInitialCircle(entry: entry, type: type, size: size)
-            }
-        }
+        CachedFriendPhoto(
+            friendId: entry.userId.uuidString,
+            photoUrl: entry.profilePhotoUrl,
+            name: entry.displayName,
+            size: size,
+            showGradientRing: false,
+            gradientColors: entry.isCurrentUser ? [type.color, type.color.opacity(0.7)] : [.gray.opacity(0.3), .gray.opacity(0.2)]
+        )
     }
     
     private func leaderboardInitialCircle(entry: LeaderboardSnippetEntry, type: ChallengeType, size: CGFloat) -> some View {

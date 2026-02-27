@@ -42,6 +42,7 @@ struct DashboardView: View {
     // Swipeable workout carousel (workout buttons + active program)
     @State private var selectedWorkoutPage: Int = 0
     @ObservedObject private var challengeService = ChallengeService.shared
+    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var stravaService = StravaService.shared
     @ObservedObject private var healthKitService = HealthKitService.shared
@@ -239,6 +240,10 @@ struct DashboardView: View {
                             .padding(.bottom, 16)
                     }
                     
+                    // Private Challenge Invite Widgets (pending invites to private communities)
+                    PrivateChallengeInviteContainer()
+                        .padding(.bottom, 16)
+                    
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
                         .font(.title3)
@@ -328,11 +333,14 @@ struct DashboardView: View {
                     // This will also call syncHealthKitDataToChallenges() internally
                     await HealthKitService.shared.syncAllData(force: true)
                     
-                    // STEP 2: Fetch updated challenges from database (reflects any changes)
-                    await ChallengeService.shared.fetchPendingInvites()
-                    await ChallengeService.shared.fetchActiveChallenges()
-                    await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
-                    await ChallengeService.shared.fetchPendingSentChallenges()
+                    // STEP 2: Fetch ALL challenge types from database (parallel for speed)
+                    async let r1: () = ChallengeService.shared.fetchPendingInvites()
+                    async let r2: () = ChallengeService.shared.fetchActiveChallenges()
+                    async let r3: () = ChallengeService.shared.fetchActiveGroupChallenges()
+                    async let r4: () = ChallengeService.shared.fetchPendingSentChallenges()
+                    async let r5: () = CommunityChallengeService.shared.refreshAll(force: true)
+                    async let r6: () = PrivateChallengeService.shared.refreshAll(force: true)
+                    _ = await (r1, r2, r3, r4, r5, r6)
                     
                     // STEP 3: Refresh friend data and other home screen content
                     await FriendService.shared.refreshHomeScreenData()
@@ -524,6 +532,10 @@ struct DashboardView: View {
             await ChallengeService.shared.fetchPendingInvites()
             await ChallengeService.shared.fetchPendingSentChallenges()
             
+            // Load private challenge data (invites + active challenges) + real-time subscriptions
+            await PrivateChallengeService.shared.refreshAll()
+            await PrivateChallengeService.shared.subscribeToRealtimeUpdates()
+            
             // Pre-fetch ranked friends for Friends tab (caches to disk)
             await FriendRankingService.shared.fetchRankedFriends()
             
@@ -567,15 +579,21 @@ struct DashboardView: View {
                     await HydrationService.shared.loadTodayData()
                     MealService.shared.loadTodaysMeals()
                     
-                    // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to challenges
+                    // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to ALL challenge types
                     print("🔄 [DASHBOARD] Universal challenge sync on foreground...")
-                    await ChallengeService.shared.syncAllTrackingToChallenges()
+                    async let challengeSync: () = ChallengeService.shared.syncAllTrackingToChallenges()
+                    async let communitySync: () = CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+                    async let privateSync: () = PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                    _ = await (challengeSync, communitySync, privateSync)
                     
-                    // Also refresh pending/sent/group lists
-                    await ChallengeService.shared.fetchPendingInvites()
-                    await ChallengeService.shared.fetchPendingSentChallenges()
-                    await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
-                    print("✅ [DASHBOARD] All challenge data refreshed")
+                    // Also refresh pending/sent/group/private lists (all in parallel)
+                    async let p1: () = ChallengeService.shared.fetchPendingInvites()
+                    async let p2: () = ChallengeService.shared.fetchPendingSentChallenges()
+                    async let p3: () = ChallengeService.shared.fetchActiveGroupChallenges()
+                    async let p4: () = CommunityChallengeService.shared.refreshAll(force: false)
+                    async let p5: () = PrivateChallengeService.shared.refreshAll(force: false)
+                    _ = await (p1, p2, p3, p4, p5)
+                    print("✅ [DASHBOARD] All challenge data refreshed (1v1 + community + private)")
                     
                     // Update last refresh date
                     lastChallengeRefreshDate = Date()
@@ -2102,159 +2120,310 @@ struct DashboardView: View {
         let streak = userManager.currentUser?.currentStreak ?? 0
         let hour = Calendar.current.component(.hour, from: Date())
         let dayOfWeek = Calendar.current.component(.weekday, from: Date())
+        let firstName = getFirstName()
         
-        // Rich variety of messages based on context - emojis at end for alignment
+        // 👤 Gender-aware terms – "queen"/"king", etc.
+        let isFemale = userManager.currentUser?.gender?.lowercased().contains("female") == true
+        let crown = isFemale ? "queen" : "king"
+        let Royal = isFemale ? "Queen" : "King"
+        let legend = isFemale ? "goddess" : "legend"
+        
         var messages: [String] = []
         
-        // Streak-based messages
-        if streak == 0 {
-            messages = [
-                "Today's the day to start something great! 💪",
-                "Every champion started with day one. Let's go! 🚀",
-                "Your fitness journey begins now! 🌟",
-                "No streak? No problem. Start building today! 🔥"
-            ]
-        } else if streak == 1 {
-            messages = [
-                "Day 1 complete! The hardest part is done. 🔥",
-                "You showed up! That's what matters most. 💪",
-                "One day down, many more wins to come! 🚀",
-                "First step taken! Momentum starts here. ⚡"
-            ]
-        } else if streak <= 3 {
-            messages = [
-                "\(streak) days in! You're building a habit. 🔥",
-                "Showing up is the hardest part. You did it \(streak)x! 💪",
-                "Consistency unlocked! Keep stacking days. 🚀",
-                "\(streak)-day streak – your future self thanks you! ⭐"
-            ]
-        } else if streak <= 7 {
-            messages = [
-                "\(streak) days strong! You're in the top 20% now. 🔥",
-                "Almost a full week! Champions are made here. 💪",
-                "Discipline > motivation. You've got both! 🚀",
-                "\(streak) days of proving you're unstoppable! ⚡"
-            ]
-        } else if streak <= 14 {
-            messages = [
-                "Over a week! This is when habits become identity. 🔥",
-                "\(streak) days! You're outworking 90% of people. 💪",
-                "\(streak)-day streak! You're built different. 🌟",
-                "Double digits! Your dedication is inspiring. 🚀"
-            ]
-        } else if streak <= 30 {
-            messages = [
-                "\(streak) days! You've made fitness non-negotiable. 👑",
-                "\(streak)-day legend! This is elite consistency. 🏆",
-                "\(streak) days of pure dedication. Respect! 💎",
-                "\(streak) days strong! Nothing can stop you now. ⚔️"
-            ]
-        } else {
-            messages = [
-                "\(streak) DAYS! You're in the top 1% of humanity. 👑",
-                "\(streak)-day monster! You ARE a fitness machine. 🏆",
-                "\(streak) days! You've mastered consistency. 💎",
-                "\(streak) days! You're rewriting your story. 🔥",
-                "\(streak) days! Your discipline is legendary. ⭐"
-            ]
+        // ─────────────────────────────────────────────
+        // 🏆 CHALLENGE-PERSONALIZED MESSAGES
+        // ─────────────────────────────────────────────
+        if let challenge = challengeService.activeChallenges.first {
+            let oppName = challenge.opponentName?.components(separatedBy: " ").first ?? "your opponent"
+            let resolvedType = challenge.resolvedType
+            let myProgress = challenge.myTodayProgress ?? 0
+            let dailyTarget = challenge.dailyTarget ?? 0
+            let remaining = max(0, dailyTarget - myProgress)
+            let unit = challenge.targetUnit.lowercased()
+            
+            // Winning vs. behind messages
+            if challenge.amWinning {
+                messages.append(contentsOf: [
+                    "You're ahead of \(oppName)! Don't let up, \(crown)! 👑",
+                    "Leading the battle vs \(oppName)! Keep that crown! 🏆",
+                    "\(oppName) is watching your lead – stay locked in! 🔥",
+                    "You're winning, \(firstName)! Make \(oppName) sweat! 💪"
+                ])
+            } else {
+                messages.append(contentsOf: [
+                    "\(oppName) is ahead – time to close the gap! 🔥",
+                    "Behind \(oppName)? Not for long. Let's go, \(crown)! 👑",
+                    "\(oppName) thinks they've got this – prove them wrong! 💪",
+                    "Comeback energy! \(oppName) won't see you coming! ⚡"
+                ])
+            }
+            
+            // Type-specific actionable tips with real numbers
+            if remaining > 0 {
+                switch resolvedType {
+                case .protein:
+                    messages.append(contentsOf: [
+                        "\(remaining)g protein to go! A chicken breast gets you closer! 🍗",
+                        "Need \(remaining)g more protein – Greek yogurt + chicken = easy! 💪",
+                        "\(remaining)g left to crush your protein goal, \(crown)! 🥚"
+                    ])
+                case .hydrate:
+                    let unitLabel = unit.contains("oz") ? "oz" : "ml"
+                    messages.append(contentsOf: [
+                        "\(remaining)\(unitLabel) of water left! Grab that bottle, \(crown)! 💧",
+                        "Stay hydrated! \(remaining)\(unitLabel) more to hit your goal! 🌊",
+                        "Water check! \(remaining)\(unitLabel) to go – almost there! 💦"
+                    ])
+                case .steps:
+                    messages.append(contentsOf: [
+                        "\(remaining.formatted()) steps to go! A quick walk does it! 👟",
+                        "\(remaining.formatted()) more steps to beat \(oppName)! 🚶",
+                        "So close! \(remaining.formatted()) steps left, \(crown)! 🔥"
+                    ])
+                case .calories:
+                    messages.append(contentsOf: [
+                        "\(remaining) calories to go! Get moving, \(crown)! 🔥",
+                        "\(remaining) cals left – a solid workout crushes that! 💪"
+                    ])
+                case .activeMinutes:
+                    messages.append(contentsOf: [
+                        "\(remaining) active minutes left! Any movement counts! ⏱️",
+                        "\(remaining) more minutes to hit your goal, \(crown)! 💪"
+                    ])
+                case .walk, .run:
+                    messages.append(contentsOf: [
+                        "Lace up! A little more distance to beat \(oppName)! 🏃",
+                        "Almost there! Keep moving, \(crown)! 👟"
+                    ])
+                case .lift, .workoutStreak:
+                    messages.append(contentsOf: [
+                        "Time to hit the weights, \(crown)! 🏋️",
+                        "One workout closer to winning – let's get it! 💪"
+                    ])
+                }
+            } else if dailyTarget > 0 {
+                // Already hit daily target
+                messages.append(contentsOf: [
+                    "Daily challenge goal CRUSHED! You're a \(legend)! 🎉",
+                    "\(firstName), you hit your daily target! \(Royal) behavior! 👑",
+                    "Challenge goal: DONE. \(oppName) can't keep up! 🏆"
+                ])
+            }
         }
         
-        // Add time-of-day specific messages
+        // ─────────────────────────────────────────────
+        // 🏋️ WORKOUT-PERSONALIZED MESSAGES
+        // ─────────────────────────────────────────────
+        if let lastWorkout = recentWorkouts.first {
+            let workoutName = lastWorkout.name ?? "your workout"
+            let daysSince = Calendar.current.dateComponents([.day], from: lastWorkout.date ?? Date(), to: Date()).day ?? 0
+            
+            if daysSince == 0 {
+                messages.append(contentsOf: [
+                    "You crushed \(workoutName) today! Amazing, \(crown)! 🔥",
+                    "\(workoutName) ✅ – you're on fire, \(firstName)! 🌟",
+                    "That \(workoutName) was pure \(Royal) energy! 👑"
+                ])
+            } else if daysSince == 1 {
+                messages.append(contentsOf: [
+                    "\(workoutName) yesterday was 🔥! Ready for round two?",
+                    "Great \(workoutName) session yesterday, \(crown)! 💪",
+                    "Your body is still thanking you for that \(workoutName)! 🌟"
+                ])
+            } else if daysSince <= 3 {
+                messages.append(contentsOf: [
+                    "Muscles are rested from \(workoutName) – time to go! 💪",
+                    "\(daysSince) days since \(workoutName)? Fresh and ready, \(crown)! 🚀"
+                ])
+            }
+            
+            // Workout-type specific fun messages
+            let type = (lastWorkout.workoutType ?? workoutName).lowercased()
+            if type.contains("leg") || type.contains("lower") || type.contains("squat") {
+                messages.append("Those legs are powerful! Walk tall, \(crown)! 🦵👑")
+            } else if type.contains("chest") || type.contains("push") || type.contains("bench") {
+                messages.append("Chest day champion! Stand proud, \(crown)! 💪✨")
+            } else if type.contains("back") || type.contains("pull") {
+                messages.append("Back gains loading! Posture on point, \(crown)! 🎯")
+            } else if type.contains("arm") || type.contains("bicep") || type.contains("tricep") {
+                messages.append("Arms looking toned! Flex on 'em, \(crown)! 💪✨")
+            } else if type.contains("shoulder") || type.contains("delt") {
+                messages.append("Shoulders looking strong! Go off, \(crown)! 🏋️")
+            } else if type.contains("core") || type.contains("ab") {
+                messages.append("Core work pays off every day! Love that, \(crown)! 🎯")
+            } else if type.contains("cardio") || type.contains("run") || type.contains("hiit") {
+                messages.append(isFemale ? "Cardio queen energy! You're glowing! ✨🏃‍♀️" : "Cardio beast mode! Keep that engine running! 🏃‍♂️🔥")
+            } else if type.contains("yoga") || type.contains("stretch") || type.contains("flex") {
+                messages.append("Flexibility is a superpower! Namaste, \(crown)! 🧘✨")
+            } else if type.contains("dance") {
+                messages.append(isFemale ? "Dancing queen! You're glowing, keep it going! 💃✨" : "Dance moves AND gains? Unstoppable! 🕺🔥")
+            } else if type.contains("full body") || type.contains("total body") {
+                messages.append("Full body work = full \(crown) energy! 👑🔥")
+            }
+        }
+        
+        // ─────────────────────────────────────────────
+        // 🔥 STREAK-BASED MESSAGES (gender-aware)
+        // ─────────────────────────────────────────────
+        if streak == 0 {
+            messages.append(contentsOf: [
+                "Today's the day to start something great, \(firstName)! 💪",
+                "Every champion started with day one. Let's go! 🚀",
+                "Fresh start energy! Let's get it, \(crown)! 🌟",
+                "Day one? You're about to surprise yourself! 🔥"
+            ])
+        } else if streak == 1 {
+            messages.append(contentsOf: [
+                "Day 1 in the books! The hardest part is done! 🔥",
+                "You showed up, \(firstName)! That's \(Royal) behavior! 💪",
+                "One day down, so many wins to come! 🚀",
+                "First step taken! Momentum starts here, \(crown)! ⚡"
+            ])
+        } else if streak <= 3 {
+            messages.append(contentsOf: [
+                "\(streak) days in! You're building something real! 🔥",
+                "\(streak) days of showing up – so proud of you! 💪",
+                "Keep stacking those days, \(crown)! 🚀",
+                "\(streak)-day streak – your future self is cheering! ⭐"
+            ])
+        } else if streak <= 7 {
+            messages.append(contentsOf: [
+                "\(streak) days strong! Unstoppable, \(crown)! 🔥",
+                "Almost a full week! Champions are made right here! 💪",
+                "Discipline AND heart – you've got both, \(firstName)! 🚀",
+                "\(streak) days of proving you're the real deal! ⚡"
+            ])
+        } else if streak <= 14 {
+            messages.append(contentsOf: [
+                "Over a week! This is becoming who you are! 🔥",
+                "\(streak) days – you're an inspiration, \(firstName)! 💪",
+                "\(streak)-day streak! Absolutely elite, \(crown)! 🌟",
+                "Double digits! Your dedication is beautiful! 🚀"
+            ])
+        } else if streak <= 30 {
+            messages.append(contentsOf: [
+                "\(streak) days! Fitness is non-negotiable for you! 👑",
+                "\(streak)-day \(legend)! Elite consistency! 🏆",
+                "\(streak) days of pure dedication – respect, \(firstName)! 💎",
+                "\(streak) days strong! Nothing can stop you, \(crown)! 🔥"
+            ])
+        } else {
+            messages.append(contentsOf: [
+                "\(streak) DAYS! Top 1% energy, \(crown)! 👑",
+                "\(streak)-day \(legend)! You ARE fitness goals! 🏆",
+                "\(streak) days of mastered consistency, \(firstName)! 💎",
+                "\(streak) days! Your discipline is legendary! 🔥",
+                "\(streak) days! Rewriting what's possible! ⭐"
+            ])
+        }
+        
+        // ─────────────────────────────────────────────
+        // ⏰ TIME-OF-DAY MESSAGES
+        // ─────────────────────────────────────────────
         if hour < 9 {
             messages.append(contentsOf: [
-                "Early bird energy! Morning warriors win the day. ☀️",
-                "Rise and grind! Best time to invest in yourself. 🌅",
-                "Morning check-in! You're already ahead. ⚡"
+                "Early bird energy! Morning \(crown)s win the day! ☀️",
+                "Rise and shine, \(firstName)! Best time to invest in you! 🌅",
+                "Morning check-in! You're already ahead! ⚡"
+            ])
+        } else if hour >= 12 && hour < 14 {
+            messages.append(contentsOf: [
+                "Lunch break? Perfect time for a protein-packed meal! 🥗",
+                "Midday \(crown) energy! Stay fueled, stay strong! 💪"
             ])
         } else if hour >= 17 && hour < 21 {
             messages.append(contentsOf: [
-                "Evening power! Perfect time for gains. 🌙",
-                "End the day strong! Your body is ready. 💪",
-                "Evening workout = better sleep tonight. 🔥"
+                "Evening power! Perfect time to get it in, \(crown)! 🌙",
+                "End the day strong! Your body is ready! 💪",
+                "Evening workout = better sleep tonight! Win-win! 🔥"
+            ])
+        } else if hour >= 21 {
+            messages.append(contentsOf: [
+                "Winding down? You earned tonight's rest, \(crown)! 🌙",
+                "Great day, \(firstName)! Sleep well – gains happen at rest! 😴"
             ])
         }
         
-        // Day-specific messages
+        // ─────────────────────────────────────────────
+        // 📅 DAY-OF-WEEK MESSAGES
+        // ─────────────────────────────────────────────
         if dayOfWeek == 2 { // Monday
             messages.append(contentsOf: [
-                "Monday momentum! Set the tone for the week. 💪",
-                "New week, new opportunities to level up! 🚀",
-                "Monday warriors build championship weeks. 🔥"
+                "Monday momentum! Set the tone, \(crown)! 💪",
+                "New week, new energy! Let's go, \(firstName)! 🚀",
+                "Monday \(crown)s build championship weeks! 🔥"
             ])
+        } else if dayOfWeek == 4 { // Wednesday
+            messages.append("Halfway through the week! Keep that energy, \(crown)! ⚡")
         } else if dayOfWeek == 6 { // Friday
             messages.append(contentsOf: [
-                "Friday finish! End the week on a high note. 🎉",
-                "Weekend warrior mode: activated! 💪",
-                "Friday flex! You earned this week. 🏆"
+                "Friday vibes! End the week on a high note! 🎉",
+                "Weekend \(crown) mode: activated! 💪",
+                "Friday flex! You earned this week, \(firstName)! 🏆"
             ])
         } else if dayOfWeek == 1 || dayOfWeek == 7 { // Weekend
             messages.append(contentsOf: [
-                "Weekend dedication = next-level results. 🌴",
-                "Weekends count too! Stay locked in. 💪",
-                "Weekend warriors separate themselves here. ⚡"
+                "Weekend dedication = next-level results! 🌴",
+                "Weekends count too! Stay locked in, \(crown)! 💪",
+                "Weekend work builds real results! ⚡"
             ])
         }
         
-        // Health & wellness reminders (always included for variety)
+        // ─────────────────────────────────────────────
+        // 🌿 WELLNESS REMINDERS (positive, never insulting)
+        // ─────────────────────────────────────────────
         messages.append(contentsOf: [
-            "Your core could use some work today. 🎯",
-            "Time to hydrate! Aim for 8 glasses today. 💧",
-            "Hit your step goal? Keep moving! 👟",
-            "Don't skip leg day! Your future self thanks you. 🦵",
-            "Protein is key! Are you hitting your macros? 🥩",
-            "Stretch it out! Flexibility = longevity. 🧘",
-            "Sleep is gains! Aim for 7-8 hours tonight. 😴",
-            "Upper body needs attention! Push yourself. 💪",
-            "Recovery day? Active rest still counts! 🌿",
-            "Cardio calling! Get that heart rate up. ❤️",
-            "Posture check! Sit up straight, king. 👑",
-            "Meal prep Sunday = success all week. 🥗",
-            "Back day? Build that V-taper! 🔱",
-            "Arms looking small? Time for curls! 💪",
-            "Shoulders make the frame! Press it out. 🏋️",
-            "Core strength = better everything. 🎯",
-            "Glutes are the powerhouse! Don't neglect them. 🍑",
-            "Water before coffee! Hydrate first. ☕",
-            "Walking counts! 10K steps for the win. 🚶",
-            "Rest days build muscle too! Listen to your body. 🛏️"
+            "Core work today? Your whole body will thank you! 🎯",
+            "Hydration check! Grab that water bottle, \(crown)! 💧",
+            "Hit your step goal yet? Every step counts! 👟",
+            "Leg day is \(crown) behavior! 🦵👑",
+            "Protein fuels progress! Hitting your macros? 🥩",
+            "Stretch it out! Flexibility is a superpower! 🧘",
+            "Sleep is where the magic happens – 7-8 hours tonight? 😴",
+            "Recovery day? Active rest still counts, \(crown)! 🌿",
+            "Get that heart rate up today! Your heart loves you! ❤️",
+            "Posture check! Stand tall, \(crown)! 👑",
+            "Meal prep = future you saying 'thank you!' 🥗",
+            "Shoulder day builds confidence! Go get it! 🏋️",
+            "Strong core = strong everything! 🎯",
+            "Glutes are the powerhouse! Show them love today! 🍑",
+            "Water before coffee! Your body will thank you! ☕",
+            "Walking counts! 10K steps for the win! 🚶",
+            "Rest days build strength too! Listen to your body! 🛏️",
+            "You're doing amazing, \(firstName)! Keep going! ✨",
+            isFemale ? "Strong is beautiful – and you're proof! 💪✨" : "Putting in the work every day! Respect, \(crown)! 💪🔥"
         ])
         
-        // 🧠 SMART INSIGHTS: Prioritize personalized insights from analysis
-        // Show database-driven insights 40% of the time when available
+        // ─────────────────────────────────────────────
+        // 🧠 SMART INSIGHTS (prioritized when available)
+        // ─────────────────────────────────────────────
         if !insightsService.activeInsights.isEmpty && Int.random(in: 0...9) < 4 {
             if let insight = insightsService.activeInsights.randomElement() {
                 return insight.message
             }
         }
         
-        // 🔥 STREAK INSIGHTS: Add streak-specific insights from tracking
+        // 🔥 STREAK INSIGHTS from tracking
         if !insightsService.streaks.isEmpty {
-            // Protein streak insight
             if let proteinStreak = insightsService.streaks.first(where: { $0.streakType == "protein_goal" }),
                proteinStreak.currentStreak >= 3 {
-                messages.append("\(proteinStreak.currentStreak)-day protein streak! Keep feeding those muscles! 🍗")
+                messages.append("\(proteinStreak.currentStreak)-day protein streak! Keep fueling those gains! 🍗")
             }
-            
-            // Hydration streak insight
             if let hydrationStreak = insightsService.streaks.first(where: { $0.streakType == "hydration" }),
                hydrationStreak.currentStreak >= 3 {
-                messages.append("\(hydrationStreak.currentStreak) days hydrated! Your body is thanking you! 💧")
+                messages.append("\(hydrationStreak.currentStreak) days hydrated! Your body loves you, \(crown)! 💧")
             }
-            
-            // Weight logging streak
             if let weightStreak = insightsService.streaks.first(where: { $0.streakType == "weight_log" }),
                weightStreak.currentStreak >= 5 {
-                messages.append("\(weightStreak.currentStreak)-day weight logging streak! Data = results! ⚖️")
+                messages.append("\(weightStreak.currentStreak)-day weight logging streak! Data drives results! ⚖️")
             }
-            
-            // Logging consistency
             if let loggingStreak = insightsService.streaks.first(where: { $0.streakType == "logging" }),
                loggingStreak.currentStreak >= 7 {
-                messages.append("\(loggingStreak.currentStreak) days tracking! Consistency is your superpower! 📊")
+                messages.append("\(loggingStreak.currentStreak) days tracking! Consistency is your superpower, \(crown)! 📊")
             }
         }
         
-        return messages.randomElement() ?? "Let's make today count! 💪"
+        return messages.randomElement() ?? "Let's make today amazing, \(firstName)! 💪"
     }
     
     // MARK: - Smart Active Program Widget
@@ -2857,6 +3026,7 @@ struct DashboardView: View {
                         // Opponent photo
                         challengeAvatar(
                             isUser: false,
+                            userId: challenge.opponentId.uuidString,
                             photoUrl: challenge.opponentPhotoUrl,
                             name: challenge.opponentName,
                             done: false,
@@ -3259,6 +3429,7 @@ struct DashboardView: View {
                 )
                 challengeAvatar(
                     isUser: false,
+                    userId: challenge.opponentId.uuidString,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
                     done: oppDone,
@@ -3441,6 +3612,7 @@ struct DashboardView: View {
                 
                 challengeAvatar(
                     isUser: false,
+                    userId: challenge.opponentId.uuidString,
                     photoUrl: challenge.opponentPhotoUrl,
                     name: challenge.opponentName,
                     done: !amWinningNow && oppToday > 0,
@@ -3454,7 +3626,7 @@ struct DashboardView: View {
     
     // MARK: - Challenge Avatar Helper
     
-    private func challengeAvatar(isUser: Bool, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color]) -> some View {
+    private func challengeAvatar(isUser: Bool, userId: String? = nil, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color]) -> some View {
         Group {
             if isUser {
                 if let cachedImage = ProfilePhotoCache.shared.cachedImage {
@@ -3465,43 +3637,26 @@ struct DashboardView: View {
                         .clipShape(Circle())
                         .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
                 } else {
-                    Circle()
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 36, height: 36)
-                        .overlay(
-                            Text(name?.prefix(1).uppercased() ?? "Y")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                    CachedFriendPhoto(
+                        friendId: SupabaseManager.shared.currentUser?.id.uuidString ?? "me",
+                        photoUrl: nil,
+                        name: name ?? "You",
+                        size: 36,
+                        showGradientRing: false,
+                        gradientColors: gradientColors
+                    )
+                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
                 }
             } else {
-                if let photoUrl = photoUrl, !photoUrl.isEmpty {
-                    AsyncImage(url: URL(string: photoUrl)) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Circle()
-                            .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .overlay(
-                                Text(name?.prefix(1).uppercased() ?? "F")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                            )
-                    }
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
-                } else {
-                    Circle()
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 36, height: 36)
-                        .overlay(
-                            Text(name?.prefix(1).uppercased() ?? "F")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
-                }
+                CachedFriendPhoto(
+                    friendId: userId ?? UUID().uuidString,
+                    photoUrl: photoUrl,
+                    name: name ?? "Friend",
+                    size: 36,
+                    showGradientRing: false,
+                    gradientColors: gradientColors
+                )
+                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
             }
         }
     }

@@ -26,6 +26,7 @@ struct ChallengeDetailView: View {
     @State private var notifyOnOpponentComplete = true
     @State private var isTogglingNotification = false
     @State private var lastSyncedSteps = 0
+    @State private var showingReactionPicker = false
     
     private var cardBackground: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color.white
@@ -57,9 +58,21 @@ struct ChallengeDetailView: View {
                         headToHeadSection
                             .fixedSize(horizontal: false, vertical: true)
                         
+                        // 🗣️ Battle Cry / 💪 Power Up send button
+                        if challenge.status == "active" {
+                            reactionSendSection
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        
                         // Progress bars comparison
                         progressComparisonSection
                             .fixedSize(horizontal: false, vertical: true)
+                        
+                        // 🗣️ Reaction Feed (Battle Log / Hype Feed)
+                        if challenge.status == "active" {
+                            ReactionFeedView(challenge: challenge)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         
                         // Stats grid
                         statsGridSection
@@ -150,6 +163,11 @@ struct ChallengeDetailView: View {
             }
         } message: {
             Text("This will end the challenge for both you and \(challenge.opponentName?.components(separatedBy: " ").first ?? "your friend"). They will be notified that you cancelled.")
+        }
+        .sheet(isPresented: $showingReactionPicker) {
+            ReactionPickerSheet(challenge: challenge, onSend: { _ in })
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -429,6 +447,72 @@ struct ChallengeDetailView: View {
                     lineWidth: 1.5
                 )
         )
+    }
+    
+    // MARK: - Reaction Send Section
+    
+    private var reactionSendSection: some View {
+        let isCompetition = challenge.mode == .competition
+        let themeGradient: [Color] = isCompetition ? [.orange, .red] : [.blue, .cyan]
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "them"
+        
+        return Button {
+            HapticManager.impact(.medium)
+            showingReactionPicker = true
+        } label: {
+            HStack(spacing: 12) {
+                // Animated icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(colors: themeGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .frame(width: 42, height: 42)
+                    
+                    Text(isCompetition ? "🗣️" : "⚡")
+                        .font(.system(size: 20))
+                }
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isCompetition ? "Send a Battle Cry" : "Send a Power Up")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    Text(isCompetition
+                         ? "Talk smack to \(opponentFirst) 😈"
+                         : "Hype up \(opponentFirst) 💪")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
+                    )
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(cardBackground)
+                    .shadow(color: themeGradient[0].opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [themeGradient[0].opacity(0.4), themeGradient[1].opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Progress Comparison Section

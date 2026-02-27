@@ -295,6 +295,11 @@ struct CommunityDetailResponse: Codable {
     
     var displayEmoji: String { emoji ?? "🌍" }
     
+    /// Shareable URL for this community challenge
+    var shareURL: URL? {
+        URL(string: "https://fit33.app/c/\(inviteSlug)")
+    }
+    
     var resolvedType: ChallengeType {
         ChallengeType(rawValue: challengeType) ?? .steps
     }
@@ -555,6 +560,9 @@ class CommunityChallengeService: ObservableObject {
     /// Stores previous ranks for delta computation: challengeId → userId → rank
     private var previousRanks: [UUID: [UUID: Int]] = [:]
     
+    /// Tracks friend IDs we've already seen in discoverable challenges (for "friend joined" notifications)
+    private var knownDiscoverableFriendIds: Set<UUID> = []
+    
     /// Timestamp of last full refresh to avoid redundant calls
     private var lastRefreshTime: Date?
     
@@ -604,6 +612,25 @@ class CommunityChallengeService: ObservableObject {
             computeRankDeltas(newChallenges: result)
             
             myChallenges = result
+            
+            // Preload profile photos for all visible participants
+            var photoData: [(id: String, url: String?)] = []
+            for challenge in result {
+                if let participants = challenge.topParticipants {
+                    for p in participants {
+                        photoData.append((id: p.userId.uuidString, url: p.profilePhotoUrl))
+                    }
+                }
+                if let friends = challenge.friendsIn {
+                    for f in friends {
+                        photoData.append((id: f.userId.uuidString, url: f.profilePhotoUrl))
+                    }
+                }
+            }
+            if !photoData.isEmpty {
+                FriendPhotoCache.shared.preloadPhotos(for: photoData)
+            }
+            
             #if DEBUG
             print("✅ [COMMUNITY] Fetched \(result.count) community challenges")
             #endif
@@ -669,17 +696,63 @@ class CommunityChallengeService: ObservableObject {
             let result: [DiscoverableCommunityChallenge] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_discoverable_community_challenges", params: DiscoverParams(
                     p_timezone: TimeZone.current.identifier,
-                    p_limit: 10
+                    p_limit: 20
                 ))
                 .execute()
                 .value
             
-            discoverableChallenges = result
+            // Sort by friends count descending so communities with most friends appear first
+            let sorted = result.sorted { ($0.friendsCount) > ($1.friendsCount) }
+            
+            // Detect NEW friends in discoverable challenges for notification
+            notifyNewFriendJoins(newChallenges: sorted)
+            
+            discoverableChallenges = sorted
             #if DEBUG
-            print("✅ [COMMUNITY] Fetched \(result.count) discoverable friend communities")
+            print("✅ [COMMUNITY] Fetched \(sorted.count) discoverable friend communities (sorted by friend count)")
             #endif
         } catch {
             print("❌ [COMMUNITY] Error fetching discoverable challenges: \(error)")
+        }
+    }
+    
+    /// Detect when a new friend joins a community we haven't joined,
+    /// and send a throttled notification to encourage the user to check it out.
+    private func notifyNewFriendJoins(newChallenges: [DiscoverableCommunityChallenge]) {
+        // Build current set of friend IDs across all discoverable challenges
+        var currentFriendIds = Set<UUID>()
+        for challenge in newChallenges {
+            for friend in challenge.friendsInChallenge ?? [] {
+                currentFriendIds.insert(friend.userId)
+            }
+        }
+        
+        // On first load, just seed the known set (don't spam on app launch)
+        guard !knownDiscoverableFriendIds.isEmpty else {
+            knownDiscoverableFriendIds = currentFriendIds
+            return
+        }
+        
+        // Find truly new friend IDs
+        let newFriendIds = currentFriendIds.subtracting(knownDiscoverableFriendIds)
+        knownDiscoverableFriendIds = currentFriendIds
+        
+        guard !newFriendIds.isEmpty else { return }
+        
+        // Find the challenge with the most friends that contains one of these new friend IDs
+        // (pick the most compelling one to notify about)
+        for challenge in newChallenges {
+            guard let friends = challenge.friendsInChallenge else { continue }
+            if let newFriend = friends.first(where: { newFriendIds.contains($0.userId) }) {
+                let friendName = newFriend.name ?? newFriend.username ?? "A friend"
+                NotificationManager.shared.sendCommunityFriendJoinedNotification(
+                    friendName: friendName,
+                    challengeTitle: challenge.title,
+                    challengeEmoji: challenge.displayEmoji,
+                    inviteSlug: challenge.inviteSlug
+                )
+                break // Only send one notification (throttle handles frequency)
+            }
         }
     }
     
@@ -1145,6 +1218,12 @@ class CommunityChallengeService: ObservableObject {
     func shareMessage(for challenge: CommunityChallenge) -> String {
         let url = challenge.shareURL?.absoluteString ?? "https://fit33.app"
         return "\(challenge.displayEmoji) Join me on the \"\(challenge.title)\" challenge on Fit33! \(challenge.formattedParticipantCount) people are already in. Can you hit \(challenge.dailyTarget) \(challenge.targetUnit) daily?\n\n\(url)"
+    }
+    
+    /// Generate a share message for a community challenge detail (used from CommunityDetailView)
+    func shareMessage(for detail: CommunityDetailResponse) -> String {
+        let url = detail.shareURL?.absoluteString ?? "https://fit33.app"
+        return "\(detail.displayEmoji) Join me on the \"\(detail.title)\" challenge on Fit33! \(detail.participantCount) people are already in. Can you hit \(detail.dailyTarget) \(detail.targetUnit) daily?\n\n\(url)"
     }
     
     /// Generate a share message when you hit your target

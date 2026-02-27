@@ -164,6 +164,18 @@ struct WorkoutTabView: View {
                 deepLinkManager.pendingDestination = nil
                 print("🌍 Deep link: Navigating to community challenges")
                 
+            // Private challenge destinations
+            case .privateChallengeDetail(let challengeId):
+                deepLinkManager.pendingPrivateChallengeId = challengeId
+                deepLinkManager.showPrivateChallengeSheet = true
+                deepLinkManager.pendingDestination = nil
+                print("🔒 Deep link: Opening private challenge \(challengeId)")
+            case .privateChallengeInvite(let challengeId):
+                deepLinkManager.pendingPrivateChallengeId = challengeId
+                deepLinkManager.showPrivateChallengeSheet = true
+                deepLinkManager.pendingDestination = nil
+                print("🔒 Deep link: Opening private challenge invite \(challengeId)")
+                
             // These destinations are handled by MainTabView (tab switching)
             case .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker, .workoutHistory, .personalRecord, .streakInfo:
                 // Already handled by MainTabView, just clear the destination

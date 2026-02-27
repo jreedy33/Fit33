@@ -3278,23 +3278,15 @@ struct NewOnboardingView: View {
         let hasFailed = failedFriendRequests.contains(friend.userId)
         
         return HStack(spacing: 14) {
-            // Avatar
-            if let photoUrl = friend.profilePhotoUrl, let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 50, height: 50)
-                            .clipShape(Circle())
-                    default:
-                        friendInitialsCircle(friend: friend)
-                    }
-                }
-            } else {
-                friendInitialsCircle(friend: friend)
-            }
+            // Avatar (cached)
+            CachedFriendPhoto(
+                friendId: friend.userId.uuidString,
+                photoUrl: friend.profilePhotoUrl,
+                name: friend.name ?? friend.username ?? "?",
+                size: 50,
+                showGradientRing: false,
+                gradientColors: [.blue, .purple]
+            )
             
             // Name & username
             VStack(alignment: .leading, spacing: 2) {

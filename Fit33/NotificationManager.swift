@@ -18,7 +18,16 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case groupChallengeInvite = "group_challenge_invite"
     case challengeUpdate = "challenge_update"
     case challengeProgress = "challenge_progress"
+    case challengeReaction = "challenge_reaction"
     case challengeCancelled = "challenge_cancelled"
+    
+    // Community Challenges
+    case communityFriendJoined = "community_friend_joined"
+    
+    // Private Challenges
+    case privateChallengeInvite = "private_challenge_invite"
+    case privateChallengeUpdate = "private_challenge_update"
+    case privateChallengeMessage = "private_challenge_message"
     
     // Progress & Achievements
     case personalRecord = "personal_record"
@@ -52,7 +61,12 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .groupChallengeInvite: return "Group Challenge Invites"
         case .challengeUpdate: return "Challenge Updates"
         case .challengeProgress: return "Challenge Progress"
+        case .challengeReaction: return "Challenge Reactions"
         case .challengeCancelled: return "Challenge Cancelled"
+        case .communityFriendJoined: return "Friend Joined Community"
+        case .privateChallengeInvite: return "Private Challenge Invites"
+        case .privateChallengeUpdate: return "Private Challenge Updates"
+        case .privateChallengeMessage: return "Private Challenge Messages"
         case .personalRecord: return "Personal Records"
         case .streakMilestone: return "Streak Celebrations"
         case .levelUp: return "Level Up Alerts"
@@ -80,7 +94,12 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .groupChallengeInvite: return "Notify when friends invite you to group challenges"
         case .challengeUpdate: return "Updates on your active challenges"
         case .challengeProgress: return "Notify when opponent completes their daily goal"
+        case .challengeReaction: return "Battle cries and power ups from your challenge opponent"
         case .challengeCancelled: return "Notify when a challenge is cancelled"
+        case .communityFriendJoined: return "Notify when friends join a community challenge"
+        case .privateChallengeInvite: return "Notify when invited to private challenges"
+        case .privateChallengeUpdate: return "Updates on your private challenge communities"
+        case .privateChallengeMessage: return "Messages in your private challenge groups"
         case .personalRecord: return "Celebrate when you beat your best"
         case .streakMilestone: return "Celebrate streak milestones"
         case .levelUp: return "Notify when you level up"
@@ -108,7 +127,12 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .groupChallengeInvite: return "trophy.fill"
         case .challengeUpdate: return "chart.line.uptrend.xyaxis"
         case .challengeProgress: return "flame.fill"
+        case .challengeReaction: return "bubble.left.fill"
         case .challengeCancelled: return "xmark.circle.fill"
+        case .communityFriendJoined: return "person.2.circle.fill"
+        case .privateChallengeInvite: return "lock.shield.fill"
+        case .privateChallengeUpdate: return "person.3.fill"
+        case .privateChallengeMessage: return "bubble.left.and.bubble.right.fill"
         case .personalRecord: return "trophy.fill"
         case .streakMilestone: return "flame.fill"
         case .levelUp: return "star.fill"
@@ -136,7 +160,12 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .groupChallengeInvite: return .orange
         case .challengeUpdate: return .purple
         case .challengeProgress: return .blue
+        case .challengeReaction: return .orange
         case .challengeCancelled: return .red
+        case .communityFriendJoined: return .cyan
+        case .privateChallengeInvite: return .purple
+        case .privateChallengeUpdate: return .purple
+        case .privateChallengeMessage: return .pink
         case .personalRecord: return .yellow
         case .streakMilestone: return .orange
         case .levelUp: return .purple
@@ -165,7 +194,12 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .groupChallengeInvite,    // Social engagement - group challenge invites
              .challengeUpdate,         // Keep users engaged with active challenges
              .challengeProgress,       // Notify when opponent completes daily goal
+             .challengeReaction,       // Battle cries and power ups from opponent
              .challengeCancelled,      // Important to know when challenge ends
+             .communityFriendJoined,   // Social discovery - friend joined a community
+             .privateChallengeInvite,  // Private challenge invites
+             .privateChallengeUpdate,  // Private challenge member joins/progress
+             .privateChallengeMessage, // Chat messages in private challenges
              .personalRecord,          // Celebrate achievements
              .streakMilestone,         // Celebrate consistency
              .levelUp,                 // Gamification engagement
@@ -219,7 +253,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         case .workout:
             return [.dailyWorkoutReminder, .streakProtection, .workoutComplete, .comebackReminder]
         case .social:
-            return [.sharedWorkout, .friendRequest, .challengeInvite, .groupChallengeInvite, .challengeUpdate]
+            return [.sharedWorkout, .friendRequest, .challengeInvite, .groupChallengeInvite, .challengeUpdate, .challengeReaction, .communityFriendJoined, .privateChallengeInvite, .privateChallengeUpdate, .privateChallengeMessage]
         case .achievements:
             return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
         case .health:
@@ -372,14 +406,15 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let pendingFriendRequests = FriendService.shared.pendingRequests.count
         let pendingChallengeInvites = ChallengeService.shared.pendingInvites.count
         let unreadWorkouts = FriendService.shared.unreadWorkoutCount
+        let pendingPrivateChallengeInvites = PrivateChallengeService.shared.pendingInvites.count
         
-        let total = pendingFriendRequests + pendingChallengeInvites + unreadWorkouts
+        let total = pendingFriendRequests + pendingChallengeInvites + unreadWorkouts + pendingPrivateChallengeInvites
         
         UNUserNotificationCenter.current().setBadgeCount(total) { error in
             if let error = error {
                 print("❌ [BADGE] Failed to update badge: \(error)")
             } else {
-                print("📛 [BADGE] Updated to \(total) (friends=\(pendingFriendRequests), challenges=\(pendingChallengeInvites), workouts=\(unreadWorkouts))")
+                print("📛 [BADGE] Updated to \(total) (friends=\(pendingFriendRequests), challenges=\(pendingChallengeInvites), private=\(pendingPrivateChallengeInvites), workouts=\(unreadWorkouts))")
             }
         }
     }
@@ -514,12 +549,40 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             intentIdentifiers: []
         )
         
+        // Private challenge invite category
+        let acceptPrivateChallengeAction = UNNotificationAction(
+            identifier: "ACCEPT_PRIVATE_CHALLENGE",
+            title: "Join",
+            options: [.foreground]
+        )
+        
+        let viewPrivateChallengeAction = UNNotificationAction(
+            identifier: "VIEW_PRIVATE_CHALLENGE",
+            title: "View",
+            options: [.foreground]
+        )
+        
+        let privateChallengeInviteCategory = UNNotificationCategory(
+            identifier: "PRIVATE_CHALLENGE_INVITE",
+            actions: [acceptPrivateChallengeAction, viewPrivateChallengeAction],
+            intentIdentifiers: []
+        )
+        
+        // Private challenge message category
+        let privateChallengeMessageCategory = UNNotificationCategory(
+            identifier: "PRIVATE_CHALLENGE_MESSAGE",
+            actions: [],
+            intentIdentifiers: []
+        )
+        
         UNUserNotificationCenter.current().setNotificationCategories([
             workoutCategory,
             nutritionCategory,
             sharedWorkoutCategory,
             challengeInviteCategory,
-            contactJoinedCategory
+            contactJoinedCategory,
+            privateChallengeInviteCategory,
+            privateChallengeMessageCategory
         ])
     }
     
@@ -967,6 +1030,83 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "challenge_completed_\(challengeId)")
     }
     
+    // MARK: - Private Challenge Notifications
+    
+    /// Private challenge invite notification - when someone invites you to a private challenge
+    func sendPrivateChallengeInviteNotification(fromName: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.privateChallengeInvite) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "🔒 \(fromName) invited you!"
+        content.body = "Join \"\(challengeTitle)\" — a private challenge community."
+        content.sound = .default
+        content.categoryIdentifier = "PRIVATE_CHALLENGE_INVITE"
+        
+        content.userInfo = [
+            "type": "private_challenge_invite",
+            "challenge_id": challengeId,
+            "sender_name": fromName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "private_invite_\(challengeId)")
+    }
+    
+    /// Private challenge member joined notification - when someone accepts your invite
+    func sendPrivateChallengeMemberJoinedNotification(memberName: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.privateChallengeUpdate) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(memberName) joined your challenge! 🎉"
+        content.body = "They're now part of \"\(challengeTitle)\". The group is growing!"
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "private_challenge_member_joined",
+            "challenge_id": challengeId,
+            "member_name": memberName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "private_joined_\(challengeId)_\(Date().timeIntervalSince1970)")
+    }
+    
+    /// Private challenge progress notification - when a member hits their daily target
+    func sendPrivateChallengeProgressNotification(memberName: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.privateChallengeUpdate) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(memberName) hit today's target! 🔥"
+        content.body = "Keep up in \"\(challengeTitle)\" — don't fall behind!"
+        content.sound = .default
+        
+        content.userInfo = [
+            "type": "private_challenge_progress",
+            "challenge_id": challengeId,
+            "member_name": memberName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "private_progress_\(challengeId)_\(Date().timeIntervalSince1970)")
+    }
+    
+    /// Private challenge chat message notification
+    func sendPrivateChallengeMessageNotification(senderName: String, message: String, challengeTitle: String, challengeId: String) {
+        guard isNotificationEnabled(.privateChallengeMessage) && isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(senderName) in \(challengeTitle)"
+        content.body = message.count > 100 ? String(message.prefix(100)) + "..." : message
+        content.sound = .default
+        content.categoryIdentifier = "PRIVATE_CHALLENGE_MESSAGE"
+        content.threadIdentifier = "private_chat_\(challengeId)"
+        
+        content.userInfo = [
+            "type": "private_challenge_message",
+            "challenge_id": challengeId,
+            "sender_name": senderName
+        ]
+        
+        sendImmediateNotification(content: content, identifier: "private_msg_\(challengeId)_\(Date().timeIntervalSince1970)")
+    }
+    
     /// Workout completed - cancel today's reminders
     func workoutCompleted() {
         // Cancel today's workout reminders since they did it
@@ -1129,6 +1269,22 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
                     print("✅ [NOTIFICATIONS] Group challenges refreshed + progress synced")
                     
+                case "community_friend_joined":
+                    print("🔄 [NOTIFICATIONS] Community friend joined - refreshing discoverable")
+                    await CommunityChallengeService.shared.fetchDiscoverableChallenges()
+                    
+                case "private_challenge_invite":
+                    print("🔄 [NOTIFICATIONS] Private challenge invite received - refreshing")
+                    await PrivateChallengeService.shared.fetchPendingInvites()
+                    
+                case "private_challenge_member_joined", "private_challenge_progress":
+                    print("🔄 [NOTIFICATIONS] Private challenge update - refreshing")
+                    await PrivateChallengeService.shared.refreshAll(force: true)
+                    
+                case "private_challenge_message":
+                    print("🔄 [NOTIFICATIONS] Private challenge message - refreshing")
+                    await PrivateChallengeService.shared.fetchMyChallenges()
+                    
                 case "friend_request", "friend_request_received":
                     await FriendService.shared.fetchPendingRequests()
                     
@@ -1179,6 +1335,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 // Navigate to friend suggestions/requests when "Add Friend" tapped
                 DeepLinkManager.shared.pendingDestination = .friendRequests
                 print("👥 [NOTIFICATIONS] User tapped Add Friend from contact joined notification")
+                
+            case "ACCEPT_PRIVATE_CHALLENGE", "VIEW_PRIVATE_CHALLENGE":
+                // Navigate to dashboard so user sees the private challenge invite widget
+                await PrivateChallengeService.shared.fetchPendingInvites()
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                print("🔒 [NOTIFICATIONS] User tapped private challenge action")
                 
             case "SNOOZE_1H":
                 // Reschedule notification for 1 hour later
@@ -1239,6 +1401,18 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .friendRequests
             print("👥 [NOTIFICATIONS] Contact joined Fit33 - opening friend requests tab")
             
+        case "community_friend_joined":
+            // Deep link to the community join sheet so the user can join too
+            if let slug = userInfo["invite_slug"] as? String {
+                DeepLinkManager.shared.pendingCommunitySlug = slug
+                DeepLinkManager.shared.showCommunityJoinSheet = true
+                print("🌍 [NOTIFICATIONS] Friend joined community — opening join sheet for: \(slug)")
+            } else {
+                // Fallback: browse communities
+                DeepLinkManager.shared.pendingDestination = .communityChallengeBrowse
+                print("🌍 [NOTIFICATIONS] Friend joined community — opening browse")
+            }
+            
         case "challenge_invite":
             // Fetch invites FIRST so the widget has data when dashboard appears
             await ChallengeService.shared.fetchPendingInvites()
@@ -1258,6 +1432,33 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
             print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
+            
+        case "private_challenge_invite":
+            await PrivateChallengeService.shared.fetchPendingInvites()
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .privateChallengeInvite(challengeId: challengeId)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+            }
+            print("🔒 [NOTIFICATIONS] Opening dashboard for private challenge invite")
+            
+        case "private_challenge_member_joined", "private_challenge_progress":
+            await PrivateChallengeService.shared.refreshAll(force: true)
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .privateChallengeDetail(challengeId: challengeId)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+            }
+            print("🔒 [NOTIFICATIONS] Private challenge update — opening detail")
+            
+        case "private_challenge_message":
+            await PrivateChallengeService.shared.fetchMyChallenges()
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .privateChallengeDetail(challengeId: challengeId)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+            }
+            print("🔒 [NOTIFICATIONS] Private challenge message — opening detail")
             
         case "challenge_accepted", "challenge_progress", "challenge_completed":
             await ChallengeService.shared.fetchPendingSentChallenges()
@@ -1380,6 +1581,50 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     // MARK: - Contact Joined Notification
     
     /// Send notification when a contact joins Fit33
+    // MARK: - Community Friend Joined
+    
+    /// Throttle key for community friend joined notifications.
+    /// We only send 1 of these every 6 hours to avoid spam.
+    private static let communityFriendJoinedThrottleKey = "last_community_friend_joined_notif"
+    private static let communityFriendJoinedThrottleInterval: TimeInterval = 6 * 60 * 60 // 6 hours
+    
+    func sendCommunityFriendJoinedNotification(friendName: String, challengeTitle: String, challengeEmoji: String, inviteSlug: String) {
+        guard isNotificationEnabled(.communityFriendJoined) else {
+            print("⚠️ [NOTIFICATIONS] Community friend joined notifications disabled")
+            return
+        }
+        
+        // Throttle: max 1 notification per 6 hours to avoid being annoying
+        let lastSent = UserDefaults.standard.double(forKey: Self.communityFriendJoinedThrottleKey)
+        if lastSent > 0 && Date().timeIntervalSince1970 - lastSent < Self.communityFriendJoinedThrottleInterval {
+            print("⏳ [NOTIFICATIONS] Community friend joined throttled — last sent \(Int((Date().timeIntervalSince1970 - lastSent) / 60))min ago")
+            return
+        }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "\(challengeEmoji) \(friendName) joined a community!"
+        content.body = "Your friend joined the \"\(challengeTitle)\" challenge. Tap to check it out!"
+        content.categoryIdentifier = "COMMUNITY_FRIEND_JOINED"
+        content.sound = .default
+        content.userInfo = [
+            "type": "community_friend_joined",
+            "invite_slug": inviteSlug,
+            "friend_name": friendName,
+            "challenge_title": challengeTitle
+        ]
+        content.threadIdentifier = "community_discovery"
+        
+        sendImmediateNotification(
+            content: content,
+            identifier: "community_friend_joined_\(inviteSlug)_\(Date().timeIntervalSince1970)"
+        )
+        
+        // Record the send time for throttling
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.communityFriendJoinedThrottleKey)
+        
+        print("📬 [NOTIFICATIONS] Sent community friend joined notification: \(friendName) → \(challengeTitle)")
+    }
+    
     func sendContactJoinedNotification(contactName: String, newUserId: String) {
         guard isNotificationEnabled(.contactJoined) else {
             print("⚠️ [NOTIFICATIONS] Contact joined notifications disabled")

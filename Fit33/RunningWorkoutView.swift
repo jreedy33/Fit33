@@ -1198,7 +1198,7 @@ struct GoalSetupSheet: View {
     private let accentColor = Color(red: 0.2, green: 1.0, blue: 0.6)
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
                 
@@ -1308,7 +1308,7 @@ struct RunCompletionView: View {
     private let accentColor = Color(red: 0.2, green: 1.0, blue: 0.6)
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(

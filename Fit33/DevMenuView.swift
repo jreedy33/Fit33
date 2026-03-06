@@ -1171,7 +1171,7 @@ struct BugDetailView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Status section
@@ -2004,7 +2004,7 @@ struct BugReportFullLogView: View {
     @State private var showingShareSheet = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     // Quick stats
@@ -2092,7 +2092,7 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
 }
 
 #Preview("Dev Menu") {
-    NavigationView {
+    NavigationStack {
         DevMenuView()
     }
 }

@@ -64,7 +64,7 @@ struct PrivateChallengeCreationFlow: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
                     .ignoresSafeArea()

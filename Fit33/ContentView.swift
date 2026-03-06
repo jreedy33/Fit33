@@ -1039,7 +1039,7 @@ struct SimpleMealPlanView: View {
     @State private var showShoppingList = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Hidden NavigationLink for food search
                 NavigationLink(
@@ -3987,7 +3987,7 @@ struct SimpleProfileSetupView: View {
     @State private var gender: String = "Male"
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     VStack(spacing: 16) {
@@ -4141,7 +4141,7 @@ struct USDAFoodSearchView: View {
     @State private var searchDebouncer: Timer?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Search Header
                 searchHeader
@@ -4747,7 +4747,7 @@ struct DetailedNutritionView: View {
     let insights: [NutritionInsight]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Detailed Macronutrient Chart
@@ -5215,7 +5215,7 @@ struct MacroGoalsExplainerView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header

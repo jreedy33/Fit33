@@ -37,7 +37,7 @@ struct FriendProfileView: View {
     // activeChallengesWithFriend is now a @State variable loaded on appear
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(
@@ -109,14 +109,14 @@ struct FriendProfileView: View {
                 }
             }
             .fullScreenCover(isPresented: $showingChallengeFlow) {
-                NavigationView {
+                NavigationStack {
                     ChallengeCreationFlow(friend: friend)
                 }
-                .navigationViewStyle(.stack)  // Force single-column layout on iPad
+                // NavigationStack doesn't need .navigationViewStyle
             }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
-                    NavigationView {
+                    NavigationStack {
                         ChallengeDetailView(challenge: challenge)
                             .toolbar {
                                 ToolbarItem(placement: .navigationBarLeading) {
@@ -885,7 +885,7 @@ struct CreateWorkoutForFriendView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(
@@ -1456,7 +1456,7 @@ struct ExercisePickerView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 LinearGradient(
                     gradient: Gradient(colors: colorScheme == .dark

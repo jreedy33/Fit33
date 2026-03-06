@@ -61,7 +61,7 @@ struct FriendSelectionSheet: View {
                 print("📋 [FRIEND SELECTION] Showing \(friendService.friends.count) friends")
             }
         }
-        .navigationViewStyle(.stack)  // Force single-column layout on iPad
+        // NavigationStack doesn't need .navigationViewStyle
     }
     
     private var friendListView: some View {

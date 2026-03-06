@@ -795,7 +795,7 @@ struct CloudProgramDetailView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         CloudProgramLibraryView()
             .environmentObject(WorkoutManager.shared)
     }

@@ -169,7 +169,7 @@ struct DashboardView: View {
     @ObservedObject private var mealService = MealService.shared
     @State private var selectedMacrosPage: Int = 0  // For swipeable macros cards
     
-    // Used to force NavigationView to reset when switching tabs
+    // Used to force NavigationStack to reset when switching tabs
     @State private var navigationViewId = UUID()
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @ObservedObject private var generatedProgramService = GeneratedProgramService.shared
@@ -188,7 +188,7 @@ struct DashboardView: View {
     
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Animated background with colored orbs
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
@@ -428,8 +428,7 @@ struct DashboardView: View {
                 .padding(.top, 60)
             }
         }
-        .navigationViewStyle(.stack)  // Force single-column layout on iPad (no split view)
-        .id(navigationViewId)  // Forces NavigationView to reset when ID changes
+        .id(navigationViewId)  // Forces NavigationStack to reset when ID changes
         .onChange(of: workoutManager.shouldPopToRootHome) { _, shouldPop in
             if shouldPop {
                 // Check if we're actually deep in navigation before doing the expensive .id() reset
@@ -456,7 +455,7 @@ struct DashboardView: View {
             }
         }
         .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
-            // 🔧 FIX: Reset navigation states AND force NavigationView reset when workout starts
+            // 🔧 FIX: Reset navigation states AND force NavigationStack reset when workout starts
             // This prevents the generator/preview from reappearing after tab switch
             if isActive {
                 // Reset navigation link states
@@ -466,7 +465,7 @@ struct DashboardView: View {
                 navigateToTodaysWorkout = false
                 isNavigating = false  // Reset debounce
                 
-                // 🔧 FORCE NavigationView to completely reset
+                // 🔧 FORCE NavigationStack to completely reset
                 // This eliminates the "smashed header" with double back buttons
                 navigationViewId = UUID()
             }
@@ -7295,7 +7294,7 @@ struct StreakInfoSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Big flame with current streak
@@ -8686,7 +8685,7 @@ struct WidgetSettingsSheet: View {
     @State private var showingPremiumUpgrade = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
                     // Subtitle

@@ -517,7 +517,7 @@ struct SimulationReportDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 // Summary Section
                 Section("Summary") {
@@ -725,7 +725,7 @@ struct QuickRealtimeTestResultView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 if let result = result {
                     // Header with big status indicator

@@ -657,7 +657,7 @@ struct EmptyProgramsView: View {
 #if DEBUG
 struct GeneratedProgramsListView_Previews: PreviewProvider {
     static var previews: some View {
-        NavigationView {
+        NavigationStack {
             GeneratedProgramsListView()
         }
     }

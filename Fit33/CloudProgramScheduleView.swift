@@ -394,7 +394,7 @@ struct DaySwapView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 // Instructions
                 VStack(spacing: 8) {
@@ -1331,7 +1331,7 @@ struct ExerciseDataDetailSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     // Video Section
@@ -2084,7 +2084,7 @@ struct SwapExerciseCard: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         CloudProgramScheduleView()
             .environmentObject(WorkoutManager.shared)
     }

@@ -381,7 +381,7 @@ struct ProgramDayPreviewView: View {
         }
         .sheet(isPresented: $showingExerciseDetail) {
             if let exercise = selectedCoreDataExercise {
-                NavigationView {
+                NavigationStack {
                     ExerciseDetailView(exercise: exercise)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {
@@ -690,7 +690,7 @@ struct ProgramExerciseSwapView: View {
     @State private var isLoading = true
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if isLoading {
                     ProgressView("Finding alternatives...")

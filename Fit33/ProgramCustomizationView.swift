@@ -22,7 +22,7 @@ struct ProgramCustomizationView: View {
     private let allEquipment = EquipmentCategory.allCases
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header
@@ -466,7 +466,7 @@ struct CustomProgramPreviewView: View {
     let onConfirm: () -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Header

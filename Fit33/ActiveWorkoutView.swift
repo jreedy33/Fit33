@@ -2077,7 +2077,7 @@ struct ExerciseCard: View {
         .animation(hasAppeared ? .easeInOut(duration: 0.2) : nil, value: isActiveCard)
         .animation(nil, value: isBeingDragged)
         .sheet(isPresented: $showingExerciseDetail) {
-            NavigationView {
+            NavigationStack {
                 ExerciseDetailView(exercise: exercise)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
@@ -3323,7 +3323,7 @@ struct RestTimerView: View {
     @Binding var isPresented: Bool
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 30) {
                 Spacer()
                 
@@ -3404,7 +3404,7 @@ struct RestTimerSetupView: View {
     private let secondOptions = Array(stride(from: 0, to: 60, by: 15))
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 30) {
                 Text("Set Rest Timer")
                     .font(.title)
@@ -3485,7 +3485,7 @@ struct ExerciseReplacementView: View {
     @State private var selectedExercise: Exercise?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
                 if similarExercises.isEmpty {
                     VStack(spacing: 20) {

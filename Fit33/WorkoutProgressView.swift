@@ -598,7 +598,7 @@ struct WorkoutProgressView: View {
             }
             // NO deferred computation tasks — keep the Workout tab snappy
         } else {
-        NavigationView {
+        NavigationStack {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     Color.clear.frame(height: 0).id("top")

@@ -15,7 +15,7 @@ struct MealPlanView: View {
     @State private var showingShoppingList = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if needsProfileSetup {
                     ProfileSetupView(showingProfileSetup: $showingProfileSetup)
@@ -902,7 +902,7 @@ struct SavedMealDetailView: View {
     @State private var showingAddedToList = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
@@ -1456,7 +1456,7 @@ struct SavedMealPickerSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
                     .ignoresSafeArea()

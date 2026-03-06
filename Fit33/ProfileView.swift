@@ -1851,7 +1851,7 @@ struct UsernameSetupSheet: View {
     @State private var isSaving = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 LinearGradient(
@@ -2496,7 +2496,7 @@ struct CameraPickerView: UIViewControllerRepresentable {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         ProfileView()
             .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
             .environmentObject(UserManager())

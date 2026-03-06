@@ -787,7 +787,7 @@ struct ProgramDetailSheet: View {
     @State private var dayPreviews: [DayPreview] = []
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
                     // Header
@@ -1088,7 +1088,7 @@ struct DayPreviewRow: View {
 // MARK: - Preview
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         PersonalizedProgramsView()
             .environmentObject(UserManager.shared)
     }

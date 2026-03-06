@@ -87,12 +87,12 @@ struct FriendsListView: View {
             }
         }
         .sheet(item: $showingFriendProfile) { friend in
-            NavigationView {
+            NavigationStack {
                 FriendProfileView(friend: friend)
             }
         }
         .sheet(isPresented: $showingReceivedWorkouts) {
-            NavigationView {
+            NavigationStack {
                 ReceivedWorkoutsView()
             }
         }
@@ -1937,7 +1937,7 @@ struct TopFriendCard: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         FriendsListView()
     }
 }

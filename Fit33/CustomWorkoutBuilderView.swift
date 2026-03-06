@@ -1584,7 +1584,7 @@ struct AddCustomExerciseView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background gradient
                 LinearGradient(
@@ -1927,7 +1927,7 @@ struct IconPickerView: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 4)
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(commonIcons, id: \.self) { icon in

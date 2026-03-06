@@ -138,7 +138,7 @@ struct AutoWorkoutPreviewView: View {
         }
         .sheet(isPresented: $showingExerciseDetail) {
             if let exercise = selectedCoreDataExercise {
-                NavigationView {
+                NavigationStack {
                     ExerciseDetailView(exercise: exercise)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {
@@ -153,7 +153,7 @@ struct AutoWorkoutPreviewView: View {
         .sheet(isPresented: $showingFallbackDetail) {
             // 🆕 Fallback detail view when Core Data not available
             if let exercise = selectedGeneratedExercise {
-                NavigationView {
+                NavigationStack {
                     GeneratedExerciseDetailView(exercise: exercise, themeColor: themeColor)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {

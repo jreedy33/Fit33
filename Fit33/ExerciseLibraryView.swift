@@ -869,7 +869,7 @@ struct ExerciseLibraryView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Fixed header section (doesn't scroll)
                 VStack(spacing: 0) {

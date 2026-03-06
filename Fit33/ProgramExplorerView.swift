@@ -1229,7 +1229,7 @@ struct AdvancedProgramFiltersView: View {
     @Binding var selectedSplit: TrainingSplit?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 28) {
                     // Experience Level
@@ -1471,7 +1471,7 @@ struct FilterChip: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         ProgramExplorerView()
             .environmentObject(UserManager())
             .environmentObject(WorkoutManager.shared)

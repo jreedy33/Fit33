@@ -1248,7 +1248,7 @@ struct SmartServingSelectorSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 (colorScheme == .dark ? Color.black : Color(white: 0.95))
@@ -1556,7 +1556,7 @@ struct MealTypeButton: View {
 
 // MARK: - Preview
 #Preview {
-    NavigationView {
+    NavigationStack {
         RecipeDetailView(
             recipeId: 716429,
             initialRecipe: SpoonacularRecipe(

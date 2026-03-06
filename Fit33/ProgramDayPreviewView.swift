@@ -64,7 +64,7 @@ struct SmartProgramDayPreviewView: View {
         }
         .sheet(isPresented: $showingExerciseDetail) {
             if let exercise = selectedCoreDataExercise {
-                NavigationView {
+                NavigationStack {
                     ExerciseDetailView(exercise: exercise)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {
@@ -565,7 +565,7 @@ struct SmartProgramExerciseCard: View {
         consistencyScore: 1.0
     )
     
-    NavigationView {
+    NavigationStack {
         SmartProgramDayPreviewView(
             program: testProgram,
             day: testDay,

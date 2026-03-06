@@ -187,7 +187,7 @@ The Fit33 iOS app has dangerous force unwraps that will crash in production. Fin
 
 ---
 
-### 1.6 Missing Error Recovery in Core Data
+### 1.6 Missing Error Recovery in Core Data Done ✅
 
 **Context:** `PersistenceController.swift` handles migration failure by deleting the entire Core Data store and recreating it (lines 104-138). If the retry also fails, it just prints a warning and continues. The app will be in an undefined state.
 

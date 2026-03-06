@@ -1,6 +1,12 @@
 import SwiftUI
 import CoreData
 
+// MARK: - Program Schedule Full View Navigation Route
+
+struct ProgramScheduleDayRoute: Hashable {
+    let dayNumber: Int
+}
+
 // MARK: - Program Schedule Full View
 // Shows program days in a grid, similar to CloudProgramScheduleView
 
@@ -181,11 +187,7 @@ struct ProgramScheduleFullView: View {
                     let dayName = getDayName(day)
                     
                     if isUnlocked && !isRestDay {
-                        NavigationLink(destination: ProgramDayPreviewView(
-                            program: program,
-                            dayNumber: day,
-                            programColor: programColor
-                        ).environmentObject(workoutManager)) {
+                        NavigationLink(value: ProgramScheduleDayRoute(dayNumber: day)) {
                             ProgramDayTile(
                                 day: day,
                                 dayName: dayName,
@@ -207,6 +209,14 @@ struct ProgramScheduleFullView: View {
                         )
                     }
                 }
+            }
+            .navigationDestination(for: ProgramScheduleDayRoute.self) { route in
+                ProgramDayPreviewView(
+                    program: program,
+                    dayNumber: route.dayNumber,
+                    programColor: programColor
+                )
+                .environmentObject(workoutManager)
             }
         }
     }

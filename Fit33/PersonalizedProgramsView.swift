@@ -8,6 +8,20 @@
 
 import SwiftUI
 
+// MARK: - Personalized Programs Navigation Route
+
+enum PersonalizedProgramsRoute: Hashable {
+    case programOverview(programId: String)
+    case dayPreview(programId: String, dayNumber: Int)
+}
+
+// MARK: - Personalized Program Navigation Route
+
+enum PersonalizedProgramRoute: Hashable {
+    case overview(programId: String)
+    case dayPreview(programId: String, dayId: String)
+}
+
 struct PersonalizedProgramsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -54,8 +68,57 @@ struct PersonalizedProgramsView: View {
             .padding(.bottom, 100)
         }
         .background(backgroundGradient)
+        .navigationDestination(for: PersonalizedProgramsRoute.self) { route in
+            switch route {
+            case .programOverview(let programId):
+                if let program = programEngine.userPrograms.first(where: { $0.id == programId }) {
+                    let template = programs.first(where: { $0.template.id == program.templateId })?.template
+                    SmartProgramOverviewView(program: program, template: template)
+                        .environmentObject(workoutManager)
+                        .environmentObject(userManager)
+                }
+            case .dayPreview(let programId, let dayNumber):
+                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
+                   let day = program.generatedDays.first(where: { $0.dayNumber == dayNumber }) {
+                    let template = programs.first(where: { $0.template.id == program.templateId })?.template
+                    let totalDays = template?.totalDays ?? program.generatedDays.count
+                    SmartProgramDayPreviewView(
+                        program: program,
+                        day: day,
+                        programName: program.personalizedName,
+                        totalDays: totalDays
+                    )
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+                }
+            }
+        }
         .navigationTitle("Your Programs")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: PersonalizedProgramRoute.self) { route in
+            switch route {
+            case .overview(let programId):
+                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
+                   let template = programs.first(where: { $0.template.id == program.templateId })?.template {
+                    SmartProgramOverviewView(program: program, template: template)
+                        .environmentObject(workoutManager)
+                        .environmentObject(userManager)
+                }
+            case .dayPreview(let programId, let dayId):
+                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
+                   let day = program.generatedDays.first(where: { $0.id == dayId }) {
+                    let totalDays = programs.first(where: { $0.template.id == program.templateId })?.template.totalDays ?? program.generatedDays.count
+                    SmartProgramDayPreviewView(
+                        program: program,
+                        day: day,
+                        programName: program.personalizedName,
+                        totalDays: totalDays
+                    )
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+                }
+            }
+        }
         .sheet(item: $selectedProgram) { program in
             ProgramDetailSheet(program: program, onStart: {
                 startProgram(program)
@@ -105,12 +168,7 @@ struct PersonalizedProgramsView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: SmartProgramOverviewView(
-                    program: program,
-                    template: template
-                )
-                .environmentObject(workoutManager)
-                .environmentObject(userManager)) {
+                NavigationLink(value: PersonalizedProgramRoute.overview(programId: program.id)) {
                     Text("View Details")
                         .font(.caption)
                         .foregroundColor(.green)
@@ -177,14 +235,7 @@ struct PersonalizedProgramsView: View {
                 if let day = currentDay, !day.isCompleted, !day.exercises.isEmpty {
                     Divider()
                     
-                    NavigationLink(destination: SmartProgramDayPreviewView(
-                        program: program,
-                        day: day,
-                        programName: program.personalizedName,
-                        totalDays: totalDays
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)) {
+                    NavigationLink(value: PersonalizedProgramsRoute.dayPreview(programId: program.id, dayNumber: day.dayNumber)) {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Today: \(day.name)")

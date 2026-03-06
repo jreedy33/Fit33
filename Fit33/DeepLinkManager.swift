@@ -57,6 +57,10 @@ class DeepLinkManager: ObservableObject {
     @Published var pendingPrivateJoinCode: String?         // Private challenge code to preview + join
     @Published var showPrivateJoinSheet = false
     
+    // Tab-specific pending routes for deep navigation after tab switch
+    @Published var pendingFriendsRoute: String?           // Route to push on FriendsTabView's NavigationStack
+    @Published var pendingDashboardRoute: String?         // Route to push on DashboardView's NavigationStack
+    
     private init() {}
     
     /// Consume and clear the pending destination
@@ -385,6 +389,8 @@ class DeepLinkManager: ObservableObject {
         showPrivateChallengeSheet = false
         pendingPrivateJoinCode = nil
         showPrivateJoinSheet = false
+        pendingFriendsRoute = nil
+        pendingDashboardRoute = nil
     }
 }
 

@@ -2,6 +2,17 @@ import SwiftUI
 import CoreData
 import PhotosUI
 
+// MARK: - Profile Navigation Route
+
+enum ProfileRoute: Hashable {
+    case limitations
+    case strava
+    case fitbit
+    case inBody
+    case healthKit
+    case settings
+}
+
 struct ProfileView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
@@ -280,7 +291,7 @@ struct ProfileView: View {
                             icon: "heart.text.square.fill",
                             iconColor: .red
                         ) {
-                            NavigationLink(destination: LimitationsSettingsView()) {
+                            NavigationLink(value: ProfileRoute.limitations) {
                                 HStack(spacing: 12) {
                                     Image(systemName: "bandage.fill")
                                         .font(.system(size: 16, weight: .medium))
@@ -474,7 +485,7 @@ struct ProfileView: View {
                         ) {
                             VStack(spacing: 0) {
                                 // Strava
-                                NavigationLink(destination: StravaSettingsView()) {
+                                NavigationLink(value: ProfileRoute.strava) {
                                     HStack(spacing: 12) {
                                         // Strava orange icon
                                         Image(systemName: "figure.run")
@@ -511,7 +522,7 @@ struct ProfileView: View {
                                     .padding(.leading, 56)
                                 
                                 // Fitbit
-                                NavigationLink(destination: FitbitSettingsView()) {
+                                NavigationLink(value: ProfileRoute.fitbit) {
                                     HStack(spacing: 12) {
                                         // Fitbit teal icon
                                         Image(systemName: "heart.circle.fill")
@@ -548,7 +559,7 @@ struct ProfileView: View {
                                     .padding(.leading, 56)
                                 
                                 // InBody
-                                NavigationLink(destination: InBodySettingsView()) {
+                                NavigationLink(value: ProfileRoute.inBody) {
                                     HStack(spacing: 12) {
                                         // InBody teal/cyan icon
                                         Image(systemName: "figure.stand")
@@ -585,7 +596,7 @@ struct ProfileView: View {
                                     .padding(.leading, 56)
                                 
                                 // Apple Health (Nike Run Club, Apple Watch, etc.)
-                                NavigationLink(destination: HealthKitSettingsView()) {
+                                NavigationLink(value: ProfileRoute.healthKit) {
                                     HStack(spacing: 12) {
                                         // Apple Health red/pink icon
                                         Image(systemName: "heart.fill")
@@ -708,11 +719,27 @@ struct ProfileView: View {
             }
             
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: SettingsView()) {
+                NavigationLink(value: ProfileRoute.settings) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 20))
                         .foregroundColor(.blue)
                 }
+            }
+        }
+        .navigationDestination(for: ProfileRoute.self) { route in
+            switch route {
+            case .limitations:
+                LimitationsSettingsView()
+            case .strava:
+                StravaSettingsView()
+            case .fitbit:
+                FitbitSettingsView()
+            case .inBody:
+                InBodySettingsView()
+            case .healthKit:
+                HealthKitSettingsView()
+            case .settings:
+                SettingsView()
             }
         }
         .onAppear {

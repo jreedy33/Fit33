@@ -898,7 +898,7 @@ struct ExerciseLibraryView: View {
                         
                         LazyVStack(spacing: 10) {
                             ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
-                                NavigationLink(destination: ExerciseDetailView(exercise: exercise)) {
+                                NavigationLink(value: exercise) {
                                     CompactExerciseRowContent(exercise: exercise, showChevron: true)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -941,6 +941,9 @@ struct ExerciseLibraryView: View {
             .navigationBarHidden(true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationDestination(for: Exercise.self) { exercise in
+                ExerciseDetailView(exercise: exercise)
+            }
             .onAppear {
                 let startTime = Date()
                 

@@ -2,6 +2,21 @@ import SwiftUI
 import CoreData
 import UserNotifications
 
+// MARK: - Dashboard Navigation Route
+
+enum DashboardRoute: Hashable {
+    case profile
+    case mealPlan
+    case workoutHistory
+    case programDetailsPlaceholder
+    case challengeFlowStart
+    case generatedProgramsList
+    case personalizedPrograms
+    case smartWorkoutPreview  // uses GeneratedProgramService.shared
+    case smartProgramOverview(programId: String)
+    case smartProgramDayPreview(programId: String, dayNumber: Int)
+}
+
 struct DashboardView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
@@ -171,6 +186,8 @@ struct DashboardView: View {
     
     // Used to force NavigationStack to reset when switching tabs
     @State private var navigationViewId = UUID()
+    @State private var dashboardNavPath = NavigationPath()
+    @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @ObservedObject private var generatedProgramService = GeneratedProgramService.shared
     @ObservedObject private var smartProgramEngine = SmartProgramEngine.shared
@@ -188,7 +205,7 @@ struct DashboardView: View {
     
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $dashboardNavPath) {
             ZStack {
                 // Animated background with colored orbs
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
@@ -361,12 +378,9 @@ struct DashboardView: View {
                 StreakInfoSheet()
                     .environmentObject(userManager)
             }
-            .background(
-                NavigationLink(
-                    destination: ChallengeFlowStartView(),
-                    isActive: $navigateToChallengeFlow
-                ) { EmptyView() }
-            )
+            .navigationDestination(isPresented: $navigateToChallengeFlow) {
+                ChallengeFlowStartView()
+            }
             .fullScreenCover(isPresented: $showingWidgetSettings) {
                 WidgetSettingsSheet(
                     showWeightTracker: $showWeightTrackerWidget,
@@ -380,36 +394,30 @@ struct DashboardView: View {
             .sheet(isPresented: $showPhoneVerificationPrompt) {
                 phoneVerificationPromptSheet
             }
-            .background(
-                Group {
-                    NavigationLink(
-                        destination: CustomWorkoutBuilderView()
-                            .environmentObject(workoutManager)
-                            .environmentObject(userManager),
-                        isActive: $navigateToCustomWorkout
-                    ) { EmptyView() }
-                    
-                    NavigationLink(
-                        destination: WorkoutGeneratorSelectionView()
-                            .environmentObject(workoutManager)
-                            .environmentObject(userManager),
-                        isActive: $navigateToAutoWorkout
-                    ) { EmptyView() }
-                    
-                    NavigationLink(
-                        destination: GeneratedProgramsListView()
-                            .environmentObject(generatedProgramService),
-                        isActive: $navigateToGeneratedPrograms
-                    ) { EmptyView() }
-                    
-                    // Challenge widget -> Friends list (from Profile)
-                    NavigationLink(
-                        destination: FriendsListView(initialTab: 0),
-                        isActive: $showFriendsListForChallenge
-                    ) { EmptyView() }
-                }
-                .hidden()
-            )
+            .navigationDestination(isPresented: $navigateToCustomWorkout) {
+                CustomWorkoutBuilderView()
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+            }
+            .navigationDestination(isPresented: $navigateToAutoWorkout) {
+                WorkoutGeneratorSelectionView()
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+            }
+            .navigationDestination(isPresented: $navigateToGeneratedPrograms) {
+                GeneratedProgramsListView()
+                    .environmentObject(generatedProgramService)
+            }
+            .navigationDestination(isPresented: $showFriendsListForChallenge) {
+                FriendsListView(initialTab: 0)
+            }
+            // MARK: - Value-Based Navigation Destinations
+            .modifier(DashboardNavigationDestinations(
+                userManager: userManager,
+                workoutManager: workoutManager,
+                generatedProgramService: generatedProgramService,
+                smartProgramEngine: smartProgramEngine
+            ))
             .overlay(
                 programConflictAlert
             )
@@ -434,7 +442,7 @@ struct DashboardView: View {
                 // Check if we're actually deep in navigation before doing the expensive .id() reset
                 let hasDeepNavigation = navigateToAutoWorkout || navigateToCustomWorkout ||
                                         navigateToGeneratedPrograms || navigateToTodaysWorkout ||
-                                        navigateToChallengeFlow
+                                        navigateToChallengeFlow || !dashboardNavPath.isEmpty
                 
                 // Reset all navigation states (pops NavigationLinks back to root)
                 navigateToAutoWorkout = false
@@ -442,6 +450,7 @@ struct DashboardView: View {
                 navigateToGeneratedPrograms = false
                 navigateToTodaysWorkout = false
                 navigateToChallengeFlow = false
+                dashboardNavPath = NavigationPath()
                 
                 // ⚡️ PERFORMANCE FIX: Only destroy/recreate the view if we were actually
                 // deep in navigation. For simple tab switches (99% case), just reset the
@@ -454,6 +463,29 @@ struct DashboardView: View {
                 workoutManager.shouldPopToRootHome = false
             }
         }
+        // MARK: - Challenge Deep Link Navigation
+        .onReceive(deepLinkManager.$pendingDashboardRoute) { route in
+            guard let route = route else { return }
+            // Small delay to ensure NavigationStack is ready after tab switch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                if route.hasPrefix("ChallengeDetail:") {
+                    let idStr = String(route.dropFirst("ChallengeDetail:".count))
+                    // Look up 1v1 challenge
+                    if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                        dashboardNavPath.append(challenge)
+                        print("🏆 [DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)")
+                    }
+                    // Look up group challenge
+                    else if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                        dashboardNavPath.append(groupChallenge)
+                        print("🏆 [DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)")
+                    } else {
+                        print("⚠️ [DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard")
+                    }
+                }
+                deepLinkManager.pendingDashboardRoute = nil
+            }
+        }
         .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
             // 🔧 FIX: Reset navigation states AND force NavigationStack reset when workout starts
             // This prevents the generator/preview from reappearing after tab switch
@@ -464,6 +496,7 @@ struct DashboardView: View {
                 navigateToGeneratedPrograms = false
                 navigateToTodaysWorkout = false
                 isNavigating = false  // Reset debounce
+                dashboardNavPath = NavigationPath()
                 
                 // 🔧 FORCE NavigationStack to completely reset
                 // This eliminates the "smashed header" with double back buttons
@@ -1074,7 +1107,7 @@ struct DashboardView: View {
                     .frame(width: 4)
                 
                 // Profile button with hollow blue gradient ring and photo/person icon
-                NavigationLink(destination: ProfileView()) {
+                NavigationLink(value: DashboardRoute.profile) {
                     ZStack(alignment: .topTrailing) {
                         ZStack {
                             // Hollow ring with blue gradient
@@ -1747,7 +1780,7 @@ struct DashboardView: View {
         caloriesExceeded: Bool,
         fatExceeded: Bool
     ) -> some View {
-        NavigationLink(destination: SimpleMealPlanView()) {
+        NavigationLink(value: DashboardRoute.mealPlan) {
             HStack(spacing: 20) {
                 // Triple ring (larger to fill space)
                 NutritionTripleRing(
@@ -1847,7 +1880,7 @@ struct DashboardView: View {
     
     
     private var compactWeeklyProgressCard: some View {
-        NavigationLink(destination: SimpleMealPlanView()) {
+        NavigationLink(value: DashboardRoute.mealPlan) {
             VStack(spacing: 12) {
                 // Header
                 HStack {
@@ -1997,7 +2030,7 @@ struct DashboardView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: WorkoutHistoryFullView()) {
+                NavigationLink(value: DashboardRoute.workoutHistory) {
                     Text("View All")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -2539,7 +2572,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     // View all button - placeholder for GeneratedProgram (would need adapter)
-                    NavigationLink(destination: Text("Program Details - Coming Soon")) {
+                    NavigationLink(value: DashboardRoute.programDetailsPlaceholder) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondary)
@@ -2581,10 +2614,7 @@ struct DashboardView: View {
             
             // Today's workout - COMPACT with rounded inner card
             if let currentDay = generatedProgramService.currentDay {
-                NavigationLink(destination: SmartWorkoutPreviewView(
-                    day: currentDay,
-                    program: program
-                ).environmentObject(generatedProgramService)) {
+                NavigationLink(value: DashboardRoute.smartWorkoutPreview) {
                     HStack(spacing: 12) {
                         // Left: Workout info
                         VStack(alignment: .leading, spacing: 3) {
@@ -3342,7 +3372,7 @@ struct DashboardView: View {
         
         return VStack(spacing: 0) {
             // Header — shared shape, type-aware content
-            NavigationLink(destination: ChallengeDetailView(challenge: challenge)) {
+            NavigationLink(value: challenge) {
                 HStack(alignment: .center, spacing: 10) {
                     // Type-specific icon with gradient ring
                     ZStack {
@@ -3758,7 +3788,7 @@ struct DashboardView: View {
         
         return VStack(spacing: 0) {
             // Header
-            NavigationLink(destination: GroupChallengeDetailView(challenge: challenge).environmentObject(userManager)) {
+            NavigationLink(value: challenge) {
                 HStack(alignment: .center, spacing: 10) {
                     ZStack {
                         Circle()
@@ -4322,7 +4352,7 @@ struct DashboardView: View {
     private var getStartedChallengeWidget: some View {
         let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
         
-        return NavigationLink(destination: ChallengeFlowStartView()) {
+        return NavigationLink(value: DashboardRoute.challengeFlowStart) {
             VStack(spacing: 0) {
                 // Top row: Trophy + Title + Chevron
                 HStack(alignment: .center, spacing: 12) {
@@ -5251,7 +5281,7 @@ struct DashboardView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: GeneratedProgramsListView()) {
+                NavigationLink(value: DashboardRoute.generatedProgramsList) {
                     Text("View All")
                         .font(.subheadline)
                         .foregroundStyle(.blue)
@@ -5392,12 +5422,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     // View all button
-                    NavigationLink(destination: SmartProgramOverviewView(
-                        program: program,
-                        template: template
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)) {
+                    NavigationLink(value: DashboardRoute.smartProgramOverview(programId: program.id)) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondary)
@@ -5440,14 +5465,7 @@ struct DashboardView: View {
             // Today's workout - COMPACT
             if let day = currentDay {
                 if !isTodayCompleted && !day.exercises.isEmpty {
-                    NavigationLink(destination: SmartProgramDayPreviewView(
-                        program: program,
-                        day: day,
-                        programName: program.personalizedName,
-                        totalDays: totalDays
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)) {
+                    NavigationLink(value: DashboardRoute.smartProgramDayPreview(programId: program.id, dayNumber: day.dayNumber)) {
                         HStack(spacing: 12) {
                             // Left: Workout info
                             VStack(alignment: .leading, spacing: 3) {
@@ -5680,7 +5698,7 @@ struct DashboardView: View {
         let accentColor = Color.green
         let totalWeeks = (template.totalDays + 6) / 7
         
-        return NavigationLink(destination: PersonalizedProgramsView().environmentObject(userManager)) {
+        return NavigationLink(value: DashboardRoute.personalizedPrograms) {
             HStack(spacing: 14) {
                 // Program icon
                 ZStack {
@@ -5827,7 +5845,7 @@ struct DashboardView: View {
     
     // Fallback card if no programs available
     private var fallbackProgramsCard: some View {
-        NavigationLink(destination: PersonalizedProgramsView().environmentObject(userManager)) {
+        NavigationLink(value: DashboardRoute.personalizedPrograms) {
             VStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -5892,6 +5910,85 @@ struct DashboardView: View {
         }
     }
     
+}
+
+// MARK: - Dashboard Navigation Destinations (extracted to help type checker)
+
+private struct DashboardNavigationDestinations: ViewModifier {
+    @ObservedObject var userManager: UserManager
+    @ObservedObject var workoutManager: WorkoutManager
+    @ObservedObject var generatedProgramService: GeneratedProgramService
+    @ObservedObject var smartProgramEngine: SmartProgramEngine
+    
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(for: DashboardRoute.self) { route in
+                dashboardRouteDestination(route)
+            }
+            .navigationDestination(for: ActiveChallenge.self) { challenge in
+                ChallengeDetailView(challenge: challenge)
+            }
+            .navigationDestination(for: ActiveGroupChallenge.self) { challenge in
+                GroupChallengeDetailView(challenge: challenge)
+                    .environmentObject(userManager)
+            }
+            .navigationDestination(for: Workout.self) { workout in
+                WorkoutHistoryDetailView(workout: workout)
+            }
+            .navigationDestination(for: CardioWorkoutDTO.self) { cardioWorkout in
+                CardioWorkoutDetailView(cardioWorkout: cardioWorkout)
+            }
+    }
+    
+    @ViewBuilder
+    private func dashboardRouteDestination(_ route: DashboardRoute) -> some View {
+        switch route {
+        case .profile:
+            ProfileView()
+        case .mealPlan:
+            SimpleMealPlanView()
+        case .workoutHistory:
+            WorkoutHistoryFullView()
+        case .programDetailsPlaceholder:
+            Text("Program Details - Coming Soon")
+        case .challengeFlowStart:
+            ChallengeFlowStartView()
+        case .generatedProgramsList:
+            GeneratedProgramsListView()
+        case .personalizedPrograms:
+            PersonalizedProgramsView()
+                .environmentObject(userManager)
+        case .smartWorkoutPreview:
+            if let program = generatedProgramService.activeProgram,
+               let day = generatedProgramService.currentDay {
+                SmartWorkoutPreviewView(day: day, program: program)
+                    .environmentObject(generatedProgramService)
+            }
+        case .smartProgramOverview(let programId):
+            if let program = smartProgramEngine.userPrograms.first(where: { $0.id == programId }) {
+                let template = smartProgramEngine.getPersonalizedPrograms(for: userManager.currentUser)
+                    .first(where: { $0.template.id == program.templateId })?.template
+                SmartProgramOverviewView(program: program, template: template)
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+            }
+        case .smartProgramDayPreview(let programId, let dayNumber):
+            if let program = smartProgramEngine.userPrograms.first(where: { $0.id == programId }),
+               let day = program.generatedDays.first(where: { $0.dayNumber == dayNumber }) {
+                let template = smartProgramEngine.getPersonalizedPrograms(for: userManager.currentUser)
+                    .first(where: { $0.template.id == program.templateId })?.template
+                let totalDays = template?.totalDays ?? program.generatedDays.count
+                SmartProgramDayPreviewView(
+                    program: program,
+                    day: day,
+                    programName: program.personalizedName,
+                    totalDays: totalDays
+                )
+                .environmentObject(workoutManager)
+                .environmentObject(userManager)
+            }
+        }
+    }
 }
 
 // MARK: - Smart Program Mini Card
@@ -6157,7 +6254,7 @@ struct RecentWorkoutCard: View {
     }
     
     var body: some View {
-        NavigationLink(destination: WorkoutHistoryDetailView(workout: workout)) {
+        NavigationLink(value: workout) {
             VStack(alignment: .leading, spacing: 0) {
                 // Top section - Title and Date
                 HStack(alignment: .top, spacing: 12) {
@@ -6599,7 +6696,7 @@ struct RecentCardioWorkoutCard: View {
     }
     
     var body: some View {
-        NavigationLink(destination: CardioWorkoutDetailView(cardioWorkout: cardioWorkout)) {
+        NavigationLink(value: cardioWorkout) {
             VStack(alignment: .leading, spacing: 0) {
                 // Top section - Title and Date
                 HStack(alignment: .top, spacing: 12) {

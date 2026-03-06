@@ -19,6 +19,7 @@ struct FriendsTabView: View {
     @StateObject private var privateChallengeService = PrivateChallengeService.shared
     @StateObject private var contactsService = ContactsService.shared
     @StateObject private var leagueService = WeeklyLeagueService.shared
+    @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     
     @State private var showingFriendsList = false
     @State private var showingFriendSearch = false
@@ -115,6 +116,10 @@ struct FriendsTabView: View {
             .navigationDestination(for: String.self) { destination in
                 if destination == "FriendsList" {
                     FriendsListView()
+                } else if destination == "FriendRequests" {
+                    FriendsListView(initialTab: 1)
+                } else if destination == "FriendSearch" {
+                    FriendsListView(initialTab: 2)
                 } else if destination == "CommunityHub" {
                     CommunityChallengesHubView()
                 } else if destination.hasPrefix("PrivateChallenge_") {
@@ -126,6 +131,26 @@ struct FriendsTabView: View {
             }
             .navigationDestination(item: $selectedCommunityChallenge) { challenge in
                 CommunityDetailView(challengeId: challenge.challengeId, challengeTitle: challenge.title)
+            }
+        }
+        // MARK: - Deep Link Route Handling
+        .onChange(of: deepLinkManager.pendingFriendsRoute) { _, route in
+            guard let route = route else { return }
+            // Small delay to ensure NavigationStack is ready after tab switch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                navigationPath.append(route)
+                deepLinkManager.pendingFriendsRoute = nil
+                print("👥 [DEEPLINK] Friends tab pushed route: \(route)")
+            }
+        }
+        .onAppear {
+            // Handle pending deep link route if FriendsTabView was just mounted
+            if let route = deepLinkManager.pendingFriendsRoute {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    navigationPath.append(route)
+                    deepLinkManager.pendingFriendsRoute = nil
+                    print("👥 [DEEPLINK] Friends tab pushed route on appear: \(route)")
+                }
             }
         }
         .task {

@@ -467,6 +467,13 @@ class AchievementService: ObservableObject {
     }
 }
 
+// MARK: - Progress Navigation Route
+
+enum ProgressRoute: Hashable {
+    case healthInsights
+    case allAchievements
+}
+
 struct WorkoutProgressView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
@@ -627,6 +634,14 @@ struct WorkoutProgressView: View {
             .navigationBarHidden(true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationDestination(for: ProgressRoute.self) { route in
+                switch route {
+                case .healthInsights:
+                    HealthInsightsView()
+                case .allAchievements:
+                    AllAchievementsView(achievements: allAchievements)
+                }
+            }
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(.ultraThinMaterial)
@@ -863,7 +878,7 @@ struct WorkoutProgressView: View {
     
     // MARK: - Health Insights Card
     private var healthInsightsCard: some View {
-        NavigationLink(destination: HealthInsightsView()) {
+        NavigationLink(value: ProgressRoute.healthInsights) {
             HStack(spacing: 16) {
                 // Icon with gradient background
                 ZStack {
@@ -2367,7 +2382,7 @@ struct WorkoutProgressView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: AllAchievementsView(achievements: allAchievements)) {
+                NavigationLink(value: ProgressRoute.allAchievements) {
                     Text("View All")
                         .font(.subheadline)
                         .fontWeight(.medium)

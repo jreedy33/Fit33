@@ -2977,8 +2977,11 @@ struct PendingSentChallenge: Codable, Identifiable {
     }
 }
 
-struct ActiveChallenge: Codable, Identifiable {
+struct ActiveChallenge: Codable, Identifiable, Hashable {
     let challengeId: UUID
+    
+    func hash(into hasher: inout Hasher) { hasher.combine(challengeId) }
+    static func == (lhs: ActiveChallenge, rhs: ActiveChallenge) -> Bool { lhs.challengeId == rhs.challengeId }
     let challengeType: String
     let title: String
     let description: String?
@@ -3247,8 +3250,11 @@ struct GroupChallengeMember: Codable, Identifiable {
     }
 }
 
-struct ActiveGroupChallenge: Codable, Identifiable {
+struct ActiveGroupChallenge: Codable, Identifiable, Hashable {
     let challengeId: UUID
+    
+    func hash(into hasher: inout Hasher) { hasher.combine(challengeId) }
+    static func == (lhs: ActiveGroupChallenge, rhs: ActiveGroupChallenge) -> Bool { lhs.challengeId == rhs.challengeId }
     let title: String
     let description: String?
     let challengeType: String

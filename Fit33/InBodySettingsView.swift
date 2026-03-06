@@ -8,6 +8,12 @@
 
 import SwiftUI
 
+// MARK: - InBody Navigation Route
+
+enum InBodyRoute: Hashable {
+    case scanHistory
+}
+
 // MARK: - InBody Settings View
 
 struct InBodySettingsView: View {
@@ -74,7 +80,7 @@ struct InBodySettingsView: View {
                         }
                         
                         if inbody.scanHistory.count > 5 {
-                            NavigationLink(destination: BodyCompositionHistoryView()) {
+                            NavigationLink(value: InBodyRoute.scanHistory) {
                                 Text("View All Scans (\(inbody.scanHistory.count))")
                                     .foregroundColor(inbodyBlue)
                             }
@@ -112,6 +118,12 @@ struct InBodySettingsView: View {
         }
         .navigationTitle("InBody")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: InBodyRoute.self) { route in
+            switch route {
+            case .scanHistory:
+                BodyCompositionHistoryView()
+            }
+        }
         .alert("Disconnect InBody?", isPresented: $showingDisconnectAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Disconnect", role: .destructive) {

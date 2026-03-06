@@ -3,8 +3,11 @@ import CoreData
 
 // MARK: - Workout Program Models
 
-struct WorkoutProgram: Identifiable, Codable {
+struct WorkoutProgram: Identifiable, Codable, Hashable {
     let id: String
+    
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: WorkoutProgram, rhs: WorkoutProgram) -> Bool { lhs.id == rhs.id }
     let name: String
     let description: String
     let duration: Int // in days

@@ -1,6 +1,16 @@
 import SwiftUI
 import CoreData
 
+// MARK: - Program Schedule Navigation Routes
+
+struct ProgramScheduleWorkoutRoute: Hashable {
+    let dayNumber: Int
+}
+
+struct ProgramScheduleExerciseRoute: Hashable {
+    let exerciseName: String
+}
+
 struct ProgramScheduleView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
@@ -34,6 +44,23 @@ struct ProgramScheduleView: View {
         )
         .navigationTitle(program.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: ProgramScheduleWorkoutRoute.self) { route in
+            WorkoutPreviewView(
+                program: program,
+                day: route.dayNumber,
+                programColor: programColor
+            )
+            .environmentObject(workoutManager)
+        }
+        .navigationDestination(for: ProgramScheduleExerciseRoute.self) { route in
+            let allExercises = ExerciseLibraryService.shared.getAllExercises()
+            if let exercise = allExercises.first(where: { $0.name == route.exerciseName }) {
+                ExerciseDetailWrapper(exercise: exercise)
+            } else {
+                Text("Exercise not found")
+                    .foregroundColor(.secondary)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -141,11 +168,7 @@ struct ProgramScheduleView: View {
             ], spacing: 12) {
                 ForEach(1...program.duration, id: \.self) { day in
                     if day <= workoutManager.currentProgramDay && !program.restDays.contains(day) {
-                        NavigationLink(destination: WorkoutPreviewView(
-                            program: program,
-                            day: day,
-                            programColor: programColor
-                        ).environmentObject(workoutManager)) {
+                        NavigationLink(value: ProgramScheduleWorkoutRoute(dayNumber: day)) {
                             DayTileContent(
                                 day: day,
                                 programDay: program.schedule[day],
@@ -515,7 +538,7 @@ struct WorkoutPreviewView: View {
             VStack(spacing: 10) {
                 ForEach(Array(generatedExercises.enumerated()), id: \.offset) { index, exercise in
                     ZStack {
-                        NavigationLink(destination: exerciseDetailView(for: exercise)) {
+                        NavigationLink(value: ProgramScheduleExerciseRoute(exerciseName: exercise.name)) {
                             EmptyView()
                         }
                         .opacity(0) // Hide the NavigationLink's default chevron

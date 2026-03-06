@@ -117,6 +117,12 @@ struct UnitSettingsView: View {
     }
 }
 
+// MARK: - Unit Settings Navigation Route
+
+enum UnitSettingsRoute: Hashable {
+    case unitSettings
+}
+
 // MARK: - Inline Settings Row for SettingsView
 
 struct UnitsLocalizationSettingsSection: View {
@@ -134,7 +140,7 @@ struct UnitsLocalizationSettingsSection: View {
             Divider().padding(.leading, 16)
             
             // Weight Unit
-            NavigationLink(destination: UnitSettingsView()) {
+            NavigationLink(value: UnitSettingsRoute.unitSettings) {
                 settingsRowContent(
                     title: "Weight Unit",
                     value: unitSettings.weightUnit.displayName
@@ -145,7 +151,7 @@ struct UnitsLocalizationSettingsSection: View {
             Divider().padding(.leading, 16)
             
             // Height Unit
-            NavigationLink(destination: UnitSettingsView()) {
+            NavigationLink(value: UnitSettingsRoute.unitSettings) {
                 settingsRowContent(
                     title: "Size Unit",
                     value: unitSettings.heightUnit.displayName
@@ -156,7 +162,7 @@ struct UnitsLocalizationSettingsSection: View {
             Divider().padding(.leading, 16)
             
             // Distance Unit
-            NavigationLink(destination: UnitSettingsView()) {
+            NavigationLink(value: UnitSettingsRoute.unitSettings) {
                 settingsRowContent(
                     title: "Distance Unit",
                     value: unitSettings.distanceUnit.displayName
@@ -167,13 +173,16 @@ struct UnitsLocalizationSettingsSection: View {
             Divider().padding(.leading, 16)
             
             // Start Week On
-            NavigationLink(destination: UnitSettingsView()) {
+            NavigationLink(value: UnitSettingsRoute.unitSettings) {
                 settingsRowContent(
                     title: "Start Week On",
                     value: unitSettings.startWeekOn.displayName
                 )
             }
             .buttonStyle(.plain)
+        }
+        .navigationDestination(for: UnitSettingsRoute.self) { _ in
+            UnitSettingsView()
         }
     }
     

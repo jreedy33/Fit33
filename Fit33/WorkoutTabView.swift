@@ -93,98 +93,46 @@ struct WorkoutTabView: View {
             }
         }
         .onReceive(deepLinkManager.$pendingDestination) { destination in
-            // Handle deep links from Live Activity and Notifications
+            // Handle deep links that belong to the Workout tab (tab 2)
+            // Other destinations are handled by ContentView (tab switching) + their target tab views
             guard let destination = destination else { return }
             switch destination {
             case .running:
-                // Navigate to running workout view
                 navigationPath.append("OutdoorRun")
                 deepLinkManager.pendingDestination = nil
                 print("🏃 Deep link: Navigating to running workout")
             case .workout:
-                // Navigate to workout generator
                 navigationPath.append("WorkoutGenerator")
                 deepLinkManager.pendingDestination = nil
                 print("🏋️ Deep link: Navigating to workout generator")
-            case .dashboard:
-                // Already on workout tab, no navigation needed
-                deepLinkManager.pendingDestination = nil
             case .sharedWorkout:
-                // Shared workouts are handled by the sheet in MainTabView
-                // Just consume the destination here
                 deepLinkManager.pendingDestination = nil
                 print("🔗 Deep link: Shared workout will be displayed in sheet")
             case .receivedWorkout(let workoutId):
-                // Navigate to received workouts and open specific workout
                 deepLinkManager.pendingReceivedWorkoutId = workoutId
                 navigationPath.append("ReceivedWorkouts")
                 deepLinkManager.pendingDestination = nil
                 print("📬 Deep link: Navigating to received workout \(workoutId)")
             case .receivedWorkouts:
-                // Navigate to received workouts list
                 navigationPath.append("ReceivedWorkouts")
                 deepLinkManager.pendingDestination = nil
                 print("📬 Deep link: Navigating to received workouts")
-            case .friends:
-                // Navigate to friends list
-                navigationPath.append("FriendsList")
-                deepLinkManager.pendingDestination = nil
-                print("👥 Deep link: Navigating to friends list")
-            case .friendRequests:
-                // Navigate directly to friend requests tab
-                navigationPath.append("FriendRequests")
-                deepLinkManager.pendingDestination = nil
-                print("👥 Deep link: Navigating to friend requests tab")
-                
-            // Challenge destinations
-            case .challenges:
-                // Navigate to challenges list
-                navigationPath.append("ChallengesList")
-                deepLinkManager.pendingDestination = nil
-                print("🏆 Deep link: Navigating to challenges list")
-            case .challengeInvite(let challengeId):
-                // Navigate to challenge invite
-                navigationPath.append("ChallengeInvite-\(challengeId)")
-                deepLinkManager.pendingDestination = nil
-                print("🏆 Deep link: Navigating to challenge invite \(challengeId)")
-            case .challengeDetail(let challengeId):
-                // Navigate to challenge detail
-                navigationPath.append("ChallengeDetail-\(challengeId)")
-                deepLinkManager.pendingDestination = nil
-                print("🏆 Deep link: Navigating to challenge detail \(challengeId)")
-                
-            // Community challenge destinations
-            case .communityChallenge(let slug):
-                deepLinkManager.pendingCommunitySlug = slug
-                deepLinkManager.showCommunityJoinSheet = true
-                deepLinkManager.pendingDestination = nil
-                print("🌍 Deep link: Opening community challenge \(slug)")
             case .communityChallengeBrowse:
                 navigationPath.append("CommunityChallenges")
                 deepLinkManager.pendingDestination = nil
                 print("🌍 Deep link: Navigating to community challenges")
                 
-            // Private challenge destinations
-            case .privateChallengeDetail(let challengeId):
-                deepLinkManager.pendingPrivateChallengeId = challengeId
-                deepLinkManager.showPrivateChallengeSheet = true
-                deepLinkManager.pendingDestination = nil
-                print("🔒 Deep link: Opening private challenge \(challengeId)")
-            case .privateChallengeInvite(let challengeId):
-                deepLinkManager.pendingPrivateChallengeId = challengeId
-                deepLinkManager.showPrivateChallengeSheet = true
-                deepLinkManager.pendingDestination = nil
-                print("🔒 Deep link: Opening private challenge invite \(challengeId)")
-            case .privateChallengeJoinByCode(let code):
-                deepLinkManager.pendingPrivateJoinCode = code
-                deepLinkManager.showPrivateJoinSheet = true
-                deepLinkManager.pendingDestination = nil
-                print("🔒 Deep link: Opening private challenge join preview for code: \(code)")
-                
-            // These destinations are handled by MainTabView (tab switching)
-            case .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker, .workoutHistory, .personalRecord, .streakInfo:
-                // Already handled by MainTabView, just clear the destination
-                deepLinkManager.pendingDestination = nil
+            // These destinations are handled by ContentView + DashboardView/FriendsTabView
+            // Don't handle or clear them here — let the correct tab consume them
+            case .friends, .friendRequests, .challenges, .challengeInvite, .challengeDetail:
+                break  // Handled by ContentView → FriendsTabView / DashboardView
+            case .communityChallenge:
+                break  // Handled by ContentView (join sheet)
+            case .privateChallengeDetail, .privateChallengeInvite, .privateChallengeJoinByCode:
+                break  // Handled by ContentView → DashboardView (sheet)
+            case .dashboard, .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker,
+                 .workoutHistory, .personalRecord, .streakInfo:
+                break  // Handled by ContentView (tab switch + scroll)
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in
@@ -284,6 +232,14 @@ struct WorkoutTabView: View {
                 .environmentObject(workoutManager)
                 .environmentObject(userManager)
             }
+        case "WorkoutHistory":
+            WorkoutHistoryFullView()
+        case "SmartWorkoutPreview":
+            if let program = GeneratedProgramService.shared.activeProgram,
+               let day = GeneratedProgramService.shared.currentDay {
+                SmartWorkoutPreviewView(day: day, program: program)
+                    .environmentObject(GeneratedProgramService.shared)
+            }
         case "ReceivedWorkouts":
             ReceivedWorkoutsView()
         case "FriendsList":
@@ -295,6 +251,14 @@ struct WorkoutTabView: View {
         case "CommunityChallenges":
             CommunityChallengesHubView()
                 .environmentObject(userManager)
+        case "SmartWorkoutPreview":
+            if let day = GeneratedProgramService.shared.currentDay,
+               let program = GeneratedProgramService.shared.activeProgram {
+                SmartWorkoutPreviewView(day: day, program: program)
+                    .environmentObject(GeneratedProgramService.shared)
+            }
+        case "WorkoutHistory":
+            WorkoutHistoryFullView()
         default:
             if destination.hasPrefix("ProgramDetail:") {
                 let programId = String(destination.dropFirst("ProgramDetail:".count))
@@ -722,10 +686,7 @@ struct WorkoutHomeView: View {
                 
                 // Today's workout with rounded inner card
                 if let currentDay = generatedProgramService.currentDay {
-                    NavigationLink(destination: SmartWorkoutPreviewView(
-                        day: currentDay,
-                        program: program
-                    ).environmentObject(generatedProgramService)) {
+                    NavigationLink(value: "SmartWorkoutPreview") {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Today's Workout")
@@ -801,7 +762,7 @@ struct WorkoutHomeView: View {
                     .font(.title2)
                     .fontWeight(.bold)
                 Spacer()
-                NavigationLink(destination: GeneratedProgramsListView()) {
+                NavigationLink(value: "GeneratedPrograms") {
                     Text("View All")
                         .font(.subheadline)
                         .foregroundStyle(.blue)
@@ -1258,7 +1219,7 @@ struct WorkoutHomeView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: WorkoutHistoryFullView()) {
+                NavigationLink(value: "WorkoutHistory") {
                     Text("View All")
                         .font(.subheadline)
                         .foregroundColor(.blue)

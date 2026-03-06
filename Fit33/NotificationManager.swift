@@ -1418,20 +1418,35 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchPendingInvites()
             // Also fetch group challenges — group invites may arrive as "challenge_invite" type
             await ChallengeService.shared.fetchActiveGroupChallenges()
-            DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites, \(ChallengeService.shared.activeGroupChallenges.count) group)")
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeInvite(challengeId: challengeId)
+                print("🏆 [NOTIFICATIONS] Opening challenge invite: \(challengeId) (\(ChallengeService.shared.pendingInvites.count) invites)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites, \(ChallengeService.shared.activeGroupChallenges.count) group)")
+            }
             
         case "group_challenge_invite":
             await ChallengeService.shared.fetchActiveGroupChallenges()
-            DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Opening home screen for group challenge invite")
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                print("🏆 [NOTIFICATIONS] Opening group challenge invite detail: \(challengeId)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                print("🏆 [NOTIFICATIONS] Opening home screen for group challenge invite")
+            }
             
         case "group_challenge_started":
             await ChallengeService.shared.fetchActiveGroupChallenges()
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
-            DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                print("🏆 [NOTIFICATIONS] Group challenge started — opening detail: \(challengeId)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
+            }
             
         case "private_challenge_invite":
             await PrivateChallengeService.shared.fetchPendingInvites()
@@ -1465,9 +1480,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenge may have been activated
             await ChallengeService.shared.fetchPendingInvites()
-            // Navigate to Dashboard so user sees the active challenge widget in the carousel
-            DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Challenge \(type) — opening dashboard with active widget")
+            // Navigate to specific challenge detail if ID available, else dashboard carousel
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                print("🏆 [NOTIFICATIONS] Challenge \(type) — opening challenge detail: \(challengeId)")
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                print("🏆 [NOTIFICATIONS] Challenge \(type) — opening dashboard with active widget")
+            }
             
         case "challenge_cancelled":
             await ChallengeService.shared.fetchActiveChallenges()

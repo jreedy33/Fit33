@@ -2,6 +2,12 @@ import SwiftUI
 import CoreData
 import AVKit
 
+// MARK: - Cloud Program Schedule Navigation Route
+
+struct CloudScheduleDayRoute: Hashable {
+    let dayNumber: Int
+}
+
 // MARK: - Cloud Program Schedule View
 
 struct CloudProgramScheduleView: View {
@@ -229,10 +235,7 @@ struct CloudProgramScheduleView: View {
                     let hasSwap = progress.daySwaps["\(day)"] != nil
                     
                     if isUnlocked && !isRestDay {
-                        NavigationLink(destination: CloudWorkoutPreviewView(
-                            dayNumber: day,
-                            programColor: programColor
-                        ).environmentObject(workoutManager)) {
+                        NavigationLink(value: CloudScheduleDayRoute(dayNumber: day)) {
                             CloudDayTile(
                                 day: day,
                                 actualDay: actualDay,
@@ -258,6 +261,13 @@ struct CloudProgramScheduleView: View {
                         )
                     }
                 }
+            }
+            .navigationDestination(for: CloudScheduleDayRoute.self) { route in
+                CloudWorkoutPreviewView(
+                    dayNumber: route.dayNumber,
+                    programColor: programColor
+                )
+                .environmentObject(workoutManager)
             }
         }
     }

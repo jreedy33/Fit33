@@ -896,11 +896,18 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             print("🔗 [DEEPLINK] Navigating to Streak Info")
             
-        // Social - handled by Friends tab
-        case .friends, .friendRequests:
+        // Social - handled by Friends tab with deep push
+        case .friends:
             selectedTab = 4
+            deepLinkManager.pendingFriendsRoute = "FriendsList"
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab for social feature")
+            print("🔗 [DEEPLINK] Switched to Friends tab → pushing FriendsList")
+            
+        case .friendRequests:
+            selectedTab = 4
+            deepLinkManager.pendingFriendsRoute = "FriendRequests"
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Friends tab → pushing FriendRequests")
             
         // Received workouts - handled by WorkoutTabView
         case .receivedWorkouts, .receivedWorkout, .sharedWorkout:
@@ -908,11 +915,24 @@ struct MainTabView: View {
             // Don't clear - WorkoutTabView handles the navigation
             print("🔗 [DEEPLINK] Switched to Workout tab for shared workout")
             
-        // Challenges - handled by Friends tab
-        case .challenges, .challengeInvite, .challengeDetail:
+        // Challenges - route based on specificity
+        case .challenges:
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab for challenge feature")
+            print("🔗 [DEEPLINK] Switched to Friends tab for challenges list")
+            
+        case .challengeInvite:
+            // Invite widget is on Dashboard (Home tab)
+            selectedTab = 0
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Home tab for challenge invite widget")
+            
+        case .challengeDetail(let challengeId):
+            // Navigate to Home tab and push the challenge detail view
+            selectedTab = 0
+            deepLinkManager.pendingDashboardRoute = "ChallengeDetail:\(challengeId)"
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Home tab → pushing challenge detail: \(challengeId)")
             
         // Community Challenges - join sheet is presented from ContentView
         case .communityChallenge(let slug):
@@ -926,11 +946,18 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             print("🔗 [DEEPLINK] Switched to Workout tab for community browse")
             
-        // Private Challenges - switch to Home tab where invites appear
-        case .privateChallengeDetail, .privateChallengeInvite:
+        // Private Challenges - navigate to Friends tab where detail views exist
+        case .privateChallengeDetail(let challengeId):
+            selectedTab = 4
+            deepLinkManager.pendingFriendsRoute = "PrivateChallenge_\(challengeId)"
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Friends tab → pushing private challenge detail: \(challengeId)")
+            
+        case .privateChallengeInvite:
+            // Private invite widget shows on Dashboard
             selectedTab = 0
-            // Don't clear - WorkoutTabView/DashboardView handles the navigation
-            print("🔗 [DEEPLINK] Switched to Home tab for private challenge")
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Switched to Home tab for private challenge invite")
             
         // Private Challenge Join by Code - show preview sheet
         case .privateChallengeJoinByCode(let code):

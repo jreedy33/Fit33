@@ -37,6 +37,9 @@ struct ProgramLibraryView: View {
             )
             .ignoresSafeArea(.all, edges: .all)
         )
+        .navigationDestination(for: WorkoutProgram.self) { program in
+            ProgramDetailView(program: program)
+        }
         .navigationTitle("Workout Programs")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -118,7 +121,7 @@ struct ProgramLibraryView: View {
     private var programsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
             ForEach(filteredPrograms) { program in
-                NavigationLink(destination: ProgramDetailView(program: program)) {
+                NavigationLink(value: program) {
                     ProgramCardContent(program: program)
                 }
                 .buttonStyle(PlainButtonStyle())

@@ -135,6 +135,12 @@ struct AdminPasswordView: View {
     }
 }
 
+// MARK: - Dev Menu Navigation Route
+
+enum DevMenuRoute: Hashable {
+    case forceExerciseRefresh
+}
+
 // MARK: - Main Dev Menu with Tabs
 struct DevMenuView: View {
     @Environment(\.dismiss) private var dismiss
@@ -335,6 +341,12 @@ struct InsightsTabContent: View {
             }
             .padding()
         }
+        .navigationDestination(for: DevMenuRoute.self) { route in
+            switch route {
+            case .forceExerciseRefresh:
+                ForceExerciseRefreshView()
+            }
+        }
         .task {
             await viewModel.loadAnalytics()
         }
@@ -389,7 +401,7 @@ struct InsightsTabContent: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             
-            NavigationLink(destination: ForceExerciseRefreshView()) {
+            NavigationLink(value: DevMenuRoute.forceExerciseRefresh) {
                 HStack {
                     Image(systemName: "arrow.clockwise.circle.fill")
                     Text("Reload Exercises")

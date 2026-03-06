@@ -55,6 +55,9 @@ struct CloudProgramLibraryView: View {
             AnimatedOrbBackground.exercises(colorScheme: colorScheme)
                 .ignoresSafeArea(.all, edges: .all)
         )
+        .navigationDestination(for: CloudProgram.self) { program in
+            CloudProgramDetailView(programId: program.id)
+        }
         .navigationTitle("Programs")
         .navigationBarTitleDisplayMode(.large)
         .task {
@@ -197,7 +200,7 @@ struct CloudProgramLibraryView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                     ForEach(filteredPrograms) { program in
-                        NavigationLink(destination: CloudProgramDetailView(programId: program.id)) {
+                        NavigationLink(value: program) {
                             DepthProgramCard(program: program)
                         }
                         .buttonStyle(PlainButtonStyle())

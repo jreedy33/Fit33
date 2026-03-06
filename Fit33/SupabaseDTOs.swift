@@ -650,8 +650,11 @@ struct CardioWorkoutData {
 }
 
 /// DTO for fetching cardio workouts from database
-struct CardioWorkoutDTO: Codable {
+struct CardioWorkoutDTO: Codable, Hashable {
     let id: String
+    
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: CardioWorkoutDTO, rhs: CardioWorkoutDTO) -> Bool { lhs.id == rhs.id }
     let activityType: String
     let workoutName: String?
     let goalType: String

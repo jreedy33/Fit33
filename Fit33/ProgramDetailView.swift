@@ -71,6 +71,16 @@ struct SmartProgramOverviewView: View {
             .ignoresSafeArea()
         )
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: SmartProgramDay.self) { day in
+            SmartProgramDayPreviewView(
+                program: program,
+                day: day,
+                programName: program.personalizedName,
+                totalDays: totalDays
+            )
+            .environmentObject(workoutManager)
+            .environmentObject(userManager)
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Program Overview")
@@ -310,14 +320,7 @@ struct SmartProgramOverviewView: View {
             
             VStack(spacing: 10) {
                 ForEach(upcomingDays.prefix(5), id: \.dayNumber) { day in
-                    NavigationLink(destination: SmartProgramDayPreviewView(
-                        program: program,
-                        day: day,
-                        programName: program.personalizedName,
-                        totalDays: totalDays
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)) {
+                    NavigationLink(value: day) {
                         UpcomingWorkoutRow(
                             day: day,
                             color: programColor
@@ -458,14 +461,7 @@ struct DayCard: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        NavigationLink(destination: SmartProgramDayPreviewView(
-            program: program,
-            day: day,
-            programName: program.personalizedName,
-            totalDays: program.generatedDays.count
-        )
-        .environmentObject(workoutManager)
-        .environmentObject(userManager)) {
+        NavigationLink(value: day) {
             VStack(spacing: 6) {
                 // Day number badge
                 Text("\(day.dayNumber)")

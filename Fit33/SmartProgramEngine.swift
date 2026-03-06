@@ -94,7 +94,9 @@ enum ProgramDifficultyLevel: Int, Codable, Comparable {
 
 // MARK: - Smart Program Template
 
-struct SmartProgramTemplate: Identifiable, Codable {
+struct SmartProgramTemplate: Identifiable, Codable, Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: SmartProgramTemplate, rhs: SmartProgramTemplate) -> Bool { lhs.id == rhs.id }
     let id: String
     let category: ProgramCategory
     let baseName: String
@@ -129,7 +131,9 @@ struct ProgramDayTemplate: Codable {
 
 // MARK: - User's Active Program (Smart Engine)
 
-struct SmartActiveProgram: Codable, Identifiable {
+struct SmartActiveProgram: Codable, Identifiable, Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: SmartActiveProgram, rhs: SmartActiveProgram) -> Bool { lhs.id == rhs.id }
     let id: String
     let templateId: String
     let userId: String
@@ -147,7 +151,9 @@ struct SmartActiveProgram: Codable, Identifiable {
     var consistencyScore: Double  // How consistent user has been
 }
 
-struct SmartProgramDay: Codable, Identifiable {
+struct SmartProgramDay: Codable, Identifiable, Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: SmartProgramDay, rhs: SmartProgramDay) -> Bool { lhs.id == rhs.id }
     let id: String
     let dayNumber: Int
     let name: String

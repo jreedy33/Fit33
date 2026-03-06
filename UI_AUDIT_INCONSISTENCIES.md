@@ -81,7 +81,7 @@ All main tab views and full-page screens use `AnimatedOrbBackground` from `Adapt
 | Phone Verification | `.stats()` | `PhoneVerificationSheet.swift:38` |
 | Existing User Phone | `.stats()` | `ExistingUserPhonePrompt.swift:45` |
 
-### Screens MISSING the orb (inconsistent)
+### Screens MISSING the orb (inconsistent) ✅
 
 | Screen | Current Background | File | Recommended Fix |
 |--------|-------------------|------|----------------|

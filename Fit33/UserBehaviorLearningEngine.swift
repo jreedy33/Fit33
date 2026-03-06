@@ -16,6 +16,7 @@
 
 import Foundation
 import CoreData
+import QuartzCore
 import Supabase
 
 // MARK: - Thread-safe cache storage for scoring functions
@@ -284,8 +285,18 @@ class UserBehaviorLearningEngine: ObservableObject {
             self.updateCaches(from: profile)
             
             // ⚡️ PERFORMANCE: Defer similarity map to background
-            Task(priority: .utility) {
-                await self.buildExerciseSimilarityMap(context: context)
+            // Pre-extract exercise data on main thread (Core Data objects aren't thread-safe)
+            let exerciseData: [(name: String, muscles: String, equipment: String)] = ExerciseLibraryService.shared.getAllExercises().compactMap { exercise in
+                guard let name = exercise.name?.lowercased() else { return nil }
+                let muscles = (exercise.muscleGroups as? [String])?.first?.lowercased() ?? ""
+                let equipment = exercise.equipment ?? ""
+                return (name: name, muscles: muscles, equipment: equipment)
+            }
+            
+            // Use Task.detached to truly run off @MainActor
+            Task.detached(priority: .utility) { [weak self] in
+                guard let self = self else { return }
+                self.buildExerciseSimilarityMapBackground(exerciseData)
             }
             
             await MainActor.run {
@@ -457,44 +468,54 @@ class UserBehaviorLearningEngine: ObservableObject {
     
     // MARK: - Exercise Similarity Map
     
-    private func buildExerciseSimilarityMap(context: NSManagedObjectContext) async {
-        let allExercises = ExerciseLibraryService.shared.getAllExercises()
+    /// Builds similarity map on a BACKGROUND thread using pre-extracted data.
+    /// This was previously blocking the main thread for ~6 seconds with 5500+ exercises.
+    nonisolated private func buildExerciseSimilarityMapBackground(_ exerciseData: [(name: String, muscles: String, equipment: String)]) {
+        let startTime = CACurrentMediaTime()
         
-        // Group exercises by movement pattern and muscle
+        // Group exercises by movement pattern and muscle+equipment
         var byPattern: [String: [String]] = [:]
         var byMuscleEquipment: [String: [String]] = [:]
         
-        for exercise in allExercises {
-            guard let name = exercise.name?.lowercased() else { continue }
+        for data in exerciseData {
+            let pattern = getMovementPattern(data.name)
+            let normalizedEquip = normalizeEquipmentSync(data.equipment)
             
-            let pattern = getMovementPattern(name)
-            let muscles = (exercise.muscleGroups as? [String])?.first?.lowercased() ?? ""
-            let equipment = normalizeEquipment(exercise.equipment ?? "")
+            byPattern[pattern, default: []].append(data.name)
             
-            // Group by pattern
-            byPattern[pattern, default: []].append(name)
-            
-            // Group by muscle + equipment type category
-            let muscleKey = "\(muscles)_\(getEquipmentCategory(equipment))"
-            byMuscleEquipment[muscleKey, default: []].append(name)
+            let muscleKey = "\(data.muscles)_\(getEquipmentCategory(normalizedEquip))"
+            byMuscleEquipment[muscleKey, default: []].append(data.name)
         }
         
-        // Build similarity sets
+        // Build similarity sets — optimized: create group Set once, then subtract
+        var variationCache: [String: Set<String>] = [:]
+        variationCache.reserveCapacity(exerciseData.count)
+        
         for (_, exercises) in byPattern {
+            guard exercises.count > 1, exercises.count < 500 else { continue } // Skip huge/trivial groups
+            let groupSet = Set(exercises)
             for exercise in exercises {
-                let similar = Set(exercises.filter { $0 != exercise })
-                LearningCacheStorage.shared.exerciseVariationCache[exercise, default: []].formUnion(similar)
+                var similar = groupSet
+                similar.remove(exercise)
+                variationCache[exercise, default: []].formUnion(similar)
             }
         }
         
         for (_, exercises) in byMuscleEquipment {
+            guard exercises.count > 1, exercises.count < 500 else { continue } // Skip huge/trivial groups
+            let groupSet = Set(exercises)
             for exercise in exercises {
-                let similar = Set(exercises.filter { $0 != exercise })
-                LearningCacheStorage.shared.exerciseVariationCache[exercise, default: []].formUnion(similar)
+                var similar = groupSet
+                similar.remove(exercise)
+                variationCache[exercise, default: []].formUnion(similar)
             }
         }
         
-        print("🧠 [LEARNING ENGINE] Built similarity map for \(LearningCacheStorage.shared.exerciseVariationCache.count) exercises")
+        // Assign to shared cache atomically
+        LearningCacheStorage.shared.exerciseVariationCache = variationCache
+        
+        let elapsedMs = (CACurrentMediaTime() - startTime) * 1000
+        print("🧠 [LEARNING ENGINE] Built similarity map for \(variationCache.count) exercises in \(String(format: "%.0f", elapsedMs))ms (background thread)")
     }
     
     /// Get similar exercises based on movement pattern and muscle group

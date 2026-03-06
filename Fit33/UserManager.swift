@@ -530,6 +530,16 @@ class UserManager: ObservableObject {
             
             // Sync workout completion to cloud (debounced)
             scheduleDebouncedCloudSync()
+            
+            // Award league points for workout completion (+50 pts)
+            Task {
+                await WeeklyLeagueService.shared.addPoints(source: .workout)
+                
+                // Update daily quest progress for workout completion
+                let totalSets = (workout.exercises?.allObjects as? [WorkoutExercise])?.count ?? 0
+                let durationSeconds = Int(workout.duration)
+                await DailyQuestService.shared.onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
+            }
         } catch {
             #if DEBUG
             print("Error completing workout: \(error)")

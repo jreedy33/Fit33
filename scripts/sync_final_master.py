@@ -2,6 +2,7 @@
 import csv
 import json
 import os
+import load_env  # noqa: F401 — auto-loads .env credentials
 from supabase import create_client
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')

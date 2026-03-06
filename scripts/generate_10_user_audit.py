@@ -12,6 +12,7 @@ Output: Clean PDF with user profiles and generated workouts.
 """
 
 import os
+import load_env  # noqa: F401 — auto-loads .env credentials
 import sys
 from datetime import datetime
 from typing import List, Dict, Optional, Set
@@ -52,8 +53,8 @@ except ImportError:
 # SUPABASE - REAL DATABASE CONNECTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SUPABASE_URL = "https://ehooeghabzefgoqzugrc.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://ehooeghabzefgoqzugrc.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 

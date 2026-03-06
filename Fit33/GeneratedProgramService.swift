@@ -120,6 +120,11 @@ class GeneratedProgramService: ObservableObject {
         // Record workout for recovery tracking
         ProgramMuscleRecoveryTracker.shared.recordWorkoutFromExercises(day.exercises)
         
+        // Update daily quest progress for program day completion
+        Task { @MainActor in
+            await DailyQuestService.shared.onProgramDayCompleted()
+        }
+        
         // Check if program is complete
         let totalDays = program.durationWeeks * program.daysPerWeek
         let completedDays = program.generatedDays.filter { $0.isCompleted }.count

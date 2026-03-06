@@ -73,7 +73,7 @@ Each workout is graded on:
 ### Simplest Method:
 1. Open Xcode: `open GoFit.xcodeproj`
 2. Run app (⌘+R)
-3. Access Dev Menu (password: `WhatsApp26!`)
+3. Access Dev Menu (password: `[removed for security - check dev team]`)
 4. Tap "Auto-Gen" tab
 5. Tap "Run Comprehensive Test"
 6. Wait 2-5 minutes

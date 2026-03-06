@@ -125,7 +125,7 @@ open GoFit.xcodeproj
 
 ### Step 2: Access Dev Menu
 1. In app, tap Dev Menu button
-2. Enter password: `WhatsApp26!`
+2. Enter password: `[removed for security - check dev team]`
 3. Tap "Auto-Gen" tab (cyan icon)
 
 ### Step 3: Run Test

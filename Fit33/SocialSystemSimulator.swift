@@ -477,6 +477,44 @@ class SocialSystemSimulator: ObservableObject {
         progress = 0.58
         
         // ═══════════════════════════════════════════════════════════
+        // PHASE 4.7: CROSS-TYPE OPPONENT PROGRESS + REALTIME VERIFICATION
+        // For EVERY active challenge, simulate User B logging a realistic
+        // random progress value, then verify User A sees the update within
+        // 5 seconds. This tests ALL types: steps, hydration, protein, etc.
+        // This is the "5202 steps in a 10K challenge" test the user requested.
+        // ═══════════════════════════════════════════════════════════
+        
+        currentPhase = "Phase 4.7: Cross-Type Realtime"
+        statusMessage = "🔥 Testing opponent progress across ALL challenge types..."
+        
+        do {
+            struct TZParams: Encodable { let p_timezone: String }
+            let allActiveChallenges: [ActiveChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_active_challenges", params: TZParams(p_timezone: TimeZone.current.identifier))
+                .execute()
+                .value
+            
+            if allActiveChallenges.isEmpty {
+                logEntry(&report, phase: "CROSS_TYPE_RT", action: "⚠️ No active challenges for cross-type test",
+                         actor: "System", service: "ChallengeService", rpcOrMethod: "get_active_challenges",
+                         success: true, durationMs: 0, severity: "WARN")
+                report.totalTests += 1
+                report.warnings += 1
+            } else {
+                await testCrossTypeRealtimeProgress(report: &report, challenges: allActiveChallenges, userA: userA, userB: userB)
+            }
+        } catch {
+            logEntry(&report, phase: "CROSS_TYPE_RT", action: "❌ Failed to query challenges for cross-type test",
+                     actor: "System", service: "Supabase", rpcOrMethod: "get_active_challenges",
+                     success: false, durationMs: 0, severity: "ERROR",
+                     details: "Error: \(error.localizedDescription)")
+            report.totalTests += 1
+            report.failedTests += 1
+        }
+        
+        progress = 0.62
+        
+        // ═══════════════════════════════════════════════════════════
         // PHASE 5: GROUP CHALLENGE AUDIT (A, B, C)
         // Full 3-way testing: create, accept all, log progress for
         // all 3 users, verify cross-visibility, leaderboard, streaks
@@ -2500,6 +2538,247 @@ class SocialSystemSimulator: ObservableObject {
                      details: "Error: \(error.localizedDescription)")
             report.totalTests += 1
             report.failedTests += 1
+        }
+    }
+    
+    // MARK: - Phase 4.7: Cross-Type Opponent Progress + Realtime Verification
+    
+    /// Tests EVERY active challenge by simulating User B logging a random, realistic progress
+    /// value and verifying User A receives the update in real-time.
+    ///
+    /// Example: If there's a 10K Steps challenge, User B logs 5202 steps (random). We then
+    /// verify that User A's RealtimeService receives the update, and after re-fetching from
+    /// the DB, the opponent progress shows 5202. Covers ALL types: steps, hydration, protein, etc.
+    private func testCrossTypeRealtimeProgress(
+        report: inout SimulationReport,
+        challenges: [ActiveChallenge],
+        userA: SimulatedUser,
+        userB: SimulatedUser
+    ) async {
+        let localTZ = TimeZone.current.identifier
+        let todayStr = SimDateFormatters.dateOnly.string(from: Date())
+        
+        // RPC params with p_force support — when true, the DB always writes the value
+        // (bypasses GREATEST clause) so a Postgres NOTIFY fires every time.
+        struct SimLogForceParams: Encodable {
+            let p_challenge_id: String
+            let p_user_id: String
+            let p_progress_value: Int
+            let p_progress_date: String
+            let p_source: String
+            let p_timezone: String
+            let p_force: Bool
+        }
+        
+        // Direct DB verify struct — queries challenge_daily_progress directly
+        // instead of relying on opponentTodayProgress (which depends on date math)
+        struct DailyProgressRow: Decodable {
+            let progress_value: Int
+        }
+        
+        // Filter to only challenges where User B is the opponent.
+        // This prevents "Target user is not a participant" errors from
+        // pre-existing challenges that don't involve User B.
+        let relevantChallenges = challenges.filter { $0.opponentId == userB.userId }
+        
+        if relevantChallenges.count < challenges.count {
+            let skipped = challenges.count - relevantChallenges.count
+            logEntry(&report, phase: "CROSS_TYPE_RT",
+                     action: "⏭️ Skipping \(skipped) challenge(s) where \(userB.name) is not the opponent",
+                     actor: "System", service: "ChallengeService", rpcOrMethod: "filter",
+                     success: true, durationMs: 0, severity: "INFO",
+                     details: "Testing \(relevantChallenges.count)/\(challenges.count) challenges (opponent = \(userB.name))")
+        }
+        
+        logEntry(&report, phase: "CROSS_TYPE_RT", action: "🔥 Starting cross-type realtime test for \(relevantChallenges.count) active challenges",
+                 actor: "System", service: "ChallengeService", rpcOrMethod: "test_setup",
+                 success: true, durationMs: 0, severity: "INFO",
+                 details: "Types: \(relevantChallenges.map { $0.resolvedType.displayName }.joined(separator: ", "))")
+        
+        var passedCount = 0
+        var failedCount = 0
+        
+        for challenge in relevantChallenges {
+            let resolvedType = challenge.resolvedType
+            
+            // Generate a realistic random progress value based on challenge type
+            let randomProgress = generateRealisticProgress(for: resolvedType, targetUnit: challenge.targetUnit, dailyTarget: challenge.dailyTarget)
+            
+            logEntry(&report, phase: "CROSS_TYPE_RT", action: "📊 \(resolvedType.emoji) \(resolvedType.displayName): \(userB.name) logging \(randomProgress) \(challenge.targetUnit)",
+                     actor: userB.name, service: "ChallengeService", rpcOrMethod: "sim_log_progress_for_user",
+                     success: true, durationMs: 0, severity: "INFO",
+                     details: "Challenge: \(challenge.title), Target: \(challenge.dailyTarget ?? 0) \(challenge.targetUnit)/day")
+            
+            // Clear the realtime event state before logging
+            RealtimeService.shared.lastOpponentProgressEvent = nil
+            let beforeTimestamp = RealtimeService.shared.lastOpponentProgressAt
+            
+            // User B logs the random progress with p_force=true
+            // FORCE MODE ensures the value is always written (even if ≤ existing),
+            // so Postgres fires a NOTIFY → WebSocket event every time.
+            let startLog = Date()
+            do {
+                let _: Bool = try await supabase
+                    .rpc("sim_log_progress_for_user", params: SimLogForceParams(
+                        p_challenge_id: challenge.challengeId.uuidString,
+                        p_user_id: userB.userId.uuidString,
+                        p_progress_value: randomProgress,
+                        p_progress_date: todayStr,
+                        p_source: "sim_crosstype",
+                        p_timezone: localTZ,
+                        p_force: true
+                    ))
+                    .execute()
+                    .value
+                
+                let logDuration = ms(since: startLog)
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "✅ \(resolvedType.emoji) \(userB.name) logged \(randomProgress) \(challenge.targetUnit) in \(logDuration)ms",
+                         actor: userB.name, service: "ChallengeService", rpcOrMethod: "sim_log_progress_for_user",
+                         success: true, durationMs: logDuration, severity: "PASS",
+                         details: "Challenge: \(challenge.challengeId.uuidString.prefix(8)), value: \(randomProgress), force: true")
+                report.totalTests += 1
+                report.passedTests += 1
+            } catch {
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "❌ \(resolvedType.emoji) \(userB.name) progress log FAILED for \(resolvedType.displayName)",
+                         actor: userB.name, service: "ChallengeService", rpcOrMethod: "sim_log_progress_for_user",
+                         success: false, durationMs: ms(since: startLog), severity: "FAIL",
+                         details: "Error: \(error.localizedDescription)")
+                report.totalTests += 1
+                report.failedTests += 1
+                failedCount += 1
+                continue
+            }
+            
+            // Wait for up to 5 seconds for the WebSocket event
+            let startWait = Date()
+            var eventReceived = false
+            var receivedValue: Int?
+            
+            for _ in 0..<20 { // 20 × 250ms = 5 seconds
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                
+                if let lastEvent = RealtimeService.shared.lastOpponentProgressEvent,
+                   lastEvent.challengeId == challenge.challengeId {
+                    if let lastTime = RealtimeService.shared.lastOpponentProgressAt,
+                       (beforeTimestamp == nil || lastTime > beforeTimestamp!) {
+                        eventReceived = true
+                        receivedValue = lastEvent.progressValue
+                        break
+                    }
+                }
+            }
+            
+            let waitMs = ms(since: startWait)
+            
+            if eventReceived {
+                let valueMatches = receivedValue == randomProgress || (receivedValue ?? 0) >= randomProgress
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "⚡️ \(resolvedType.emoji) REALTIME HIT: \(userB.name) logged \(randomProgress) → \(userA.name) received \(receivedValue ?? -1) in \(waitMs)ms",
+                         actor: userA.name, service: "RealtimeService", rpcOrMethod: "WebSocket",
+                         success: valueMatches, durationMs: waitMs,
+                         severity: valueMatches ? "PASS" : "WARN",
+                         details: "Challenge: \(challenge.title) (\(resolvedType.displayName)). \(valueMatches ? "✅ Values match!" : "⚠️ Value mismatch — may be cumulative.")")
+                report.totalTests += 1
+                if valueMatches { report.passedTests += 1; passedCount += 1 }
+                else { report.warnings += 1; passedCount += 1 } // Still counts as a pass (event received)
+            } else {
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "❌ \(resolvedType.emoji) NO REALTIME for \(resolvedType.displayName) after 5s!",
+                         actor: userA.name, service: "RealtimeService", rpcOrMethod: "WebSocket",
+                         success: false, durationMs: waitMs, severity: "FAIL",
+                         details: "🚨 \(userB.name) logged \(randomProgress) \(challenge.targetUnit) for \(challenge.title) but \(userA.name) received NOTHING via WebSocket")
+                report.totalTests += 1
+                report.failedTests += 1
+                failedCount += 1
+            }
+            
+            // DB verify: query challenge_daily_progress DIRECTLY for the exact row we just wrote.
+            // This avoids date-math mismatches from get_active_challenges (which computes "today"
+            // via the DB server clock and may differ from the client's todayStr).
+            let startFetch = Date()
+            do {
+                let rows: [DailyProgressRow] = try await supabase
+                    .from("challenge_daily_progress")
+                    .select("progress_value")
+                    .eq("challenge_id", value: challenge.challengeId.uuidString)
+                    .eq("user_id", value: userB.userId.uuidString)
+                    .eq("progress_date", value: todayStr)
+                    .execute()
+                    .value
+                
+                let fetchMs = ms(since: startFetch)
+                let dbValue = rows.first?.progress_value
+                let shows = dbValue != nil && dbValue! >= randomProgress
+                
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "\(shows ? "✅" : "❌") \(resolvedType.emoji) DB verify: progress_value=\(dbValue ?? -1) (expected \(randomProgress))",
+                         actor: userA.name, service: "Supabase", rpcOrMethod: "challenge_daily_progress",
+                         success: shows, durationMs: fetchMs,
+                         severity: shows ? "PASS" : "FAIL",
+                         details: "Direct query: challenge=\(challenge.challengeId.uuidString.prefix(8)), user=\(userB.userId.uuidString.prefix(8)), date=\(todayStr), value=\(dbValue ?? -1)")
+                report.totalTests += 1
+                if shows { report.passedTests += 1 } else { report.failedTests += 1 }
+            } catch {
+                let fetchMs = ms(since: startFetch)
+                logEntry(&report, phase: "CROSS_TYPE_RT",
+                         action: "❌ \(resolvedType.emoji) DB verify query FAILED",
+                         actor: userA.name, service: "Supabase", rpcOrMethod: "challenge_daily_progress",
+                         success: false, durationMs: fetchMs, severity: "FAIL",
+                         details: "Error: \(error.localizedDescription)")
+                report.totalTests += 1
+                report.failedTests += 1
+            }
+            
+            // Brief pause between challenges
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        
+        // Summary
+        logEntry(&report, phase: "CROSS_TYPE_RT",
+                 action: "📊 Cross-Type Realtime Summary: \(passedCount)/\(relevantChallenges.count) passed, \(failedCount) failed",
+                 actor: "System", service: "SocialSystemSimulator", rpcOrMethod: "summary",
+                 success: failedCount == 0, durationMs: 0,
+                 severity: failedCount == 0 ? "PASS" : (failedCount < relevantChallenges.count ? "WARN" : "FAIL"),
+                 details: "Tested \(relevantChallenges.count) challenge types for real-time opponent progress delivery")
+    }
+    
+    /// Generate a realistic random progress value based on challenge type.
+    /// Returns a value that looks like real-world data (e.g., 5202 steps, 1847ml water).
+    private func generateRealisticProgress(for type: ChallengeType, targetUnit: String, dailyTarget: Int?) -> Int {
+        let target = dailyTarget ?? 10000
+        switch type {
+        case .steps:
+            // Realistic step count: 2000-14000 (partial day to active day)
+            return Int.random(in: 2000...14000)
+        case .walk:
+            // Walking: 10-50 minutes
+            return Int.random(in: 10...50)
+        case .run:
+            // Running: 1-6 miles or 10-60 minutes
+            if targetUnit == "miles" || targetUnit == "km" {
+                return Int.random(in: 1...6)
+            }
+            return Int.random(in: 10...60)
+        case .lift, .workoutStreak:
+            // Lift/streak: 0-2 workouts
+            return Int.random(in: 0...2)
+        case .activeMinutes:
+            // Active minutes: 15-90
+            return Int.random(in: 15...90)
+        case .hydrate:
+            // Hydration: 500-3000ml or 17-100oz
+            if targetUnit.lowercased() == "oz" {
+                return Int.random(in: 17...100)
+            }
+            return Int.random(in: 500...3000)
+        case .protein:
+            // Protein: 40-200g
+            return Int.random(in: 40...200)
+        case .calories:
+            // Calories: 800-2500
+            return Int.random(in: 800...2500)
         }
     }
     

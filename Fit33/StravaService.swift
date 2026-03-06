@@ -121,7 +121,10 @@ final class StravaService: ObservableObject {
             "grant_type": "authorization_code"
         ]
         
-        var request = URLRequest(url: URL(string: Config.tokenUrl)!)
+        guard let tokenURL = URL(string: Config.tokenUrl) else {
+            throw StravaError.tokenExchangeFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
@@ -172,7 +175,10 @@ final class StravaService: ObservableObject {
             "grant_type": "refresh_token"
         ]
         
-        var request = URLRequest(url: URL(string: Config.tokenUrl)!)
+        guard let tokenURL = URL(string: Config.tokenUrl) else {
+            throw StravaError.tokenRefreshFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
@@ -230,16 +236,23 @@ final class StravaService: ObservableObject {
             let token = try await ensureValidToken()
             print("🔑 [STRAVA] Token valid, fetching activities...")
             
-            let after = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date())!
+            guard let after = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
+                throw StravaError.apiError("Failed to compute date range")
+            }
             let afterTimestamp = Int(after.timeIntervalSince1970)
             
-            var components = URLComponents(string: "\(Config.apiBaseUrl)/athlete/activities")!
+            guard var components = URLComponents(string: "\(Config.apiBaseUrl)/athlete/activities") else {
+                throw StravaError.apiError("Invalid activities URL")
+            }
             components.queryItems = [
                 URLQueryItem(name: "after", value: String(afterTimestamp)),
                 URLQueryItem(name: "per_page", value: "100")
             ]
             
-            var request = URLRequest(url: components.url!)
+            guard let activitiesURL = components.url else {
+                throw StravaError.apiError("Invalid activities URL")
+            }
+            var request = URLRequest(url: activitiesURL)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -292,7 +305,10 @@ final class StravaService: ObservableObject {
     func getActivityDetail(id: Int64) async throws -> StravaActivityDetail {
         let token = try await ensureValidToken()
         
-        var request = URLRequest(url: URL(string: "\(Config.apiBaseUrl)/activities/\(id)")!)
+        guard let activityURL = URL(string: "\(Config.apiBaseUrl)/activities/\(id)") else {
+            throw StravaError.apiError("Invalid activity detail URL")
+        }
+        var request = URLRequest(url: activityURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -315,7 +331,10 @@ final class StravaService: ObservableObject {
             throw StravaError.notConnected
         }
         
-        var request = URLRequest(url: URL(string: "\(Config.apiBaseUrl)/athletes/\(athleteId)/stats")!)
+        guard let statsURL = URL(string: "\(Config.apiBaseUrl)/athletes/\(athleteId)/stats") else {
+            throw StravaError.apiError("Invalid athlete stats URL")
+        }
+        var request = URLRequest(url: statsURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         let (data, response) = try await URLSession.shared.data(for: request)

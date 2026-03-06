@@ -390,6 +390,48 @@ struct GoButtonOverlay: View {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK: - Home Badge Counter (Combine-based, prevents render cascade)
+// ═══════════════════════════════════════════════════════════════════════════════
+/// Lightweight counter that tracks ONLY the Home tab badge count via Combine.
+///
+/// 🔴 WHY THIS EXISTS:
+/// Previously, MainTabView directly observed FriendService (12 @Published),
+/// ChallengeService (8 @Published), and PrivateChallengeService (4 @Published).
+/// ANY change to ANY of those 24 properties forced a full re-render of ALL 5 tab
+/// views — causing catastrophic render cascades during HealthKit sync.
+///
+/// This class subscribes to only the 5 specific properties needed for the badge
+/// and uses .removeDuplicates() so MainTabView ONLY re-renders when the actual
+/// badge count changes.
+@MainActor
+final class HomeBadgeCounter: ObservableObject {
+    static let shared = HomeBadgeCounter()
+    @Published private(set) var count: Int = 0
+    private var cancellables = Set<AnyCancellable>()
+    
+    private init() {
+        let friendPending = FriendService.shared.$pendingRequests
+            .map(\.count)
+        let friendWorkouts = FriendService.shared.$receivedWorkouts
+            .map { $0.filter { $0.viewedAt == nil && $0.isPending }.count }
+        let challengeInvites = ChallengeService.shared.$pendingInvites
+            .map(\.count)
+        let groupInvites = ChallengeService.shared.$activeGroupChallenges
+            .map { $0.filter(\.isMyInvitePending).count }
+        let privateInvites = PrivateChallengeService.shared.$pendingInvites
+            .map(\.count)
+        
+        Publishers.CombineLatest3(friendPending, friendWorkouts, challengeInvites)
+            .combineLatest(Publishers.CombineLatest(groupInvites, privateInvites))
+            .map { triple, pair in triple.0 + triple.1 + triple.2 + pair.0 + pair.1 }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.count = $0 }
+            .store(in: &cancellables)
+    }
+}
+
 struct MainTabView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @EnvironmentObject var userManager: UserManager
@@ -397,26 +439,17 @@ struct MainTabView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @StateObject private var deepLinkManager = DeepLinkManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
-    @StateObject private var lazyTabManager = LazyTabManager.shared
-    @StateObject private var tabSwitchOptimizer = TabSwitchOptimizer.shared
-    @StateObject private var tabPreloader = TabPreloader.shared  // ⚡️ For instant tab switching
-    // 🔴 Services observed for Home tab red dot badge
-    @ObservedObject private var friendService = FriendService.shared
-    @ObservedObject private var challengeService = ChallengeService.shared
-    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+    @StateObject private var badgeCounter = HomeBadgeCounter.shared
+    // ⚡️ Tab infrastructure — plain references (NOT @StateObject) to avoid
+    // re-rendering ALL tabs whenever isTransitioning/isPreloadingComplete changes.
+    // These are only used for method calls in onChange handlers.
+    private let lazyTabManager = LazyTabManager.shared
+    private let tabSwitchOptimizer = TabSwitchOptimizer.shared
+    private let tabPreloader = TabPreloader.shared
     @State private var selectedTab: Int = 0
     @State private var scrollToTopTrigger: UUID = UUID()
     @State private var showNotificationPermissionPrompt = false
     @State private var hasCheckedNotificationPermission = false
-    
-    /// Total pending requests/invites shown on the Home tab — drives the red dot badge
-    private var homeTabPendingCount: Int {
-        friendService.pendingRequests.count +
-        friendService.unreadWorkoutCount +
-        challengeService.pendingInvites.count +
-        challengeService.activeGroupChallenges.filter(\.isMyInvitePending).count +
-        privateChallengeService.pendingInvites.count
-    }
     
     private let tabs = [
         TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .white),
@@ -449,7 +482,7 @@ struct MainTabView: View {
                         }
                     }
                     .tag(0)
-                    .badge(homeTabPendingCount)
+                    .badge(badgeCounter.count)
                 
                 // Tab 1: Exercise Library (preloaded for instant access)
                 LazyTabContent(tab: .exercises) {
@@ -605,11 +638,19 @@ struct MainTabView: View {
         }
         .onChange(of: selectedTab) { oldValue, newValue in
             if oldValue != newValue {
+                let switchStartTime = CACurrentMediaTime()
+                
+                // 🔍 FREEZE DEBUG: Step-by-step logging to find where tab switch hangs
+                print("🔍 [TAB FREEZE] ━━━ onChange START: tab \(oldValue)→\(newValue) ━━━")
+                MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
+                
                 // ⚡️ INSTANT TAB SWITCHING: When tabs are preloaded, transition is instant
                 let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
+                print("🔍 [TAB FREEZE] step 1: isInstantSwitch=\(isInstantSwitch) (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
                 
                 // ⚡️ PERFORMANCE: Start optimized tab transition
                 tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
+                print("🔍 [TAB FREEZE] step 2: beginTransition done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
                 
                 // Mark tab as visited for lazy loading
                 if let tab = LazyTabManager.Tab(rawValue: newValue) {
@@ -619,6 +660,7 @@ struct MainTabView: View {
                         SmartPrefetch.shared.prefetchForTab(tab)
                     }
                 }
+                print("🔍 [TAB FREEZE] step 3: markVisited+prefetch done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
                 
                 // Log tab switch with screen IDs
                 let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
@@ -636,10 +678,12 @@ struct MainTabView: View {
                     "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
                     "is_instant": isInstantSwitch
                 ])
+                print("🔍 [TAB FREEZE] step 4: session logging done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
 
                 scrollToTopTrigger = UUID()
                 // Immediately hide GO button when switching tabs
                 GoButtonState.shared.hide(reason: "tab_switch")
+                print("🔍 [TAB FREEZE] step 5: GoButton hidden (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
                 
                 // Always pop to root when switching to Home tab
                 // This prevents stale navigation states from showing unexpected views
@@ -653,9 +697,20 @@ struct MainTabView: View {
                     workoutManager.autoGenCameFromHomeTab = false
                 }
                 
+                let onChangeElapsed = (CACurrentMediaTime() - switchStartTime) * 1000
+                print("🔍 [TAB FREEZE] step 6: onChange handler COMPLETE (\(String(format: "%.1f", onChangeElapsed))ms)")
+                if onChangeElapsed > 100 {
+                    print("⚠️ [TAB FREEZE] onChange handler took \(String(format: "%.0f", onChangeElapsed))ms — may cause jank")
+                }
+                
                 // ⚡️ End transition tracking (async to not block)
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [self] in
+                    let endTime = CACurrentMediaTime()
+                    let totalMs = (endTime - switchStartTime) * 1000
+                    print("🔍 [TAB FREEZE] step 7: endTransition callback fired (\(String(format: "%.1f", totalMs))ms since start)")
                     tabSwitchOptimizer.endTransition()
+                    MainThreadWatchdog.shared.clearContext()
+                    print("🔍 [TAB FREEZE] ━━━ onChange FULLY DONE: tab \(oldValue)→\(newValue) (\(String(format: "%.1f", totalMs))ms) ━━━")
                 }
             }
             // Defer HealthKit fetches to not block tab switch animation
@@ -711,6 +766,12 @@ struct MainTabView: View {
         .sheet(isPresented: $deepLinkManager.showCommunityJoinSheet) {
             if let slug = deepLinkManager.pendingCommunitySlug {
                 CommunityJoinSheet(codeOrSlug: slug)
+            }
+        }
+        // Private Challenge Join Sheet - shows when user opens a /pc/ deep link
+        .sheet(isPresented: $deepLinkManager.showPrivateJoinSheet) {
+            if let code = deepLinkManager.pendingPrivateJoinCode {
+                PrivateChallengeJoinSheet(code: code)
             }
         }
         // MARK: - Notification Permission Prompt
@@ -870,6 +931,13 @@ struct MainTabView: View {
             selectedTab = 0
             // Don't clear - WorkoutTabView/DashboardView handles the navigation
             print("🔗 [DEEPLINK] Switched to Home tab for private challenge")
+            
+        // Private Challenge Join by Code - show preview sheet
+        case .privateChallengeJoinByCode(let code):
+            deepLinkManager.pendingPrivateJoinCode = code
+            deepLinkManager.showPrivateJoinSheet = true
+            deepLinkManager.pendingDestination = nil
+            print("🔗 [DEEPLINK] Showing private challenge join sheet for code: \(code)")
         }
     }
     

@@ -1199,7 +1199,7 @@ class ProgramCustomizationService: ObservableObject {
     
     private func getRequiredEquipment(for exercise: String) -> String {
         // First try the database
-        if let exerciseData = ComprehensiveExerciseDatabase.exercises.first(where: { $0.name == exercise }) {
+        if let exerciseData = ExerciseDataProvider.shared.exercises.first(where: { $0.name == exercise }) {
             return exerciseData.equipment
         }
         
@@ -1266,7 +1266,7 @@ class ProgramCustomizationService: ObservableObject {
     
     private func generateExercisesForFocus(_ focusAreas: [String], count: Int) -> [CloudProgramExercise] {
         // Simple generation based on focus areas
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         var selected: [CloudProgramExercise] = []
         var usedNames: Set<String> = []
         

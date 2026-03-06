@@ -742,7 +742,7 @@ struct ProgramExerciseSwapView: View {
         // Find exercises that target the same muscles
         let targetMuscles = Set(currentExercise.muscleGroups.map { $0.lowercased() })
         
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         let filtered = allExercises.filter { exercise in
             let exerciseMuscles = Set(exercise.muscleGroups.map { $0.lowercased() })
             let hasOverlap = !targetMuscles.isDisjoint(with: exerciseMuscles)

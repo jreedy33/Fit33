@@ -33,6 +33,7 @@ class DeepLinkManager: ObservableObject {
         // Private Challenges
         case privateChallengeDetail(challengeId: String)   // View a private challenge
         case privateChallengeInvite(challengeId: String)   // Accept/view an invite
+        case privateChallengeJoinByCode(code: String)      // Preview + join a private challenge by code
         
         // Dashboard Widgets (navigate to Home + scroll to widget)
         case hydration          // Home tab > Hydration widget
@@ -53,6 +54,8 @@ class DeepLinkManager: ObservableObject {
     @Published var showCommunityJoinSheet = false
     @Published var pendingPrivateChallengeId: String?     // Private challenge to view on open
     @Published var showPrivateChallengeSheet = false
+    @Published var pendingPrivateJoinCode: String?         // Private challenge code to preview + join
+    @Published var showPrivateJoinSheet = false
     
     private init() {}
     
@@ -354,6 +357,18 @@ class DeepLinkManager: ObservableObject {
             }
             return false
             
+        case "pc":
+            // Format: https://fit33.app/pc/{joinCode} — show private challenge preview + join
+            if pathComponents.count >= 2 {
+                let joinCode = pathComponents[1]
+                pendingPrivateJoinCode = joinCode
+                pendingDestination = .privateChallengeJoinByCode(code: joinCode)
+                showPrivateJoinSheet = true
+                print("🔒 [DEEPLINK] Universal link to private challenge join preview: \(joinCode)")
+                return true
+            }
+            return false
+            
         default:
             return false
         }
@@ -368,6 +383,8 @@ class DeepLinkManager: ObservableObject {
         showCommunityJoinSheet = false
         pendingPrivateChallengeId = nil
         showPrivateChallengeSheet = false
+        pendingPrivateJoinCode = nil
+        showPrivateJoinSheet = false
     }
 }
 

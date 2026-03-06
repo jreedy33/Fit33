@@ -13,7 +13,7 @@ Press `⌘+R` in Xcode
 
 ### Step 3: Access Dev Menu
 1. Tap the Dev Menu button in your app
-2. Enter password: `WhatsApp26!`
+2. Enter password: `[removed for security - check dev team]`
 3. Tap the **"Auto-Gen"** tab (cyan icon with wand and stars)
 
 ### Step 4: Run Test

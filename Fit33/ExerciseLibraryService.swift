@@ -1,7 +1,7 @@
 import Foundation
 import CoreData
 
-struct ExerciseData {
+struct ExerciseData: Codable {
     let name: String
     let category: String
     let muscleGroups: [String]
@@ -11,7 +11,13 @@ struct ExerciseData {
     let primaryMuscle: String
     let secondaryMuscles: [String]
     let sources: [String]
-    var videoFilename: String? = nil  // For direct video lookup
+    var videoFilename: String? = nil  // For direct video lookup (not in JSON)
+    
+    enum CodingKeys: String, CodingKey {
+        case name, category, muscleGroups, equipment, instructions
+        case primaryBodyRegion, primaryMuscle, secondaryMuscles, sources
+        // videoFilename is excluded from JSON — it's set at runtime
+    }
 }
 
 class ExerciseLibraryService: ObservableObject {
@@ -19,10 +25,9 @@ class ExerciseLibraryService: ObservableObject {
     
     private let viewContext = PersistenceController.shared.container.viewContext
     
-    // ⚡️ MEMORY FIX: Changed from `let` to lazy computed.
-    // The full ComprehensiveExerciseDatabase (7800 lines, 400+ exercises) was loaded on init
-    // and held permanently in memory even though it's only used once during initial setup.
-    private var defaultExercises: [ExerciseData] { ComprehensiveExerciseDatabase.exercises }
+    // ⚡️ PERF: Loads from exercises.json via ExerciseDataProvider (lazy, cached).
+    // Previously loaded from ComprehensiveExerciseDatabase.swift (7800 lines of hardcoded Swift).
+    private var defaultExercises: [ExerciseData] { ExerciseDataProvider.shared.exercises }
     
     // MARK: - Loading State (for UI to know when exercises are ready)
     @Published var isExercisesReady: Bool = false

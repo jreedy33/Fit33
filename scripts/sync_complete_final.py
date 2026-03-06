@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Complete sync of ALL 36 columns from Final Master Correct.csv"""
-import csv, json
+import csv, json, os
+import load_env  # noqa: F401 — auto-loads .env credentials
 from supabase import create_client
 
-SUPABASE_URL = 'https://ehooeghabzefgoqzugrc.supabase.co'
-SUPABASE_KEY = 'sb_secret_qF4j8_mWAjBSgto-7pmJlQ_J47n5qNO'
+# ⚠️ This script requires the SERVICE ROLE key (bypasses RLS).
+# Set SUPABASE_SERVICE_ROLE_KEY in your environment. NEVER hardcode it.
+SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://ehooeghabzefgoqzugrc.supabase.co')
+SUPABASE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']  # Required — will error if not set
 
 def parse_muscles(value):
     """Convert plain text or comma-separated to JSON array"""

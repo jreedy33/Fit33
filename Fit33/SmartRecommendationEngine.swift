@@ -229,7 +229,7 @@ class SmartRecommendationEngine {
         community: CommunityInsightsData
     ) -> [RecommendedExercise] {
         
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         var selectedExercises: [RecommendedExercise] = []
         var usedMovementPatterns: Set<String> = []
         var usedExerciseNames: Set<String> = []

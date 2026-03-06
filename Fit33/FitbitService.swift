@@ -144,13 +144,18 @@ final class FitbitService: ObservableObject {
         
         let bodyString = bodyParams.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         
-        var request = URLRequest(url: URL(string: Config.tokenUrl)!)
+        guard let tokenURL = URL(string: Config.tokenUrl) else {
+            throw FitbitError.tokenExchangeFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
         // Fitbit requires Basic auth header with client_id:client_secret
         let credentials = "\(Config.clientId):\(Config.clientSecret)"
-        let credentialsData = credentials.data(using: .utf8)!
+        guard let credentialsData = credentials.data(using: .utf8) else {
+            throw FitbitError.tokenExchangeFailed
+        }
         let base64Credentials = credentialsData.base64EncodedString()
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         
@@ -207,13 +212,18 @@ final class FitbitService: ObservableObject {
         
         let bodyString = bodyParams.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         
-        var request = URLRequest(url: URL(string: Config.tokenUrl)!)
+        guard let tokenURL = URL(string: Config.tokenUrl) else {
+            throw FitbitError.tokenRefreshFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
         // Fitbit requires Basic auth header
         let credentials = "\(Config.clientId):\(Config.clientSecret)"
-        let credentialsData = credentials.data(using: .utf8)!
+        guard let credentialsData = credentials.data(using: .utf8) else {
+            throw FitbitError.tokenRefreshFailed
+        }
         let base64Credentials = credentialsData.base64EncodedString()
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         
@@ -284,7 +294,10 @@ final class FitbitService: ObservableObject {
         do {
             let token = try await ensureValidToken()
             
-            var request = URLRequest(url: URL(string: "\(Config.apiBaseUrl)/1/user/-/profile.json")!)
+            guard let profileURL = URL(string: "\(Config.apiBaseUrl)/1/user/-/profile.json") else {
+                throw FitbitError.apiError("Invalid profile URL")
+            }
+            var request = URLRequest(url: profileURL)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -357,12 +370,16 @@ final class FitbitService: ObservableObject {
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM-dd"
             
-            let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date())!
+            guard let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
+                throw FitbitError.apiError("Failed to compute date range")
+            }
             let afterDateStr = dateFormatter.string(from: afterDate)
             let todayStr = dateFormatter.string(from: Date())
             
             // Fetch activity logs
-            let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/list.json?afterDate=\(afterDateStr)&sort=desc&limit=100&offset=0")!
+            guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/list.json?afterDate=\(afterDateStr)&sort=desc&limit=100&offset=0") else {
+                throw FitbitError.apiError("Invalid activities URL")
+            }
             
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -396,7 +413,9 @@ final class FitbitService: ObservableObject {
             dateFormatter.dateFormat = "yyyy-MM-dd"
             let todayStr = dateFormatter.string(from: Date())
             
-            let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/date/\(todayStr).json")!
+            guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/date/\(todayStr).json") else {
+                throw FitbitError.apiError("Invalid daily summary URL")
+            }
             
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -425,11 +444,15 @@ final class FitbitService: ObservableObject {
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM-dd"
             
-            let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date())!
+            guard let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
+                throw FitbitError.apiError("Failed to compute date range")
+            }
             let afterDateStr = dateFormatter.string(from: afterDate)
             let todayStr = dateFormatter.string(from: Date())
             
-            let url = URL(string: "\(Config.apiBaseUrl)/1.2/user/-/sleep/date/\(afterDateStr)/\(todayStr).json")!
+            guard let url = URL(string: "\(Config.apiBaseUrl)/1.2/user/-/sleep/date/\(afterDateStr)/\(todayStr).json") else {
+                throw FitbitError.apiError("Invalid sleep URL")
+            }
             
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -459,7 +482,9 @@ final class FitbitService: ObservableObject {
             dateFormatter.dateFormat = "yyyy-MM-dd"
             let dateStr = dateFormatter.string(from: date)
             
-            let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/heart/date/\(dateStr)/1d.json")!
+            guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/heart/date/\(dateStr)/1d.json") else {
+                return nil
+            }
             
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

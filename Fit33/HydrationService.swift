@@ -443,10 +443,20 @@ class HydrationService: ObservableObject {
                 // Don't reload from cloud if insert failed - keep local data
             }
             
-            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated total to any active hydration challenges
+            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated total to ALL challenge types
             let totalForChallenge = todayTotal
             Task {
+                // Sync to 1v1 challenges
                 await ChallengeService.shared.syncTrackingForType(.hydrate, value: totalForChallenge, source: "hydration")
+                
+                // Sync to private challenges
+                await PrivateChallengeService.shared.syncTrackingForType(.hydrate, value: totalForChallenge, source: "hydration")
+                
+                // Sync to community challenges
+                await CommunityChallengeService.shared.syncTrackingForType(.hydrate, value: totalForChallenge, source: "hydration")
+                
+                // Update daily quest progress for water logging
+                await DailyQuestService.shared.onWaterLogged()
             }
         } else {
             print("ℹ️ [Water] Logged \(amountMl)ml locally (offline mode)")
@@ -474,7 +484,14 @@ class HydrationService: ObservableObject {
             // and fire a realtime event so the opponent sees the change.
             let updatedTotal = todayTotal
             Task {
+                // Sync to 1v1 challenges (with decrease support)
                 await ChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration", allowDecrease: true)
+                
+                // Sync to private challenges (re-push new total — GREATEST in DB keeps it safe)
+                await PrivateChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration")
+                
+                // Sync to community challenges
+                await CommunityChallengeService.shared.syncTrackingForType(.hydrate, value: updatedTotal, source: "hydration")
             }
             
             return true

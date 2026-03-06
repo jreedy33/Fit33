@@ -6,6 +6,7 @@ Sync exercises table with CSV - updates existing, deletes removed exercises
 import csv
 import json
 import os
+import load_env  # noqa: F401 — auto-loads .env credentials
 import sys
 from supabase import create_client, Client
 

@@ -7,10 +7,12 @@ struct SettingsView: View {
     @StateObject private var fitbitService = FitbitService.shared
     @StateObject private var healthKitService = HealthKitService.shared
     
+    #if DEBUG
     @State private var versionTapCount = 0
     @State private var showDevMenu = false
     @State private var showAdminPassword = false
     @State private var isAdminAuthenticated = false
+    #endif
     
     @State private var showBugReportSheet = false
     @State private var isSyncingProfile = false
@@ -706,11 +708,13 @@ struct SettingsView: View {
                                 }
                                 .buttonStyle(.plain)
                                 
+                                #if DEBUG
                                 // Hidden NavigationLink to dev menu (after password authentication)
                                 NavigationLink(destination: DevMenuView(), isActive: $showDevMenu) {
                                     EmptyView()
                                 }
                                 .hidden()
+                                #endif
                                 
                                 Divider().padding(.leading, 52)
                                 
@@ -789,6 +793,7 @@ struct SettingsView: View {
         .onAppear {
             SessionLogManager.shared.logScreen(.settings)
         }
+        #if DEBUG
         .sheet(isPresented: $showAdminPassword) {
             AdminPasswordView(isAuthenticated: $isAdminAuthenticated)
         }
@@ -801,6 +806,7 @@ struct SettingsView: View {
                 }
             }
         }
+        #endif
         .sheet(isPresented: $showBugReportSheet) {
             ManualBugReportView()
         }

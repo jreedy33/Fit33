@@ -544,7 +544,7 @@ class RecipePreferenceService: ObservableObject {
         
         print("🍽️ [RECIPE PREFS] Smart match query: '\(searchQuery)' offset: \(randomOffset)")
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }
@@ -684,7 +684,7 @@ class RecipePreferenceService: ObservableObject {
         
         print("🍽️ [RECIPE PREFS] Strategy 2 query: '\(queryIngredient)' exclude: \(excludeIngredients.prefix(30))...")
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }
@@ -757,7 +757,7 @@ class RecipePreferenceService: ObservableObject {
             offset: randomOffset
         )
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }
@@ -836,7 +836,7 @@ class RecipePreferenceService: ObservableObject {
             offset: randomOffset
         )
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }
@@ -920,7 +920,7 @@ class RecipePreferenceService: ObservableObject {
         let randomOffset = Int.random(in: 0...50)
         queryItems.append(URLQueryItem(name: "offset", value: String(randomOffset)))
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }
@@ -981,7 +981,7 @@ class RecipePreferenceService: ObservableObject {
         let randomOffset = Int.random(in: 0...50)
         queryItems.append(URLQueryItem(name: "offset", value: String(randomOffset)))
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else { return [] }

@@ -308,7 +308,6 @@ final class CrashReportingService {
     /// Add a breadcrumb — call this on every significant user action.
     func addBreadcrumb(_ action: String, screen: String? = nil) {
         breadcrumbLock.lock()
-        defer { breadcrumbLock.unlock() }
         
         let currentScreen = screen ?? getCurrentScreen()
         breadcrumbs.append((action: action, screen: currentScreen, timestamp: Date()))
@@ -319,8 +318,20 @@ final class CrashReportingService {
         }
         
         // Persist breadcrumbs to disk periodically (every 10 actions)
+        // Take snapshot while holding lock, then release before disk I/O
+        var snapshotForPersist: [[String: String]]? = nil
         if breadcrumbs.count % 10 == 0 {
-            persistBreadcrumbsToDisk()
+            snapshotForPersist = _breadcrumbsSnapshotUnsafe()
+        }
+        
+        breadcrumbLock.unlock()
+        
+        // Disk write happens OUTSIDE the lock on a background queue
+        // to avoid blocking the main thread and prevent deadlocks
+        if let snapshot = snapshotForPersist {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.persistBreadcrumbsSnapshot(snapshot)
+            }
         }
     }
     
@@ -329,10 +340,16 @@ final class CrashReportingService {
         return "Unknown"
     }
     
+    /// Thread-safe snapshot — acquires lock internally. Safe to call from any context.
     private func getBreadcrumbsSnapshot() -> [[String: String]] {
         breadcrumbLock.lock()
-        defer { breadcrumbLock.unlock() }
-        
+        let snapshot = _breadcrumbsSnapshotUnsafe()
+        breadcrumbLock.unlock()
+        return snapshot
+    }
+    
+    /// Unsafe snapshot — caller MUST already hold breadcrumbLock.
+    private func _breadcrumbsSnapshotUnsafe() -> [[String: String]] {
         let formatter = ISO8601DateFormatter()
         return breadcrumbs.map { crumb in
             [
@@ -540,14 +557,21 @@ final class CrashReportingService {
         try? FileManager.default.removeItem(at: pendingReportsURL)
     }
     
-    private func persistBreadcrumbsToDisk() {
-        let snapshot = getBreadcrumbsSnapshot()
+    /// Persist a pre-built snapshot to disk. Does NOT acquire any locks.
+    private func persistBreadcrumbsSnapshot(_ snapshot: [[String: String]]) {
         do {
             let data = try JSONEncoder().encode(snapshot)
             try data.write(to: breadcrumbsURL, options: .atomic)
         } catch {
             // Non-critical
         }
+    }
+    
+    /// Thread-safe persist — acquires lock, snapshots, then writes to disk.
+    /// Only call this from contexts that do NOT already hold breadcrumbLock.
+    private func persistBreadcrumbsToDisk() {
+        let snapshot = getBreadcrumbsSnapshot()
+        persistBreadcrumbsSnapshot(snapshot)
     }
     
     private func restoreBreadcrumbs() {

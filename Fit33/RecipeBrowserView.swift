@@ -544,7 +544,11 @@ class RecipeBrowserViewModel: ObservableObject {
             }
         }
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else {
+            errorMessage = "Invalid URL"
+            isLoading = false
+            return
+        }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {
@@ -603,7 +607,11 @@ class RecipeBrowserViewModel: ObservableObject {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .joined(separator: ",+")
         
-        let url = URL(string: "\(baseURL)/recipes/findByIngredients?apiKey=\(apiKey)&ingredients=\(ingredients)&number=\(pageSize)&ranking=1&ignorePantry=true")!
+        guard let url = URL(string: "\(baseURL)/recipes/findByIngredients?apiKey=\(apiKey)&ingredients=\(ingredients)&number=\(pageSize)&ranking=1&ignorePantry=true") else {
+            errorMessage = "Invalid search URL"
+            isLoading = false
+            return
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -667,7 +675,10 @@ class RecipeBrowserViewModel: ObservableObject {
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else {
+            isLoadingMore = false
+            return
+        }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {

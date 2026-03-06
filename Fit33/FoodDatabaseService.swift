@@ -262,7 +262,10 @@ class FoodDatabaseService: ObservableObject {
         
         do {
             // Make the request using URLSession to get raw response
-            var urlRequest = URLRequest(url: URL(string: "https://ehooeghabzefgoqzugrc.supabase.co/functions/v1/usda-food-search")!)
+            guard let edgeFunctionURL = URL(string: "https://ehooeghabzefgoqzugrc.supabase.co/functions/v1/usda-food-search") else {
+                throw NSError(domain: "FoodDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid edge function URL"])
+            }
+            var urlRequest = URLRequest(url: edgeFunctionURL)
             urlRequest.httpMethod = "POST"
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             urlRequest.setValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0", forHTTPHeaderField: "Authorization")

@@ -632,6 +632,9 @@ class CloudProgramService: ObservableObject {
         saveProgramToCache()
         print("💾 Program cache updated")
         
+        // Update daily quest progress for program day completion
+        await DailyQuestService.shared.onProgramDayCompleted()
+        
         // Check if program is complete
         await checkProgramCompletion()
     }
@@ -1389,7 +1392,7 @@ class CloudProgramService: ObservableObject {
         }
         
         let targetCount = max(day.day.exerciseCount, 5) // Minimum 5 exercises
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         let mappedEquipment = Set(mapEquipment(day.day.requiredEquipment))
         
         // If day has predefined exercises, find them in the database
@@ -1841,7 +1844,7 @@ class CloudProgramService: ObservableObject {
     
     /// Fallback exercise generation when intelligent generator fails
     private func generateFallbackExercises(for day: FullProgramDay) -> [ExerciseData] {
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         let focusAreas = Set(day.day.focusAreas.map { $0.lowercased() })
         let equipment = Set(day.day.requiredEquipment.map { $0.lowercased() })
         

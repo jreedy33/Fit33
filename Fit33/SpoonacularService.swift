@@ -75,7 +75,11 @@ class SpoonacularService: ObservableObject {
             queryItems.append(URLQueryItem(name: "diet", value: diet))
         }
         
-        var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else {
+            errorMessage = "Invalid URL"
+            isLoading = false
+            return
+        }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {
@@ -138,7 +142,10 @@ class SpoonacularService: ObservableObject {
             return cached
         }
         
-        let url = URL(string: "\(baseURL)/recipes/\(recipeId)/information?apiKey=\(apiKey)&includeNutrition=true")!
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/information?apiKey=\(apiKey)&includeNutrition=true") else {
+            print("❌ [SPOONACULAR] Invalid URL for recipe detail")
+            return nil
+        }
         
         print("🍽️ [SPOONACULAR] Fetching detail for recipe \(recipeId)")
         
@@ -168,7 +175,10 @@ class SpoonacularService: ObservableObject {
     
     /// Fetches recipes similar to a given recipe
     func fetchSimilarRecipes(recipeId: Int, number: Int = 4) async -> [SimilarRecipe] {
-        let url = URL(string: "\(baseURL)/recipes/\(recipeId)/similar?apiKey=\(apiKey)&number=\(number)")!
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/similar?apiKey=\(apiKey)&number=\(number)") else {
+            print("❌ [SPOONACULAR] Invalid URL for similar recipes")
+            return []
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -193,7 +203,11 @@ class SpoonacularService: ObservableObject {
         errorMessage = nil
         
         let tagsString = tags.joined(separator: ",")
-        let url = URL(string: "\(baseURL)/recipes/random?apiKey=\(apiKey)&number=\(number)&tags=\(tagsString)")!
+        guard let url = URL(string: "\(baseURL)/recipes/random?apiKey=\(apiKey)&number=\(number)&tags=\(tagsString)") else {
+            errorMessage = SpoonacularError.invalidURL.localizedDescription
+            isLoading = false
+            return
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -275,6 +289,7 @@ enum SpoonacularError: LocalizedError {
     case invalidApiKey
     case quotaExceeded
     case invalidResponse
+    case invalidURL
     case httpError(Int)
     case decodingError
     
@@ -286,6 +301,8 @@ enum SpoonacularError: LocalizedError {
             return "API quota exceeded. Recipes will refresh tomorrow."
         case .invalidResponse:
             return "Invalid response from server."
+        case .invalidURL:
+            return "Failed to construct API request URL."
         case .httpError(let code):
             return "Server error (code: \(code))"
         case .decodingError:

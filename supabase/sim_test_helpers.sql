@@ -15,9 +15,10 @@
 -- DEPLOY: Run this in Supabase SQL Editor before running the simulator.
 -- ============================================================================
 
--- Drop existing versions
+-- Drop existing versions (all known overloads)
 DROP FUNCTION IF EXISTS sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT, BOOLEAN);
 
 CREATE OR REPLACE FUNCTION sim_log_progress_for_user(
     p_challenge_id TEXT,
@@ -25,7 +26,10 @@ CREATE OR REPLACE FUNCTION sim_log_progress_for_user(
     p_progress_value INT,
     p_progress_date TEXT DEFAULT NULL,
     p_source TEXT DEFAULT 'manual',
-    p_timezone TEXT DEFAULT 'UTC'
+    p_timezone TEXT DEFAULT 'UTC',
+    p_force BOOLEAN DEFAULT FALSE  -- When TRUE, always SET the value (no GREATEST guard).
+                                    -- Used by the cross-type realtime test to ensure
+                                    -- every write fires a Postgres NOTIFY → WebSocket event.
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -83,23 +87,41 @@ BEGIN
     v_target_hit := (v_daily_target IS NOT NULL AND p_progress_value >= v_daily_target);
 
     -- Upsert daily progress for the TARGET user (not caller)
-    INSERT INTO challenge_daily_progress (
-        challenge_id, user_id, progress_date, progress_value, target_hit, source, updated_at
-    ) VALUES (
-        challenge_uuid, target_user_uuid, v_progress_date, p_progress_value,
-        v_target_hit, p_source, NOW()
-    )
-    ON CONFLICT (challenge_id, user_id, progress_date)
-    DO UPDATE SET
-        progress_value = GREATEST(challenge_daily_progress.progress_value, EXCLUDED.progress_value),
-        target_hit = CASE
-            WHEN EXCLUDED.progress_value > challenge_daily_progress.progress_value
-            THEN EXCLUDED.target_hit
-            ELSE challenge_daily_progress.target_hit
-        END,
-        source = EXCLUDED.source,
-        updated_at = NOW()
-    WHERE EXCLUDED.progress_value > challenge_daily_progress.progress_value;
+    IF p_force THEN
+        -- FORCE MODE: Always write the exact value. Guarantees a DB UPDATE event
+        -- fires every time, which is essential for realtime test verification.
+        INSERT INTO challenge_daily_progress (
+            challenge_id, user_id, progress_date, progress_value, target_hit, source, updated_at
+        ) VALUES (
+            challenge_uuid, target_user_uuid, v_progress_date, p_progress_value,
+            v_target_hit, p_source, NOW()
+        )
+        ON CONFLICT (challenge_id, user_id, progress_date)
+        DO UPDATE SET
+            progress_value = EXCLUDED.progress_value,
+            target_hit = EXCLUDED.target_hit,
+            source = EXCLUDED.source,
+            updated_at = NOW();
+    ELSE
+        -- NORMAL MODE: Only update if the new value is higher (production behavior)
+        INSERT INTO challenge_daily_progress (
+            challenge_id, user_id, progress_date, progress_value, target_hit, source, updated_at
+        ) VALUES (
+            challenge_uuid, target_user_uuid, v_progress_date, p_progress_value,
+            v_target_hit, p_source, NOW()
+        )
+        ON CONFLICT (challenge_id, user_id, progress_date)
+        DO UPDATE SET
+            progress_value = GREATEST(challenge_daily_progress.progress_value, EXCLUDED.progress_value),
+            target_hit = CASE
+                WHEN EXCLUDED.progress_value > challenge_daily_progress.progress_value
+                THEN EXCLUDED.target_hit
+                ELSE challenge_daily_progress.target_hit
+            END,
+            source = EXCLUDED.source,
+            updated_at = NOW()
+        WHERE EXCLUDED.progress_value > challenge_daily_progress.progress_value;
+    END IF;
 
     -- Calculate streak for the target user
     v_check_date := v_progress_date;
@@ -150,7 +172,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION sim_log_progress_for_user(TEXT, TEXT, INT, TEXT, TEXT, TEXT, BOOLEAN) TO authenticated;
 
 -- ============================================================================
 -- FUNCTION 2: sim_accept_challenge_for_user

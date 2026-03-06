@@ -116,10 +116,8 @@ class WorkoutGeneratorService: ObservableObject {
         }
     }
     
-    private let supabase = SupabaseClient(
-        supabaseURL: URL(string: "https://ehooeghabzefgoqzugrc.supabase.co")!,
-        supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0"
-    )
+    // ⚡️ Use the shared Supabase client instead of duplicating credentials
+    private var supabase: SupabaseClient { SupabaseManager.shared.supabaseClient }
     
     @Published var isGenerating = false
     @Published var generatedExercises: [GeneratedExercise] = []
@@ -277,7 +275,7 @@ class WorkoutGeneratorService: ObservableObject {
         count: Int,
         excludeExerciseIds: [String]
     ) -> [GeneratedExercise] {
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         
         // Normalize inputs for matching
         let normalizedPrimaries = Set(primaryMuscles.map { $0.lowercased() })

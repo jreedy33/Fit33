@@ -11,7 +11,22 @@ class MealService: ObservableObject {
     @Published var todaysMeals: [MealEntryData] = []
     @Published var isLoading = false
     
+    /// Tracks when todaysMeals was last loaded so we can detect stale (previous-day) data.
+    private var lastLoadDate: Date?
+    
     private init() {
+        loadTodaysMeals()
+    }
+    
+    /// Ensures todaysMeals is fresh — re-fetches from Core Data if the last load was on a
+    /// different calendar day. Call this before any code that reads todaysMeals for syncing
+    /// (challenge sync, background sync, etc.) to prevent stale yesterday data from being
+    /// pushed as today's progress.
+    func ensureFreshForToday() {
+        if let lastLoad = lastLoadDate, Calendar.current.isDateInToday(lastLoad) {
+            return // Already loaded today — data is fresh
+        }
+        print("🔄 [MEAL SERVICE] Data stale (loaded on a different day) — refreshing for today")
         loadTodaysMeals()
     }
     
@@ -86,18 +101,46 @@ class MealService: ObservableObject {
                     calories: foodEntry.calories,
                     protein: foodEntry.protein
                 )
+                
+                // Update daily quest progress for meal logging (pass meal type for specific quests)
+                await DailyQuestService.shared.onMealLogged(mealType: mealType.rawValue)
+                
+                // Track high-protein meals (30g+ protein) for quest
+                if foodEntry.protein >= 30 {
+                    await DailyQuestService.shared.onHighProteinMealLogged()
+                }
+                
+                // Award league points for meal logging (+10 pts)
+                await WeeklyLeagueService.shared.addPoints(source: .mealLogged)
             }
             
-            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated protein/calories to any active challenges
+            // ⚡ REAL-TIME CHALLENGE SYNC: Push updated protein/calories to ALL challenge types
             Task { @MainActor in
                 let totalProtein = todaysMeals.reduce(0) { $0 + $1.protein }
                 let totalCalories = todaysMeals.reduce(0) { $0 + $1.calories }
                 
+                // Sync to 1v1 challenges
                 if totalProtein > 0 {
                     await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
                 }
                 if totalCalories > 0 {
                     await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
+                }
+                
+                // Sync to private challenges
+                if totalProtein > 0 {
+                    await PrivateChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
+                }
+                if totalCalories > 0 {
+                    await PrivateChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
+                }
+                
+                // Sync to community challenges
+                if totalProtein > 0 {
+                    await CommunityChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals")
+                }
+                if totalCalories > 0 {
+                    await CommunityChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals")
                 }
             }
         } catch {
@@ -144,8 +187,18 @@ class MealService: ObservableObject {
                 Task { @MainActor in
                     let totalProtein = todaysMeals.reduce(0) { $0 + $1.protein }
                     let totalCalories = todaysMeals.reduce(0) { $0 + $1.calories }
+                    
+                    // Sync to 1v1 challenges (with decrease support)
                     await ChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals", allowDecrease: true)
                     await ChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals", allowDecrease: true)
+                    
+                    // Sync to private challenges (allowDecrease so DB accepts the lower value)
+                    await PrivateChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals", allowDecrease: true)
+                    await PrivateChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals", allowDecrease: true)
+                    
+                    // Sync to community challenges (allowDecrease so DB accepts the lower value)
+                    await CommunityChallengeService.shared.syncTrackingForType(.protein, value: totalProtein, source: "meals", allowDecrease: true)
+                    await CommunityChallengeService.shared.syncTrackingForType(.calories, value: totalCalories, source: "meals", allowDecrease: true)
                 }
             }
         } catch {
@@ -199,6 +252,7 @@ class MealService: ObservableObject {
     
     func loadTodaysMeals() {
         isLoading = true
+        lastLoadDate = Date()   // Track when we loaded so ensureFreshForToday() can detect staleness
         
         let request: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
         let calendar = Calendar.current

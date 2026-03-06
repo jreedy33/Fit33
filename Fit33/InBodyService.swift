@@ -119,7 +119,10 @@ class InBodyService: ObservableObject {
     
     /// Exchange authorization code for access/refresh tokens
     private func exchangeCodeForTokens(code: String) async throws -> TokenResponse {
-        var request = URLRequest(url: URL(string: "\(baseURL)/oauth/token")!)
+        guard let tokenURL = URL(string: "\(baseURL)/oauth/token") else {
+            throw InBodyError.authenticationFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
@@ -149,7 +152,10 @@ class InBodyService: ObservableObject {
             throw InBodyError.noRefreshToken
         }
         
-        var request = URLRequest(url: URL(string: "\(baseURL)/oauth/token")!)
+        guard let tokenURL = URL(string: "\(baseURL)/oauth/token") else {
+            throw InBodyError.tokenRefreshFailed
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
@@ -198,7 +204,9 @@ class InBodyService: ObservableObject {
         do {
             // Fetch measurements from InBody API
             // Default: last 30 days of measurements
-            let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+            guard let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) else {
+                throw InBodyError.networkError
+            }
             let fromDate = ISO8601DateFormatter().string(from: thirtyDaysAgo)
             
             let data = try await makeAuthenticatedRequest(

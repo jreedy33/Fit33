@@ -6,6 +6,7 @@ Update exercises table in Supabase from improved CSV
 import csv
 import json
 import os
+import load_env  # noqa: F401 — auto-loads .env credentials
 from supabase import create_client, Client
 
 # Supabase connection (you'll need to set these environment variables)

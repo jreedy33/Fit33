@@ -419,8 +419,7 @@ class ChallengeService: ObservableObject {
     /// This is critical at startup when many concurrent requests compete for the network layer.
     private func withCancelRetry<T>(
         label: String,
-        maxRetries: Int = 2,
-        retryDelay: UInt64 = 1_500_000_000, // 1.5 seconds
+        maxRetries: Int = 4,
         operation: () async throws -> T
     ) async throws -> T {
         var lastError: Error?
@@ -432,8 +431,10 @@ class ChallengeService: ObservableObject {
                 let nsError = error as NSError
                 // Only retry on -999 cancelled errors (network congestion)
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
-                    print("🔄 [CHALLENGES] \(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(retryDelay / 1_000_000_000)s...")
-                    try? await Task.sleep(nanoseconds: retryDelay)
+                    // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                    print("🔄 [CHALLENGES] \(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...")
+                    try? await Task.sleep(nanoseconds: delay)
                     continue
                 }
                 throw error
@@ -817,6 +818,9 @@ class ChallengeService: ObservableObject {
             referenceId: challengeId,
             referenceType: "challenge"
         )
+        
+        // Update daily quest progress for sending a challenge
+        await DailyQuestService.shared.onChallengeSent()
         
         // Refresh PENDING sent challenges (NOT active - challenge is pending until opponent accepts)
         await fetchPendingSentChallenges()
@@ -1570,51 +1574,64 @@ class ChallengeService: ObservableObject {
         workoutId: UUID? = nil,
         allowDecrease: Bool = false
     ) async -> Bool {
-        do {
-            struct LogProgressParams: Encodable {
-                let p_challenge_id: String
-                let p_progress_value: Int
-                let p_progress_date: String?
-                let p_source: String
-                let p_workout_id: String?
-                let p_timezone: String
-                let p_allow_decrease: Bool
-            }
-            
-            // When date is nil (default), let the SERVER determine "today" using
-            // the challenge's stored creator_timezone. This ensures both participants
-            // see the same day boundary (midnight in the creator's timezone).
-            // Only pass an explicit date for simulator/backfill scenarios.
-            let dateStr: String? = date.map { ChallengeFormatters.localDateOnly.string(from: $0) }
-            
-            let _: Bool = try await SupabaseManager.shared.supabaseClient
-                .rpc("log_challenge_progress", params: LogProgressParams(
-                    p_challenge_id: challengeId.uuidString,
-                    p_progress_value: progressValue,
-                    p_progress_date: dateStr,
-                    p_source: source,
-                    p_workout_id: workoutId?.uuidString,
-                    p_timezone: TimeZone.current.identifier,
-                    p_allow_decrease: allowDecrease
-                ))
-                .execute()
-                .value
-            
-            print("✅ [PROGRESS LOG] Logged \(progressValue) (source: \(source)) for challenge \(challengeId.uuidString.prefix(8))")
-            
-            // Refresh active challenges to show updated progress
-            await fetchActiveChallenges()
-            
-            // Log what the widget will now show
-            if let updated = activeChallenges.first(where: { $0.challengeId == challengeId }) {
-                print("📊 [PROGRESS LOG] After refresh → myToday: \(updated.myTodayProgress ?? -1), oppToday: \(updated.opponentTodayProgress ?? -1), myTotal: \(updated.myTotalProgress), oppTotal: \(updated.opponentTotalProgress)")
-            }
-            
-            return true
-        } catch {
-            print("❌ [CHALLENGES] Error logging progress: \(error)")
-            return false
+        struct LogProgressParams: Encodable {
+            let p_challenge_id: String
+            let p_progress_value: Int
+            let p_progress_date: String?
+            let p_source: String
+            let p_workout_id: String?
+            let p_timezone: String
+            let p_allow_decrease: Bool
         }
+        
+        // When date is nil (default), let the SERVER determine "today" using
+        // the challenge's stored creator_timezone. This ensures both participants
+        // see the same day boundary (midnight in the creator's timezone).
+        // Only pass an explicit date for simulator/backfill scenarios.
+        let dateStr: String? = date.map { ChallengeFormatters.localDateOnly.string(from: $0) }
+        
+        let maxRetries = 5
+        for attempt in 1...maxRetries {
+            do {
+                let _: Bool = try await SupabaseManager.shared.supabaseClient
+                    .rpc("log_challenge_progress", params: LogProgressParams(
+                        p_challenge_id: challengeId.uuidString,
+                        p_progress_value: progressValue,
+                        p_progress_date: dateStr,
+                        p_source: source,
+                        p_workout_id: workoutId?.uuidString,
+                        p_timezone: TimeZone.current.identifier,
+                        p_allow_decrease: allowDecrease
+                    ))
+                    .execute()
+                    .value
+                
+                print("✅ [PROGRESS LOG] Logged \(progressValue) (source: \(source)) for challenge \(challengeId.uuidString.prefix(8))")
+                
+                // Refresh active challenges to show updated progress
+                await fetchActiveChallenges()
+                
+                // Log what the widget will now show
+                if let updated = activeChallenges.first(where: { $0.challengeId == challengeId }) {
+                    print("📊 [PROGRESS LOG] After refresh → myToday: \(updated.myTodayProgress ?? -1), oppToday: \(updated.opponentTodayProgress ?? -1), myTotal: \(updated.myTotalProgress), oppTotal: \(updated.opponentTotalProgress)")
+                }
+                
+                return true
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                    // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections at startup
+                    // Use increasing backoff: 1s, 2s, 4s, 8s to let the request storm settle
+                    let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                    print("⚠️ [CHALLENGES] log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    try? await Task.sleep(nanoseconds: delay)
+                } else {
+                    print("❌ [CHALLENGES] Error logging progress: \(error)")
+                    return false
+                }
+            }
+        }
+        return false
     }
     
     // MARK: - HealthKit Auto-Sync
@@ -1626,6 +1643,12 @@ class ChallengeService: ObservableObject {
             print("📊 [CHALLENGES] No active challenges to sync")
             return
         }
+        
+        // ⚠️ CRITICAL: Ensure MealService has today's data.
+        // This function reads todaysMeals for protein/calorie challenges.
+        // Without this, a background HealthKit update on a new day would
+        // push stale yesterday protein/calories as today's progress.
+        MealService.shared.ensureFreshForToday()
         
         let healthKit = HealthKitService.shared
         
@@ -1648,12 +1671,19 @@ class ChallengeService: ObservableObject {
             
             print("📊 [CHALLENGES] Calculated \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'")
             
-            if progressValue > 0 {
-                print("🔄 [CHALLENGES] Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'...")
+            // For "recalculable" types (protein, hydration, calories) the local value
+            // is authoritative — we MUST log even when 0 so stale yesterday rows
+            // get overwritten (e.g. 203g protein from yesterday).
+            let resolvedType = challenge.resolvedType
+            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
+            
+            if progressValue > 0 || isRecalculable {
+                print("🔄 [CHALLENGES] Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)' (allowDecrease: \(isRecalculable))...")
                 let success = await logProgress(
                     challengeId: challenge.challengeId,
-                    progressValue: progressValue,
-                    source: "healthkit"
+                    progressValue: max(progressValue, 0),
+                    source: "healthkit",
+                    allowDecrease: isRecalculable
                 )
                 
                 if success {
@@ -1770,6 +1800,10 @@ class ChallengeService: ObservableObject {
     func syncAllTrackingToChallenges() async {
         guard !activeChallenges.isEmpty || !activeGroupChallenges.isEmpty else { return }
         
+        // ⚠️ CRITICAL: Ensure MealService has today's data, not stale yesterday meals.
+        // Without this, a new-day sync can push yesterday's protein/calories as today's.
+        MealService.shared.ensureFreshForToday()
+        
         print("🔄 [CHALLENGES] Universal sync: pushing all tracking data to challenges...")
         
         // Sync 1v1 challenges
@@ -1824,16 +1858,30 @@ class ChallengeService: ObservableObject {
                 source = "healthkit"
             }
             
-            // Use max of local and server so we never send a lower value
-            // (which would be silently ignored by GREATEST and skip realtime)
-            let serverToday = challenge.myTodayProgress ?? 0
-            let progressToLog = max(progressValue, serverToday)
+            // For re-calculable types (protein, hydration, calories) the local value
+            // is authoritative — it's freshly computed from today's meals/logs.
+            // We MUST use allowDecrease so the DB accepts the correct value even
+            // when it's lower than a stale value that was previously logged
+            // (e.g. yesterday's protein carried over due to a timing bug).
+            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
             
-            if progressToLog > 0 {
+            let progressToLog: Int
+            if isRecalculable {
+                // Trust the local value — it was just recomputed from today's data
+                progressToLog = progressValue
+            } else {
+                // For HealthKit-sourced types (steps, active minutes, workouts),
+                // use max of local and server to avoid sending a lower value
+                let serverToday = challenge.myTodayProgress ?? 0
+                progressToLog = max(progressValue, serverToday)
+            }
+            
+            if progressToLog > 0 || isRecalculable {
                 let _ = await logProgress(
                     challengeId: challenge.challengeId,
-                    progressValue: progressToLog,
-                    source: source
+                    progressValue: max(progressToLog, 0),
+                    source: source,
+                    allowDecrease: isRecalculable
                 )
             }
         }
@@ -1865,7 +1913,19 @@ class ChallengeService: ObservableObject {
             challenge.resolvedType == type && challenge.iHaveAccepted
         }
         
-        guard !matching.isEmpty || !matchingGroup.isEmpty else { return }
+        // Always sync to community & private challenges (they have their own tables).
+        // Fire these in parallel — they don't block 1v1/group sync below.
+        // Always pass allowDecrease: true for community/private — the synced value
+        // is the authoritative total for today (e.g. recalculated protein after meal removal),
+        // so the DB must accept it even if it's lower than the previous GREATEST() value.
+        async let communitySync: () = CommunityChallengeService.shared.syncTrackingForType(type, value: value, source: source, allowDecrease: true)
+        async let privateSync: () = PrivateChallengeService.shared.syncTrackingForType(type, value: value, source: source, allowDecrease: true)
+        
+        guard !matching.isEmpty || !matchingGroup.isEmpty else {
+            // No 1v1/group matches, but still wait for community/private
+            _ = await (communitySync, privateSync)
+            return
+        }
         
         let totalCount = matching.count + matchingGroup.count
         print("⚡ [CHALLENGES] Quick sync \(type.rawValue): \(value) \(type.unitLabel) to \(totalCount) challenge(s) (allowDecrease: \(allowDecrease))")
@@ -1918,6 +1978,9 @@ class ChallengeService: ObservableObject {
         async let fetch1v1: () = fetchActiveChallenges()
         async let fetchGroup: () = fetchActiveGroupChallenges()
         _ = await (fetch1v1, fetchGroup)
+        
+        // Wait for community & private sync started at the top
+        _ = await (communitySync, privateSync)
     }
     
     /// Check if a Strava workout satisfies a challenge
@@ -2080,25 +2143,38 @@ class ChallengeService: ObservableObject {
     func recalculateAllChallengeProgress() async {
         guard !activeChallenges.isEmpty else { return }
         
+        // Ensure meals are fresh for protein/calorie challenges
+        MealService.shared.ensureFreshForToday()
+        
         print("🔄 [CHALLENGES] Recalculating progress for \(activeChallenges.count) challenges...")
         
-        for challenge in activeChallenges {
-            guard challenge.status == "active" || challenge.status == "pending" else { continue }
-            
+        let eligible = activeChallenges.filter { $0.status == "active" || $0.status == "pending" }
+        
+        for (index, challenge) in eligible.enumerated() {
             // Calculate total progress from ALL sources
             let totalProgress = await calculateTotalProgressFromAllSources(
                 challengeType: challenge.challengeType,
                 targetUnit: challenge.targetUnit
             )
             
-            if totalProgress > 0 {
-                // Log the max progress (this handles deduplication via the database)
-                // Source must be one of: manual, healthkit, strava, fitbit, aggregated
+            // For "recalculable" types (protein, hydration, calories) the local value
+            // is authoritative — we MUST log even when 0 so stale yesterday rows
+            // get overwritten (e.g. 203g protein from yesterday).
+            let resolvedType = challenge.resolvedType
+            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
+            
+            if totalProgress > 0 || isRecalculable {
                 let _ = await logProgress(
                     challengeId: challenge.challengeId,
-                    progressValue: totalProgress,
-                    source: "healthkit"
+                    progressValue: max(totalProgress, 0),
+                    source: "healthkit",
+                    allowDecrease: isRecalculable
                 )
+                
+                // Small delay between RPCs to avoid overwhelming URLSession connections
+                if index < eligible.count - 1 {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
             }
         }
         
@@ -2431,6 +2507,63 @@ class ChallengeProgressResolver: ObservableObject {
     
     /// Progress percentage (0.0–1.0) for a community challenge based on live data
     func progressPercentage(for challenge: CommunityChallenge) -> Double {
+        guard challenge.dailyTarget > 0 else { return 0 }
+        let value = Double(liveProgress(for: challenge))
+        return min(1.0, value / Double(challenge.dailyTarget))
+    }
+    
+    // MARK: - Private Challenge Live Progress
+    
+    /// Returns live "my today" progress for a private challenge, using the same
+    /// HealthKit / tracking-service data. Always returns max(local, server).
+    func liveProgress(for challenge: PrivateChallenge) -> Int {
+        let resolvedType = challenge.resolvedType
+        let serverValue = challenge.myTodayProgress ?? 0
+        
+        let localValue: Int
+        
+        switch resolvedType {
+        case .steps:
+            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
+            localValue = steps
+        case .hydrate:
+            let totalMl = hydrationService.todayTotal
+            if challenge.targetUnit.lowercased() == "oz" {
+                localValue = Int(Double(totalMl) / 29.5735)
+            } else {
+                localValue = totalMl
+            }
+        case .protein:
+            localValue = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+        case .calories:
+            let hkCalories = healthKitService.todayCalories
+            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
+            localValue = max(hkCalories, mealCalories)
+        case .activeMinutes:
+            localValue = healthKitService.todayActiveMinutes
+        case .walk, .run:
+            let distance = healthKitService.todayDistance
+            let km = distance / 1000.0
+            if challenge.targetUnit.lowercased().contains("min") {
+                localValue = healthKitService.todayActiveMinutes
+            } else {
+                localValue = Int(km)
+            }
+        case .lift, .workoutStreak:
+            localValue = 0
+        }
+        
+        return max(localValue, serverValue)
+    }
+    
+    /// Formatted live progress string for a private challenge
+    func formattedProgress(for challenge: PrivateChallenge) -> String {
+        let value = liveProgress(for: challenge)
+        return formatValue(value, unit: challenge.targetUnit, type: challenge.resolvedType)
+    }
+    
+    /// Progress percentage (0.0–1.0) for a private challenge based on live data
+    func progressPercentage(for challenge: PrivateChallenge) -> Double {
         guard challenge.dailyTarget > 0 else { return 0 }
         let value = Double(liveProgress(for: challenge))
         return min(1.0, value / Double(challenge.dailyTarget))

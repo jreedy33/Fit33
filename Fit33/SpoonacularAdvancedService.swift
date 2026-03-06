@@ -49,7 +49,11 @@ class SpoonacularAdvancedService: ObservableObject {
             queryItems.append(URLQueryItem(name: "exclude", value: exclude.joined(separator: ",")))
         }
         
-        var urlComponents = URLComponents(string: "\(baseURL)/mealplanner/generate")!
+        guard var urlComponents = URLComponents(string: "\(baseURL)/mealplanner/generate") else {
+            errorMessage = "Invalid URL"
+            isLoading = false
+            return nil
+        }
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {
@@ -136,7 +140,10 @@ class SpoonacularAdvancedService: ObservableObject {
     }
     
     private func fetchRecipeIngredients(recipeId: Int) async -> [ShoppingIngredient]? {
-        let url = URL(string: "\(baseURL)/recipes/\(recipeId)/ingredientWidget.json?apiKey=\(apiKey)")!
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/ingredientWidget.json?apiKey=\(apiKey)") else {
+            print("❌ [SHOPPING] Invalid URL for recipe \(recipeId)")
+            return nil
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -185,7 +192,11 @@ class SpoonacularAdvancedService: ObservableObject {
         errorMessage = nil
         
         let encoded = ingredientName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ingredientName
-        let url = URL(string: "\(baseURL)/food/ingredients/substitutes?apiKey=\(apiKey)&ingredientName=\(encoded)")!
+        guard let url = URL(string: "\(baseURL)/food/ingredients/substitutes?apiKey=\(apiKey)&ingredientName=\(encoded)") else {
+            print("❌ [SUBSTITUTES] Invalid URL for ingredient: \(ingredientName)")
+            isLoading = false
+            return []
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -227,7 +238,11 @@ class SpoonacularAdvancedService: ObservableObject {
         errorMessage = nil
         
         let encoded = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
-        let url = URL(string: "\(baseURL)/recipes/extract?apiKey=\(apiKey)&url=\(encoded)&analyze=true&forceExtraction=true&addRecipeInformation=true")!
+        guard let url = URL(string: "\(baseURL)/recipes/extract?apiKey=\(apiKey)&url=\(encoded)&analyze=true&forceExtraction=true&addRecipeInformation=true") else {
+            print("❌ [EXTRACT] Invalid URL for extraction")
+            isLoading = false
+            return nil
+        }
         
         print("📥 [EXTRACT] Extracting recipe from URL")
         
@@ -264,7 +279,10 @@ class SpoonacularAdvancedService: ObservableObject {
         guard query.count >= 2 else { return [] }
         
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let url = URL(string: "\(baseURL)/recipes/autocomplete?apiKey=\(apiKey)&query=\(encoded)&number=\(number)")!
+        guard let url = URL(string: "\(baseURL)/recipes/autocomplete?apiKey=\(apiKey)&query=\(encoded)&number=\(number)") else {
+            print("❌ [AUTOCOMPLETE] Invalid URL for query: \(query)")
+            return []
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -292,7 +310,11 @@ class SpoonacularAdvancedService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        let url = URL(string: "\(baseURL)/recipes/parseIngredients?apiKey=\(apiKey)&includeNutrition=true")!
+        guard let url = URL(string: "\(baseURL)/recipes/parseIngredients?apiKey=\(apiKey)&includeNutrition=true") else {
+            print("❌ [NUTRITION] Invalid URL for ingredient analysis")
+            isLoading = false
+            return nil
+        }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -365,7 +387,11 @@ class SpoonacularAdvancedService: ObservableObject {
         errorMessage = nil
         
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let url = URL(string: "\(baseURL)/food/menuItems/search?apiKey=\(apiKey)&query=\(encoded)&number=\(number)")!
+        guard let url = URL(string: "\(baseURL)/food/menuItems/search?apiKey=\(apiKey)&query=\(encoded)&number=\(number)") else {
+            print("❌ [MENU] Invalid URL for query: \(query)")
+            isLoading = false
+            return []
+        }
         
         print("🍔 [MENU] Searching for: \(query)")
         
@@ -398,7 +424,10 @@ class SpoonacularAdvancedService: ObservableObject {
     
     /// Get menu item details
     func getMenuItemDetails(menuItemId: Int) async -> MenuItemDetail? {
-        let url = URL(string: "\(baseURL)/food/menuItems/\(menuItemId)?apiKey=\(apiKey)")!
+        guard let url = URL(string: "\(baseURL)/food/menuItems/\(menuItemId)?apiKey=\(apiKey)") else {
+            print("❌ [MENU] Invalid URL for menu item \(menuItemId)")
+            return nil
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -420,7 +449,10 @@ class SpoonacularAdvancedService: ObservableObject {
     // MARK: - 9. Price Breakdown
     /// Get price breakdown for a recipe
     func getPriceBreakdown(recipeId: Int) async -> RecipePriceBreakdown? {
-        let url = URL(string: "\(baseURL)/recipes/\(recipeId)/priceBreakdownWidget.json?apiKey=\(apiKey)")!
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/priceBreakdownWidget.json?apiKey=\(apiKey)") else {
+            print("❌ [PRICE] Invalid URL for recipe \(recipeId)")
+            return nil
+        }
         
         print("💰 [PRICE] Getting price breakdown for recipe \(recipeId)")
         
@@ -449,7 +481,10 @@ class SpoonacularAdvancedService: ObservableObject {
     // MARK: - 10. Nutrition Widget Data
     /// Get detailed nutrition widget data for a recipe
     func getNutritionWidget(recipeId: Int) async -> NutritionWidgetData? {
-        let url = URL(string: "\(baseURL)/recipes/\(recipeId)/nutritionWidget.json?apiKey=\(apiKey)")!
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/nutritionWidget.json?apiKey=\(apiKey)") else {
+            print("❌ [NUTRITION] Invalid URL for recipe \(recipeId)")
+            return nil
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)

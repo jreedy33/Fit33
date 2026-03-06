@@ -218,7 +218,12 @@ class BackgroundChallengeSyncService {
             forTaskWithIdentifier: Self.bgTaskIdentifier,
             using: nil
         ) { task in
-            self.handleBackgroundTask(task as! BGAppRefreshTask)
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                print("❌ [BG SYNC] Unexpected task type: \(type(of: task))")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundTask(refreshTask)
         }
         
         print("✅ [BG SYNC] BGTask registered: \(Self.bgTaskIdentifier)")
@@ -317,12 +322,25 @@ class BackgroundChallengeSyncService {
             return
         }
         
+        // ── Step 4b: Refresh meal & hydration data for today ──
+        // Without this, stale yesterday data would be synced as today's progress.
+        MealService.shared.ensureFreshForToday()
+        await HydrationService.shared.loadTodayData()
+        
         // ── Step 5: Push ALL health data to challenges ──
         // This calls log_challenge_progress for each relevant challenge type
         await ChallengeService.shared.syncAllTrackingToChallenges()
         
+        // ── Step 6: Sync private & community challenges ──
+        // These have their own daily progress tables and need the same sync
+        await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+        await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+        
+        let privateChallengeCount = PrivateChallengeService.shared.myChallenges.count
+        let communityChallengeCount = CommunityChallengeService.shared.myChallenges.count
+        
         let duration = Date().timeIntervalSince(start)
         print("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s")
-        print("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group challenges")
+        print("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group + \(privateChallengeCount) private + \(communityChallengeCount) community challenges")
     }
 }

@@ -541,6 +541,11 @@ class WeightTrackingService: ObservableObject {
             
             print("✅ [Weight] Logged \(weight) \(weightUnitSuffix) to cloud")
             
+            // Update daily quest progress for weight logging
+            Task { @MainActor in
+                await DailyQuestService.shared.onWeightLogged()
+            }
+            
             // Update user profile weight
             await updateUserProfileWeight(weightKg: weightKg, weightLbs: weightLbs)
             

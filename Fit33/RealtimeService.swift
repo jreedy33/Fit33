@@ -43,6 +43,101 @@ class RealtimeService: ObservableObject {
     private var sharedWorkoutsChannel: RealtimeChannelV2?
     private var challengesChannel: RealtimeChannelV2?
     private var dailyProgressChannel: RealtimeChannelV2?
+    private var privateChallengeChannel: RealtimeChannelV2?
+    private var communityChallengeChannel: RealtimeChannelV2?
+    private var communityParticipantsChannel: RealtimeChannelV2?
+    private var privateMembersChannel: RealtimeChannelV2?
+    
+    // MARK: - Debounce State
+    
+    /// Debounce tasks for community and private challenge progress refreshes.
+    /// For automated metrics like steps, many progress events fire in rapid succession.
+    /// We debounce to avoid calling fetchMyChallenges() on every single event.
+    private var communityProgressDebounceTask: Task<Void, Never>?
+    private var privateProgressDebounceTask: Task<Void, Never>?
+    
+    /// Periodic refresh timer for auto-tracked community/private challenge progress.
+    /// Manual-input challenges (protein, hydration) refresh in real-time via WebSocket.
+    /// Auto-tracked challenges (steps, active_minutes, walk, run) refresh on this cadence
+    /// since they update frequently in the background and real-time events would be noisy.
+    private var autoTrackedRefreshTimer: Task<Void, Never>?
+    private static let autoTrackedRefreshInterval: UInt64 = 90_000_000_000 // 90 seconds (was 30s — too aggressive)
+    
+    // MARK: - Throttle State (prevent cascading fetches)
+    
+    /// Last time we fetched community challenges from a realtime event.
+    /// Used to throttle rapid-fire events from triggering redundant network calls.
+    private var lastCommunityFetchTime: Date?
+    private static let communityFetchThrottleInterval: TimeInterval = 3.0 // Don't re-fetch within 3s
+    
+    /// Last time we fetched 1v1/group challenges from a realtime event.
+    private var lastChallengeFetchTime: Date?
+    private static let challengeFetchThrottleInterval: TimeInterval = 3.0 // Don't re-fetch within 3s
+    
+    /// Last time we fetched private challenges from a realtime event.
+    private var lastPrivateFetchTime: Date?
+    private static let privateFetchThrottleInterval: TimeInterval = 3.0
+    
+    /// Throttled community challenge fetch — prevents cascading duplicate network calls.
+    private func throttledCommunityFetch() async {
+        let now = Date()
+        if let last = lastCommunityFetchTime, now.timeIntervalSince(last) < Self.communityFetchThrottleInterval {
+            return // Already fetched very recently
+        }
+        lastCommunityFetchTime = now
+        await CommunityChallengeService.shared.fetchMyChallenges()
+    }
+    
+    /// Throttled 1v1/group challenge fetch — prevents cascading duplicate network calls.
+    private func throttledChallengeFetch() async {
+        let now = Date()
+        if let last = lastChallengeFetchTime, now.timeIntervalSince(last) < Self.challengeFetchThrottleInterval {
+            return // Already fetched very recently
+        }
+        lastChallengeFetchTime = now
+        await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
+    }
+    
+    /// Throttled private challenge fetch — prevents cascading duplicate network calls.
+    private func throttledPrivateFetch() async {
+        let now = Date()
+        if let last = lastPrivateFetchTime, now.timeIntervalSince(last) < Self.privateFetchThrottleInterval {
+            return // Already fetched very recently
+        }
+        lastPrivateFetchTime = now
+        await PrivateChallengeService.shared.fetchMyChallenges()
+    }
+    
+    /// Returns true if this challenge type is manually input by the user (protein, hydration, etc.).
+    /// Manual-input challenges should refresh instantly when a real-time event arrives.
+    /// Auto-tracked challenges (steps, active minutes) refresh on a periodic cadence instead.
+    private static func isManualInputType(_ challengeType: String?) -> Bool {
+        guard let type = challengeType else { return true } // Default to instant if unknown
+        switch type {
+        case "protein", "hydrate", "sleep", "lift", "workout_streak":
+            return true  // User explicitly logs these — refresh instantly
+        case "steps", "active_minutes", "walk", "run", "calories":
+            return false // HealthKit auto-syncs these — refresh on cadence
+        default:
+            return true  // Unknown types default to instant
+        }
+    }
+    
+    /// Look up the challenge type for a community challenge by its ID.
+    /// Returns nil if the challenge isn't in the user's local list.
+    private func lookupCommunityChallengeType(challengeId: String) -> String? {
+        guard let uuid = UUID(uuidString: challengeId) else { return nil }
+        return CommunityChallengeService.shared.myChallenges
+            .first(where: { $0.challengeId == uuid })?.challengeType
+    }
+    
+    /// Look up the challenge type for a private challenge by its ID.
+    private func lookupPrivateChallengeType(challengeId: String) -> String? {
+        guard let uuid = UUID(uuidString: challengeId) else { return nil }
+        return PrivateChallengeService.shared.myChallenges
+            .first(where: { $0.challengeId == uuid })?.challengeType
+    }
     
     // MARK: - Callbacks
     
@@ -166,12 +261,19 @@ class RealtimeService: ObservableObject {
         await subscribeSharedWorkouts(userId: userId)
         await subscribeChallenges(userId: userId)
         await subscribeDailyProgress(userId: userId)
+        await subscribePrivateChallengeProgress(userId: userId)
+        await subscribeCommunityChallengeProgress(userId: userId)
+        await subscribeCommunityParticipants(userId: userId)
+        await subscribePrivateMembers(userId: userId)
+        
+        // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
+        startAutoTrackedRefreshTimer()
         
         isConnected = true
         connectionError = nil
         print("✅ [REALTIME] Connected to all channels")
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All 4 channels active: friendships, shared_workouts, challenges, daily_progress")
+                        details: "✅ All 8 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members + auto-tracked refresh timer")
     }
     
     /// Disconnect from all realtime channels
@@ -190,11 +292,40 @@ class RealtimeService: ObservableObject {
         if let channel = dailyProgressChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        if let channel = privateChallengeChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        if let channel = communityChallengeChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        if let channel = communityParticipantsChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        if let channel = privateMembersChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        
+        // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
+        // Without this, the services hold a stale channel reference and the guard in
+        // subscribeToRealtimeUpdates() prevents re-subscription after background → foreground.
+        await PrivateChallengeService.shared.unsubscribeFromRealtimeUpdates()
+        await CommunityChallengeService.shared.unsubscribeFromRealtimeUpdates()
+        
+        // Cancel any pending debounced refresh tasks and the cadence timer
+        communityProgressDebounceTask?.cancel()
+        privateProgressDebounceTask?.cancel()
+        communityProgressDebounceTask = nil
+        privateProgressDebounceTask = nil
+        stopAutoTrackedRefreshTimer()
         
         friendshipsChannel = nil
         sharedWorkoutsChannel = nil
         challengesChannel = nil
         dailyProgressChannel = nil
+        privateChallengeChannel = nil
+        communityChallengeChannel = nil
+        communityParticipantsChannel = nil
+        privateMembersChannel = nil
         
         isConnected = false
         print("✅ [REALTIME] Disconnected from all channels")
@@ -473,8 +604,7 @@ class RealtimeService: ObservableObject {
         if oldStatus == "pending" && newStatus == "accepted" {
             print("✅ [REALTIME] I accepted a challenge - refreshing all lists (1v1 + group)")
             await ChallengeService.shared.fetchPendingInvites()  // Remove from pending
-            await ChallengeService.shared.fetchActiveChallenges()  // Add to active (1v1)
-            await ChallengeService.shared.fetchActiveGroupChallenges()  // Add to active (group)
+            await throttledChallengeFetch()  // Add to active (1v1 + group) — throttled
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
             print("❌ [REALTIME] I declined a challenge")
@@ -482,8 +612,7 @@ class RealtimeService: ObservableObject {
         } else if totalProgress != oldTotalProgress {
             // My progress was confirmed in DB — refresh group challenges to show DB-backed values
             print("📊 [REALTIME] My own progress confirmed in DB: \(totalProgress) — refreshing")
-            await ChallengeService.shared.fetchActiveChallenges()
-            await ChallengeService.shared.fetchActiveGroupChallenges()
+            await throttledChallengeFetch()
         }
     }
     
@@ -510,8 +639,7 @@ class RealtimeService: ObservableObject {
             logRealtimeEvent(type: "OPPONENT_ACCEPTED", source: "challenge_participants",
                             details: "✅ Opponent accepted! Refreshing all lists...")
             await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from sent
-            await ChallengeService.shared.fetchActiveChallenges()  // Add to active (1v1)
-            await ChallengeService.shared.fetchActiveGroupChallenges()  // Add to active (group)
+            await throttledChallengeFetch()  // Add to active (1v1 + group)
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
             print("❌ [REALTIME] Opponent DECLINED my challenge - removing from sent")
@@ -523,8 +651,7 @@ class RealtimeService: ObservableObject {
             print("📊 [REALTIME] Opponent progress changed: \(oldTotalProgress) → \(totalProgress) - refreshing all challenges")
             logRealtimeEvent(type: "OPPONENT_PROGRESS", source: "challenge_participants",
                             details: "🔥 Progress: \(oldTotalProgress)→\(totalProgress) for challenge \(challengeId.prefix(8))")
-            await ChallengeService.shared.fetchActiveChallenges()
-            await ChallengeService.shared.fetchActiveGroupChallenges()
+            await throttledChallengeFetch()
         } else {
             // DEFENSIVE: Even if progress looks unchanged, refresh if we got an update event
             // This catches cases where oldRecord is empty (REPLICA IDENTITY not FULL)
@@ -533,8 +660,7 @@ class RealtimeService: ObservableObject {
                 print("⚠️ [REALTIME] No old record data — REPLICA IDENTITY may not be FULL. Refreshing defensively.")
                 logRealtimeEvent(type: "OPPONENT_UPDATE_NO_OLD", source: "challenge_participants",
                                 details: "⚠️ No old record data — refreshing defensively. newProgress=\(totalProgress)")
-                await ChallengeService.shared.fetchActiveChallenges()
-                await ChallengeService.shared.fetchActiveGroupChallenges()
+                await throttledChallengeFetch()
             }
         }
     }
@@ -552,22 +678,13 @@ class RealtimeService: ObservableObject {
         let status = jsonString(record["status"]) ?? ""
         let totalProgress = jsonInt(record["total_progress"]) ?? 0
         
-        print("🔔 [REALTIME] Challenge participant updated!")
-        print("   Challenge ID: \(challengeId)")
-        print("   Participant: \(participantUserId)")
-        print("   Status: \(status)")
-        print("   Progress: \(totalProgress)")
-        
         logRealtimeEvent(type: "CHALLENGE_PROGRESS", source: "challenge_participants",
                         details: "user: \(participantUserId.prefix(8)), challenge: \(challengeId.prefix(8)), status: \(status), progress: \(totalProgress)")
         
-        // If it's my own update, skip
+        // If it's my own update, skip — we already know our own progress
         if participantUserId == userId.uuidString {
-            print("⏭️ [REALTIME] Skipping own update")
             return
         }
-        
-        print("📊 [REALTIME] Opponent's progress/status changed - refreshing!")
         
         let payload = ChallengePayload(
             challengeId: UUID(uuidString: challengeId) ?? UUID(),
@@ -579,12 +696,8 @@ class RealtimeService: ObservableObject {
         // Trigger callback
         onChallengeProgressUpdated?(payload)
         
-        // Refresh all challenge data (in case status changed from pending to accepted)
-        await ChallengeService.shared.fetchActiveChallenges()
-        await ChallengeService.shared.fetchActiveGroupChallenges()
-        await ChallengeService.shared.fetchPendingInvites()
-        await ChallengeService.shared.fetchPendingSentChallenges()
-        print("✅ [REALTIME] Challenge data refreshed after participant update")
+        // ⚡️ PERF FIX: Use throttled fetch instead of 4 sequential fetches
+        await throttledChallengeFetch()
     }
     
     private func handleChallengeStatusChange(_ action: UpdateAction) async {
@@ -593,33 +706,20 @@ class RealtimeService: ObservableObject {
         let challengeId = jsonString(record["id"]) ?? "unknown"
         let status = jsonString(record["status"]) ?? ""
         
-        print("🔔 [REALTIME] Challenge status changed!")
-        print("   Challenge ID: \(challengeId)")
-        print("   New Status: \(status)")
+        #if DEBUG
+        print("🔔 [REALTIME] Challenge status: \(challengeId.prefix(8)) → \(status)")
+        #endif
         logRealtimeEvent(type: "CHALLENGE_STATUS", source: "group_challenges", details: "Challenge \(challengeId.prefix(8)) → \(status)")
         
-        if status == "active" {
-            print("🎯 [REALTIME] Challenge is now ACTIVE! Both participants accepted.")
-        } else if status == "completed" {
-            print("🏁 [REALTIME] Challenge COMPLETED!")
-        } else if status == "cancelled" {
-            print("❌ [REALTIME] Challenge CANCELLED! Refreshing to remove from all lists...")
-        } else if status == "declined" {
-            print("👎 [REALTIME] Challenge DECLINED!")
-        }
+        // ⚡️ PERF FIX: Use throttled fetch instead of 4 sequential fetches.
+        // Status changes (cancelled, completed, declined) are infrequent, so one
+        // consolidated fetch is sufficient — the throttle prevents cascading.
+        await throttledChallengeFetch()
+        await ChallengeService.shared.fetchPendingInvites()
         
-        // Refresh all challenge states - this handles when opponent accepts/declines/cancels
-        print("🔄 [REALTIME] Refreshing all challenge data...")
-        await ChallengeService.shared.fetchActiveChallenges()
-        await ChallengeService.shared.fetchActiveGroupChallenges()
-        await ChallengeService.shared.fetchPendingInvites()  // This will remove cancelled challenges
-        await ChallengeService.shared.fetchPendingSentChallenges()
-        
-        print("✅ [REALTIME] Challenge data refreshed")
-        print("   Active 1v1: \(ChallengeService.shared.activeChallenges.count)")
-        print("   Active Group: \(ChallengeService.shared.activeGroupChallenges.count)")
-        print("   Pending Invites: \(ChallengeService.shared.pendingInvites.count)")
-        print("   Pending Sent: \(ChallengeService.shared.pendingSentChallenges.count)")
+        #if DEBUG
+        print("✅ [REALTIME] Challenge data refreshed after status change")
+        #endif
     }
     
     // MARK: - Daily Progress Subscription (for live challenge widget)
@@ -703,12 +803,10 @@ class RealtimeService: ObservableObject {
         let progressDate = jsonString(record["progress_date"]) ?? ""
         
         if isOwnUpdate {
-            // Own progress was written to DB — refresh so widgets show updated data
-            print("📊 [REALTIME] Own daily progress confirmed in DB: \(progressValue) — refreshing all challenges")
+            // ⚡️ PERF FIX: Skip fetching for own daily progress — we already have the data locally.
+            // The DB just confirmed what we wrote. Fetching here caused redundant network calls.
             logRealtimeEvent(type: "OWN_DAILY_PROGRESS", source: "challenge_daily_progress",
-                            details: "✅ Own progress confirmed: \(progressValue), challenge: \(challengeIdString.prefix(8))")
-            await ChallengeService.shared.fetchActiveChallenges()
-            await ChallengeService.shared.fetchActiveGroupChallenges()
+                            details: "✅ Own progress confirmed: \(progressValue), challenge: \(challengeIdString.prefix(8)) — SKIPPED refresh")
             return
         }
         
@@ -717,13 +815,9 @@ class RealtimeService: ObservableObject {
         // ═══════════════════════════════════════════════════════════
         
         let timestamp = Date()
-        print("🎯 [REALTIME] ⚡️ OPPONENT DAILY PROGRESS UPDATE RECEIVED ⚡️")
-        print("   Challenge: \(challengeIdString.prefix(8))")
-        print("   Opponent: \(recordUserId.prefix(8))")
-        print("   Progress: \(progressValue)")
-        print("   Target Hit: \(targetHit)")
-        print("   Date: \(progressDate)")
-        print("   Received at: \(timestamp)")
+        #if DEBUG
+        print("🎯 [REALTIME] Opponent daily progress: \(recordUserId.prefix(8)) → \(progressValue) (hit: \(targetHit)) challenge: \(challengeIdString.prefix(8))")
+        #endif
         
         logRealtimeEvent(type: "🔥 OPPONENT_DAILY_PROGRESS", source: "challenge_daily_progress",
                         details: "⚡️ Opponent \(recordUserId.prefix(8)) → \(progressValue) (hit: \(targetHit)) challenge: \(challengeIdString.prefix(8))")
@@ -743,19 +837,371 @@ class RealtimeService: ObservableObject {
         // Trigger callback (ChallengeDetailView and GroupChallengeDetailView listen to this)
         onOpponentDailyProgressUpdated?(payload)
         
-        // Refresh BOTH 1v1 and group challenges so all widgets update IMMEDIATELY
-        async let fetch1v1: () = ChallengeService.shared.fetchActiveChallenges()
-        async let fetchGroup: () = ChallengeService.shared.fetchActiveGroupChallenges()
-        _ = await (fetch1v1, fetchGroup)
-        
-        print("✅ [REALTIME] Challenge data refreshed after opponent progress update")
-        logRealtimeEvent(type: "REFRESH_COMPLETE", source: "ChallengeService",
-                        details: "✅ Refreshed 1v1 + group challenges after opponent update")
+        // Refresh BOTH 1v1 and group challenges — throttled to prevent cascading duplicates
+        await throttledChallengeFetch()
         
         // Haptic feedback when opponent hits their daily target
         if targetHit {
             HapticManager.notification(.warning)
         }
+    }
+    // MARK: - Private Challenge Progress Subscription
+    
+    /// Subscribe to private_challenge_daily_progress updates.
+    /// When ANY member of a private challenge logs progress, all other members
+    /// see it instantly via WebSocket — no polling required.
+    private func subscribePrivateChallengeProgress(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("private_challenge_progress-\(userId.uuidString)")
+        
+        // Listen for inserts (new daily progress logged by any member)
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "private_challenge_daily_progress"
+        )
+        
+        // Listen for updates (progress value changed for any member)
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "private_challenge_daily_progress"
+        )
+        
+        Task {
+            for await action in inserts {
+                await handlePrivateChallengeProgressChange(action.record, userId: userId)
+            }
+        }
+        
+        Task {
+            for await action in updates {
+                await handlePrivateChallengeProgressChange(action.record, userId: userId)
+            }
+        }
+        
+        await channel.subscribe()
+        privateChallengeChannel = channel
+        
+        print("📡 [REALTIME] Subscribed to private_challenge_daily_progress updates")
+        logRealtimeEvent(type: "SUBSCRIBED", source: "private_challenge_daily_progress",
+                        details: "✅ Listening for INSERT + UPDATE on private_challenge_daily_progress")
+    }
+    
+    private func handlePrivateChallengeProgressChange(_ record: [String: AnyJSON]?, userId: UUID) async {
+        guard let record = record else { return }
+        
+        let recordUserId = jsonString(record["user_id"]) ?? ""
+        let challengeId = jsonString(record["challenge_id"]) ?? ""
+        let progressValue = jsonInt(record["progress_value"]) ?? 0
+        
+        let isOwnUpdate = recordUserId == userId.uuidString
+        let challengeType = lookupPrivateChallengeType(challengeId: challengeId)
+        let isManual = Self.isManualInputType(challengeType)
+        
+        if isOwnUpdate {
+            logRealtimeEvent(type: "OWN_PRIVATE_PROGRESS", source: "private_challenge_daily_progress",
+                            details: "✅ Own progress: \(progressValue), challenge: \(challengeId.prefix(8)) — SKIPPED refresh")
+            // ⚡️ PERF FIX: Skip fetching for own updates — we already have the data locally.
+            return
+        }
+        
+        print("📊 [REALTIME] Private challenge member progress: \(recordUserId.prefix(8)) → \(progressValue) (challenge: \(challengeId.prefix(8)), type: \(challengeType ?? "?"), manual: \(isManual))")
+        logRealtimeEvent(type: "🔥 PRIVATE_MEMBER_PROGRESS", source: "private_challenge_daily_progress",
+                        details: "⚡️ Member \(recordUserId.prefix(8)) → \(progressValue), challenge: \(challengeId.prefix(8)), manual: \(isManual)")
+        
+        if isManual {
+            // Manual-input challenges (protein, hydration, etc.): debounced refresh
+            // Cancels any pending debounce and waits 1.5s before fetching.
+            privateProgressDebounceTask?.cancel()
+            privateProgressDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s debounce
+                guard !Task.isCancelled else { return }
+                await throttledPrivateFetch()
+            }
+        }
+        // Auto-tracked challenges: refresh on periodic cadence timer instead.
+    }
+    
+    // MARK: - Community Challenge Progress Subscription
+    
+    /// Subscribe to community_challenge_daily_progress updates.
+    /// When ANY community member logs progress, the leaderboard updates live.
+    private func subscribeCommunityChallengeProgress(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("community_challenge_progress-\(userId.uuidString)")
+        
+        // Listen for inserts (new daily progress logged by any member)
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "community_challenge_daily_progress"
+        )
+        
+        // Listen for updates (progress value changed for any member)
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "community_challenge_daily_progress"
+        )
+        
+        Task {
+            for await action in inserts {
+                await handleCommunityChallengeProgressChange(action.record, userId: userId)
+            }
+        }
+        
+        Task {
+            for await action in updates {
+                await handleCommunityChallengeProgressChange(action.record, userId: userId)
+            }
+        }
+        
+        await channel.subscribe()
+        communityChallengeChannel = channel
+        
+        print("📡 [REALTIME] Subscribed to community_challenge_daily_progress updates")
+        logRealtimeEvent(type: "SUBSCRIBED", source: "community_challenge_daily_progress",
+                        details: "✅ Listening for INSERT + UPDATE on community_challenge_daily_progress")
+    }
+    
+    private func handleCommunityChallengeProgressChange(_ record: [String: AnyJSON]?, userId: UUID) async {
+        guard let record = record else {
+            print("⚠️ [REALTIME] Community progress event with nil record")
+            return
+        }
+        
+        let recordUserId = jsonString(record["user_id"]) ?? ""
+        let challengeId = jsonString(record["challenge_id"]) ?? ""
+        let progressValue = jsonInt(record["progress_value"]) ?? 0
+        
+        let isOwnUpdate = recordUserId == userId.uuidString
+        
+        // PERF FIX: Skip own events entirely — we already know our own progress.
+        // These arrive because we subscribe without a user_id filter, and each
+        // INSERT/UPDATE from our own log_community_challenge_progress triggers
+        // 2 events (insert + update) that cascade into redundant fetchMyChallenges() calls.
+        if isOwnUpdate {
+            #if DEBUG
+            print("📡 [REALTIME] 🌍 Community progress (OWN) — skipping refresh for \(challengeId.prefix(8))")
+            #endif
+            logRealtimeEvent(type: "OWN_COMMUNITY_PROGRESS", source: "community_challenge_daily_progress",
+                            details: "✅ Own community progress confirmed: \(progressValue), challenge: \(challengeId.prefix(8)) — SKIPPED refresh")
+            return
+        }
+        
+        let challengeType = lookupCommunityChallengeType(challengeId: challengeId)
+        let isManual = Self.isManualInputType(challengeType)
+        
+        #if DEBUG
+        print("📡 [REALTIME] 🌍 COMMUNITY PROGRESS EVENT RECEIVED")
+        print("   └─ user: \(recordUserId.prefix(8))... (OTHER)")
+        print("   └─ challenge: \(challengeId.prefix(8))...")
+        print("   └─ value: \(progressValue)")
+        print("   └─ type: \(challengeType ?? "unknown"), manual: \(isManual)")
+        #endif
+        
+        logRealtimeEvent(type: "🌍 COMMUNITY_MEMBER_PROGRESS", source: "community_challenge_daily_progress",
+                        details: "⚡️ Member \(recordUserId.prefix(8)) → \(progressValue), challenge: \(challengeId.prefix(8)), manual: \(isManual)")
+        
+        if isManual {
+            // Manual-input challenges (protein, hydration, etc.): debounced refresh
+            // Cancels any pending debounce and waits 1.5s before fetching, so rapid-fire
+            // events (e.g. logging 3 waters in quick succession) only trigger ONE fetch.
+            communityProgressDebounceTask?.cancel()
+            communityProgressDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s debounce
+                guard !Task.isCancelled else { return }
+                print("🔄 [REALTIME] Community manual input (debounced) — refreshing community challenges")
+                await throttledCommunityFetch()
+                print("✅ [REALTIME] Community challenges refreshed after member progress update")
+            }
+        }
+        // Auto-tracked challenges (steps, active_minutes): skip immediate refresh.
+        // These update on the periodic cadence timer instead (every 90s) to avoid
+        // flooding the UI with rapid HealthKit-driven updates.
+    }
+    
+    // MARK: - Community Participants Subscription (Join/Leave Events)
+    
+    /// Subscribe to community_challenge_participants for real-time join/leave events.
+    /// When a user joins or leaves a community challenge, all members see the update instantly.
+    private func subscribeCommunityParticipants(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("community_participants-\(userId.uuidString)")
+        
+        // Listen for new members joining (INSERT)
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "community_challenge_participants"
+        )
+        
+        // Listen for member status changes (UPDATE) — e.g. deactivation
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "community_challenge_participants"
+        )
+        
+        Task {
+            for await action in inserts {
+                await handleCommunityParticipantChange(action.record, type: "JOIN", userId: userId)
+            }
+        }
+        
+        Task {
+            for await action in updates {
+                await handleCommunityParticipantChange(action.record, type: "UPDATE", userId: userId)
+            }
+        }
+        
+        await channel.subscribe()
+        communityParticipantsChannel = channel
+        
+        print("📡 [REALTIME] Subscribed to community_challenge_participants (join/leave)")
+        logRealtimeEvent(type: "SUBSCRIBED", source: "community_challenge_participants",
+                        details: "✅ Listening for INSERT + UPDATE on community_challenge_participants")
+    }
+    
+    private func handleCommunityParticipantChange(_ record: [String: AnyJSON]?, type: String, userId: UUID) async {
+        guard let record = record else { return }
+        
+        let recordUserId = jsonString(record["user_id"]) ?? ""
+        let challengeId = jsonString(record["challenge_id"]) ?? ""
+        let isOwnJoin = recordUserId == userId.uuidString
+        
+        print("🌍 [REALTIME] Community participant \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))")
+        logRealtimeEvent(type: "COMMUNITY_PARTICIPANT_\(type)", source: "community_challenge_participants",
+                        details: "\(isOwnJoin ? "You" : "Member \(recordUserId.prefix(8))") \(type.lowercased()) community challenge \(challengeId.prefix(8))")
+        
+        // Throttled refresh — join/leave events are infrequent but can still double-fire
+        await throttledCommunityFetch()
+        
+        if !isOwnJoin {
+            HapticManager.impact(.light)
+        }
+    }
+    
+    // MARK: - Private Challenge Members Subscription (Join/Leave Events)
+    
+    /// Subscribe to private_challenge_members for real-time join/leave events.
+    /// When a user joins or leaves a private challenge, all members see it instantly.
+    private func subscribePrivateMembers(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("private_members-\(userId.uuidString)")
+        
+        // Listen for new members joining (INSERT)
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "private_challenge_members"
+        )
+        
+        // Listen for member status changes (UPDATE) — e.g. role change, deactivation
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "private_challenge_members"
+        )
+        
+        Task {
+            for await action in inserts {
+                await handlePrivateMemberChange(action.record, type: "JOIN", userId: userId)
+            }
+        }
+        
+        Task {
+            for await action in updates {
+                await handlePrivateMemberChange(action.record, type: "UPDATE", userId: userId)
+            }
+        }
+        
+        await channel.subscribe()
+        privateMembersChannel = channel
+        
+        print("📡 [REALTIME] Subscribed to private_challenge_members (join/leave)")
+        logRealtimeEvent(type: "SUBSCRIBED", source: "private_challenge_members",
+                        details: "✅ Listening for INSERT + UPDATE on private_challenge_members")
+    }
+    
+    private func handlePrivateMemberChange(_ record: [String: AnyJSON]?, type: String, userId: UUID) async {
+        guard let record = record else { return }
+        
+        let recordUserId = jsonString(record["user_id"]) ?? ""
+        let challengeId = jsonString(record["challenge_id"]) ?? ""
+        let isOwnJoin = recordUserId == userId.uuidString
+        
+        print("🔒 [REALTIME] Private member \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))")
+        logRealtimeEvent(type: "PRIVATE_MEMBER_\(type)", source: "private_challenge_members",
+                        details: "\(isOwnJoin ? "You" : "Member \(recordUserId.prefix(8))") \(type.lowercased()) private challenge \(challengeId.prefix(8))")
+        
+        // Throttled refresh — join/leave events are infrequent but can still double-fire
+        await throttledPrivateFetch()
+        
+        // Signal detail views to reload their member list
+        PrivateChallengeService.shared.memberChangeToken = UUID()
+        
+        if !isOwnJoin {
+            HapticManager.impact(.light)
+        }
+    }
+    
+    // MARK: - Periodic Cadence Refresh (Community + Private Challenges)
+    
+    /// Start the periodic refresh timer for community/private challenges.
+    /// Called when realtime connects. This serves two purposes:
+    /// 1. Auto-tracked challenges (steps, active_minutes) rely on this instead of instant WebSocket updates (too noisy)
+    /// 2. Fallback for ALL community/private challenges in case WebSocket events aren't delivered
+    ///    (e.g., Supabase Realtime publication not configured, cross-table RLS blocking events)
+    ///
+    /// ⚡️ PERF FIX: Only fetches when the community view is currently visible.
+    /// When not visible, the timer still runs but skips fetches to avoid background network storms.
+    func startAutoTrackedRefreshTimer() {
+        autoTrackedRefreshTimer?.cancel()
+        autoTrackedRefreshTimer = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.autoTrackedRefreshInterval)
+                guard !Task.isCancelled else { break }
+                
+                // ⚡️ PERF FIX: Only refresh when the community view is visible.
+                // Background refreshes were firing every 30s regardless, causing
+                // network storms and @MainActor contention that froze the UI.
+                guard CommunityChallengeService.shared.isCommunityViewVisible else {
+                    continue
+                }
+                
+                // Skip if we already fetched recently from a realtime event (prevents redundant calls)
+                let communityStale = lastCommunityFetchTime == nil || Date().timeIntervalSince(lastCommunityFetchTime!) > 30
+                let privateStale = lastPrivateFetchTime == nil || Date().timeIntervalSince(lastPrivateFetchTime!) > 30
+                
+                let hasCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
+                let hasPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
+                
+                if (hasCommunity && communityStale) || (hasPrivate && privateStale) {
+                    print("🔄 [REALTIME] Cadence refresh for community/private challenges (every \(Self.autoTrackedRefreshInterval / 1_000_000_000)s)")
+                    
+                    if hasCommunity && communityStale {
+                        lastCommunityFetchTime = Date()
+                        await CommunityChallengeService.shared.fetchMyChallenges()
+                    }
+                    if hasPrivate && privateStale {
+                        lastPrivateFetchTime = Date()
+                        await PrivateChallengeService.shared.fetchMyChallenges()
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Stop the periodic refresh timer (called on disconnect).
+    func stopAutoTrackedRefreshTimer() {
+        autoTrackedRefreshTimer?.cancel()
+        autoTrackedRefreshTimer = nil
     }
 }
 

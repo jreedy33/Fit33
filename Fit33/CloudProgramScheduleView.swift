@@ -1865,7 +1865,7 @@ struct ExerciseSwapView: View {
     
     // MARK: - Helper Functions
     private func loadExercises() {
-        allExercises = ComprehensiveExerciseDatabase.exercises
+        allExercises = ExerciseDataProvider.shared.exercises
     }
     
     private func iconForCategory(_ category: String) -> String {

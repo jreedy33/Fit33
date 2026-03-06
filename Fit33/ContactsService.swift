@@ -113,40 +113,53 @@ class ContactsService: ObservableObject {
         ]
         
         let request = CNContactFetchRequest(keysToFetch: keysToFetch)
+        let contactStore = self.store // Capture on main thread — CNContactStore is thread-safe
         
-        var emails: Set<String> = []
-        var phones: Set<String> = []
-        
-        do {
-            try store.enumerateContacts(with: request) { contact, _ in
-                // Collect emails (lowercase for matching)
-                for email in contact.emailAddresses {
-                    let emailString = (email.value as String).lowercased().trimmingCharacters(in: .whitespaces)
-                    if !emailString.isEmpty {
-                        emails.insert(emailString)
+        // ⚡️ FIX: enumerateContacts() is a SYNCHRONOUS blocking call.
+        // Because ContactsService is @MainActor, it was running on the main thread
+        // and blocking the UI for the entire contact scan (30+ seconds on large lists).
+        // Moving it to a background queue prevents the deadlock / freeze.
+        let result: (emails: [String], phones: [String]) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var emails: Set<String> = []
+                var phones: Set<String> = []
+                
+                do {
+                    try contactStore.enumerateContacts(with: request) { contact, _ in
+                        // Collect emails (lowercase for matching)
+                        for email in contact.emailAddresses {
+                            let emailString = (email.value as String).lowercased().trimmingCharacters(in: .whitespaces)
+                            if !emailString.isEmpty {
+                                emails.insert(emailString)
+                            }
+                        }
+                        
+                        // Collect phone numbers (normalized — last 10 digits for US)
+                        for phone in contact.phoneNumbers {
+                            let digits = phone.value.stringValue
+                                .components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                            let normalized = digits.count >= 10 ? String(digits.suffix(10)) : digits
+                            if !normalized.isEmpty {
+                                phones.insert(normalized)
+                            }
+                        }
                     }
+                } catch {
+                    print("❌ [CONTACTS] Error fetching contacts: \(error)")
                 }
                 
-                // Collect phone numbers (normalized)
-                for phone in contact.phoneNumbers {
-                    let phoneString = self.normalizePhoneNumber(phone.value.stringValue)
-                    if !phoneString.isEmpty {
-                        phones.insert(phoneString)
-                    }
-                }
+                continuation.resume(returning: (emails: Array(emails), phones: Array(phones)))
             }
-            
-            contactEmails = Array(emails)
-            contactPhoneNumbers = Array(phones)
-            
-            print("📇 [CONTACTS] Found \(emails.count) emails and \(phones.count) phone numbers")
-        } catch {
-            print("❌ [CONTACTS] Error fetching contacts: \(error)")
         }
+        
+        // Back on @MainActor — safe to update @Published properties
+        contactEmails = result.emails
+        contactPhoneNumbers = result.phones
+        print("📇 [CONTACTS] Found \(result.emails.count) emails and \(result.phones.count) phone numbers")
     }
     
     /// Normalize phone number by removing non-digits
-    private func normalizePhoneNumber(_ phone: String) -> String {
+    nonisolated private func normalizePhoneNumber(_ phone: String) -> String {
         let digits = phone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         // Return last 10 digits for US numbers, or full number for international
         if digits.count >= 10 {

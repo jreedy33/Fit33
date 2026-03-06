@@ -374,6 +374,8 @@ struct Fit33App: App {
         print("🧠 [INIT] Exercise intelligence systems fully initialized")
     }
     
+    @State private var showCoreDataFatalError = false
+    
     var body: some Scene {
         WindowGroup {
             // New onboarding flow includes auth, so always show ContentView
@@ -391,8 +393,39 @@ struct Fit33App: App {
             .sheet(isPresented: $shakeManager.showBugReportSheet) {
                 BugReportView()
             }
+            // MARK: - Core Data Fatal Error (store cannot load at all)
+            .onReceive(NotificationCenter.default.publisher(for: .coreDataLoadFailed)) { _ in
+                showCoreDataFatalError = true
+            }
+            .alert("Unable to Load Data", isPresented: $showCoreDataFatalError) {
+                Button("Try Again") {
+                    // Force quit and relaunch is the safest recovery
+                    fatalError("Core Data fatal failure — forcing app restart for clean state")
+                }
+                Button("Contact Support", role: .cancel) {
+                    shakeManager.showBugReportSheet = true
+                }
+            } message: {
+                Text("The app's local database could not be loaded. Please try restarting the app. If the problem persists, contact support via the bug report tool.")
+            }
                 .task {
+                    // Check for Core Data fatal failure (notification may fire before view is ready)
+                    if PersistenceController.storeLoadFailed {
+                        showCoreDataFatalError = true
+                    }
+                    
+                    // checkAuth() calls syncAllDataFromCloud() for authenticated users,
+                    // which seamlessly restores all data if the store was reset during init.
+                    // The user never sees anything — data just reappears.
                     await supabaseManager.checkAuth()
+                    
+                    // Silent cleanup: if store was reset, the sync above already restored everything.
+                    // Clean up the backup files and clear the flag — no user notification needed.
+                    if PersistenceController.storeWasReset {
+                        PersistenceController.storeWasReset = false
+                        persistenceController.cleanupStoreBackup()
+                        print("✅ [CORE DATA] Store reset auto-recovered via cloud sync — user unaffected")
+                    }
 
                     // Load user limitations for safety filtering
                     if supabaseManager.isAuthenticated {
@@ -620,6 +653,14 @@ struct Fit33App: App {
                             async let communityRefresh: () = CommunityChallengeService.shared.refreshAll(force: false)
                             async let privateRefresh: () = PrivateChallengeService.shared.refreshAll(force: false)
                             _ = await (communityRefresh, privateRefresh)
+                            
+                            // Priority 4.5: Sync tracking data to community/private challenges.
+                            // HealthDataService's syncAllSourcesToChallenges() ran BEFORE these
+                            // challenges were loaded (so it skipped them). Now that they're loaded,
+                            // push fresh protein/hydration/calories/steps so stale yesterday values
+                            // get overwritten in the DB.
+                            await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+                            await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
                             
                             // Priority 5: Background work (lower urgency)
                             await pushNotificationService.recheckAndRegister()

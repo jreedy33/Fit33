@@ -76,7 +76,7 @@ This comprehensive test suite thoroughly validates your workout auto-generation 
 
 3. **Navigate to Dev Menu:**
    - In your app, find and tap the Dev Menu access button
-   - Enter admin password: `WhatsApp26!`
+   - Enter admin password: `[removed for security - check dev team]`
    - Tap the "Auto-Gen" tab
 
 4. **Run the test:**

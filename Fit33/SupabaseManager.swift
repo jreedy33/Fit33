@@ -10,7 +10,18 @@ import CoreData
 class SupabaseManager: ObservableObject {
     static let shared = SupabaseManager()
     
-    // Your Supabase credentials
+    // MARK: - Supabase Credentials
+    //
+    // ⚠️ SECURITY NOTE:
+    // The anon key below is intentionally included in the client app — this is standard
+    // for Supabase projects. It is safe because Supabase Row Level Security (RLS) policies
+    // protect all user data. The anon key only grants access that RLS explicitly allows.
+    //
+    // If RLS is ever disabled on ANY table, this key would allow unauthorized public access
+    // to that table's data. Always ensure RLS is enabled and policies are correct.
+    //
+    // See SECURITY_CHECKLIST.md for the full RLS audit checklist and instructions.
+    //
     private let supabaseURL = "https://ehooeghabzefgoqzugrc.supabase.co"  
     private let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0"     
     

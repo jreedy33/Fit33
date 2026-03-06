@@ -560,6 +560,11 @@ class CommunityChallengeService: ObservableObject {
     /// Stores previous ranks for delta computation: challengeId → userId → rank
     private var previousRanks: [UUID: [UUID: Int]] = [:]
     
+    /// Whether the community widgets are currently visible on screen.
+    /// When true, new deltas replace old ones in real-time.
+    /// When false and the view reappears, deltas are cleared.
+    var isCommunityViewVisible = false
+    
     /// Tracks friend IDs we've already seen in discoverable challenges (for "friend joined" notifications)
     private var knownDiscoverableFriendIds: Set<UUID> = []
     
@@ -642,6 +647,7 @@ class CommunityChallengeService: ObservableObject {
     /// Computes rank change deltas by comparing new leaderboard data against stored previous ranks.
     /// A positive delta means the user climbed (e.g. rank 5 → 3 = +2).
     /// A negative delta means the user dropped (e.g. rank 3 → 5 = -2).
+    /// Arrows appear with animation and auto-clear after 6 seconds.
     private func computeRankDeltas(newChallenges: [CommunityChallenge]) {
         var newDeltas: [UUID: [UUID: Int]] = [:]
         var newPreviousRanks: [UUID: [UUID: Int]] = [:]
@@ -679,7 +685,43 @@ class CommunityChallengeService: ObservableObject {
         
         // Update stored state
         previousRanks = newPreviousRanks
-        rankDeltas = newDeltas
+        
+        // Animate the delta arrows in.
+        // Arrows persist until the user navigates away from the community view.
+        // If the user is already viewing, new deltas replace old ones in real-time.
+        if !newDeltas.isEmpty {
+            if isCommunityViewVisible {
+                // User is watching — merge new deltas into existing (replace per-challenge)
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    for (cid, userDeltas) in newDeltas {
+                        rankDeltas[cid] = userDeltas
+                    }
+                }
+            } else {
+                // User isn't on the screen yet — set fresh deltas for when they arrive
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    rankDeltas = newDeltas
+                }
+            }
+        }
+        // If newDeltas is empty, keep existing arrows visible until cleared
+    }
+    
+    // MARK: - Rank Delta Visibility
+    
+    /// Call when the community widgets appear on screen (Friends tab, Community Hub).
+    /// Keeps existing arrows visible and enables real-time delta updates.
+    func markCommunityViewVisible() {
+        isCommunityViewVisible = true
+    }
+    
+    /// Call when the user navigates AWAY from the community widgets.
+    /// Clears all rank delta arrows so they're gone when the user returns.
+    func markCommunityViewHidden() {
+        isCommunityViewVisible = false
+        withAnimation(.easeOut(duration: 0.4)) {
+            rankDeltas = [:]
+        }
     }
     
     // MARK: - Fetch Discoverable (Friends' Communities)
@@ -938,6 +980,14 @@ class CommunityChallengeService: ObservableObject {
     func subscribeToRealtimeUpdates() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
         
+        // Prevent duplicate subscriptions — calling postgresChange on an already-subscribed
+        // channel triggers "You cannot call postgresChange after joining the channel" warning
+        // and silently breaks the subscription.
+        if communityRealtimeChannel != nil {
+            print("⏭️ [COMMUNITY] Already subscribed to real-time updates — skipping")
+            return
+        }
+        
         let client = SupabaseManager.shared.supabaseClient
         let channel = client.realtimeV2.channel("community-challenges")
         
@@ -1053,31 +1103,46 @@ class CommunityChallengeService: ObservableObject {
     
     // MARK: - Log Progress
     
-    func logProgress(challengeId: UUID, progressValue: Int) async -> Bool {
-        do {
-            struct LogParams: Encodable {
-                let p_challenge_id: String
-                let p_progress: Int
-                let p_timezone: String
-            }
-            
-            let _: Bool = try await SupabaseManager.shared.supabaseClient
-                .rpc("log_community_challenge_progress", params: LogParams(
-                    p_challenge_id: challengeId.uuidString,
-                    p_progress: progressValue,
-                    p_timezone: TimeZone.current.identifier
-                ))
-                .execute()
-                .value
-            
-            #if DEBUG
-            print("✅ [COMMUNITY] Logged progress: \(progressValue) for \(challengeId)")
-            #endif
-            return true
-        } catch {
-            print("❌ [COMMUNITY] Error logging progress: \(error)")
-            return false
+    func logProgress(challengeId: UUID, progressValue: Int, allowDecrease: Bool = false) async -> Bool {
+        struct LogParams: Encodable {
+            let p_challenge_id: String
+            let p_progress: Int
+            let p_timezone: String
+            let p_allow_decrease: Bool
         }
+        
+        let maxRetries = 5
+        for attempt in 1...maxRetries {
+            do {
+                let _: Bool = try await SupabaseManager.shared.supabaseClient
+                    .rpc("log_community_challenge_progress", params: LogParams(
+                        p_challenge_id: challengeId.uuidString,
+                        p_progress: progressValue,
+                        p_timezone: TimeZone.current.identifier,
+                        p_allow_decrease: allowDecrease
+                    ))
+                    .execute()
+                    .value
+                
+                #if DEBUG
+                print("✅ [COMMUNITY] Logged progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))")
+                #endif
+                return true
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                    // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections
+                    // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
+                    let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                    print("⚠️ [COMMUNITY] log_community_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    try? await Task.sleep(nanoseconds: delay)
+                } else {
+                    print("❌ [COMMUNITY] Error logging progress: \(error)")
+                    return false
+                }
+            }
+        }
+        return false
     }
     
     // MARK: - Get Leaderboard
@@ -1128,6 +1193,38 @@ class CommunityChallengeService: ObservableObject {
         }
     }
     
+    // MARK: - Quick Type-Specific Sync
+    
+    /// Quick sync for a SPECIFIC challenge type to community challenges.
+    /// Called immediately when user logs data (protein, hydration, calories, etc.).
+    /// Much faster than full sync — only touches matching challenges.
+    /// Pass `allowDecrease: true` when the value may have gone DOWN (e.g. meal removed).
+    func syncTrackingForType(_ type: ChallengeType, value: Int, source: String = "auto_sync", allowDecrease: Bool = false) async {
+        let matching = myChallenges.filter { $0.resolvedType == type }
+        guard !matching.isEmpty else { return }
+        
+        print("⚡ [COMMUNITY] Quick sync \(type.rawValue): \(value) to \(matching.count) community challenge(s) (allowDecrease: \(allowDecrease))")
+        
+        for challenge in matching {
+            var adjustedValue = value
+            // Handle unit conversion for hydration (ml → oz if needed)
+            if type == .hydrate && challenge.targetUnit.lowercased() == "oz" {
+                adjustedValue = Int(Double(value) / 29.5735)
+            }
+            
+            if adjustedValue > 0 || allowDecrease {
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: max(adjustedValue, 0),
+                    allowDecrease: allowDecrease
+                )
+            }
+        }
+        
+        // Refresh to show updated progress in widgets
+        await fetchMyChallenges()
+    }
+    
     // MARK: - Auto-Sync Progress to Community Challenges
     
     /// Syncs HealthKit/tracking data to all active community challenges
@@ -1135,15 +1232,38 @@ class CommunityChallengeService: ObservableObject {
     func syncAllTrackingToCommunityChallenges() async {
         guard !myChallenges.isEmpty else { return }
         
+        // Ensure MealService has today's data (not stale yesterday meals)
+        MealService.shared.ensureFreshForToday()
+        
         #if DEBUG
         print("🔄 [COMMUNITY] Syncing tracking data to \(myChallenges.count) community challenges...")
         #endif
         
-        for challenge in myChallenges {
+        for (index, challenge) in myChallenges.enumerated() {
             let progressValue = await calculateProgress(for: challenge)
             
-            if progressValue > 0 {
-                let _ = await logProgress(challengeId: challenge.challengeId, progressValue: progressValue)
+            // For "recalculable" types (protein, hydration, calories) the local value
+            // is authoritative — it's freshly computed from today's meals/logs.
+            // We MUST log even when the value is 0 so that any stale yesterday row
+            // in the DB gets overwritten (e.g. 14g protein from yesterday).
+            let isRecalculable = (challenge.challengeType == "protein" ||
+                                  challenge.challengeType == "hydrate" ||
+                                  challenge.challengeType == "calories")
+            
+            if progressValue > 0 || isRecalculable {
+                // allowDecrease: true ensures the DB value matches the authoritative
+                // calculated value. Without this, stale data (e.g. 713g protein from
+                // before a meal removal) gets stuck forever due to the GREATEST() clause.
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: max(progressValue, 0),
+                    allowDecrease: isRecalculable
+                )
+                
+                // Small delay between RPCs to avoid overwhelming URLSession connections
+                if index < myChallenges.count - 1 {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
             }
         }
         

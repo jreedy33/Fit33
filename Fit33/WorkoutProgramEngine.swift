@@ -166,7 +166,7 @@ class WorkoutProgramEngine {
     // MARK: - Exercise Database Access
     
     private func findExercise(byName name: String) -> ExerciseData? {
-        return ComprehensiveExerciseDatabase.exercises.first { $0.name == name }
+        return ExerciseDataProvider.shared.exercises.first { $0.name == name }
     }
     
     // MARK: - Generate Actual Workout from ProgramDay

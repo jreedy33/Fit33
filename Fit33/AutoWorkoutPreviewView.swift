@@ -836,7 +836,7 @@ struct AutoExerciseSwapView: View {
     @State private var selectedCategory: String? = nil
     
     private var allExercises: [ExerciseData] {
-        ComprehensiveExerciseDatabase.exercises
+        ExerciseDataProvider.shared.exercises
     }
     
     private var filteredExercises: [ExerciseData] {

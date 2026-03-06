@@ -572,39 +572,287 @@ final class TabSwitchOptimizer: ObservableObject {
     @Published private(set) var isTransitioning = false
     private var transitionStartTime: CFTimeInterval = 0
     
+    // 🔍 FREEZE DETECTION: Timer that fires if transition never completes
+    private var freezeDetectionTimer: DispatchWorkItem?
+    private var pendingFrom: Int = -1
+    private var pendingTo: Int = -1
+    private var transitionSequence: Int = 0 // Increments on every beginTransition
+    
     private init() {}
     
     /// Call when tab switch begins
     func beginTransition(from: Int, to: Int) {
         transitionStartTime = CACurrentMediaTime()
         isTransitioning = true
+        pendingFrom = from
+        pendingTo = to
+        transitionSequence += 1
+        let seq = transitionSequence
+        
+        let tabNames = ["Home", "Exercises", "Workout", "Nutrition", "Friends"]
+        let fromName = from < tabNames.count ? tabNames[from] : "Tab\(from)"
+        let toName = to < tabNames.count ? tabNames[to] : "Tab\(to)"
+        
+        let memoryMB = Self.quickMemoryMB()
+        print("🔍 [TAB FREEZE] beginTransition: \(fromName)(\(from))→\(toName)(\(to)) seq#\(seq) memory:\(Int(memoryMB))MB thread:\(Thread.isMainThread ? "main" : "bg")")
+        
+        // 🐕 Tell watchdog about this tab switch
+        MainThreadWatchdog.shared.trackTabSwitch(from: from, to: to)
         
         // Prepare destination tab
+        let prepStart = CACurrentMediaTime()
         if let tab = LazyTabManager.Tab(rawValue: to) {
             LazyTabManager.shared.markVisited(tab)
             SmartPrefetch.shared.prefetchForTab(tab)
         }
+        let prepMs = (CACurrentMediaTime() - prepStart) * 1000
+        print("🔍 [TAB FREEZE] beginTransition: prefetch done for seq#\(seq) (\(String(format: "%.1f", prepMs))ms)")
         
         // Haptic feedback (already warm from HapticManager)
         HapticManager.selectionChanged()
+        
+        // 🔍 FREEZE DETECTION: If endTransition isn't called within 3s, log a freeze warning
+        freezeDetectionTimer?.cancel()
+        let freezeCheck = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            // Only fire if this transition is still the active one
+            if self.transitionSequence == seq && self.isTransitioning {
+                let elapsed = (CACurrentMediaTime() - self.transitionStartTime) * 1000
+                let mem = Self.quickMemoryMB()
+                print("🚨🚨🚨 [TAB FREEZE] FREEZE DETECTED! Tab \(from)→\(to) seq#\(seq) stuck for \(String(format: "%.0f", elapsed))ms!")
+                print("   └─ memory: \(Int(mem))MB")
+                print("   └─ isTransitioning still true — endTransition() was NEVER called")
+                print("   └─ main_thread: \(Thread.isMainThread)")
+                
+                // Log what's happening on the main run loop
+                MainThreadWatchdog.shared.logFreezeSnapshot(context: "tab_switch_\(from)→\(to)_seq\(seq)")
+            }
+        }
+        freezeDetectionTimer = freezeCheck
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: freezeCheck)
     }
     
     /// Call when tab switch animation completes
     func endTransition() {
         let elapsed = (CACurrentMediaTime() - transitionStartTime) * 1000
+        let seq = transitionSequence
         isTransitioning = false
         
-        #if DEBUG
+        // Cancel freeze detection — transition completed normally
+        freezeDetectionTimer?.cancel()
+        freezeDetectionTimer = nil
+        
+        // 🐕 Clear watchdog context
+        MainThreadWatchdog.shared.clearContext()
+        
         // Note: Humans perceive <200ms as "instant", <500ms as "fast"
         // Only warn if transition takes longer than 300ms (noticeable delay)
-        if elapsed > 300 {
+        if elapsed > 2000 {
+            print("🚨 [TAB SWITCH] VERY slow transition: \(String(format: "%.1f", elapsed))ms (seq#\(seq))")
+        } else if elapsed > 300 {
             print("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", elapsed))ms")
         } else if elapsed > 150 {
             print("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", elapsed))ms")
         } else {
             print("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", elapsed))ms")
         }
-        #endif
+    }
+    
+    /// Quick memory reading for diagnostics
+    nonisolated static func quickMemoryMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.resident_size) / (1024 * 1024) : 0
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK: - 7b. MAIN THREAD WATCHDOG (Freeze Detection)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Monitors the main thread for hangs/freezes by pinging it from a background thread.
+/// Uses semaphore-based detection for precise timing.
+/// If the main thread doesn't respond within the threshold, logs detailed diagnostics.
+final class MainThreadWatchdog {
+    static let shared = MainThreadWatchdog()
+    
+    private var watchdogThread: Thread?
+    private var isRunning = false
+    private let checkInterval: TimeInterval = 0.5      // Check every 500ms
+    private let freezeThreshold: TimeInterval = 1.5     // 1.5s without response = freeze
+    private let criticalThreshold: TimeInterval = 3.0   // 3s = critical freeze
+    
+    // Track what was happening when freeze started
+    private var activeContext: String = "none"
+    private var contextStartTime: CFTimeInterval = 0
+    private var lastTabFrom: Int = -1
+    private var lastTabTo: Int = -1
+    private var lastTabTime: CFTimeInterval = 0
+    private var freezeCount: Int = 0
+    private let lock = NSLock()
+    
+    private init() {}
+    
+    /// Start the watchdog — call once at app launch
+    func start() {
+        guard !isRunning else { return }
+        isRunning = true
+        
+        let thread = Thread { [weak self] in
+            self?.watchdogLoop()
+        }
+        thread.name = "com.gofit.mainthread-watchdog"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        watchdogThread = thread
+        
+        print("🐕 [WATCHDOG] Main thread freeze detector started (threshold: \(freezeThreshold)s)")
+    }
+    
+    /// Set current context (e.g., "tab_switch_0→1") — helps correlate freezes
+    func setContext(_ context: String) {
+        lock.lock()
+        activeContext = context
+        contextStartTime = CACurrentMediaTime()
+        lock.unlock()
+    }
+    
+    func clearContext() {
+        lock.lock()
+        activeContext = "none"
+        lock.unlock()
+    }
+    
+    /// Thread-safe check if a tab switch is currently in progress
+    var isTabSwitchActive: Bool {
+        lock.lock()
+        let active = activeContext.contains("tab_switch")
+        lock.unlock()
+        return active
+    }
+    
+    /// Track tab switch for better freeze context
+    func trackTabSwitch(from: Int, to: Int) {
+        let tabNames = ["Home", "Exercises", "Workout", "Nutrition", "Friends"]
+        let fromName = from < tabNames.count ? tabNames[from] : "Tab\(from)"
+        let toName = to < tabNames.count ? tabNames[to] : "Tab\(to)"
+        lock.lock()
+        lastTabFrom = from
+        lastTabTo = to
+        lastTabTime = CACurrentMediaTime()
+        activeContext = "tab_switch:\(fromName)→\(toName)"
+        contextStartTime = CACurrentMediaTime()
+        lock.unlock()
+    }
+    
+    /// Log a snapshot of current state (called from freeze detection timer)
+    @MainActor
+    func logFreezeSnapshot(context: String) {
+        let mem = TabSwitchOptimizer.quickMemoryMB()
+        let runLoopMode = RunLoop.current.currentMode?.rawValue ?? "unknown"
+        
+        print("🔍 [WATCHDOG] Freeze snapshot for: \(context)")
+        print("   └─ memory: \(Int(mem))MB")
+        print("   └─ runloop_mode: \(runLoopMode)")
+        print("   └─ isTransitioning: \(TabSwitchOptimizer.shared.isTransitioning)")
+        print("   └─ thread: \(Thread.isMainThread ? "main" : "background")")
+        print("   └─ active_tasks: check console for pending operations")
+    }
+    
+    private func watchdogLoop() {
+        while isRunning {
+            Thread.sleep(forTimeInterval: checkInterval)
+            
+            let pingStart = CACurrentMediaTime()
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            // Capture context BEFORE pinging
+            lock.lock()
+            let ctx = activeContext
+            let ctxStart = contextStartTime
+            let tabFrom = lastTabFrom
+            let tabTo = lastTabTo
+            let tabTime = lastTabTime
+            lock.unlock()
+            
+            // Ping the main thread
+            DispatchQueue.main.async {
+                semaphore.signal()
+            }
+            
+            // Wait for the main thread to respond within threshold
+            let result = semaphore.wait(timeout: .now() + freezeThreshold)
+            
+            if result == .timedOut {
+                // Main thread didn't respond — it's frozen!
+                lock.lock()
+                freezeCount += 1
+                let count = freezeCount
+                lock.unlock()
+                
+                let mem = TabSwitchOptimizer.quickMemoryMB()
+                let ctxDuration = ctxStart > 0 ? (CACurrentMediaTime() - ctxStart) * 1000 : 0
+                let tabAge = tabTime > 0 ? CACurrentMediaTime() - tabTime : -1
+                
+                let tabNames = ["Home", "Exercises", "Workout", "Nutrition", "Friends"]
+                let tabInfo: String
+                if tabFrom >= 0 && tabTo >= 0 {
+                    let fromName = tabFrom < tabNames.count ? tabNames[tabFrom] : "Tab\(tabFrom)"
+                    let toName = tabTo < tabNames.count ? tabNames[tabTo] : "Tab\(tabTo)"
+                    tabInfo = "\(fromName)→\(toName) (\(String(format: "%.1f", tabAge))s ago)"
+                } else {
+                    tabInfo = "none"
+                }
+                
+                print("🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count))")
+                print("   └─ context: \(ctx) (running \(String(format: "%.0f", ctxDuration))ms)")
+                print("   └─ last_tab_switch: \(tabInfo)")
+                print("   └─ memory: \(Int(mem))MB")
+                print("   └─ ⚠️ UI is unresponsive — user cannot interact")
+                
+                // Log thread count
+                logThreadInfo()
+                
+                // Now wait for unblock (up to 30s)
+                let unblockResult = semaphore.wait(timeout: .now() + 30.0)
+                let totalBlocked = CACurrentMediaTime() - pingStart
+                
+                if unblockResult == .timedOut {
+                    print("🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK!")
+                    print("   └─ context: \(ctx)")
+                } else if totalBlocked >= criticalThreshold {
+                    print("🧊🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s (CRITICAL)")
+                    print("   └─ context: \(ctx)")
+                } else {
+                    print("🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s")
+                    print("   └─ context: \(ctx)")
+                }
+            }
+        }
+    }
+    
+    private func logThreadInfo() {
+        // Log basic thread counts to help diagnose contention
+        var threadList: thread_act_array_t?
+        var threadCount: mach_msg_type_number_t = 0
+        let result = task_threads(mach_task_self_, &threadList, &threadCount)
+        if result == KERN_SUCCESS {
+            print("   └─ active_threads: \(threadCount)")
+            // Deallocate the thread list
+            if let list = threadList {
+                vm_deallocate(mach_task_self_, vm_address_t(bitPattern: list), vm_size_t(Int(threadCount) * MemoryLayout<thread_act_t>.size))
+            }
+        }
+    }
+    
+    func stop() {
+        isRunning = false
+        watchdogThread = nil
     }
 }
 
@@ -684,12 +932,14 @@ struct LazyTabContent<Content: View>: View {
                     .onAppear {
                         hasInitialized = true
                         lazyTabManager.markVisited(tab)
+                        print("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (eager/initialized)")
                     }
             } else if lazyTabManager.shouldRenderContent(for: tab) {
                 // Tab was explicitly visited or hinted
                 content()
                     .onAppear {
                         hasInitialized = true
+                        print("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (shouldRender)")
                     }
             } else {
                 // Lightweight placeholder - show VERY briefly while initializing
@@ -698,6 +948,7 @@ struct LazyTabContent<Content: View>: View {
                         // Initialize immediately - no delay
                         hasInitialized = true
                         lazyTabManager.markVisited(tab)
+                        print("🔍 [TAB FREEZE] ⏳ Tab \(tab.rawValue) showing PLACEHOLDER (first init)")
                     }
             }
         }
@@ -840,3 +1091,4 @@ final class PerformanceMetrics: ObservableObject {
     }
 }
 #endif
+

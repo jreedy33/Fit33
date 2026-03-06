@@ -145,6 +145,10 @@ struct PrivateChallengeDetailView: View {
         .refreshable {
             await loadDetail()
         }
+        .onChange(of: privateChallengeService.memberChangeToken) { _, _ in
+            // A member joined or left — reload detail for live member list
+            Task { await loadDetail() }
+        }
     }
     
     private func loadDetail() async {
@@ -274,9 +278,11 @@ struct PrivateChallengeDetailView: View {
     // MARK: - Progress Section
     
     private var progressSection: some View {
-        let progress = detail?.todayProgressPercentage ?? challenge.todayProgressPercentage
-        let todayProgress = detail?.myTodayProgress ?? challenge.myTodayProgress ?? 0
+        let resolver = ChallengeProgressResolver.shared
+        let liveValue = resolver.liveProgress(for: challenge)
         let dailyTarget = detail?.dailyTarget ?? challenge.dailyTarget
+        let progress = dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(dailyTarget)) : 0
+        let todayProgress = liveValue
         let rank = detail?.myRank ?? challenge.myRank ?? 0
         
         return VStack(spacing: 16) {
@@ -419,8 +425,12 @@ struct PrivateChallengeDetailView: View {
     }
     
     private func leaderboardRow(member: PrivateChallengeMember, dailyTarget: Int) -> some View {
-        let progress = dailyTarget > 0 ? min(1.0, Double(member.todayProgress ?? 0) / Double(dailyTarget)) : 0
         let isMe = member.isCurrentUser ?? false
+        // Use live HealthKit/tracking data for current user, DB data for others
+        let displayProgress = isMe
+            ? ChallengeProgressResolver.shared.liveProgress(for: challenge)
+            : (member.todayProgress ?? 0)
+        let progress = dailyTarget > 0 ? min(1.0, Double(displayProgress) / Double(dailyTarget)) : 0
         
         return HStack(spacing: 12) {
             // Rank
@@ -482,13 +492,13 @@ struct PrivateChallengeDetailView: View {
             
             Spacer()
             
-            // Today's progress
+            // Today's progress (live for current user, DB for others)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(member.todayProgress ?? 0)")
+                Text("\(displayProgress)")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                 
-                if member.targetHitToday ?? false {
+                if (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false)) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundColor(.green)

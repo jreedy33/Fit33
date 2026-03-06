@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 // MARK: - Admin Password Gate
@@ -2100,3 +2101,4 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
     AdminPasswordView(isAuthenticated: .constant(false))
 }
 
+#endif // DEBUG

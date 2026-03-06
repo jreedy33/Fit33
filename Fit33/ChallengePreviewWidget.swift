@@ -437,7 +437,7 @@ struct ActiveChallengeWidget: View {
                 HStack(spacing: 8) {
                     ZStack {
                         Circle()
-                            .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
                             .frame(width: 28, height: 28)
                         Text(resolvedType.emoji)
                             .font(.system(size: 14))

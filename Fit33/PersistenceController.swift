@@ -1,8 +1,31 @@
 import CoreData
 import Foundation
 
+// MARK: - Core Data Recovery Notifications
+extension Notification.Name {
+    /// Posted when Core Data fails to load even after a reset attempt.
+    /// Observers should show a critical error screen to the user.
+    static let coreDataLoadFailed = Notification.Name("coreDataLoadFailed")
+}
+
 struct PersistenceController {
     static let shared = PersistenceController()
+    
+    // MARK: - Store Recovery State
+    /// True if the store was reset (deleted & recreated) due to migration failure.
+    /// The existing syncAllDataFromCloud() in checkAuth() will auto-restore all data.
+    /// After restore, Fit33App silently cleans up the backup — user never sees anything.
+    static var storeWasReset = false
+    
+    /// True if Core Data could not be loaded even after a reset attempt.
+    /// The app should show a critical error screen when this is true.
+    static var storeLoadFailed = false
+    
+    /// The migration error that caused the store reset, if any.
+    static var migrationError: NSError?
+    
+    /// URL where the backup of the corrupted store was saved (if backup succeeded).
+    static var storeBackupURL: URL?
     
     static var preview: PersistenceController = {
         let result = PersistenceController(inMemory: true)
@@ -57,8 +80,7 @@ struct PersistenceController {
         do {
             try viewContext.save()
         } catch {
-            let nsError = error as NSError
-            fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+            print("⚠️ [PREVIEW] Failed to save preview data: \(error)")
         }
         
         return result
@@ -73,18 +95,18 @@ struct PersistenceController {
         let useInMemory = inMemory // Respect the parameter, don't force in-memory
         
         if useInMemory {
-            container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
+            container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
             print("🧪 Using in-memory Core Data (DEBUG mode)")
         }
         
         // Configure store description with migration options
-        guard let description = container.persistentStoreDescriptions.first else {
-            fatalError("Failed to retrieve a persistent store description")
+        if let description = container.persistentStoreDescriptions.first {
+            // Enable automatic migration
+            description.shouldMigrateStoreAutomatically = true
+            description.shouldInferMappingModelAutomatically = true
+        } else {
+            print("⚠️ [CORE DATA] No persistent store description found — migration options skipped")
         }
-        
-        // Enable automatic migration
-        description.shouldMigrateStoreAutomatically = true
-        description.shouldInferMappingModelAutomatically = true
         
         var loadError: NSError?
         var storeURL: URL?
@@ -105,13 +127,64 @@ struct PersistenceController {
             print("🔄 Attempting automatic Core Data reset...")
             print("Error details: \(error.localizedDescription)")
             
-            // Delete all store files
+            PersistenceController.migrationError = error
+            
+            // 🛡️ Log the migration failure to crash reporting with full context
+            CrashReportingService.shared.reportError(
+                message: "Core Data migration failed — store will be reset",
+                domain: "CoreData",
+                code: "MIGRATION_FAILURE_\(error.code)",
+                error: error,
+                severity: .critical,
+                additionalContext: [
+                    "store_url": url.absoluteString,
+                    "error_domain": error.domain,
+                    "error_code": "\(error.code)",
+                    "error_user_info": "\(error.userInfo)",
+                    "migration_auto_enabled": "true",
+                    "infer_mapping_auto_enabled": "true"
+                ]
+            )
+            
             let fileManager = FileManager.default
+            
+            // 🛡️ STEP 1: Backup the corrupted store before deleting
             if fileManager.fileExists(atPath: url.path) {
-                // Delete main store file
+                let backupDir = fileManager.temporaryDirectory
+                    .appendingPathComponent("CoreDataBackup_\(Int(Date().timeIntervalSince1970))")
+                
+                do {
+                    try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                    
+                    let mainBackup = backupDir.appendingPathComponent(url.lastPathComponent)
+                    try fileManager.copyItem(at: url, to: mainBackup)
+                    
+                    // Also backup -shm and -wal if they exist
+                    let shmURL = URL(fileURLWithPath: url.path + "-shm")
+                    let walURL = URL(fileURLWithPath: url.path + "-wal")
+                    if fileManager.fileExists(atPath: shmURL.path) {
+                        try fileManager.copyItem(at: shmURL, to: backupDir.appendingPathComponent(shmURL.lastPathComponent))
+                    }
+                    if fileManager.fileExists(atPath: walURL.path) {
+                        try fileManager.copyItem(at: walURL, to: backupDir.appendingPathComponent(walURL.lastPathComponent))
+                    }
+                    
+                    PersistenceController.storeBackupURL = backupDir
+                    print("💾 Core Data store backed up to: \(backupDir.path)")
+                } catch {
+                    print("⚠️ Failed to backup Core Data store: \(error.localizedDescription)")
+                    CrashReportingService.shared.reportError(
+                        message: "Failed to backup Core Data store before reset",
+                        domain: "CoreData",
+                        code: "BACKUP_FAILURE",
+                        error: error,
+                        severity: .high
+                    )
+                }
+                
+                // STEP 2: Delete the corrupted store files
                 try? fileManager.removeItem(at: url)
                 
-                // Delete associated files (-shm, -wal)
                 let shmURL = URL(fileURLWithPath: url.path + "-shm")
                 let walURL = URL(fileURLWithPath: url.path + "-wal")
                 try? fileManager.removeItem(at: shmURL)
@@ -120,7 +193,7 @@ struct PersistenceController {
                 print("🗑️ Deleted old Core Data store files")
             }
             
-            // Try loading again with fresh store
+            // STEP 3: Try loading again with fresh store
             var retrySuccess = false
             container.loadPersistentStores { _, retryError in
                 if let retryError = retryError as NSError? {
@@ -131,9 +204,44 @@ struct PersistenceController {
                 }
             }
             
-            // If retry failed, this is a critical error
-            if !retrySuccess {
-                print("⚠️ WARNING: Could not load Core Data even after reset. App may not function correctly.")
+            if retrySuccess {
+                // STEP 4: Store was reset — auto-restore will happen via syncAllDataFromCloud()
+                // which runs inside checkAuth() on every authenticated app launch.
+                // The user never sees anything — their data reappears seamlessly.
+                PersistenceController.storeWasReset = true
+                
+                CrashReportingService.shared.reportError(
+                    message: "Core Data store was reset successfully — auto-restore pending via cloud sync",
+                    domain: "CoreData",
+                    code: "STORE_RESET_SUCCESS",
+                    severity: .high,
+                    additionalContext: [
+                        "backup_location": PersistenceController.storeBackupURL?.path ?? "none",
+                        "original_error_code": "\(loadError?.code ?? 0)"
+                    ]
+                )
+            } else {
+                // STEP 5: Critical failure — Core Data cannot load at all
+                PersistenceController.storeLoadFailed = true
+                
+                CrashReportingService.shared.reportError(
+                    message: "Core Data CRITICAL FAILURE — store cannot load even after reset",
+                    domain: "CoreData",
+                    code: "STORE_LOAD_FATAL",
+                    severity: .critical,
+                    additionalContext: [
+                        "original_error": loadError?.localizedDescription ?? "unknown",
+                        "original_error_code": "\(loadError?.code ?? 0)",
+                        "backup_location": PersistenceController.storeBackupURL?.path ?? "none"
+                    ]
+                )
+                
+                // Post notification so UI can show a critical error screen
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .coreDataLoadFailed, object: nil)
+                }
+                
+                print("❌ CRITICAL: Could not load Core Data even after reset. App will not function correctly.")
             }
         }
         
@@ -263,5 +371,50 @@ struct PersistenceController {
         }
         
         print("✅ All local user data cleared successfully")
+    }
+    
+    // MARK: - Cloud Restore After Store Reset
+    
+    /// Restores all user data from Supabase after a Core Data store reset.
+    /// Called automatically — the user never needs to know a reset happened.
+    func attemptCloudRestore() async -> Bool {
+        guard SupabaseManager.shared.isAuthenticated else {
+            print("⚠️ [RESTORE] Cannot restore from cloud — user not authenticated")
+            return false
+        }
+        
+        print("☁️ [RESTORE] Starting full cloud data restore...")
+        
+        CrashReportingService.shared.addBreadcrumb("Cloud restore started after Core Data reset")
+        
+        // Use the existing comprehensive sync which restores:
+        // - User profile
+        // - Workout history
+        // - Favorite workouts
+        // - Meal logs
+        // - Exercise nicknames
+        await SupabaseManager.shared.syncAllDataFromCloud()
+        
+        print("✅ [RESTORE] Cloud data restore completed")
+        
+        CrashReportingService.shared.addBreadcrumb("Cloud restore completed successfully")
+        
+        // Clear the reset flag now that data is restored
+        PersistenceController.storeWasReset = false
+        
+        return true
+    }
+    
+    /// Cleans up the backup of the corrupted store (call after successful restore or if user declines)
+    func cleanupStoreBackup() {
+        guard let backupURL = PersistenceController.storeBackupURL else { return }
+        
+        do {
+            try FileManager.default.removeItem(at: backupURL)
+            PersistenceController.storeBackupURL = nil
+            print("🗑️ Cleaned up Core Data backup at \(backupURL.path)")
+        } catch {
+            print("⚠️ Failed to clean up Core Data backup: \(error.localizedDescription)")
+        }
     }
 }

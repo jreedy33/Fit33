@@ -18,12 +18,14 @@ struct FriendsTabView: View {
     @StateObject private var communityService = CommunityChallengeService.shared
     @StateObject private var privateChallengeService = PrivateChallengeService.shared
     @StateObject private var contactsService = ContactsService.shared
+    @StateObject private var leagueService = WeeklyLeagueService.shared
     
     @State private var showingFriendsList = false
     @State private var showingFriendSearch = false
     @State private var showingFriendProfile: Friend?
     @State private var showingCommunityHub = false
     @State private var showingChallengeCreation = false
+    @State private var showingLeagueDetail = false
     @State private var activeChallengePageIndex = 0
     @State private var sentRecommendedChallenge = false
     @State private var showingSentConfirmation = false
@@ -34,16 +36,30 @@ struct FriendsTabView: View {
     @State private var showingAllCommunities = false
     @State private var hasAppearedBefore = false
     
+    // MARK: - Live Refresh State
+    @State private var lastRefreshedAt: Date?
+    @State private var lastContactsRefreshAt: Date?
+    @State private var isManualRefreshing = false
+    @State private var autoRefreshTimer: Timer?
+    
+    /// How often to auto-poll for fresh opponent data (60 seconds).
+    /// Realtime WebSocket handles immediate updates; this is a fallback.
+    private let autoRefreshInterval: TimeInterval = 60
+    
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ScrollView(.vertical) {
-                VStack(spacing: 0) {
+                // ⚡️ PERF FIX: LazyVStack defers off-screen sections (community widgets,
+            // challenge carousel, quick actions) until the user scrolls to them.
+            // Previously a regular VStack rendered ALL ~10 sections synchronously
+            // on first visit, blocking the main thread for ~1.7s.
+            LazyVStack(spacing: 0) {
                     // Custom header
                     friendsHeaderView
                         .padding(.top, 4)
                         .padding(.bottom, 16)
                     
-                    VStack(spacing: 24) {
+                    LazyVStack(spacing: 24) {
                         // Instagram-style friend stories bar
                         friendStoriesBar
                         
@@ -52,6 +68,9 @@ struct FriendsTabView: View {
                         
                         // Quick action tiles: Add Friend, New Challenge, Join Community
                         friendsQuickActionTiles
+                        
+                        // Weekly League widget
+                        weeklyLeagueSection
                         
                         // Active Challenges carousel
                         activeChallengesCarousel
@@ -81,8 +100,12 @@ struct FriendsTabView: View {
                 .padding(.bottom, 20)
             }
             .refreshable {
-                // Pull-to-refresh: refresh everything in parallel for speed
+                // Pull-to-refresh: push own data + pull fresh data for everyone
+                await ChallengeService.shared.syncAllTrackingToChallenges()
+                await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
                 await refreshAllFriendsData(force: true)
+                lastRefreshedAt = Date()
             }
             .background(
                 AnimatedOrbBackground.friends(colorScheme: colorScheme)
@@ -94,6 +117,11 @@ struct FriendsTabView: View {
                     FriendsListView()
                 } else if destination == "CommunityHub" {
                     CommunityChallengesHubView()
+                } else if destination.hasPrefix("PrivateChallenge_") {
+                    let idStr = String(destination.dropFirst("PrivateChallenge_".count))
+                    if let challenge = privateChallengeService.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                        PrivateChallengeDetailView(challenge: challenge)
+                    }
                 }
             }
             .navigationDestination(item: $selectedCommunityChallenge) { challenge in
@@ -110,25 +138,57 @@ struct FriendsTabView: View {
             guard !Task.isCancelled else { return }
             
             await refreshAllFriendsData(force: false)
+            lastRefreshedAt = Date()
             hasAppearedBefore = true
+            
+            // Start auto-refresh polling for live opponent data
+            startAutoRefreshTimer()
         }
         .onAppear {
+            // Mark community widgets as visible so rank arrows stay and update live
+            communityService.markCommunityViewVisible()
+            
             // Auto-refresh when returning to this tab (after initial load)
             if hasAppearedBefore {
                 // Clear sent IDs so stale markers don't block refreshed suggestions
                 sentRequestIds.removeAll()
                 requestSentAnimationIds.removeAll()
-                Task {
-                    await refreshAllFriendsData(force: false)
+                
+                // ⚡️ PERF FIX: Only do a FULL refresh if stale (> 30s since last).
+                // Quick tab switches (< 30s apart) just re-start the timer.
+                let isStale = lastRefreshedAt == nil || Date().timeIntervalSince(lastRefreshedAt!) > 30
+                if isStale {
+                    Task {
+                        await refreshAllFriendsData(force: false)
+                        lastRefreshedAt = Date()
+                    }
                 }
+                // Re-start timer when tab appears
+                startAutoRefreshTimer()
             }
         }
+        .onDisappear {
+            // Clear rank delta arrows — they'll be gone when user returns
+            communityService.markCommunityViewHidden()
+            
+            // Stop auto-refresh when leaving the tab to save battery
+            stopAutoRefreshTimer()
+        }
         .onChange(of: scenePhase) { oldPhase, newPhase in
-            // Auto-refresh when app comes back to foreground
             if newPhase == .active && oldPhase != .active {
-                Task {
-                    await refreshAllFriendsData(force: false)
+                // App foregrounded → only refresh if stale (> 30s).
+                // Heavy sync (HealthKit push + pull) is already handled by Fit33App's
+                // foreground handler. We just need to refresh the display data here.
+                let isStale = lastRefreshedAt == nil || Date().timeIntervalSince(lastRefreshedAt!) > 30
+                if isStale {
+                    Task {
+                        await refreshAllFriendsData(force: false)
+                        lastRefreshedAt = Date()
+                    }
                 }
+                startAutoRefreshTimer()
+            } else if newPhase == .background {
+                stopAutoRefreshTimer()
             }
         }
         .sheet(item: $showingFriendProfile) { friend in
@@ -158,9 +218,68 @@ struct FriendsTabView: View {
                     .environmentObject(userManager)
             }
         }
+        .sheet(isPresented: $showingLeagueDetail) {
+            NavigationStack {
+                WeeklyLeagueDetailView()
+            }
+        }
         .overlay(
             sentConfirmationOverlay
         )
+    }
+    
+    // MARK: - Auto-Refresh Timer (Live Opponent Data)
+    
+    /// Start a background timer that auto-refreshes challenge data every 60s.
+    /// This is a fallback for when Supabase Realtime misses an event.
+    /// Uses .default RunLoop mode (NOT .common) so it never fires during
+    /// scroll tracking or tab switch animations — preventing UI freezes.
+    private func startAutoRefreshTimer() {
+        stopAutoRefreshTimer() // Prevent duplicates
+        let timer = Timer.scheduledTimer(withTimeInterval: autoRefreshInterval, repeats: true) { _ in
+            Task { @MainActor in
+                // ⚡️ PERF FIX: Only refresh 1v1 challenges here (lightweight).
+                // Community + Private challenges are already refreshed by the RealtimeService
+                // cadence timer. Running refreshAll(force: true) here was redundant and caused
+                // duplicate network calls every 60s on top of the cadence timer's 90s fetches.
+                async let active: () = challengeService.fetchActiveChallenges()
+                async let groups: () = challengeService.fetchActiveGroupChallenges()
+                async let league: () = leagueService.fetchOrJoinLeague(force: false)
+                _ = await (active, groups, league)
+                lastRefreshedAt = Date()
+            }
+        }
+        // ⚡️ PERFORMANCE FIX: Do NOT add to .common mode.
+        // Timer.scheduledTimer already adds to .default mode, which won't fire
+        // during UI tracking (scrolling, tab switch animations).
+        // Previously: RunLoop.main.add(timer, forMode: .common) caused the timer
+        // to fire mid-animation, triggering 5 network requests that resolved on
+        // @MainActor and caused rendering storms that froze tab navigation.
+        autoRefreshTimer = timer
+    }
+    
+    private func stopAutoRefreshTimer() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = nil
+    }
+    
+    // MARK: - Time-Ago Helpers
+    
+    private func timeAgoText(since date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds < 5 { return "just now" }
+        if seconds < 60 { return "\(seconds)s ago" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        return "\(hours)h ago"
+    }
+    
+    private func timeAgoColor(since date: Date) -> Color {
+        let seconds = Date().timeIntervalSince(date)
+        if seconds < 60 { return .green }       // Fresh (< 1 min)
+        if seconds < 300 { return .yellow }      // Slightly stale (< 5 min)
+        return .orange                            // Stale (> 5 min)
     }
     
     // MARK: - Header
@@ -170,7 +289,7 @@ struct FriendsTabView: View {
     /// Central refresh for all Friends tab data.
     /// Uses throttling in CommunityChallengeService/PrivateChallengeService to avoid redundant calls.
     private func refreshAllFriendsData(force: Bool) async {
-        // Batch 1: Fast social data (parallel)
+        // Batch 1: Fast social data (parallel) — lightweight, always fetch
         async let friends: () = friendService.fetchFriends()
         async let ranked: () = rankingService.fetchRankedFriends()
         async let pending: () = friendService.fetchPendingRequests()
@@ -178,39 +297,103 @@ struct FriendsTabView: View {
         async let privateInvites: () = PrivateChallengeService.shared.fetchPendingInvites()
         _ = await (friends, ranked, pending, invites, privateInvites)
         
-        // Batch 2: Challenge data — all types in parallel
+        // Batch 2: Challenge data + league — all types in parallel
         async let active: () = challengeService.fetchActiveChallenges()
         async let groups: () = challengeService.fetchActiveGroupChallenges()
         async let community: () = communityService.refreshAll(force: force)
         async let privateChallenges: () = PrivateChallengeService.shared.refreshAll(force: force)
-        _ = await (active, groups, community, privateChallenges)
+        async let league: () = leagueService.fetchOrJoinLeague(force: force)
+        _ = await (active, groups, community, privateChallenges, league)
         
-        // Batch 3: Friend suggestions (contacts + mutual friends in parallel)
-        async let pymk: () = contactsService.fetchPeopleYouMayKnow()
-        if contactsService.canAccessContacts {
-            async let contactRefresh: () = contactsService.fetchContactsAndFindFriends()
-            _ = await (pymk, contactRefresh)
-        } else {
-            _ = await pymk
+        // Batch 3: Contacts + PYMK — HEAVY operations, only run when forced (pull-to-refresh)
+        // or every 5 minutes. Tab switches should NOT re-scan contacts from the device.
+        if force || lastContactsRefreshAt == nil || Date().timeIntervalSince(lastContactsRefreshAt!) > 300 {
+            lastContactsRefreshAt = Date()
+            async let pymk: () = contactsService.fetchPeopleYouMayKnow()
+            if contactsService.canAccessContacts {
+                async let contactRefresh: () = contactsService.fetchContactsAndFindFriends()
+                _ = await (pymk, contactRefresh)
+            } else {
+                _ = await pymk
+            }
         }
     }
     
     // MARK: - Header
     
     private var friendsHeaderView: some View {
-        HStack {
-            Text("Friends")
-                .font(.system(size: 42, weight: .bold))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Friends")
+                    .font(.system(size: 42, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
+                    .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
+                
+                Spacer()
+                
+                // Manual refresh button
+                Button(action: {
+                    guard !isManualRefreshing else { return }
+                    HapticManager.impact(.medium)
+                    isManualRefreshing = true
+                    Task {
+                        // Push our own data first, then pull everyone's fresh data
+                        await ChallengeService.shared.syncAllTrackingToChallenges()
+                        await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                        await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+                        await refreshAllFriendsData(force: true)
+                        lastRefreshedAt = Date()
+                        isManualRefreshing = false
+                    }
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 14, weight: .semibold))
+                            .rotationEffect(.degrees(isManualRefreshing ? 360 : 0))
+                            .animation(isManualRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isManualRefreshing)
+                        
+                        if isManualRefreshing {
+                            Text("Syncing...")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .foregroundStyle(
+                        LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.cyan.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .disabled(isManualRefreshing)
+            }
             
-            Spacer()
+            // "Last refreshed X ago" indicator
+            if let lastRefresh = lastRefreshedAt {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(timeAgoColor(since: lastRefresh))
+                        .frame(width: 6, height: 6)
+                    
+                    Text("Updated \(timeAgoText(since: lastRefresh))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.leading, 6)
+            }
         }
         .padding(.leading, 4)
     }
@@ -644,6 +827,27 @@ struct FriendsTabView: View {
         .padding(24)
         .frame(maxWidth: .infinity)
         .sleekCard(cornerRadius: 24, accentColor: .cyan)
+    }
+    
+    // MARK: - Weekly League Widget
+    
+    private var weeklyLeagueSection: some View {
+        WeeklyLeagueWidget(
+            leagueService: leagueService,
+            onTap: {
+                if leagueService.standing != nil {
+                    showingLeagueDetail = true
+                } else {
+                    // First tap → join the league
+                    Task {
+                        await leagueService.fetchOrJoinLeague(force: true)
+                        if leagueService.standing != nil {
+                            showingLeagueDetail = true
+                        }
+                    }
+                }
+            }
+        )
     }
     
     // MARK: - Active Challenges Carousel
@@ -1495,19 +1699,14 @@ struct FriendsTabView: View {
                 .buttonStyle(.plain)
             }
         }
-        .navigationDestination(for: String.self) { value in
-            if value.hasPrefix("PrivateChallenge_") {
-                let idStr = String(value.dropFirst("PrivateChallenge_".count))
-                if let challenge = privateChallengeService.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
-                    PrivateChallengeDetailView(challenge: challenge)
-                }
-            }
-        }
     }
     
     private func privateChallengeRow(challenge: PrivateChallenge) -> some View {
         let type = challenge.resolvedType
-        let progress = challenge.todayProgressPercentage
+        let resolver = ChallengeProgressResolver.shared
+        let liveValue = resolver.liveProgress(for: challenge)
+        let progress = challenge.dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(challenge.dailyTarget)) : 0
+        let liveTargetHit = liveValue >= challenge.dailyTarget
         
         return HStack(spacing: 12) {
             // Emoji + progress ring
@@ -1550,13 +1749,13 @@ struct FriendsTabView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     
-                    // Progress
-                    Text("\(challenge.myTodayProgress ?? 0)/\(challenge.dailyTarget) \(challenge.targetUnit)")
+                    // Progress (live from HealthKit/tracking)
+                    Text("\(liveValue)/\(challenge.dailyTarget) \(challenge.targetUnit)")
                         .font(.caption2)
                         .fontWeight(.medium)
-                        .foregroundColor(challenge.targetHitToday ? .green : .secondary)
+                        .foregroundColor(liveTargetHit ? .green : .secondary)
                     
-                    if challenge.targetHitToday {
+                    if liveTargetHit {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.green)

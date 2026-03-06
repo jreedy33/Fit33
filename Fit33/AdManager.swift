@@ -23,8 +23,11 @@ class AdManager: NSObject, ObservableObject {
     /// Whether an ad is currently being shown
     @Published var isShowingAd = false
     
-    /// Whether an ad is ready to be shown
+    /// Whether an interstitial ad is ready to be shown
     @Published var isAdReady = false
+    
+    /// Whether a rewarded video ad is ready to be shown
+    @Published var isRewardedAdReady = false
     
     /// Minimum ad duration in seconds (used for timer calculation when no ad plays)
     let minimumAdDuration: TimeInterval = 30
@@ -36,17 +39,31 @@ class AdManager: NSObject, ObservableObject {
     // MARK: - Private Properties
     
     private var interstitialAd: InterstitialAd?
+    private var rewardedAd: RewardedAd?
     private var adStartTime: Date?
     private var onAdDismissed: (() -> Void)?
+    private var onRewardEarned: (() -> Void)?
     private var isSDKInitialized = false
     
-    // Ad Unit IDs
+    /// Tracks whether the currently presenting ad is a rewarded video (vs interstitial)
+    private var isShowingRewardedAd = false
+    
+    // Interstitial Ad Unit IDs
     // Test ID: ca-app-pub-3940256099942544/4411468910 (use during development)
     // Production ID: ca-app-pub-8809892203317185/3674561599 (use for release)
     #if DEBUG
     private let adUnitID = "ca-app-pub-3940256099942544/4411468910" // Test ads for development
     #else
     private let adUnitID = "ca-app-pub-8809892203317185/3674561599" // Production ads for release
+    #endif
+    
+    // Rewarded Ad Unit IDs
+    // Test ID: ca-app-pub-3940256099942544/1712485313 (use during development)
+    // Production ID: TODO — Create rewarded video unit in AdMob dashboard (publisher: ca-app-pub-8809892203317185)
+    #if DEBUG
+    private let rewardedAdUnitID = "ca-app-pub-3940256099942544/1712485313" // Test rewarded ads
+    #else
+    private let rewardedAdUnitID = "ca-app-pub-8809892203317185/5259396920" // Production rewarded ads
     #endif
     
     // MARK: - Initialization
@@ -108,6 +125,11 @@ class AdManager: NSObject, ObservableObject {
             // Preload first ad if ads are enabled
             if self?.adsEnabled == true {
                 self?.loadInterstitialAd()
+            }
+            
+            // Also preload rewarded ad if not ready (for daily quest)
+            if self?.isRewardedAdReady == false {
+                self?.loadRewardedAd()
             }
         }
     }
@@ -231,6 +253,94 @@ class AdManager: NSObject, ObservableObject {
         }
         return true
     }
+    
+    // MARK: - Rewarded Ad Methods
+    
+    /// Load a new rewarded video ad (for the "Watch 2 Videos" quest)
+    func loadRewardedAd() {
+        // Premium users don't need ads
+        guard !PremiumManager.shared.isPremiumUser else { return }
+        
+        // Initialize SDK if not already done
+        if !isSDKInitialized {
+            initializeSDK()
+            return
+        }
+        
+        print("📺 Loading rewarded ad...")
+        
+        RewardedAd.load(with: rewardedAdUnitID, request: Request()) { [weak self] ad, error in
+            if let error = error {
+                print("📺 Failed to load rewarded ad: \(error.localizedDescription)")
+                SessionLogManager.shared.logAdLoad(success: false, adUnitId: self?.rewardedAdUnitID ?? "", loadTimeMs: 0, error: error.localizedDescription)
+                DispatchQueue.main.async {
+                    self?.isRewardedAdReady = false
+                }
+                return
+            }
+            
+            print("📺 Rewarded ad loaded successfully")
+            SessionLogManager.shared.logAdLoad(success: true, adUnitId: self?.rewardedAdUnitID ?? "", loadTimeMs: 0)
+            self?.rewardedAd = ad
+            self?.rewardedAd?.fullScreenContentDelegate = self
+            
+            DispatchQueue.main.async {
+                self?.isRewardedAdReady = true
+            }
+        }
+    }
+    
+    /// Show a rewarded video ad (for the daily quest)
+    /// - Parameters:
+    ///   - viewController: The view controller to present the ad from
+    ///   - onReward: Called when the user earns the reward (watched full video)
+    func showRewardedAd(from viewController: UIViewController, onReward: @escaping () -> Void) {
+        // Premium users never see ads
+        guard !PremiumManager.shared.isPremiumUser else {
+            print("📺 Premium user, skipping rewarded ad")
+            return
+        }
+        
+        guard let rewardedAd = rewardedAd else {
+            print("📺 No rewarded ad available, loading new one")
+            SessionLogManager.shared.logAdError(adUnitId: rewardedAdUnitID, error: "No rewarded ad available", context: "showRewardedAd")
+            loadRewardedAd()
+            return
+        }
+        
+        print("📺 Showing rewarded ad")
+        SessionLogManager.shared.logAdShow(adUnitId: rewardedAdUnitID, placement: "daily_quest_watch_ads")
+        self.onRewardEarned = onReward
+        self.isShowingRewardedAd = true
+        self.adStartTime = Date()
+        
+        DispatchQueue.main.async {
+            self.isShowingAd = true
+            rewardedAd.present(from: viewController) { [weak self] in
+                // User earned the reward (watched the full video)
+                print("📺 User earned rewarded ad reward!")
+                DispatchQueue.main.async {
+                    self?.onRewardEarned?()
+                    self?.onRewardEarned = nil
+                }
+            }
+        }
+    }
+    
+    /// Prepare a rewarded ad for the daily quest (call when ad quest is detected)
+    func prepareRewardedAd() {
+        // Premium users don't need ads
+        guard !PremiumManager.shared.isPremiumUser else { return }
+        
+        if !isSDKInitialized {
+            print("📺 Preparing rewarded ad, initializing SDK...")
+            initializeSDK()
+            // After SDK init, loadRewardedAd will be called from the init callback
+            // We need to also load rewarded when SDK finishes
+        } else if !isRewardedAdReady {
+            loadRewardedAd()
+        }
+    }
 }
 
 // MARK: - FullScreenContentDelegate
@@ -242,21 +352,34 @@ extension AdManager: FullScreenContentDelegate {
     }
     
     func adDidRecordClick(_ ad: FullScreenPresentingAd) {
+        let unitId = isShowingRewardedAd ? rewardedAdUnitID : adUnitID
         print("📺 Ad recorded click")
-        SessionLogManager.shared.logAdClicked(adUnitId: adUnitID)
+        SessionLogManager.shared.logAdClicked(adUnitId: unitId)
     }
     
     func ad(_ ad: FullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
-        print("📺 Ad failed to present: \(error.localizedDescription)")
-        SessionLogManager.shared.logAdError(adUnitId: adUnitID, error: error.localizedDescription, context: "present")
+        let isRewarded = isShowingRewardedAd
+        let unitId = isRewarded ? rewardedAdUnitID : adUnitID
+        print("📺 \(isRewarded ? "Rewarded" : "Interstitial") ad failed to present: \(error.localizedDescription)")
+        SessionLogManager.shared.logAdError(adUnitId: unitId, error: error.localizedDescription, context: "present")
         DispatchQueue.main.async {
             self.isShowingAd = false
-            self.isAdReady = false
-            self.onAdDismissed?()
-            self.onAdDismissed = nil
+            if isRewarded {
+                self.isRewardedAdReady = false
+                self.isShowingRewardedAd = false
+                self.onRewardEarned = nil
+            } else {
+                self.isAdReady = false
+                self.onAdDismissed?()
+                self.onAdDismissed = nil
+            }
         }
         // Try to load a new ad
-        loadInterstitialAd()
+        if isRewarded {
+            loadRewardedAd()
+        } else {
+            loadInterstitialAd()
+        }
     }
     
     func adWillPresentFullScreenContent(_ ad: FullScreenPresentingAd) {
@@ -268,7 +391,9 @@ extension AdManager: FullScreenContentDelegate {
     }
     
     func adDidDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("📺 Ad dismissed")
+        let isRewarded = isShowingRewardedAd
+        let unitId = isRewarded ? rewardedAdUnitID : adUnitID
+        print("📺 \(isRewarded ? "Rewarded" : "Interstitial") ad dismissed")
         
         // Calculate how long the ad was shown and ROUND to whole seconds
         let rawDuration = Date().timeIntervalSince(adStartTime ?? Date())
@@ -276,24 +401,36 @@ extension AdManager: FullScreenContentDelegate {
         print("📺 Ad was shown for \(rawDuration)s (raw) → \(roundedDuration)s (rounded)")
         
         // Log the ad dismissal with watch duration
-        SessionLogManager.shared.logAdDismissed(adUnitId: adUnitID, watchedDurationMs: Int(rawDuration * 1000))
+        SessionLogManager.shared.logAdDismissed(adUnitId: unitId, watchedDurationMs: Int(rawDuration * 1000))
         
-        // Store the ROUNDED ad duration for the rest timer calculation
-        lastAdDuration = roundedDuration
-        
-        // IMMEDIATELY call completion - don't wait for minimum duration
-        // The rest timer will account for the actual ad time shown
-        DispatchQueue.main.async {
-            self.isShowingAd = false
-            self.isAdReady = false
-            print("📺 Calling ad completion callback...")
-            self.onAdDismissed?()
-            self.onAdDismissed = nil
-            print("📺 Ad completion callback finished")
+        if isRewarded {
+            // Rewarded ad dismissed — reward was already granted in the present() callback
+            DispatchQueue.main.async {
+                self.isShowingAd = false
+                self.isRewardedAdReady = false
+                self.isShowingRewardedAd = false
+                self.onRewardEarned = nil
+                print("📺 Rewarded ad fully dismissed")
+            }
+            // Preload the next rewarded ad
+            loadRewardedAd()
+        } else {
+            // Store the ROUNDED ad duration for the rest timer calculation
+            lastAdDuration = roundedDuration
+            
+            // IMMEDIATELY call completion - don't wait for minimum duration
+            // The rest timer will account for the actual ad time shown
+            DispatchQueue.main.async {
+                self.isShowingAd = false
+                self.isAdReady = false
+                print("📺 Calling ad completion callback...")
+                self.onAdDismissed?()
+                self.onAdDismissed = nil
+                print("📺 Ad completion callback finished")
+            }
+            // Preload the next interstitial ad
+            loadInterstitialAd()
         }
-        
-        // Preload the next ad
-        loadInterstitialAd()
     }
 }
 

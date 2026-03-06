@@ -44,6 +44,7 @@ struct DashboardView: View {
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
     @ObservedObject private var friendService = FriendService.shared
+    @StateObject private var dailyQuestService = DailyQuestService.shared
     @ObservedObject private var stravaService = StravaService.shared
     @ObservedObject private var healthKitService = HealthKitService.shared
     @State private var navigateToCustomWorkout = false
@@ -244,6 +245,10 @@ struct DashboardView: View {
                     PrivateChallengeInviteContainer()
                         .padding(.bottom, 16)
                     
+                    // Daily Quests widget
+                    dailyQuestsSection
+                        .padding(.bottom, 16)
+                    
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
                         .font(.title3)
@@ -408,19 +413,44 @@ struct DashboardView: View {
             .overlay(
                 programConflictAlert
             )
+            .overlay(alignment: .top) {
+                VStack(spacing: 8) {
+                    if let quest = dailyQuestService.lastCompletedQuest {
+                        QuestCompletionCelebration(
+                            quest: quest,
+                            isShowing: $dailyQuestService.showQuestCompletionCelebration
+                        )
+                    }
+                    QuestBonusCelebration(
+                        isShowing: $dailyQuestService.showBonusCelebration
+                    )
+                }
+                .padding(.top, 60)
+            }
         }
         .navigationViewStyle(.stack)  // Force single-column layout on iPad (no split view)
         .id(navigationViewId)  // Forces NavigationView to reset when ID changes
         .onChange(of: workoutManager.shouldPopToRootHome) { _, shouldPop in
             if shouldPop {
-                // Force NavigationView to completely reset by changing its ID
-                navigationViewId = UUID()
+                // Check if we're actually deep in navigation before doing the expensive .id() reset
+                let hasDeepNavigation = navigateToAutoWorkout || navigateToCustomWorkout ||
+                                        navigateToGeneratedPrograms || navigateToTodaysWorkout ||
+                                        navigateToChallengeFlow
                 
-                // Also reset all navigation states
+                // Reset all navigation states (pops NavigationLinks back to root)
                 navigateToAutoWorkout = false
                 navigateToCustomWorkout = false
                 navigateToGeneratedPrograms = false
                 navigateToTodaysWorkout = false
+                navigateToChallengeFlow = false
+                
+                // ⚡️ PERFORMANCE FIX: Only destroy/recreate the view if we were actually
+                // deep in navigation. For simple tab switches (99% case), just reset the
+                // navigation link bindings. The .id() trick destroys the ENTIRE view hierarchy,
+                // re-triggering .task (15+ network requests), .onAppear, and all subscriptions.
+                if hasDeepNavigation {
+                    navigationViewId = UUID()
+                }
                 
                 workoutManager.shouldPopToRootHome = false
             }
@@ -536,6 +566,9 @@ struct DashboardView: View {
             await PrivateChallengeService.shared.refreshAll()
             await PrivateChallengeService.shared.subscribeToRealtimeUpdates()
             
+            // Load daily quests (must be after auth-dependent calls above so currentUser is available)
+            await dailyQuestService.fetchDailyQuests()
+            
             // Pre-fetch ranked friends for Friends tab (caches to disk)
             await FriendRankingService.shared.fetchRankedFriends()
             
@@ -547,7 +580,11 @@ struct DashboardView: View {
             // is ready, so this ensures health data reaches the server ASAP.
             // HealthDataService.syncAllHealthData() handles HealthKit fetch + push
             // to 1v1 AND community challenges in one pass (with internal throttling).
-            await HealthDataService.shared.syncAllHealthData(force: true)
+            // ⚡️ Use force: false so the internal throttle prevents a double-sync
+            // if Fit33App's scenePhase handler already triggered syncAllHealthData().
+            // Using force: true was causing 40+ concurrent requests to flood URLSession,
+            // leading to mass NSURLErrorDomain -999 cancellations of challenge RPCs.
+            await HealthDataService.shared.syncAllHealthData(force: false)
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
             // Refresh recommendation after workout completion (debounced)
@@ -572,12 +609,15 @@ struct DashboardView: View {
                         print("🌙 [CHALLENGES] Day changed! Auto-refreshing for new day...")
                     }
                     
-                    // Sync HealthKit first
-                    await HealthKitService.shared.syncAllData(force: true)
-                    
-                    // Reload hydration + meal data so challenge resolver has fresh values
-                    await HydrationService.shared.loadTodayData()
+                    // ⚠️ Reload hydration + meal data BEFORE HealthKit sync.
+                    // syncAllData() internally calls syncHealthKitDataToChallenges()
+                    // which reads todaysMeals — if we don't refresh first, stale
+                    // yesterday data gets pushed as today's progress on new days.
                     MealService.shared.loadTodaysMeals()
+                    await HydrationService.shared.loadTodayData()
+                    
+                    // Sync HealthKit (this also syncs to challenges internally)
+                    await HealthKitService.shared.syncAllData(force: true)
                     
                     // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to ALL challenge types
                     print("🔄 [DASHBOARD] Universal challenge sync on foreground...")
@@ -601,6 +641,9 @@ struct DashboardView: View {
                     if dayChanged {
                         print("🌙 [CHALLENGES] Midnight sync complete - today's progress reset to 0")
                     }
+                    
+                    // Refresh daily quests (force on day change to get new quests)
+                    await dailyQuestService.fetchDailyQuests(force: dayChanged)
                     
                     // Refresh friend data
                     await FriendService.shared.refreshHomeScreenData()
@@ -656,7 +699,19 @@ struct DashboardView: View {
         print("💡 [DASHBOARD] Loaded recommendation: \(recommendation.message)")
     }
     
+    // ⚡️ PERFORMANCE: Throttle cardio fetches — multiple triggers (HealthKit, Strava, notifications)
+    // can fire simultaneously, causing 10+ redundant network requests that flood the dashboard.
+    @State private var lastCardioFetchTime: Date?
+    private static let cardioFetchCooldown: TimeInterval = 10 // Max once per 10 seconds
+    
     private func loadRecentCardioWorkouts() async {
+        // Throttle: skip if we just fetched within cooldown
+        if let lastFetch = lastCardioFetchTime,
+           Date().timeIntervalSince(lastFetch) < Self.cardioFetchCooldown {
+            return
+        }
+        lastCardioFetchTime = Date()
+        
         do {
             // Fetch recent for display (limited to 5)
             let cardioWorkouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 5)
@@ -2724,6 +2779,12 @@ struct DashboardView: View {
         }
     }
     
+    // MARK: - Daily Quests Section
+    
+    private var dailyQuestsSection: some View {
+        DailyQuestsWidget(questService: dailyQuestService)
+    }
+    
     // MARK: - Challenge Cards Section (kept together)
     
     private var challengeCardsSection: some View {
@@ -3284,10 +3345,10 @@ struct DashboardView: View {
             // Header — shared shape, type-aware content
             NavigationLink(destination: ChallengeDetailView(challenge: challenge)) {
                 HStack(alignment: .center, spacing: 10) {
-                    // Type-specific icon with gradient background
+                    // Type-specific icon with gradient ring
                     ZStack {
                         Circle()
-                            .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
                             .frame(width: 36, height: 36)
                         Text(resolvedType.emoji)
                             .font(.system(size: 18))
@@ -3702,7 +3763,7 @@ struct DashboardView: View {
                 HStack(alignment: .center, spacing: 10) {
                     ZStack {
                         Circle()
-                            .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
                             .frame(width: 36, height: 36)
                         Text(resolvedType.emoji)
                             .font(.system(size: 18))

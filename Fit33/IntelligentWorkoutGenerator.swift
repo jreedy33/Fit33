@@ -86,7 +86,7 @@ class IntelligentWorkoutGenerator {
         print("   Difficulty: \(difficulty.rawValue)")
         
         // Step 1: Get all exercises and classify them
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         let classifiedExercises = allExercises.map { classifyExercise($0) }
         
         // Step 2: Filter by body parts and equipment
@@ -656,7 +656,7 @@ class IntelligentWorkoutGenerator {
     }
     
     func getUnusedExercises(forBodyParts bodyParts: Set<String>, equipment: Set<String>) -> [ExerciseData] {
-        let allExercises = ComprehensiveExerciseDatabase.exercises
+        let allExercises = ExerciseDataProvider.shared.exercises
         let classified = allExercises.map { classifyExercise($0) }
         let filtered = filterExercises(classified, targetBodyParts: bodyParts, availableEquipment: equipment, difficulty: .intermediate)
         

@@ -152,18 +152,16 @@ final class HealthDataService: ObservableObject {
             await challengeService.recalculateAllChallengeProgress()
         }
         
-        // Push health data to community AND private challenges (parallel for speed)
-        await withTaskGroup(of: Void.self) { group in
-            if hasCommunity {
-                group.addTask {
-                    await communityService.syncAllTrackingToCommunityChallenges()
-                }
-            }
-            if hasPrivate {
-                group.addTask {
-                    await privateService.syncAllTrackingToPrivateChallenges()
-                }
-            }
+        // Push health data to community AND private challenges SEQUENTIALLY
+        // ⚡️ SERIALIZED: Running these one-at-a-time prevents iOS from cancelling
+        // concurrent Supabase RPC requests during startup (NSURLErrorDomain -999).
+        // Each sync internally loops through challenges and fires RPCs; running both
+        // in parallel doubles the concurrent connection count and overwhelms URLSession.
+        if hasCommunity {
+            await communityService.syncAllTrackingToCommunityChallenges()
+        }
+        if hasPrivate {
+            await privateService.syncAllTrackingToPrivateChallenges()
         }
         
         print("✅ [CHALLENGES] All health sources synced to challenges (1v1 + community + private)")
@@ -639,6 +637,9 @@ final class HealthDataService: ObservableObject {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
+        // ⚡️ Sequential with 150ms gaps to avoid flooding URLSession during startup.
+        // These are display-only queries — not critical for challenge sync.
+        
         // Fetch weekly activity data
         do {
             let activities: [DailyActivitySummary] = try await SupabaseManager.shared.supabaseClient
@@ -657,6 +658,8 @@ final class HealthDataService: ObservableObject {
         } catch {
             print("❌ [HEALTH] Failed to fetch activity data: \(error)")
         }
+        
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
         
         // Fetch sleep logs
         do {
@@ -677,6 +680,8 @@ final class HealthDataService: ObservableObject {
             print("❌ [HEALTH] Failed to fetch sleep data: \(error)")
         }
         
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
+        
         // Fetch heart rate data
         do {
             let heartRates: [HeartRateDaily] = try await SupabaseManager.shared.supabaseClient
@@ -696,6 +701,8 @@ final class HealthDataService: ObservableObject {
         } catch {
             print("❌ [HEALTH] Failed to fetch heart rate data: \(error)")
         }
+        
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
         
         // Fetch workout aggregates from cardio_workouts
         await fetchWorkoutAggregates()

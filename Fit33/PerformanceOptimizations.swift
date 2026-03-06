@@ -177,15 +177,19 @@ final class MemoryPressureHandler {
     private var lastCleanupTime: Date?
     private var lastEmergencyTime: Date?
     private var emergencyAttemptCount: Int = 0
-    private let cleanupCooldown: TimeInterval = 5 // Reduced from 10 for faster response
-    private let emergencyCooldown: TimeInterval = 30 // Prevent emergency spam loop
+    private var criticalFailCount: Int = 0 // Track consecutive critical cleanups that freed 0 bytes
+    private let maxCriticalAttempts: Int = 3 // Stop critical cleanup after 3 failed attempts
+    private let cleanupCooldown: TimeInterval = 15 // Generous cooldown to prevent main thread churn
+    private let emergencyCooldown: TimeInterval = 60 // Prevent emergency spam loop
     private let maxEmergencyAttempts: Int = 3 // Stop after 3 failed attempts
     
-    // ⚡️ PERFORMANCE: Lower memory thresholds for better performance
-    // Memory thresholds (in MB) - lowered to prevent CPU spikes from memory pressure
-    private let warningThreshold: Double = 300  // Lowered from 400
-    private let criticalThreshold: Double = 450 // Lowered from 550
-    private let emergencyThreshold: Double = 600 // Raised from 550 to account for WebContent overhead
+    // ⚡️ MEMORY THRESHOLDS — tuned for iPhone 16 Pro (8GB RAM)
+    // The app's normal working set is ~400-550MB after loading 5500+ exercises,
+    // intelligence engine, and all services. Thresholds must be ABOVE that baseline
+    // or the cleanup loop fires endlessly, blocks the main thread, and causes UI freezes.
+    private let warningThreshold: Double = 550  // Light cleanup (warm caches only)
+    private let criticalThreshold: Double = 700 // Full cache clear
+    private let emergencyThreshold: Double = 850 // Aggressive teardown
     
     private init() {
         setupMemoryWarningObserver()
@@ -198,12 +202,13 @@ final class MemoryPressureHandler {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            // OS memory warning — always respect, but use the cooldown
             self?.handleMemoryWarning(level: .critical)
         }
     }
     
     private func startPeriodicMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.checkMemoryPressure()
         }
     }
@@ -218,47 +223,51 @@ final class MemoryPressureHandler {
         } else if memoryMB > warningThreshold {
             handleMemoryWarning(level: .warning)
         } else {
-            // Memory is back to healthy — reset emergency attempt counter
-            if emergencyAttemptCount > 0 {
+            // Memory is back to healthy — reset all attempt counters
+            if emergencyAttemptCount > 0 || criticalFailCount > 0 {
                 emergencyAttemptCount = 0
+                criticalFailCount = 0
                 #if DEBUG
-                print("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — emergency counter reset")
+                print("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — counters reset")
                 #endif
             }
         }
     }
     
     enum MemoryWarningLevel {
-        case warning    // > 300MB - Clear warm caches
-        case critical   // > 450MB - Clear all caches
-        case emergency  // > 600MB - Aggressive cleanup
+        case warning    // > 550MB - Clear warm caches
+        case critical   // > 700MB - Clear all caches
+        case emergency  // > 850MB - Aggressive cleanup
     }
     
     func handleMemoryWarning(level: MemoryWarningLevel) {
         let beforeMB = getMemoryUsageMB()
         let now = Date()
         
-        // Respect cooldown for ALL levels (including emergency)
-        // Emergency gets its own longer cooldown and attempt limit to prevent infinite loop
+        // 🔍 FREEZE DEBUG: Log if memory cleanup happens during a tab transition
+        // (Use watchdog's thread-safe context instead of @MainActor TabSwitchOptimizer)
+        let isDuringTabSwitch = MainThreadWatchdog.shared.isTabSwitchActive
+        if isDuringTabSwitch {
+            print("🔍 [TAB FREEZE] ⚠️ MEMORY CLEANUP during active tab transition! level=\(level) memory=\(Int(beforeMB))MB thread=\(Thread.isMainThread ? "MAIN" : "bg")")
+        }
+        
+        // Respect cooldown for ALL levels to prevent main-thread churn
         if level == .emergency {
-            // Stop spamming if we've already tried and failed multiple times
-            if emergencyAttemptCount >= maxEmergencyAttempts {
-                // Silently skip — we've already done everything we can
-                return
-            }
+            if emergencyAttemptCount >= maxEmergencyAttempts { return }
             if let lastEmergency = lastEmergencyTime,
-               now.timeIntervalSince(lastEmergency) < emergencyCooldown {
-                return
-            }
+               now.timeIntervalSince(lastEmergency) < emergencyCooldown { return }
             lastEmergencyTime = now
             emergencyAttemptCount += 1
         } else {
+            // Skip critical cleanup if previous attempts freed nothing
+            if level == .critical && criticalFailCount >= maxCriticalAttempts { return }
+            
             if let lastCleanup = lastCleanupTime,
-               now.timeIntervalSince(lastCleanup) < cleanupCooldown {
-                return
-            }
+               now.timeIntervalSince(lastCleanup) < cleanupCooldown { return }
         }
         lastCleanupTime = now
+        
+        let cleanupStart = CACurrentMediaTime()
         
         switch level {
         case .warning:
@@ -274,23 +283,25 @@ final class MemoryPressureHandler {
             performEmergencyCleanup()
         }
         
-        // Force garbage collection with multiple passes
-        for _ in 0..<3 {
-            autoreleasepool { }
+        let cleanupMs = (CACurrentMediaTime() - cleanupStart) * 1000
+        if cleanupMs > 50 || isDuringTabSwitch {
+            print("🔍 [TAB FREEZE] Memory cleanup took \(String(format: "%.1f", cleanupMs))ms (during_tab_switch=\(isDuringTabSwitch))")
         }
         
-        // Wait a moment for cleanup to take effect
-        Thread.sleep(forTimeInterval: 0.05)
-        
+        // Check if cleanup had any effect (no Thread.sleep — never block main thread)
         let afterMB = getMemoryUsageMB()
         let freed = max(0, beforeMB - afterMB)
-        if freed > 0 {
+        if freed > 5 {
+            // Reset fail counter on success
+            criticalFailCount = 0
             print("💾 [MEMORY] Freed \(Int(freed))MB (now: \(Int(afterMB))MB)")
-        } else if level == .emergency {
-            print("💾 [MEMORY] Emergency cleanup had no effect (\(Int(afterMB))MB) — memory held by active objects/system")
-            if emergencyAttemptCount >= maxEmergencyAttempts {
-                print("ℹ️ [MEMORY] Max emergency attempts reached — suppressing further cleanup until memory drops below threshold")
+        } else if level == .critical {
+            criticalFailCount += 1
+            if criticalFailCount >= maxCriticalAttempts {
+                print("ℹ️ [MEMORY] Critical cleanup ineffective \(criticalFailCount)x — suppressing until memory drops")
             }
+        } else if level == .emergency && freed <= 5 {
+            print("💾 [MEMORY] Emergency cleanup had no effect (\(Int(afterMB))MB) — memory held by active objects")
         }
     }
     
@@ -895,6 +906,9 @@ enum PerformanceOptimizationsInitializer {
         
         // Initialize heavy work sentinel
         _ = HeavyWorkSentinel.shared
+        
+        // 🐕 Start main thread watchdog (freeze detection)
+        MainThreadWatchdog.shared.start()
         
         // Begin coordinated startup sequence
         Task { @MainActor in

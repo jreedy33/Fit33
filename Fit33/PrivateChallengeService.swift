@@ -77,7 +77,7 @@ struct PrivateChallenge: Codable, Identifiable {
     let isRecurring: Bool
     let showLeaderboard: Bool
     let allowMemberInvites: Bool
-    let myTodayProgress: Int?
+    var myTodayProgress: Int?
     let myDaysCompleted: Int?
     let myCurrentStreak: Int?
     let myRole: String?
@@ -151,6 +151,51 @@ struct PrivateChallenge: Codable, Identifiable {
         case lastChatSender = "last_chat_sender"
         case lastChatAt = "last_chat_at"
         case unreadCount = "unread_count"
+    }
+}
+
+/// Preview data for a private challenge (returned by lookup_private_challenge_by_code)
+/// Used to show challenge info before the user decides to join
+struct PrivateChallengePreview: Codable, Identifiable {
+    let challengeId: UUID
+    let title: String
+    let description: String?
+    let emoji: String?
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let memberCount: Int
+    let maxMembers: Int?
+    let joinCode: String
+    let isRecurring: Bool
+    let creatorName: String?
+    let creatorUsername: String?
+    let creatorPhotoUrl: String?
+    let alreadyJoined: Bool
+    let status: String
+    
+    var id: UUID { challengeId }
+    var displayEmoji: String { emoji ?? "🔒" }
+    
+    var resolvedType: ChallengeType {
+        ChallengeType(rawValue: challengeType) ?? .steps
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case title, description, emoji
+        case challengeType = "challenge_type"
+        case dailyTarget = "daily_target"
+        case targetUnit = "target_unit"
+        case memberCount = "member_count"
+        case maxMembers = "max_members"
+        case joinCode = "join_code"
+        case isRecurring = "is_recurring"
+        case creatorName = "creator_name"
+        case creatorUsername = "creator_username"
+        case creatorPhotoUrl = "creator_photo_url"
+        case alreadyJoined = "already_joined"
+        case status
     }
 }
 
@@ -389,6 +434,10 @@ class PrivateChallengeService: ObservableObject {
     @Published var pendingInvites: [PrivateChallengeInvite] = []
     @Published var isLoading = false
     
+    /// Incremented when a member join/leave realtime event is detected.
+    /// Detail views observe this to auto-refresh their member list.
+    @Published var memberChangeToken = UUID()
+    
     /// Realtime channel for live updates
     private var realtimeChannel: RealtimeChannelV2?
     
@@ -399,6 +448,7 @@ class PrivateChallengeService: ObservableObject {
     // Cache keys
     private let myChallengesCacheKey = "private_challenges_cache"
     private let invitesCacheKey = "private_challenge_invites_cache"
+    private let cacheDateKey = "private_challenges_cache_date"
     
     private init() {
         loadFromCache()
@@ -407,8 +457,23 @@ class PrivateChallengeService: ObservableObject {
     // MARK: - Cache
     
     private func loadFromCache() {
+        // Check if the cache is from a previous day — if so, today's progress values are stale
+        let cacheTimestamp = UserDefaults.standard.double(forKey: cacheDateKey)
+        let cacheDate = cacheTimestamp > 0 ? Date(timeIntervalSince1970: cacheTimestamp) : nil
+        let isCacheFromToday = cacheDate.map { Calendar.current.isDateInToday($0) } ?? false
+        
         if let data = UserDefaults.standard.data(forKey: myChallengesCacheKey) {
-            if let cached = try? JSONDecoder().decode([PrivateChallenge].self, from: data) {
+            if var cached = try? JSONDecoder().decode([PrivateChallenge].self, from: data) {
+                // If cache is from a previous day, zero out today-specific fields
+                // so stale yesterday progress doesn't appear as today's progress
+                if !isCacheFromToday && !cached.isEmpty {
+                    #if DEBUG
+                    print("🌙 [PRIVATE] Cache is from previous day — zeroing out today's progress")
+                    #endif
+                    for i in cached.indices {
+                        cached[i].myTodayProgress = 0
+                    }
+                }
                 self.myChallenges = cached
                 #if DEBUG
                 print("✅ [PRIVATE] Loaded \(cached.count) cached private challenges")
@@ -428,6 +493,7 @@ class PrivateChallengeService: ObservableObject {
     private func cacheData() {
         if let data = try? JSONEncoder().encode(myChallenges) {
             UserDefaults.standard.set(data, forKey: myChallengesCacheKey)
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
         }
         if let data = try? JSONEncoder().encode(pendingInvites) {
             UserDefaults.standard.set(data, forKey: invitesCacheKey)
@@ -437,6 +503,7 @@ class PrivateChallengeService: ObservableObject {
     func clearCache() {
         UserDefaults.standard.removeObject(forKey: myChallengesCacheKey)
         UserDefaults.standard.removeObject(forKey: invitesCacheKey)
+        UserDefaults.standard.removeObject(forKey: cacheDateKey)
         myChallenges = []
         pendingInvites = []
     }
@@ -616,6 +683,60 @@ class PrivateChallengeService: ObservableObject {
         } catch {
             print("❌ [PRIVATE] Error inviting user: \(error)")
             HapticManager.notification(.error)
+            return nil
+        }
+    }
+    
+    // MARK: - Join by Code
+    
+    /// Look up a private challenge by join code WITHOUT joining.
+    /// Returns preview data so the user can decide whether to join.
+    func lookupByCode(code: String) async -> PrivateChallengePreview? {
+        do {
+            struct LookupParams: Encodable {
+                let p_code: String
+            }
+            
+            let results: [PrivateChallengePreview] = try await SupabaseManager.shared.supabaseClient
+                .rpc("lookup_private_challenge_by_code", params: LookupParams(
+                    p_code: code
+                ))
+                .execute()
+                .value
+            
+            #if DEBUG
+            print("🔒 [PRIVATE] Lookup by code: found \(results.count) result(s)")
+            #endif
+            return results.first
+        } catch {
+            print("❌ [PRIVATE] Error looking up challenge by code: \(error)")
+            return nil
+        }
+    }
+    
+    func joinByCode(code: String) async -> UUID? {
+        do {
+            struct JoinByCodeParams: Encodable {
+                let p_join_code: String
+            }
+            
+            let challengeId: UUID = try await SupabaseManager.shared.supabaseClient
+                .rpc("join_private_challenge_by_code", params: JoinByCodeParams(
+                    p_join_code: code
+                ))
+                .execute()
+                .value
+            
+            #if DEBUG
+            print("🔒 [PRIVATE] Joined private challenge via code: \(challengeId)")
+            #endif
+            HapticManager.notification(.success)
+            
+            await fetchMyChallenges()
+            cacheData()
+            return challengeId
+        } catch {
+            print("❌ [PRIVATE] Error joining by code: \(error)")
             return nil
         }
     }
@@ -875,31 +996,46 @@ class PrivateChallengeService: ObservableObject {
     
     // MARK: - Log Progress
     
-    func logProgress(challengeId: UUID, progressValue: Int) async -> Bool {
-        do {
-            struct LogParams: Encodable {
-                let p_challenge_id: String
-                let p_progress: Int
-                let p_timezone: String
-            }
-            
-            let _: Bool = try await SupabaseManager.shared.supabaseClient
-                .rpc("log_private_challenge_progress", params: LogParams(
-                    p_challenge_id: challengeId.uuidString,
-                    p_progress: progressValue,
-                    p_timezone: TimeZone.current.identifier
-                ))
-                .execute()
-                .value
-            
-            #if DEBUG
-            print("✅ [PRIVATE] Logged progress: \(progressValue) for \(challengeId)")
-            #endif
-            return true
-        } catch {
-            print("❌ [PRIVATE] Error logging progress: \(error)")
-            return false
+    func logProgress(challengeId: UUID, progressValue: Int, allowDecrease: Bool = false) async -> Bool {
+        struct LogParams: Encodable {
+            let p_challenge_id: String
+            let p_progress: Int
+            let p_timezone: String
+            let p_allow_decrease: Bool
         }
+        
+        let maxRetries = 5
+        for attempt in 1...maxRetries {
+            do {
+                let _: Bool = try await SupabaseManager.shared.supabaseClient
+                    .rpc("log_private_challenge_progress", params: LogParams(
+                        p_challenge_id: challengeId.uuidString,
+                        p_progress: progressValue,
+                        p_timezone: TimeZone.current.identifier,
+                        p_allow_decrease: allowDecrease
+                    ))
+                    .execute()
+                    .value
+                
+                #if DEBUG
+                print("✅ [PRIVATE] Logged progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))")
+                #endif
+                return true
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                    // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections
+                    // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
+                    let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                    print("⚠️ [PRIVATE] log_private_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    try? await Task.sleep(nanoseconds: delay)
+                } else {
+                    print("❌ [PRIVATE] Error logging progress: \(error)")
+                    return false
+                }
+            }
+        }
+        return false
     }
     
     // MARK: - Get Challenge Detail
@@ -982,6 +1118,14 @@ class PrivateChallengeService: ObservableObject {
     
     func subscribeToRealtimeUpdates() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        // Prevent duplicate subscriptions — calling postgresChange on an already-subscribed
+        // channel triggers "You cannot call postgresChange after joining the channel" warning
+        // and silently breaks the subscription.
+        if realtimeChannel != nil {
+            print("⏭️ [PRIVATE] Already subscribed to real-time updates — skipping")
+            return
+        }
         
         let client = SupabaseManager.shared.supabaseClient
         let channel = client.realtimeV2.channel("private-challenges")
@@ -1092,20 +1236,75 @@ class PrivateChallengeService: ObservableObject {
         cacheData()
     }
     
+    // MARK: - Quick Type-Specific Sync
+    
+    /// Quick sync for a SPECIFIC challenge type to private challenges.
+    /// Called immediately when user logs data (protein, hydration, calories, etc.).
+    /// Much faster than full sync — only touches matching challenges.
+    /// Pass `allowDecrease: true` when the value may have gone DOWN (e.g. meal removed).
+    func syncTrackingForType(_ type: ChallengeType, value: Int, source: String = "auto_sync", allowDecrease: Bool = false) async {
+        let matching = myChallenges.filter { $0.resolvedType == type }
+        guard !matching.isEmpty else { return }
+        
+        print("⚡ [PRIVATE] Quick sync \(type.rawValue): \(value) to \(matching.count) private challenge(s) (allowDecrease: \(allowDecrease))")
+        
+        for challenge in matching {
+            var adjustedValue = value
+            // Handle unit conversion for hydration (ml → oz if needed)
+            if type == .hydrate && challenge.targetUnit.lowercased() == "oz" {
+                adjustedValue = Int(Double(value) / 29.5735)
+            }
+            
+            if adjustedValue > 0 || allowDecrease {
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: max(adjustedValue, 0),
+                    allowDecrease: allowDecrease
+                )
+            }
+        }
+        
+        // Refresh to show updated progress in widgets
+        await fetchMyChallenges()
+    }
+    
     // MARK: - Auto-Sync Progress (from HealthKit)
     
     func syncAllTrackingToPrivateChallenges() async {
         guard !myChallenges.isEmpty else { return }
         
+        // Ensure MealService has today's data (not stale yesterday meals)
+        MealService.shared.ensureFreshForToday()
+        
         #if DEBUG
         print("🔄 [PRIVATE] Syncing tracking data to \(myChallenges.count) private challenges...")
         #endif
         
-        for challenge in myChallenges {
+        for (index, challenge) in myChallenges.enumerated() {
             let progressValue = await calculateProgress(for: challenge)
             
-            if progressValue > 0 {
-                let _ = await logProgress(challengeId: challenge.challengeId, progressValue: progressValue)
+            // For "recalculable" types (protein, hydration, calories) the local value
+            // is authoritative — it's freshly computed from today's meals/logs.
+            // We MUST log even when the value is 0 so that any stale yesterday row
+            // in the DB gets overwritten (e.g. 14g protein from yesterday).
+            let isRecalculable = (challenge.challengeType == "protein" ||
+                                  challenge.challengeType == "hydrate" ||
+                                  challenge.challengeType == "calories")
+            
+            if progressValue > 0 || isRecalculable {
+                // allowDecrease: true ensures the DB value matches the authoritative
+                // calculated value. Without this, stale data (e.g. 713g protein from
+                // before a meal removal) gets stuck forever due to the GREATEST() clause.
+                let _ = await logProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: max(progressValue, 0),
+                    allowDecrease: isRecalculable
+                )
+                
+                // Small delay between RPCs to avoid overwhelming URLSession connections
+                if index < myChallenges.count - 1 {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
             }
         }
         

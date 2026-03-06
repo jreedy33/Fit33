@@ -8,6 +8,306 @@
 
 import SwiftUI
 
+// MARK: - Challenge Rules
+
+/// A single rule line for a community challenge.
+struct ChallengeRule: Identifiable {
+    let id = UUID()
+    let icon: String
+    let text: String
+}
+
+/// Generates clear, specific rules for each community challenge so members
+/// know exactly what earns credit and how progress is tracked.
+enum ChallengeRulesHelper {
+    
+    /// Returns full rules for a community challenge.
+    static func rules(
+        title: String,
+        challengeType: String,
+        dailyTarget: Int,
+        targetUnit: String
+    ) -> [ChallengeRule] {
+        let slug = title.lowercased()
+        
+        // ── Official challenge-specific rules ──
+        
+        if slug.contains("lunchtime walk") {
+            return [
+                ChallengeRule(icon: "🎯", text: "Walk or run for \(dailyTarget)+ minutes"),
+                ChallengeRule(icon: "⏰", text: "Activity between 12 PM – 3 PM"),
+                ChallengeRule(icon: "🏃", text: "Walking & running workouts both count"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from Apple Health"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("morning walk") {
+            return [
+                ChallengeRule(icon: "🎯", text: "Walk \(dailyTarget.formatted()) steps before noon"),
+                ChallengeRule(icon: "🌅", text: "Get your steps in first thing"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from iPhone & Apple Watch"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("no rest day") {
+            return [
+                ChallengeRule(icon: "🎯", text: "Complete at least 1 workout every day"),
+                ChallengeRule(icon: "✅", text: "Any type — weights, cardio, yoga, HIIT, stretching"),
+                ChallengeRule(icon: "📝", text: "Log your workout in the app to get credit"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("hydro homies") {
+            let ozEquiv = Int(Double(dailyTarget) / 29.5735)
+            return [
+                ChallengeRule(icon: "🎯", text: "Drink at least \(dailyTarget) ml (\(ozEquiv) oz) of water"),
+                ChallengeRule(icon: "💧", text: "Log each glass or bottle as you drink"),
+                ChallengeRule(icon: "📝", text: "Manual tracking — tap + to log water"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("protein club") {
+            return [
+                ChallengeRule(icon: "🎯", text: "Hit \(dailyTarget)g of protein from meals"),
+                ChallengeRule(icon: "🍗", text: "All logged meals & snacks count toward your total"),
+                ChallengeRule(icon: "📝", text: "Log meals to track protein automatically"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("burn") && slug.contains("club") {
+            return [
+                ChallengeRule(icon: "🎯", text: "Burn \(dailyTarget)+ active calories through exercise"),
+                ChallengeRule(icon: "✅", text: "Any workout or exercise counts"),
+                ChallengeRule(icon: "📱", text: "Auto-synced from Apple Health"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        if slug.contains("30 min movement") || slug.contains("30-min") {
+            return [
+                ChallengeRule(icon: "🎯", text: "\(dailyTarget)+ minutes of any activity"),
+                ChallengeRule(icon: "✅", text: "Walking, running, cycling, swimming — all movement counts"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from Apple Watch"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+        
+        // ── Generic rules by challenge type ──
+        
+        switch challengeType {
+        case "steps":
+            return [
+                ChallengeRule(icon: "🎯", text: "Walk \(dailyTarget.formatted()) steps in a day"),
+                ChallengeRule(icon: "✅", text: "All steps count — walking, running, daily movement"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from iPhone & Apple Watch"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "hydrate":
+            let unitDisplay = targetUnit.lowercased() == "oz"
+                ? "\(dailyTarget) oz"
+                : "\(dailyTarget) ml (\(Int(Double(dailyTarget) / 29.5735)) oz)"
+            return [
+                ChallengeRule(icon: "🎯", text: "Drink at least \(unitDisplay) of water"),
+                ChallengeRule(icon: "💧", text: "Log each glass or bottle in the app"),
+                ChallengeRule(icon: "📝", text: "Manual tracking — tap + to log water"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "protein":
+            return [
+                ChallengeRule(icon: "🎯", text: "Hit \(dailyTarget)g of protein from meals"),
+                ChallengeRule(icon: "✅", text: "Protein from all logged meals & snacks counts"),
+                ChallengeRule(icon: "📝", text: "Log your meals to track automatically"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "calories":
+            return [
+                ChallengeRule(icon: "🎯", text: "Burn \(dailyTarget)+ active calories"),
+                ChallengeRule(icon: "✅", text: "Any exercise or workout counts"),
+                ChallengeRule(icon: "📱", text: "Auto-synced from Apple Health"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "active_minutes":
+            return [
+                ChallengeRule(icon: "🎯", text: "\(dailyTarget)+ minutes of activity"),
+                ChallengeRule(icon: "✅", text: "Walking, running, cycling — any movement counts"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from Apple Watch"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "walk":
+            return [
+                ChallengeRule(icon: "🎯", text: "Walk for \(dailyTarget)+ \(targetUnit)"),
+                ChallengeRule(icon: "✅", text: "Walking & running workouts both count"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from activity data"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "run":
+            return [
+                ChallengeRule(icon: "🎯", text: "Run for \(dailyTarget)+ \(targetUnit)"),
+                ChallengeRule(icon: "✅", text: "Outdoor & treadmill runs count"),
+                ChallengeRule(icon: "📱", text: "Auto-tracked from activity data"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        case "workout_streak":
+            return [
+                ChallengeRule(icon: "🎯", text: "Complete at least \(dailyTarget) workout\(dailyTarget > 1 ? "s" : "")"),
+                ChallengeRule(icon: "✅", text: "Any type — weights, cardio, yoga, HIIT"),
+                ChallengeRule(icon: "📝", text: "Log your workout in the app"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        default:
+            return [
+                ChallengeRule(icon: "🎯", text: "Hit \(dailyTarget) \(targetUnit) daily"),
+                ChallengeRule(icon: "🔄", text: "Resets daily at midnight"),
+            ]
+        }
+    }
+    
+    /// Compact 1-line summary for widgets and small cards.
+    static func compactSummary(
+        title: String,
+        challengeType: String,
+        dailyTarget: Int,
+        targetUnit: String
+    ) -> String {
+        let slug = title.lowercased()
+        
+        if slug.contains("lunchtime walk") {
+            return "\(dailyTarget) min walk/run · 12–3 PM · Auto-tracked"
+        }
+        if slug.contains("morning walk") {
+            return "\(dailyTarget.formatted()) steps before noon · Auto-tracked"
+        }
+        
+        switch challengeType {
+        case "steps":
+            return "\(dailyTarget.formatted()) steps daily · Auto-tracked"
+        case "hydrate":
+            return "\(dailyTarget) \(targetUnit) water daily · Log in app"
+        case "protein":
+            return "\(dailyTarget)g protein daily · Log meals"
+        case "calories":
+            return "\(dailyTarget) cal burned daily · Auto-tracked"
+        case "active_minutes":
+            return "\(dailyTarget) min active daily · Auto-tracked"
+        case "walk":
+            return "\(dailyTarget) min walking daily · Auto-tracked"
+        case "run":
+            return "\(dailyTarget) min running daily · Auto-tracked"
+        case "workout_streak":
+            return "\(dailyTarget) workout\(dailyTarget > 1 ? "s" : "") daily · Log in app"
+        default:
+            return "\(dailyTarget) \(targetUnit) daily"
+        }
+    }
+}
+
+/// Full rules card shown on the community challenge detail page.
+struct ChallengeRulesCard: View {
+    let rules: [ChallengeRule]
+    let themeColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.clipboard")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(themeColor)
+                Text("Challenge Rules")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(rules) { rule in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(rule.icon)
+                            .font(.system(size: 13))
+                            .frame(width: 20)
+                        Text(rule.text)
+                            .font(.caption)
+                            .foregroundColor(colorScheme == .dark ? .secondary : Color(white: 0.35))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [themeColor.opacity(0.08), themeColor.opacity(0.03), Color(white: 0.08)]
+                                : [themeColor.opacity(0.05), themeColor.opacity(0.02), Color.white],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: themeColor.opacity(colorScheme == .dark ? 0.08 : 0.04), location: 0),
+                                .init(color: .clear, location: 0.25)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+            .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.15 : 0.10), radius: 8, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [themeColor.opacity(0.35), themeColor.opacity(0.10)]
+                            : [themeColor.opacity(0.20), themeColor.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
+/// Compact rules summary line for widgets and small cards.
+struct CompactRulesLine: View {
+    let title: String
+    let challengeType: String
+    let dailyTarget: Int
+    let targetUnit: String
+    let themeColor: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "list.bullet.clipboard")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(themeColor.opacity(0.5))
+            Text(ChallengeRulesHelper.compactSummary(
+                title: title,
+                challengeType: challengeType,
+                dailyTarget: dailyTarget,
+                targetUnit: targetUnit
+            ))
+                .font(.system(size: 11))
+                .foregroundColor(themeColor.opacity(0.6))
+                .lineLimit(1)
+        }
+    }
+}
+
 // MARK: - Community Challenges Hub
 
 struct CommunityChallengesHubView: View {
@@ -18,6 +318,10 @@ struct CommunityChallengesHubView: View {
     @State private var showingCreate = false
     @State private var showingJoinByCode = false
     @State private var joinCode = ""
+    @State private var showPrivateJoinSheet = false
+    @State private var pendingPrivateJoinCode = ""
+    @State private var showCommunityJoinSheet = false
+    @State private var pendingCommunityJoinCode = ""
     @State private var selectedChallenge: CommunityChallenge?
     @State private var selectedFeatured: FeaturedCommunityChallenge?
     
@@ -80,6 +384,12 @@ struct CommunityChallengesHubView: View {
                 await service.fetchMyChallenges()
                 await service.fetchFeaturedChallenges()
             }
+            .onAppear {
+                service.markCommunityViewVisible()
+            }
+            .onDisappear {
+                service.markCommunityViewHidden()
+            }
             .sheet(isPresented: $showingCreate) {
                 CommunityCreateChallengeView()
             }
@@ -87,14 +397,42 @@ struct CommunityChallengesHubView: View {
                 TextField("Enter 6-digit code", text: $joinCode)
                     .textInputAutocapitalization(.characters)
                 Button("Cancel", role: .cancel) { joinCode = "" }
-                Button("Join") {
+                Button("Next") {
+                    let code = joinCode
+                    joinCode = ""
                     Task {
-                        let _ = await service.joinChallenge(code: joinCode)
-                        joinCode = ""
+                        // Try community challenge lookup first
+                        let communityPreview = await service.lookupChallenge(code: code)
+                        if communityPreview != nil {
+                            await MainActor.run {
+                                pendingCommunityJoinCode = code
+                                showCommunityJoinSheet = true
+                            }
+                            return
+                        }
+                        
+                        // If not found as community, try private challenge lookup
+                        let privatePreview = await PrivateChallengeService.shared.lookupByCode(code: code)
+                        await MainActor.run {
+                            if privatePreview != nil {
+                                pendingPrivateJoinCode = code
+                                showPrivateJoinSheet = true
+                            } else {
+                                // Neither found — show private join sheet which will show "not found"
+                                pendingPrivateJoinCode = code
+                                showPrivateJoinSheet = true
+                            }
+                        }
                     }
                 }
             } message: {
                 Text("Enter the challenge join code shared with you.")
+            }
+            .sheet(isPresented: $showPrivateJoinSheet) {
+                PrivateChallengeJoinSheet(code: pendingPrivateJoinCode)
+            }
+            .sheet(isPresented: $showCommunityJoinSheet) {
+                CommunityJoinSheet(codeOrSlug: pendingCommunityJoinCode)
             }
             .navigationDestination(item: $selectedChallenge) { challenge in
                 CommunityDetailView(challengeId: challenge.challengeId, challengeTitle: challenge.title)
@@ -327,6 +665,17 @@ struct CommunityLeaderboardWidget: View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header: Challenge identity + your rank ──
             challengeHeader
+            
+            // ── Compact rules summary ──
+            CompactRulesLine(
+                title: challenge.title,
+                challengeType: challenge.challengeType,
+                dailyTarget: challenge.dailyTarget,
+                targetUnit: challenge.targetUnit,
+                themeColor: themeColor
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
             
             // ── Friends in this community (avatar row) ──
             if !friendAvatars.isEmpty {
@@ -660,11 +1009,29 @@ struct CommunityLeaderboardWidget: View {
     
     private func miniLeaderboardRow(entry: LeaderboardSnippetEntry, rankDelta: Int, isLast: Bool) -> some View {
         let isMe = entry.isCurrentUser
+        // Use live HealthKit/tracking data for current user so the widget
+        // shows real-time local values instead of stale DB data.
+        // For other members, show DB-reported todayProgress (updated via realtime).
+        let displayProgress = isMe ? liveMyTodayProgress : entry.todayProgress
+        let displayTargetHit = isMe ? liveTargetHitToday : entry.targetHitToday
         
         return VStack(spacing: 0) {
             HStack(spacing: 6) {
-                // Rank badge + delta indicator
-                HStack(spacing: 2) {
+                // Rank badge + delta arrow
+                HStack(spacing: 1) {
+                    // Rank change arrow (green ▲ / red ▼)
+                    if rankDelta > 0 {
+                        Image(systemName: "arrowtriangle.up.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(.green)
+                            .transition(.scale.combined(with: .opacity))
+                    } else if rankDelta < 0 {
+                        Image(systemName: "arrowtriangle.down.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(.red)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                    
                     Group {
                         if let emoji = rankEmoji(for: entry.rank) {
                             Text(emoji)
@@ -675,19 +1042,9 @@ struct CommunityLeaderboardWidget: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
-                    // Rank change indicator
-                    if rankDelta > 0 {
-                        Text("+\(rankDelta)")
-                            .font(.system(size: 7, weight: .bold, design: .rounded))
-                            .foregroundColor(.green)
-                    } else if rankDelta < 0 {
-                        Text("\(rankDelta)")
-                            .font(.system(size: 7, weight: .bold, design: .rounded))
-                            .foregroundColor(.red)
-                    }
                 }
-                .frame(width: rankDelta != 0 ? 32 : 20, alignment: .center)
+                .frame(width: rankDelta != 0 ? 30 : 20, alignment: .center)
+                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: rankDelta)
                 
                 // Avatar (cached)
                 CachedFriendPhoto(
@@ -715,13 +1072,13 @@ struct CommunityLeaderboardWidget: View {
                 
                 Spacer()
                 
-                // Today's progress
+                // Today's progress (live for current user, DB for others)
                 HStack(spacing: 2) {
-                    Text("\(entry.todayProgress)")
+                    Text("\(displayProgress)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(entry.targetHitToday ? themeColor : .primary)
+                        .foregroundColor(displayTargetHit ? themeColor : .primary)
                     
-                    if entry.targetHitToday {
+                    if displayTargetHit {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 8))
                             .foregroundColor(themeColor)
@@ -920,6 +1277,16 @@ struct FeaturedChallengeCard: View {
                 Spacer()
             }
             
+            // Compact rules
+            CompactRulesLine(
+                title: challenge.title,
+                challengeType: challenge.challengeType,
+                dailyTarget: challenge.dailyTarget,
+                targetUnit: challenge.targetUnit,
+                themeColor: tc
+            )
+            .padding(.bottom, 2)
+            
             // Stats row
             HStack(spacing: 16) {
                 Label("\(challenge.formattedParticipantCount) members", systemImage: "person.2.fill")
@@ -1078,8 +1445,8 @@ struct CommunityLeaderboardView: View {
             await loadLeaderboard()
         }
         .sheet(isPresented: $showingShare) {
-            if let lb = leaderboard {
-                let url = URL(string: "https://fit33.app/c/\(lb.inviteSlug)")!
+            if let lb = leaderboard,
+               let url = URL(string: "https://fit33.app/c/\(lb.inviteSlug)") {
                 ShareLink(
                     item: url,
                     subject: Text(lb.challengeTitle),
@@ -1332,12 +1699,14 @@ struct CommunityLeaderboardView: View {
                 .padding(.horizontal, 14)
                 
                 VStack(spacing: 0) {
+                    let deltas = service.rankDeltas[lb.challengeId] ?? [:]
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         fullLeaderboardRow(
                             entry: entry,
                             dailyTarget: lb.dailyTarget,
                             targetUnit: lb.targetUnit,
-                            isCurrentUser: entry.isCurrentUser ?? (entry.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString)
+                            isCurrentUser: entry.isCurrentUser ?? (entry.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString),
+                            rankDelta: deltas[entry.userId] ?? 0
                         )
                         
                         if index < entries.count - 1 {
@@ -1366,21 +1735,36 @@ struct CommunityLeaderboardView: View {
         }
     }
     
-    private func fullLeaderboardRow(entry: CommunityLeaderboardEntry, dailyTarget: Int, targetUnit: String, isCurrentUser: Bool) -> some View {
+    private func fullLeaderboardRow(entry: CommunityLeaderboardEntry, dailyTarget: Int, targetUnit: String, isCurrentUser: Bool, rankDelta: Int = 0) -> some View {
         HStack(spacing: 0) {
-            // Rank
-            Group {
-                switch entry.rank {
-                case 1: Text("🥇").font(.system(size: 18))
-                case 2: Text("🥈").font(.system(size: 18))
-                case 3: Text("🥉").font(.system(size: 18))
-                default:
-                    Text("#\(entry.rank)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.secondary)
+            // Rank + delta arrow
+            HStack(spacing: 2) {
+                if rankDelta > 0 {
+                    Image(systemName: "arrowtriangle.up.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.green)
+                        .transition(.scale.combined(with: .opacity))
+                } else if rankDelta < 0 {
+                    Image(systemName: "arrowtriangle.down.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.red)
+                        .transition(.scale.combined(with: .opacity))
+                }
+                
+                Group {
+                    switch entry.rank {
+                    case 1: Text("🥇").font(.system(size: 18))
+                    case 2: Text("🥈").font(.system(size: 18))
+                    case 3: Text("🥉").font(.system(size: 18))
+                    default:
+                        Text("#\(entry.rank)")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .frame(width: 36, alignment: .center)
+            .frame(width: rankDelta != 0 ? 44 : 36, alignment: .center)
+            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: rankDelta)
             
             // Avatar (cached)
             CachedFriendPhoto(
@@ -1923,6 +2307,217 @@ struct CommunityJoinSheet: View {
     }
 }
 
+// MARK: - Private Challenge Join Sheet (from Code Entry or Deep Link)
+
+/// Shows a private challenge preview with a "Join" button.
+/// Used when a user enters a private challenge code or opens a /pc/ deep link.
+struct PrivateChallengeJoinSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    
+    let code: String
+    
+    @State private var preview: PrivateChallengePreview?
+    @State private var isLoading = true
+    @State private var isJoining = false
+    @State private var joined = false
+    @State private var joinedChallengeId: UUID?
+    @State private var error: String?
+    
+    private let themeGradient: [Color] = [.purple, .blue]
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: colorScheme == .dark
+                        ? [Color(red: 0.08, green: 0.06, blue: 0.14), Color(red: 0.05, green: 0.04, blue: 0.08)]
+                        : [Color(red: 0.96, green: 0.95, blue: 1.0), Color.white]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                if isLoading {
+                    ProgressView("Loading challenge...")
+                } else if let preview = preview {
+                    VStack(spacing: 24) {
+                        Spacer()
+                        
+                        // Challenge preview card
+                        VStack(spacing: 16) {
+                            // Emoji with gradient ring
+                            ZStack {
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(colors: preview.resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        lineWidth: 3
+                                    )
+                                    .frame(width: 80, height: 80)
+                                Text(preview.displayEmoji)
+                                    .font(.system(size: 40))
+                            }
+                            
+                            // Private badge
+                            HStack(spacing: 4) {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 10))
+                                Text("Private Challenge")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.purple)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.purple.opacity(0.12))
+                            .clipShape(Capsule())
+                            
+                            Text(preview.title)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .multilineTextAlignment(.center)
+                            
+                            if let desc = preview.description, !desc.isEmpty {
+                                Text(desc)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            
+                            // Stats row
+                            HStack(spacing: 24) {
+                                VStack(spacing: 4) {
+                                    Text("\(preview.memberCount)")
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                    Text("Members")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                VStack(spacing: 4) {
+                                    Text("\(preview.dailyTarget)")
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                    Text("\(preview.targetUnit)/day")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                if let max = preview.maxMembers {
+                                    VStack(spacing: 4) {
+                                        Text("\(max)")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        Text("Max")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            
+                            if let creator = preview.creatorName ?? preview.creatorUsername {
+                                Text("Created by \(creator)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(32)
+                        
+                        Spacer()
+                        
+                        // Join / Already Joined button
+                        if preview.alreadyJoined || joined {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text(joined ? "Joined!" : "Already Joined!")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(14)
+                            .padding(.horizontal, 20)
+                        } else {
+                            Button(action: { Task { await joinChallenge() } }) {
+                                HStack(spacing: 8) {
+                                    if isJoining {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else {
+                                        Image(systemName: "person.badge.plus")
+                                        Text("Join Challenge")
+                                            .fontWeight(.bold)
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
+                                )
+                                .cornerRadius(14)
+                            }
+                            .disabled(isJoining)
+                            .padding(.horizontal, 20)
+                        }
+                        
+                        if let error = error {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 20)
+                        }
+                    }
+                    .padding(.bottom, 40)
+                } else {
+                    // Not found state
+                    VStack(spacing: 16) {
+                        Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                            .font(.system(size: 48))
+                            .foregroundColor(.orange)
+                        Text("Challenge Not Found")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Text("This private challenge may have ended or the code may be invalid.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(40)
+                }
+            }
+            .navigationTitle("Join Private Challenge")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .task {
+                // Look up both community and private — show whichever matches
+                preview = await PrivateChallengeService.shared.lookupByCode(code: code)
+                isLoading = false
+            }
+        }
+    }
+    
+    private func joinChallenge() async {
+        isJoining = true
+        let id = await PrivateChallengeService.shared.joinByCode(code: code)
+        isJoining = false
+        
+        if let id = id {
+            joinedChallengeId = id
+            joined = true
+            HapticManager.notification(.success)
+        } else {
+            error = "Failed to join. Please try again."
+        }
+    }
+}
+
 // MARK: - Friend Discovery Card
 
 /// Shows a community that the user's friends are in but the user hasn't joined yet.
@@ -1965,6 +2560,15 @@ struct FriendDiscoveryCard: View {
                 
                 Spacer()
             }
+            
+            // Compact rules
+            CompactRulesLine(
+                title: challenge.title,
+                challengeType: challenge.challengeType,
+                dailyTarget: challenge.dailyTarget,
+                targetUnit: challenge.targetUnit,
+                themeColor: tc
+            )
             
             // Friends row: stacked photos + friend names + Join button
             HStack(spacing: 8) {
@@ -2167,6 +2771,17 @@ struct CommunityDetailView: View {
                         VStack(spacing: 16) {
                             // Challenge header card
                             detailHeader(detail)
+                            
+                            // Challenge rules
+                            ChallengeRulesCard(
+                                rules: ChallengeRulesHelper.rules(
+                                    title: detail.title,
+                                    challengeType: detail.challengeType,
+                                    dailyTarget: detail.dailyTarget,
+                                    targetUnit: detail.targetUnit
+                                ),
+                                themeColor: detail.resolvedType.color
+                            )
                             
                             // Your stats
                             myStatsSection(detail)
@@ -2824,6 +3439,12 @@ struct AllCommunityChallengesView: View {
             }
             .navigationTitle("My Communities")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                service.markCommunityViewVisible()
+            }
+            .onDisappear {
+                service.markCommunityViewHidden()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") { dismiss() }

@@ -165,6 +165,14 @@ class PersonalRecordService: ObservableObject {
                 self.showingPRCelebration = false
             }
             
+            // Award league points for PR (+30 pts)
+            Task { @MainActor in
+                await WeeklyLeagueService.shared.addPoints(source: .personalRecord)
+                
+                // Update daily quest progress for PR
+                await DailyQuestService.shared.onPersonalRecord()
+            }
+            
             #if DEBUG
             print("🏆 NEW PR ACHIEVED: \(pr.celebrationMessage)")
             #endif

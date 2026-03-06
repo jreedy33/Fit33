@@ -304,6 +304,10 @@ class FriendService: ObservableObject {
             print("✅ [FRIEND REQUEST] Request sent successfully! ID: \(requestId)")
             await fetchUnreadCount()
             await fetchSentRequests()  // Refresh sent requests list
+            
+            // Update daily quest progress for adding a friend
+            await DailyQuestService.shared.onFriendRequestSent()
+            
             return true
         } catch {
             logger.log(.error, category: .social, message: "Friend request FAILED", metadata: [
@@ -534,6 +538,10 @@ class FriendService: ObservableObject {
             
             await fetchSentWorkouts()
             print("✅ Workout sent to friend")
+            
+            // Update daily quest progress for sharing a workout
+            await DailyQuestService.shared.onWorkoutShared()
+            
             return true
         } catch {
             print("❌ Error sending workout: \(error)")

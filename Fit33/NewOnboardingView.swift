@@ -94,7 +94,7 @@ struct NewOnboardingView: View {
     // Phone number (for 2FA / account security)
     @State private var phoneNumber = ""
     @State private var phoneNumberError = ""
-    @State private var selectedCountryCode: CountryCode = .us  // Default to US
+    @State private var selectedCountryCode: CountryCode = CountryCode.fromLocale()  // Auto-detect from device locale
     @State private var verificationCode = ""
     @State private var isVerificationCodeSent = false
     @State private var isPhoneVerified = false
@@ -109,7 +109,7 @@ struct NewOnboardingView: View {
     @StateObject private var phoneVerificationService = PhoneVerificationService.shared
     
     // Constants for phone verification limits
-    private let maxPhoneVerificationAttempts = 2
+    private let maxPhoneVerificationAttempts = 3
     
     // Username fields
     @State private var username = ""
@@ -897,6 +897,9 @@ struct NewOnboardingView: View {
         .onDisappear {
             // End the session when view disappears
             OnboardingSessionManager.shared.endSession()
+            // Clean up timers to prevent leaks
+            sendCodeTimer?.invalidate()
+            sendCodeTimer = nil
         }
     }
     
@@ -1008,7 +1011,9 @@ struct NewOnboardingView: View {
                     .padding(.horizontal, 20)
             }
         }
-        .padding(.top, 70) // Safe area clearance
+        .padding(.top, UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.safeAreaInsets.top.map { max($0 + 10, 50) } ?? 70) // Dynamic safe area clearance
         .padding(.bottom, currentStep == .auth ? 12 : 24)
     }
 
@@ -1200,7 +1205,7 @@ struct NewOnboardingView: View {
             // Username doesn't need to be verified yet - button will trigger verification
             let nameValid = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return isUsernameValid && nameValid
-        case .basics: return selectedGender != nil && !birthday.isEmpty
+        case .basics: return isBirthdayValid && calculatedAge >= 13 && calculatedAge <= 120
         case .body: return isHeightValid && isWeightValid
         case .goal: return !selectedGoals.isEmpty
         case .experience: return !selectedExperience.isEmpty
@@ -1226,7 +1231,7 @@ struct NewOnboardingView: View {
     // Get full E.164 formatted phone number for sending to Twilio
     private var fullPhoneNumber: String {
         let digits = phoneNumber.filter { $0.isNumber }
-        return "\(selectedCountryCode.rawValue)\(digits)"
+        return "\(selectedCountryCode.dialingCode)\(digits)"
     }
     
     // MARK: - Navigation Helpers
@@ -1331,7 +1336,7 @@ struct NewOnboardingView: View {
             HStack(spacing: 6) {
                 Text(selectedCountryCode.flag)
                     .font(.system(size: 18))
-                Text(selectedCountryCode.rawValue)
+                Text(selectedCountryCode.dialingCode)
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundColor(.primary)
                 Image(systemName: "chevron.down")
@@ -1473,26 +1478,32 @@ struct NewOnboardingView: View {
                                 }
                             }
                         
-                        // Visual digit tiles
-                        HStack(spacing: 10) {
-                            ForEach(0..<6, id: \.self) { index in
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
-                                    
-                                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .stroke(
-                                            index == verificationCode.count ? Color.blue : Color.clear,
-                                            lineWidth: 2
-                                        )
-                                    
-                                    Text(getDigit(at: index))
-                                        .font(.ds_stat)
-                                        .foregroundColor(.primary)
+                        // Visual digit tiles - responsive width for all screen sizes
+                        GeometryReader { geo in
+                            let tileWidth = min(50, (geo.size.width - 50) / 6) // 50pt spacing total, 6 tiles
+                            let tileHeight = tileWidth * 1.2
+                            HStack(spacing: max(6, (geo.size.width - tileWidth * 6) / 5)) {
+                                ForEach(0..<6, id: \.self) { index in
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
+
+                                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                                            .stroke(
+                                                index == verificationCode.count ? Color.blue : Color.clear,
+                                                lineWidth: 2
+                                            )
+
+                                        Text(getDigit(at: index))
+                                            .font(.system(size: min(28, tileWidth * 0.56), weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                    }
+                                    .frame(width: tileWidth, height: tileHeight)
                                 }
-                                .frame(width: 50, height: 60)
                             }
+                            .frame(maxWidth: .infinity)
                         }
+                        .frame(height: 72) // Fixed height container
                         .onTapGesture {
                             focusedField = .verificationCode
                         }
@@ -1833,9 +1844,9 @@ struct NewOnboardingView: View {
     private func formatPhoneNumberForCountry(_ input: String) -> String {
         let digits = input.filter { $0.isNumber }
         let limited = String(digits.prefix(selectedCountryCode.maxDigits))
-        
-        // For US, use (XXX) XXX-XXXX format
-        if selectedCountryCode == .us {
+
+        // US/Canada: (XXX) XXX-XXXX
+        if selectedCountryCode == .us || selectedCountryCode == .canada {
             var result = ""
             for (index, char) in limited.enumerated() {
                 if index == 0 { result += "(" }
@@ -1845,8 +1856,8 @@ struct NewOnboardingView: View {
             }
             return result
         }
-        
-        // For UK, use XXXX XXXXXX format
+
+        // UK: XXXX XXXXXX
         if selectedCountryCode == .uk {
             var result = ""
             for (index, char) in limited.enumerated() {
@@ -1855,8 +1866,58 @@ struct NewOnboardingView: View {
             }
             return result
         }
-        
-        // For other countries, just space every 3 digits
+
+        // India: XXXXX XXXXX
+        if selectedCountryCode == .india {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 5 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        // Brazil: XX XXXXX XXXX
+        if selectedCountryCode == .brazil {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 2 || index == 7 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        // Japan/Korea: XX XXXX XXXX
+        if selectedCountryCode == .japan || selectedCountryCode == .southKorea {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 2 || index == 6 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        // Australia: XXX XXX XXX
+        if selectedCountryCode == .australia {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 3 || index == 6 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        // Singapore/Hong Kong: XXXX XXXX
+        if selectedCountryCode == .singapore || selectedCountryCode == .hongKong {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 4 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        // Default: space every 3 digits for readability
         var result = ""
         for (index, char) in limited.enumerated() {
             if index > 0 && index % 3 == 0 { result += " " }
@@ -1868,7 +1929,7 @@ struct NewOnboardingView: View {
     // Format full international number for display
     private func formatInternationalNumber() -> String {
         let digits = phoneNumber.filter { $0.isNumber }
-        return "\(selectedCountryCode.rawValue) \(digits)"
+        return "\(selectedCountryCode.dialingCode) \(digits)"
     }
     
     // MARK: - Username Step Content
@@ -3430,9 +3491,10 @@ struct NewOnboardingView: View {
         let digits = heightFeetInchesDigits.filter { $0.isNumber }
         guard !digits.isEmpty else { return "-" }
         let feet = String(digits.prefix(1))
-        let inchesRaw = String(digits.dropFirst().prefix(2))
-        // Pad inches to 2 digits (5'8" → 5'08")
-        let inches = inchesRaw.count == 1 ? "0\(inchesRaw)" : inchesRaw
+        let inches = String(digits.dropFirst().prefix(2))
+        if inches.isEmpty {
+            return "\(feet)'0\""
+        }
         return "\(feet)'\(inches)\""
     }
     
@@ -4093,12 +4155,20 @@ struct NewOnboardingView: View {
               day >= 1 && day <= 31,
               year >= 1900 && year <= Calendar.current.component(.year, from: Date())
         else { return nil }
-        
+
         var components = DateComponents()
         components.month = month
         components.day = day
         components.year = year
-        return Calendar.current.date(from: components)
+
+        // Validate actual calendar date (catches Feb 30, Apr 31, etc.)
+        guard let date = Calendar.current.date(from: components),
+              Calendar.current.component(.month, from: date) == month,
+              Calendar.current.component(.day, from: date) == day,
+              Calendar.current.component(.year, from: date) == year
+        else { return nil }
+
+        return date
     }
     
     private var isBirthdayValid: Bool {
@@ -8477,7 +8547,9 @@ struct OnboardingCameraPicker: UIViewControllerRepresentable {
 
 // MARK: - Country Code for Phone Verification
 enum CountryCode: String, CaseIterable, Identifiable {
+    // North America
     case us = "+1"
+    // Europe
     case uk = "+44"
     case ireland = "+353"
     case france = "+33"
@@ -8493,9 +8565,49 @@ enum CountryCode: String, CaseIterable, Identifiable {
     case norway = "+47"
     case denmark = "+45"
     case poland = "+48"
-    
-    var id: String { rawValue }
-    
+    case finland = "+358"
+    case greece = "+30"
+    case czechRepublic = "+420"
+    case romania = "+40"
+    case hungary = "+36"
+    // Asia-Pacific
+    case australia = "+61"
+    case newZealand = "+64"
+    case india = "+91"
+    case japan = "+81"
+    case southKorea = "+82"
+    case singapore = "+65"
+    case hongKong = "+852"
+    case philippines = "+63"
+    case thailand = "+66"
+    case malaysia = "+60"
+    case indonesia = "+62"
+    // Americas
+    case canada = "+1CA"  // Same code as US, differentiated by case
+    case mexico = "+52"
+    case brazil = "+55"
+    case argentina = "+54"
+    case colombia = "+57"
+    case chile = "+56"
+    // Middle East & Africa
+    case uae = "+971"
+    case saudiArabia = "+966"
+    case southAfrica = "+27"
+    case israel = "+972"
+    case turkey = "+90"
+    case nigeria = "+234"
+    case egypt = "+20"
+
+    var id: String { self == .canada ? "+1CA" : rawValue }
+
+    /// The actual dialing code to send to Twilio (strips any suffix)
+    var dialingCode: String {
+        switch self {
+        case .canada: return "+1"
+        default: return rawValue
+        }
+    }
+
     var flag: String {
         switch self {
         case .us: return "🇺🇸"
@@ -8514,9 +8626,38 @@ enum CountryCode: String, CaseIterable, Identifiable {
         case .norway: return "🇳🇴"
         case .denmark: return "🇩🇰"
         case .poland: return "🇵🇱"
+        case .finland: return "🇫🇮"
+        case .greece: return "🇬🇷"
+        case .czechRepublic: return "🇨🇿"
+        case .romania: return "🇷🇴"
+        case .hungary: return "🇭🇺"
+        case .australia: return "🇦🇺"
+        case .newZealand: return "🇳🇿"
+        case .india: return "🇮🇳"
+        case .japan: return "🇯🇵"
+        case .southKorea: return "🇰🇷"
+        case .singapore: return "🇸🇬"
+        case .hongKong: return "🇭🇰"
+        case .philippines: return "🇵🇭"
+        case .thailand: return "🇹🇭"
+        case .malaysia: return "🇲🇾"
+        case .indonesia: return "🇮🇩"
+        case .canada: return "🇨🇦"
+        case .mexico: return "🇲🇽"
+        case .brazil: return "🇧🇷"
+        case .argentina: return "🇦🇷"
+        case .colombia: return "🇨🇴"
+        case .chile: return "🇨🇱"
+        case .uae: return "🇦🇪"
+        case .saudiArabia: return "🇸🇦"
+        case .southAfrica: return "🇿🇦"
+        case .israel: return "🇮🇱"
+        case .turkey: return "🇹🇷"
+        case .nigeria: return "🇳🇬"
+        case .egypt: return "🇪🇬"
         }
     }
-    
+
     var name: String {
         switch self {
         case .us: return "United States"
@@ -8535,56 +8676,86 @@ enum CountryCode: String, CaseIterable, Identifiable {
         case .norway: return "Norway"
         case .denmark: return "Denmark"
         case .poland: return "Poland"
+        case .finland: return "Finland"
+        case .greece: return "Greece"
+        case .czechRepublic: return "Czech Republic"
+        case .romania: return "Romania"
+        case .hungary: return "Hungary"
+        case .australia: return "Australia"
+        case .newZealand: return "New Zealand"
+        case .india: return "India"
+        case .japan: return "Japan"
+        case .southKorea: return "South Korea"
+        case .singapore: return "Singapore"
+        case .hongKong: return "Hong Kong"
+        case .philippines: return "Philippines"
+        case .thailand: return "Thailand"
+        case .malaysia: return "Malaysia"
+        case .indonesia: return "Indonesia"
+        case .canada: return "Canada"
+        case .mexico: return "Mexico"
+        case .brazil: return "Brazil"
+        case .argentina: return "Argentina"
+        case .colombia: return "Colombia"
+        case .chile: return "Chile"
+        case .uae: return "UAE"
+        case .saudiArabia: return "Saudi Arabia"
+        case .southAfrica: return "South Africa"
+        case .israel: return "Israel"
+        case .turkey: return "Turkey"
+        case .nigeria: return "Nigeria"
+        case .egypt: return "Egypt"
         }
     }
-    
+
     var displayText: String {
-        "\(flag) \(rawValue)"
+        "\(flag) \(dialingCode)"
     }
-    
+
     // Minimum digits for phone number (without country code)
     var minDigits: Int {
         switch self {
-        case .us: return 10
-        case .uk: return 10
-        case .ireland: return 9
-        case .france: return 9
-        case .germany: return 10
-        case .spain: return 9
-        case .italy: return 9
-        case .netherlands: return 9
-        case .belgium: return 9
-        case .portugal: return 9
-        case .austria: return 10
-        case .switzerland: return 9
-        case .sweden: return 9
-        case .norway: return 8
-        case .denmark: return 8
-        case .poland: return 9
+        case .us, .canada: return 10
+        case .uk, .germany, .austria: return 10
+        case .india: return 10
+        case .australia: return 9
+        case .japan, .southKorea: return 10
+        case .brazil, .mexico, .argentina: return 10
+        case .norway, .denmark: return 8
+        case .singapore, .hongKong: return 8
+        case .uae: return 9
+        case .southAfrica, .nigeria: return 9
+        case .turkey: return 10
+        case .egypt: return 10
+        case .israel: return 9
+        default: return 9
         }
     }
-    
+
     var maxDigits: Int {
         switch self {
-        case .us: return 10
+        case .us, .canada: return 10
         case .uk: return 10
-        case .ireland: return 9
-        case .france: return 9
         case .germany: return 11
-        case .spain: return 9
         case .italy: return 10
-        case .netherlands: return 9
-        case .belgium: return 9
-        case .portugal: return 9
-        case .austria: return 10
-        case .switzerland: return 9
-        case .sweden: return 9
-        case .norway: return 8
-        case .denmark: return 8
-        case .poland: return 9
+        case .india: return 10
+        case .australia: return 9
+        case .japan: return 11
+        case .southKorea: return 11
+        case .brazil: return 11
+        case .mexico, .argentina: return 10
+        case .norway, .denmark: return 8
+        case .singapore, .hongKong: return 8
+        case .indonesia: return 12
+        case .philippines: return 10
+        case .uae: return 9
+        case .turkey: return 10
+        case .egypt: return 10
+        case .nigeria: return 10
+        default: return 10
         }
     }
-    
+
     var placeholder: String {
         switch self {
         case .us: return "(555) 123-4567"
@@ -8603,6 +8774,88 @@ enum CountryCode: String, CaseIterable, Identifiable {
         case .norway: return "412 34 567"
         case .denmark: return "20 12 34 56"
         case .poland: return "512 345 678"
+        case .finland: return "40 123 4567"
+        case .greece: return "691 234 5678"
+        case .czechRepublic: return "601 234 567"
+        case .romania: return "721 234 567"
+        case .hungary: return "20 123 4567"
+        case .australia: return "412 345 678"
+        case .newZealand: return "21 123 4567"
+        case .india: return "98765 43210"
+        case .japan: return "90 1234 5678"
+        case .southKorea: return "10 1234 5678"
+        case .singapore: return "9123 4567"
+        case .hongKong: return "9123 4567"
+        case .philippines: return "917 123 4567"
+        case .thailand: return "81 234 5678"
+        case .malaysia: return "12 345 6789"
+        case .indonesia: return "812 345 6789"
+        case .canada: return "(555) 123-4567"
+        case .mexico: return "55 1234 5678"
+        case .brazil: return "11 91234 5678"
+        case .argentina: return "11 1234 5678"
+        case .colombia: return "301 234 5678"
+        case .chile: return "9 1234 5678"
+        case .uae: return "50 123 4567"
+        case .saudiArabia: return "50 123 4567"
+        case .southAfrica: return "71 123 4567"
+        case .israel: return "50 123 4567"
+        case .turkey: return "532 123 4567"
+        case .nigeria: return "802 345 6789"
+        case .egypt: return "10 1234 5678"
+        }
+    }
+
+    /// Auto-detect user's country from device locale
+    static func fromLocale() -> CountryCode {
+        let regionCode = Locale.current.region?.identifier ?? "US"
+        switch regionCode.uppercased() {
+        case "US": return .us
+        case "GB": return .uk
+        case "IE": return .ireland
+        case "FR": return .france
+        case "DE": return .germany
+        case "ES": return .spain
+        case "IT": return .italy
+        case "NL": return .netherlands
+        case "BE": return .belgium
+        case "PT": return .portugal
+        case "AT": return .austria
+        case "CH": return .switzerland
+        case "SE": return .sweden
+        case "NO": return .norway
+        case "DK": return .denmark
+        case "PL": return .poland
+        case "FI": return .finland
+        case "GR": return .greece
+        case "CZ": return .czechRepublic
+        case "RO": return .romania
+        case "HU": return .hungary
+        case "AU": return .australia
+        case "NZ": return .newZealand
+        case "IN": return .india
+        case "JP": return .japan
+        case "KR": return .southKorea
+        case "SG": return .singapore
+        case "HK": return .hongKong
+        case "PH": return .philippines
+        case "TH": return .thailand
+        case "MY": return .malaysia
+        case "ID": return .indonesia
+        case "CA": return .canada
+        case "MX": return .mexico
+        case "BR": return .brazil
+        case "AR": return .argentina
+        case "CO": return .colombia
+        case "CL": return .chile
+        case "AE": return .uae
+        case "SA": return .saudiArabia
+        case "ZA": return .southAfrica
+        case "IL": return .israel
+        case "TR": return .turkey
+        case "NG": return .nigeria
+        case "EG": return .egypt
+        default: return .us
         }
     }
 }

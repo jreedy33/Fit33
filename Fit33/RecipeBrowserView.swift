@@ -101,7 +101,9 @@ struct RecipeBrowserView: View {
             }
         }
         .task {
-            // Load preferences into view model
+            // Re-learn from food history before loading (picks up newly logged foods)
+            await preferencesService.learnFromFoodHistory()
+            // Load preferences into view model (includes auto-detected from food logs)
             viewModel.excludeIngredients = preferencesService.getDislikedIngredients()
             viewModel.includeIngredients = preferencesService.getLikedIngredients()
             await viewModel.searchRecipes()
@@ -111,10 +113,13 @@ struct RecipeBrowserView: View {
         }
         .onChange(of: showingPreferences) { _, isShowing in
             if !isShowing {
-                // Refresh recipes when preferences sheet closes
-                viewModel.excludeIngredients = preferencesService.getDislikedIngredients()
-                viewModel.includeIngredients = preferencesService.getLikedIngredients()
-                Task { await viewModel.searchRecipes() }
+                // Refresh recipes when preferences sheet closes (re-learn from food history too)
+                Task {
+                    await preferencesService.learnFromFoodHistory()
+                    viewModel.excludeIngredients = preferencesService.getDislikedIngredients()
+                    viewModel.includeIngredients = preferencesService.getLikedIngredients()
+                    await viewModel.searchRecipes()
+                }
             }
         }
         .background(
@@ -494,19 +499,26 @@ class RecipeBrowserViewModel: ObservableObject {
             URLQueryItem(name: "fillIngredients", value: "true")
         ]
         
-        // Add search query - SIMPLE queries work best with Spoonacular
+        // Health filters to ensure only healthy, real meals appear
+        queryItems.append(URLQueryItem(name: "minHealthScore", value: "40"))
+        queryItems.append(URLQueryItem(name: "maxSugar", value: "25"))
+        queryItems.append(URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"))
+
+        // Build search query incorporating user preferences
         if !searchQuery.isEmpty {
             queryItems.append(URLQueryItem(name: "query", value: searchQuery))
             print("🍽️ [BROWSER] User search: \(searchQuery)")
         } else if !includeIngredients.isEmpty {
-            // Use FIRST ingredient only as query (not all of them - that's too restrictive)
-            let firstIngredient = includeIngredients.first ?? "chicken"
-            queryItems.append(URLQueryItem(name: "query", value: "\(firstIngredient) dinner"))
-            print("🍽️ [BROWSER] Ingredient query: \(firstIngredient) dinner")
+            // Use top 2 liked ingredients for broader matching
+            let topIngredients = includeIngredients.prefix(2).joined(separator: " ")
+            queryItems.append(URLQueryItem(name: "query", value: "healthy \(topIngredients)"))
+            // Also pass as includeIngredients for Spoonacular preference matching
+            queryItems.append(URLQueryItem(name: "includeIngredients", value: includeIngredients.prefix(3).joined(separator: ",")))
+            print("🍽️ [BROWSER] Preference query: healthy \(topIngredients) (include: \(includeIngredients.prefix(3).joined(separator: ",")))")
         } else {
-            // Simple default - let sort=healthiness handle it
-            queryItems.append(URLQueryItem(name: "query", value: "dinner"))
-            print("🍽️ [BROWSER] Default query: dinner (sorted by healthiness)")
+            // Default to common healthy meals
+            queryItems.append(URLQueryItem(name: "query", value: "healthy chicken vegetables protein"))
+            print("🍽️ [BROWSER] Default query: healthy chicken vegetables protein")
         }
         
         // Add diet filter
@@ -652,18 +664,27 @@ class RecipeBrowserViewModel: ObservableObject {
             URLQueryItem(name: "instructionsRequired", value: "true")
         ]
         
+        // Health filters consistent with initial search
+        queryItems.append(URLQueryItem(name: "minHealthScore", value: "40"))
+        queryItems.append(URLQueryItem(name: "maxSugar", value: "25"))
+        queryItems.append(URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"))
+
         // Use same query logic as searchRecipes
         if !searchQuery.isEmpty {
             queryItems.append(URLQueryItem(name: "query", value: searchQuery))
+        } else if !includeIngredients.isEmpty {
+            let topIngredients = includeIngredients.prefix(2).joined(separator: " ")
+            queryItems.append(URLQueryItem(name: "query", value: "healthy \(topIngredients)"))
+            queryItems.append(URLQueryItem(name: "includeIngredients", value: includeIngredients.prefix(3).joined(separator: ",")))
         } else {
-            queryItems.append(URLQueryItem(name: "query", value: "dinner"))
+            queryItems.append(URLQueryItem(name: "query", value: "healthy chicken vegetables protein"))
         }
-        
+
         if let diet = selectedDiet {
             queryItems.append(URLQueryItem(name: "diet", value: diet.apiValue))
         }
-        
-        // Only exclude disliked ingredients (don't require liked ingredients)
+
+        // Exclude disliked ingredients
         if !excludeIngredients.isEmpty {
             let topDislikes = excludeIngredients.prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))

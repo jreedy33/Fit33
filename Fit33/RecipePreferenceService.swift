@@ -398,10 +398,8 @@ class RecipePreferenceService: ObservableObject {
     func getPersonalizedRecipes(count: Int = 10) async -> [SpoonacularRecipe] {
         isLoadingRecommendations = true
         
-        // Re-learn from food history if we haven't recently
-        if ingredientCounts.isEmpty || likedIngredients.isEmpty {
-            await learnFromFoodHistory()
-        }
+        // Always re-learn from food history to pick up newly logged foods
+        await learnFromFoodHistory()
         
         // LOG: User preferences at start
         logger.logPreferences(liked: likedIngredients, disliked: dislikedIngredients)
@@ -512,18 +510,16 @@ class RecipePreferenceService: ObservableObject {
     }
     
     /// Fetch recipes that feature user's preferred ingredients
-    /// Uses a LENIENT approach - just search, sort by healthiness
+    /// Uses a LENIENT approach - search with health filters, sort by healthiness
     private func fetchRecipesByIngredientsSmartMatch(
         ingredients: [String],
         count: Int
     ) async -> [SpoonacularRecipe] {
-        // Use SIMPLE search - Spoonacular works best with simple queries
-        let searchIngredient = ingredients.first ?? "chicken"
-        let randomOffset = Int.random(in: 0...50)
-        
-        // Simple search like "chicken" or "salmon"
-        let searchQuery = searchIngredient
-        
+        // Use top 2 ingredients for broader matching (not just first)
+        let searchIngredients = ingredients.prefix(2).joined(separator: " ")
+        let searchQuery = "healthy \(searchIngredients)"
+        let randomOffset = Int.random(in: 0...15) // Smaller offset = more common recipes
+
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "apiKey", value: apiKey),
             URLQueryItem(name: "number", value: String(count)),
@@ -531,17 +527,21 @@ class RecipePreferenceService: ObservableObject {
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
-            // SIMPLE query - no health filters, just sort by healthiness
+            // Health filters to ensure quality results
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            // Only real meals - no desserts, drinks, or beverages
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"),
             URLQueryItem(name: "query", value: searchQuery),
             URLQueryItem(name: "offset", value: String(randomOffset))
         ]
-        
+
         // Only exclude disliked ingredients
         if !dislikedIngredients.isEmpty {
             let topDislikes = dislikedIngredients.prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
-        
+
         print("🍽️ [RECIPE PREFS] Smart match query: '\(searchQuery)' offset: \(randomOffset)")
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
@@ -653,17 +653,18 @@ class RecipePreferenceService: ObservableObject {
     
     // MARK: - Private API Methods
     
-    /// Fetch recipes with user preferences - LENIENT: only exclude disliked, sort by health
+    /// Fetch recipes with user preferences - health-filtered with preference matching
     private func fetchRecipesWithPreferences(
         includeIngredients: String,
         excludeIngredients: String,
         count: Int
     ) async -> [SpoonacularRecipe] {
-        // Use ingredient as search query (not strict filter)
+        // Use ingredients as search query for broad matching
         let ingredientList = includeIngredients.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
-        let queryIngredient = ingredientList.first ?? "dinner"
-        let randomOffset = Int.random(in: 0...50)
-        
+        let queryIngredient = ingredientList.prefix(2).joined(separator: " ")
+        let searchQuery = "healthy \(queryIngredient)"
+        let randomOffset = Int.random(in: 0...15)
+
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "apiKey", value: apiKey),
             URLQueryItem(name: "number", value: String(count)),
@@ -671,18 +672,21 @@ class RecipePreferenceService: ObservableObject {
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
-            // SIMPLE query - let results through, sorted by healthiness
-            URLQueryItem(name: "query", value: queryIngredient),
+            // Health filters
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"),
+            URLQueryItem(name: "query", value: searchQuery),
             URLQueryItem(name: "offset", value: String(randomOffset))
         ]
-        
-        // ONLY exclude disliked ingredients - this is safe and won't break results
+
+        // Exclude disliked ingredients
         if !excludeIngredients.isEmpty {
             let excludeList = excludeIngredients.split(separator: ",").prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: excludeList))
         }
-        
-        print("🍽️ [RECIPE PREFS] Strategy 2 query: '\(queryIngredient)' exclude: \(excludeIngredients.prefix(30))...")
+
+        print("🍽️ [RECIPE PREFS] Strategy 2 query: '\(searchQuery)' exclude: \(excludeIngredients.prefix(30))...")
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
@@ -710,20 +714,25 @@ class RecipePreferenceService: ObservableObject {
         }
     }
     
-    /// Fetch healthy recipes - LENIENT approach (no strict filters that cause 0 results)
+    /// Fetch healthy recipes - common healthy meals only
     private func fetchHealthyRecipesWithExclusions(count: Int, excludeIds: [Int]) async -> [SpoonacularRecipe] {
-        // Use variety of healthy queries
+        // Common healthy meal queries that return recognizable, everyday healthy recipes
         let healthyQueries = [
-            "grilled chicken breast",
-            "salmon dinner",
-            "healthy pasta",
-            "beef stir fry",
-            "quinoa bowl",
-            "shrimp vegetables",
-            "lean protein dinner"
+            "grilled chicken vegetables",
+            "salmon asparagus",
+            "chicken breast rice",
+            "scrambled eggs toast",
+            "avocado toast eggs",
+            "greek yogurt granola",
+            "chicken salad",
+            "stir fry vegetables",
+            "quinoa bowl chicken",
+            "oatmeal berries",
+            "turkey wrap",
+            "baked salmon broccoli"
         ]
         let query = healthyQueries.randomElement() ?? "grilled chicken"
-        let randomOffset = Int.random(in: 0...50)
+        let randomOffset = Int.random(in: 0...10) // Keep offset low for common results
         
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "apiKey", value: apiKey),
@@ -732,27 +741,30 @@ class RecipePreferenceService: ObservableObject {
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
-            // NO strict filters - just sort by healthiness
+            // Health filters to ensure quality
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"),
             URLQueryItem(name: "query", value: query),
             URLQueryItem(name: "offset", value: String(randomOffset))
         ]
-        
+
         // Only exclude disliked ingredients (safer)
         if !dislikedIngredients.isEmpty {
             let topDislikes = dislikedIngredients.prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
-        
+
         // LOG: API Request
         logger.logAPIRequest(
             endpoint: "complexSearch (Healthy Fallback)",
             query: query,
             includeIngredients: nil,
             excludeIngredients: dislikedIngredients.isEmpty ? nil : dislikedIngredients.prefix(3).joined(separator: ","),
-            minHealthScore: nil,
+            minHealthScore: 40,
             minProtein: nil,
-            maxSugar: nil,
-            mealType: nil,
+            maxSugar: 25,
+            mealType: "main course,salad,soup,breakfast,side dish,snack",
             count: count + 5,
             offset: randomOffset
         )
@@ -787,51 +799,55 @@ class RecipePreferenceService: ObservableObject {
         }
     }
     
-    /// Fetch varied meal recipes - LENIENT approach (no strict filters)
+    /// Fetch varied meal recipes - common healthy meals with variety
     private func fetchVariedRecipes(count: Int, excludeIds: [Int]) async -> [SpoonacularRecipe] {
-        // Real meal queries - search by name, sort by healthiness
+        // Common healthy meal queries people actually search for
         let mealQueries = [
-            "chicken dinner",
-            "salmon recipe",
-            "beef dinner",
-            "pasta dinner",
-            "shrimp recipe",
-            "turkey dinner",
-            "rice bowl",
-            "stir fry",
-            "healthy breakfast"
+            "chicken breast vegetables",
+            "salmon rice",
+            "egg breakfast healthy",
+            "turkey salad",
+            "shrimp stir fry",
+            "oatmeal protein",
+            "greek yogurt bowl",
+            "avocado chicken",
+            "lean beef broccoli",
+            "sweet potato chicken"
         ]
-        let randomQuery = mealQueries.randomElement() ?? "chicken dinner"
-        let randomOffset = Int.random(in: 0...40)
-        
+        let randomQuery = mealQueries.randomElement() ?? "chicken vegetables"
+        let randomOffset = Int.random(in: 0...10)
+
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "apiKey", value: apiKey),
             URLQueryItem(name: "number", value: String(count + 5)),
             URLQueryItem(name: "addRecipeNutrition", value: "true"),
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
-            // NO strict filters - just query and sort
+            // Health filters for quality
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"),
             URLQueryItem(name: "query", value: randomQuery),
             URLQueryItem(name: "instructionsRequired", value: "true"),
             URLQueryItem(name: "offset", value: String(randomOffset))
         ]
-        
+
         // Only exclude disliked ingredients
         if !dislikedIngredients.isEmpty {
             let topDislikes = dislikedIngredients.prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
-        
+
         // LOG: API Request
         logger.logAPIRequest(
             endpoint: "complexSearch (Varied Meals)",
             query: randomQuery,
             includeIngredients: nil,
             excludeIngredients: dislikedIngredients.isEmpty ? nil : dislikedIngredients.prefix(3).joined(separator: ","),
-            minHealthScore: nil,
+            minHealthScore: 40,
             minProtein: nil,
-            maxSugar: nil,
-            mealType: nil,
+            maxSugar: 25,
+            mealType: "main course,salad,soup,breakfast,side dish,snack",
             count: count + 5,
             offset: randomOffset
         )
@@ -906,18 +922,20 @@ class RecipePreferenceService: ObservableObject {
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
-            // Simpler query that will return results
-            URLQueryItem(name: "query", value: "healthy protein")
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            URLQueryItem(name: "type", value: "main course,salad,soup,breakfast,side dish,snack"),
+            URLQueryItem(name: "query", value: "healthy chicken vegetables protein")
         ]
-        
+
         // Exclude ONLY TOP 3 disliked ingredients
         if !dislikedIngredients.isEmpty {
             let topDislikes = dislikedIngredients.prefix(3).joined(separator: ",")
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
-        
-        // Random offset for variety
-        let randomOffset = Int.random(in: 0...50)
+
+        // Small random offset for variety but keep in common results range
+        let randomOffset = Int.random(in: 0...10)
         queryItems.append(URLQueryItem(name: "offset", value: String(randomOffset)))
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
@@ -958,8 +976,10 @@ class RecipePreferenceService: ObservableObject {
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
             URLQueryItem(name: "fillIngredients", value: "true"),
-            // Simpler query to ensure results
-            URLQueryItem(name: "query", value: healthyQuery.split(separator: " ").first.map(String.init) ?? "healthy")
+            URLQueryItem(name: "minHealthScore", value: "40"),
+            URLQueryItem(name: "maxSugar", value: "25"),
+            // Use full healthy query for better matching
+            URLQueryItem(name: "query", value: healthyQuery)
         ]
         
         // Add ONLY TOP 2-3 ingredient preferences for ~70% match
@@ -977,26 +997,26 @@ class RecipePreferenceService: ObservableObject {
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
         
-        // Random offset for variety
-        let randomOffset = Int.random(in: 0...50)
+        // Small random offset for variety within common results
+        let randomOffset = Int.random(in: 0...10)
         queryItems.append(URLQueryItem(name: "offset", value: String(randomOffset)))
-        
+
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
-        
+
         guard let url = urlComponents.url else { return [] }
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
-            
+
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
                 return []
             }
-            
+
             let decoder = JSONDecoder()
             let searchResponse = try decoder.decode(RecipeSearchResponse.self, from: data)
-            
+
             print("✅ [RECIPE PREFS] Meal-time query returned \(searchResponse.results.count) results")
             return Array(searchResponse.results.prefix(count))
         } catch {

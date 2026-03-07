@@ -221,9 +221,12 @@ struct HealthyRecipesCarousel: View {
         Task {
             // Check if we should refresh or use cached
             if preferenceService.shouldRefreshCarousel() || displayedRecipes.isEmpty {
+                // Re-learn from food history so carousel reflects what user actually eats
+                await preferenceService.learnFromFoodHistory()
+
                 // Fetch more recipes for 2-row layout (16 total = 8 per row)
                 let targetCount = 16
-                
+
                 // Try to get personalized recommendations based on food history
                 let personalized = await preferenceService.getRotatedCarouselRecipes(count: targetCount)
                 

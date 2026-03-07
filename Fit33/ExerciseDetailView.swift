@@ -446,18 +446,15 @@ struct ExerciseDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .background(
             ZStack {
-                // Layer 1: Deep colored shadow (3D depth)
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(categoryColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
                     .offset(y: 10)
                     .blur(radius: 6)
                 
-                // Layer 2: Middle depth shadow
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.05))
                     .offset(y: 5)
                 
-                // Layer 3: Main card background
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
@@ -469,7 +466,6 @@ struct ExerciseDetailView: View {
                         )
                     )
                 
-                // Layer 4: Inner highlight — top edge glow
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
@@ -482,13 +478,12 @@ struct ExerciseDetailView: View {
                         lineWidth: 1.5
                     )
                 
-                // Layer 5: Accent border — subtle category color tint
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [
-                                categoryColor.opacity(colorScheme == .dark ? 0.4 : 0.25),
-                                categoryColor.opacity(colorScheme == .dark ? 0.2 : 0.1)
+                                Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.25),
+                                Color.blue.opacity(colorScheme == .dark ? 0.2 : 0.1)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -497,16 +492,14 @@ struct ExerciseDetailView: View {
                     )
             }
         )
-        // Subtle category-colored glow around the card
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.2), lineWidth: 1.5)
+                .stroke(Color.blue.opacity(colorScheme == .dark ? 0.35 : 0.2), lineWidth: 1.5)
                 .blur(radius: 4)
         )
-        // External shadows for 3D floating effect + colored glow
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
-        .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 20, x: 0, y: 4)
-        .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 30, x: 0, y: 0)
+        .shadow(color: Color.blue.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 20, x: 0, y: 4)
+        .shadow(color: Color.blue.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 30, x: 0, y: 0)
         .padding(.horizontal, Spacing.md)
         .padding(.top, 8)
     }

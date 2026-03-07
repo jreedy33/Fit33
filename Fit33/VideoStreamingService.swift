@@ -745,7 +745,7 @@ struct VideoPlayerLayerView: UIViewRepresentable {
         view.backgroundColor = .white
         
         let playerLayer = AVPlayerLayer(player: player)
-        playerLayer.videoGravity = .resizeAspect
+        playerLayer.videoGravity = .resizeAspectFill
         playerLayer.frame = view.bounds
         view.layer.addSublayer(playerLayer)
         
@@ -788,23 +788,19 @@ struct RemoteVideoPlayerView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .top) {
-            // Clean background
+        ZStack(alignment: .center) {
             backgroundColor
             
             if let player = playerManager.player, showPlayer {
-                // 🎬 Video ready — crossfade from poster to live video
                 VideoPlayerLayerView(player: player)
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity.animation(.easeIn(duration: 0.15)))
             } else if let poster = posterImage {
-                // 🖼️ YOUTUBE TRICK: Show poster frame INSTANTLY while video loads behind it.
-                // User sees the exercise form immediately — perceives zero load time.
                 Image(uiImage: poster)
                     .resizable()
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
             } else if playerManager.isLoading {
                 // ⏳ No poster frame cached yet (first time playing this exercise)
@@ -842,7 +838,7 @@ struct RemoteVideoPlayerView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 240) // Fixed height, content aligned to top
+        .clipped()
         .onAppear {
             guard !hasAppeared else { return }
             hasAppeared = true

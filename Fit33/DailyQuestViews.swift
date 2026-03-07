@@ -254,18 +254,12 @@ struct DailyQuestsWidget: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
-        .background(
-            quest.isCompleted
-                ? RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.green.opacity(colorScheme == .dark ? 0.06 : 0.04))
-                : nil
-        )
         .sleekCardSubtle(cornerRadius: 16)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     quest.isCompleted
-                        ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        ? LinearGradient(colors: [.green.opacity(0.35), .mint.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         : LinearGradient(colors: [quest.categoryColor.opacity(0.35), quest.categoryColor.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1
                 )

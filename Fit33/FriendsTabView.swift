@@ -36,6 +36,8 @@ struct FriendsTabView: View {
     @State private var selectedCommunityChallenge: CommunityChallenge?
     @State private var showingAllCommunities = false
     @State private var hasAppearedBefore = false
+    @State private var challengeGlowPhase: Double = 0
+    @State private var challengeToCancel: UUID?
     
     // MARK: - Live Refresh State
     @State private var lastRefreshedAt: Date?
@@ -653,36 +655,20 @@ struct FriendsTabView: View {
     // MARK: - Quick Action Tiles (Add Friend, New Challenge, Join Community)
     
     private var friendsQuickActionTiles: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                FriendsQuickTile(
-                    icon: "person.2.fill",
-                    title: "Friends",
-                    gradient: [.cyan, .blue],
-                    action: { showingFriendsList = true }
-                )
-                
-                FriendsQuickTile(
-                    icon: "trophy.fill",
-                    title: "Challenge",
-                    gradient: [.orange, .red],
-                    action: { showingChallengeCreation = true }
-                )
-                
-                FriendsQuickTile(
-                    icon: "globe.americas.fill",
-                    title: "Community",
-                    gradient: [.green, .mint],
-                    action: { showingCommunityHub = true }
-                )
-                
-                FriendsQuickTile(
-                    icon: "qrcode.viewfinder",
-                    title: "Scan QR",
-                    gradient: [.purple, .pink],
-                    action: { showingFriendsList = true }
-                )
-            }
+        HStack(spacing: 12) {
+            FriendsQuickTile(
+                icon: "trophy.fill",
+                title: "Challenge",
+                gradient: [.orange, .red],
+                action: { showingChallengeCreation = true }
+            )
+            
+            FriendsQuickTile(
+                icon: "globe.americas.fill",
+                title: "Community",
+                gradient: [.green, .mint],
+                action: { showingCommunityHub = true }
+            )
         }
     }
     
@@ -892,15 +878,32 @@ struct FriendsTabView: View {
     // MARK: - Active Challenges Carousel
     
     private var activeChallengesCarousel: some View {
-        let activeChallenges = challengeService.activeChallenges
+        let activeIds = Set(challengeService.activeChallenges.map { $0.id })
+        let activeChallenges = Array(challengeService.activeChallenges.prefix(3))
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
-        let totalCards = activeChallenges.count + groupChallenges.count
-        let safePageIndex = totalCards > 0 ? min(max(0, activeChallengePageIndex), totalCards - 1) : 0
+        let activeCount = activeChallenges.count + groupChallenges.count
+        
+        var seenPendingIds = Set<UUID>()
+        let remainingSlots = max(0, 3 - activeCount)
+        let pendingSent = challengeService.pendingSentChallenges
+            .filter { pending in
+                guard !pending.title.isEmpty && pending.durationDays > 0 else { return false }
+                guard !activeIds.contains(pending.challengeId) else { return false }
+                guard !seenPendingIds.contains(pending.challengeId) else { return false }
+                seenPendingIds.insert(pending.challengeId)
+                return true
+            }
+            .prefix(remainingSlots)
+        let pendingArray = Array(pendingSent)
+        let pendingCount = pendingArray.count
+        
+        let showDefaultInCarousel = activeCount == 0 && pendingCount > 0 && pendingCount < 3
+        let totalWidgetCount = activeCount + pendingCount + (showDefaultInCarousel ? 1 : 0)
+        let safePageIndex = totalWidgetCount > 0 ? min(max(0, activeChallengePageIndex), totalWidgetCount - 1) : 0
         
         return Group {
-            if totalCards > 0 {
+            if totalWidgetCount > 0 {
                 VStack(spacing: 4) {
-                    // Header — same style as home screen
                     HStack {
                         Image(systemName: "flame.fill")
                             .foregroundStyle(
@@ -913,20 +916,18 @@ struct FriendsTabView: View {
                         
                         Spacer()
                         
-                        Text("\(totalCards) active")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color.orange.opacity(0.15))
-                            )
+                        if activeCount > 0 {
+                            Text("\(activeCount) active")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.orange.opacity(0.15)))
+                        }
                     }
                     
-                    if totalCards > 1 {
-                        // Multiple cards — swipeable GeometryReader (same as home screen)
+                    if totalWidgetCount > 1 {
                         GeometryReader { geometry in
                             let cardWidth = geometry.size.width
                             let spacing: CGFloat = 16
@@ -943,6 +944,18 @@ struct FriendsTabView: View {
                                         .frame(width: cardWidth)
                                         .opacity(safePageIndex == (activeChallenges.count + index) ? 1 : 0)
                                 }
+                                
+                                ForEach(Array(pendingArray.enumerated()), id: \.offset) { index, pending in
+                                    friendsTabPendingSentCard(challenge: pending)
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeCount + index) ? 1 : 0)
+                                }
+                                
+                                if showDefaultInCarousel {
+                                    noChallengesCard
+                                        .frame(width: cardWidth)
+                                        .opacity(safePageIndex == (activeCount + pendingCount) ? 1 : 0)
+                                }
                             }
                             .offset(x: -CGFloat(safePageIndex) * (cardWidth + spacing))
                         }
@@ -953,9 +966,9 @@ struct FriendsTabView: View {
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
                                     let verticalAmount = abs(value.translation.height)
-                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 && totalCards > 0 {
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 && totalWidgetCount > 0 {
                                         HapticManager.impact(.medium)
-                                        if horizontalAmount < 0 && activeChallengePageIndex < totalCards - 1 {
+                                        if horizontalAmount < 0 && activeChallengePageIndex < totalWidgetCount - 1 {
                                             activeChallengePageIndex += 1
                                         } else if horizontalAmount > 0 && activeChallengePageIndex > 0 {
                                             activeChallengePageIndex -= 1
@@ -964,9 +977,8 @@ struct FriendsTabView: View {
                                 }
                         )
                         
-                        // Page indicators (dash and dot style — same as home)
                         HStack(spacing: 6) {
-                            ForEach(0..<totalCards, id: \.self) { index in
+                            ForEach(0..<totalWidgetCount, id: \.self) { index in
                                 Capsule()
                                     .fill(safePageIndex == index ? Color.blue : Color.gray.opacity(0.3))
                                     .frame(width: safePageIndex == index ? 20 : 8, height: 6)
@@ -979,12 +991,67 @@ struct FriendsTabView: View {
                         }
                         .padding(.vertical, 4)
                     } else if let challenge = activeChallenges.first {
-                        // Single 1v1 challenge
                         activeChallengeCard(challenge: challenge)
                     } else if let group = groupChallenges.first {
-                        // Single group challenge
                         groupChallengeCard(challenge: group)
+                    } else if let firstPending = pendingArray.first {
+                        let singlePendingCount = 2
+                        let singleSafeIndex = min(max(0, activeChallengePageIndex), singlePendingCount - 1)
+                        
+                        GeometryReader { geometry in
+                            let cardWidth = geometry.size.width
+                            let spacing: CGFloat = 16
+                            
+                            HStack(spacing: spacing) {
+                                friendsTabPendingSentCard(challenge: firstPending)
+                                    .frame(width: cardWidth)
+                                    .opacity(singleSafeIndex == 0 ? 1 : 0)
+                                
+                                noChallengesCard
+                                    .frame(width: cardWidth)
+                                    .opacity(singleSafeIndex == 1 ? 1 : 0)
+                            }
+                            .offset(x: -CGFloat(singleSafeIndex) * (cardWidth + spacing))
+                        }
+                        .frame(height: 156)
+                        .animation(.easeOut(duration: 0.2), value: activeChallengePageIndex)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                                        HapticManager.impact(.medium)
+                                        if horizontalAmount < 0 && activeChallengePageIndex < 1 {
+                                            activeChallengePageIndex = 1
+                                        } else if horizontalAmount > 0 && activeChallengePageIndex > 0 {
+                                            activeChallengePageIndex = 0
+                                        }
+                                    }
+                                }
+                        )
+                        
+                        HStack(spacing: 6) {
+                            ForEach(0..<2, id: \.self) { index in
+                                Circle()
+                                    .fill(singleSafeIndex == index ? Color.orange : Color.gray.opacity(0.3))
+                                    .frame(width: 6, height: 6)
+                                    .scaleEffect(singleSafeIndex == index ? 1.0 : 0.8)
+                                    .animation(.easeOut(duration: 0.2), value: singleSafeIndex)
+                                    .onTapGesture {
+                                        HapticManager.impact(.light)
+                                        activeChallengePageIndex = index
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
+                }
+                .onChange(of: challengeService.activeChallenges.count) { _, _ in
+                    activeChallengePageIndex = 0
+                }
+                .onChange(of: challengeService.pendingSentChallenges.count) { _, _ in
+                    activeChallengePageIndex = 0
                 }
             } else {
                 noChallengesCard
@@ -1087,8 +1154,28 @@ struct FriendsTabView: View {
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                Color.orange.opacity(0.7),
+                                Color.orange.opacity(0.5),
+                                Color.orange.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                Color.orange.opacity(0.2),
+                                Color.yellow.opacity(0.4),
+                                Color.orange.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
                         LinearGradient(
-                            colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
+                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1096,9 +1183,186 @@ struct FriendsTabView: View {
                     )
             }
         )
-        .shadow(color: typeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: typeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
         .padding(.horizontal, 4)
+    }
+    
+    // MARK: - Pending Sent Challenge Card
+    
+    private func friendsTabPendingSentCard(challenge: PendingSentChallenge) -> some View {
+        let resolvedType = challenge.resolvedType
+        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
+        let target = challenge.dailyTarget ?? 0
+        let formatted = target >= 1000 ? "\(target / 1000)K" : "\(target)"
+        
+        return VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                CachedFriendPhoto(
+                    friendId: challenge.opponentId.uuidString,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName ?? "Friend",
+                    size: 48,
+                    showGradientRing: true,
+                    gradientColors: [.orange, .yellow]
+                )
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(challenge.displayTitle)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text(resolvedType.emoji)
+                            .font(.system(size: 14))
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text("Sent to \(opponentFirst)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+            
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.orange)
+                    .frame(width: 4, height: 36)
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("\(formatted) \(challenge.targetUnit)/day")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        Text("PENDING")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(0.85))
+                            )
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Text("\(challenge.durationDays) days")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("•")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Waiting to accept")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    challengeToCancel = challenge.challengeId
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.ds_caption)
+                        Text("Cancel")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Capsule().fill(Color.red.opacity(0.85)))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                Color.orange.opacity(0.7),
+                                Color.orange.opacity(0.5),
+                                Color.orange.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                Color.orange.opacity(0.2),
+                                Color.yellow.opacity(0.4),
+                                Color.orange.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
+        .alert("Cancel Challenge?", isPresented: Binding(
+            get: { challengeToCancel == challenge.challengeId },
+            set: { if !$0 { challengeToCancel = nil } }
+        )) {
+            Button("Keep It", role: .cancel) { challengeToCancel = nil }
+            Button("Cancel Challenge", role: .destructive) {
+                Task {
+                    await challengeService.cancelPendingChallenge(challengeId: challenge.challengeId)
+                    challengeToCancel = nil
+                }
+            }
+        } message: {
+            Text("This will cancel the challenge sent to \(challenge.opponentName ?? "your friend").")
+        }
     }
     
     // MARK: - Competition Bar (head-to-head with avatars + swords)
@@ -1446,67 +1710,153 @@ struct FriendsTabView: View {
     }
     
     private var noChallengesCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Header OUTSIDE the card
-            HStack {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(
-                        LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .font(.title3)
-                Text("Active Challenges")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                Spacer()
-            }
-            
-            // Card content
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(colors: [.orange.opacity(0.2), .red.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .frame(width: 56, height: 56)
-                    
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                }
-                
-                Text("No active challenges yet")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                
-                Text("Challenge a friend and start competing!")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Button(action: {
-                    HapticManager.impact(.medium)
-                    showingChallengeCreation = true
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.fill")
-                        Text("Start a Challenge")
-                            .fontWeight(.semibold)
+        let challengeColor = Color.orange
+        
+        return Button { showingChallengeCreation = true } label: {
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .stroke(challengeColor.opacity(0.3), lineWidth: 4)
+                            .frame(width: 48, height: 48)
+                        
+                        Text("🏆")
+                            .font(.system(size: 22))
                     }
-                    .font(.subheadline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(20)
-                    .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 2)
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Challenge a Friend!")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Text("Compete head-to-head on fitness goals")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(challengeColor)
+                        .frame(width: 4, height: 36)
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Steps, Workouts & More")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        HStack(spacing: 4) {
+                            Text("7-30 days")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Daily goals")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(challengeColor)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.ds_caption)
+                        Text("Challenge")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.orange, Color(red: 1.0, green: 0.6, blue: 0.0)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+                }
+                .padding(Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity)
-            .sleekCard(cornerRadius: 24, accentColor: .orange)
+        }
+        .buttonStyle(.plain)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                Color.orange.opacity(0.7),
+                                Color.orange.opacity(0.5),
+                                Color.orange.opacity(0.3),
+                                Color.clear,
+                                Color.clear,
+                                Color.orange.opacity(0.2),
+                                Color.yellow.opacity(0.4),
+                                Color.orange.opacity(0.6)
+                            ]),
+                            center: .center,
+                            angle: .degrees(challengeGlowPhase)
+                        ),
+                        lineWidth: 2
+                    )
+                    .blur(radius: 2)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
+        .onAppear {
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                challengeGlowPhase = 360
+            }
         }
     }
     
@@ -1840,21 +2190,55 @@ struct FriendsTabView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.purple.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 6)
+                    .blur(radius: 4)
+                
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 3)
+                
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.14), Color(white: 0.09)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [.purple.opacity(0.3), .pink.opacity(0.15)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .purple.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Community Challenges Widget

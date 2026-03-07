@@ -3038,7 +3038,6 @@ struct DashboardView: View {
     
     private func pendingSentChallengeWidget(challenge: PendingSentChallenge) -> some View {
         let resolvedType = challenge.resolvedType
-        let challengeColor = resolvedType.color
         let challengeType = resolvedType
         let isShowingCancelForThis = Binding(
             get: { challengeToCancel == challenge.challengeId },
@@ -3046,22 +3045,59 @@ struct DashboardView: View {
         )
         
         return VStack(spacing: 0) {
-            // Header - Same structure as group challenge widget
-            HStack(alignment: .center, spacing: 10) {
-                // Challenge type emoji (main icon only)
-                Text(challengeType.emoji)
-                    .font(.system(size: 28))
+            // Top row: Emoji + Title/Status + PENDING badge
+            HStack(alignment: .center, spacing: 12) {
+                CachedFriendPhoto(
+                    friendId: challenge.opponentId.uuidString,
+                    photoUrl: challenge.opponentPhotoUrl,
+                    name: challenge.opponentName ?? "Friend",
+                    size: 48,
+                    showGradientRing: true,
+                    gradientColors: [.orange, .yellow]
+                )
                 
-                // Challenge info
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
                         Text(challenge.displayTitle)
-                            .font(.subheadline)
+                            .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
                             .lineLimit(1)
+                        Text(challengeType.emoji)
+                            .font(.system(size: 14))
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text("Sent to \(challenge.opponentName?.components(separatedBy: " ").first ?? "friend")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+            
+            // Bottom row: accent bar + details + Cancel button (matches "Challenge a Friend" inner card)
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.orange)
+                    .frame(width: 4, height: 36)
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    let target = challenge.dailyTarget ?? 0
+                    let formatted = target >= 1000 ? "\(target / 1000)K" : "\(target)"
+                    HStack(spacing: 6) {
+                        Text("\(formatted) \(challenge.targetUnit)/day")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
-                        // Pending badge (muted teal)
                         Text("PENDING")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.white)
@@ -3069,134 +3105,74 @@ struct DashboardView: View {
                             .padding(.vertical, 2)
                             .background(
                                 Capsule()
-                                    .fill(Color.teal.opacity(0.7))
+                                    .fill(Color.orange.opacity(0.85))
                             )
                     }
                     
-                    HStack(spacing: 6) {
-                        Text("Waiting for \(challenge.opponentName?.components(separatedBy: " ").first ?? "friend")")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        
-                        Text("•")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        
+                    HStack(spacing: 4) {
                         Text("\(challenge.durationDays) days")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(challengeColor)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("•")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Waiting to accept")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
                     }
                 }
                 
                 Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, Spacing.sm)
-            
-            // Inner card section - Left accent bar style (matching active challenge)
-            HStack(spacing: 0) {
-                // Left accent bar
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(challengeColor)
-                    .frame(width: 4)
-                    .padding(.vertical, 4)
                 
-                HStack(spacing: 8) {
-                    // You vs Opponent photos
-                    HStack(spacing: 6) {
-                        // Your photo
-                        challengeAvatar(
-                            isUser: true,
-                            photoUrl: nil,
-                            name: userManager.currentUser?.name,
-                            done: false,
-                            gradientColors: [.blue, .cyan]
-                        )
-                        
-                        Text("vs")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        
-                        // Opponent photo
-                        challengeAvatar(
-                            isUser: false,
-                            userId: challenge.opponentId.uuidString,
-                            photoUrl: challenge.opponentPhotoUrl,
-                            name: challenge.opponentName,
-                            done: false,
-                            gradientColors: [.orange, .red]
-                        )
-                    }
-                    
-                    // Challenge details
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sent to \(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")")
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    challengeToCancel = challenge.challengeId
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.ds_caption)
+                        Text("Cancel")
                             .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        
-                        let target = challenge.dailyTarget ?? 0
-                        let formatted = target >= 1000 ? "\(target / 1000)K" : "\(target)"
-                        Text("\(formatted) \(challenge.targetUnit)/day")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
+                            .fontWeight(.bold)
                     }
-                    
-                    Spacer(minLength: 4)
-                    
-                    // Cancel button
-                    Button(action: {
-                        print("🗑️ [DASHBOARD] Cancel button tapped for challenge: \(challenge.title)")
-                        HapticManager.impact(.medium)
-                        challengeToCancel = challenge.challengeId
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "xmark")
-                                .font(.ds_caption)
-                            Text("Cancel")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, Spacing.xs)
-                        .background(
-                            Capsule()
-                                .fill(Color.red.opacity(0.85))
-                        )
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .fill(Color.red.opacity(0.85))
+                    )
+                    .contentShape(Capsule())
                 }
-                .padding(.leading, 12)
-                .padding(.trailing, 14)
+                .buttonStyle(.plain)
             }
-            .padding(.vertical, Spacing.sm)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark 
-                        ? Color.white.opacity(0.04) 
-                        : Color.black.opacity(0.03))
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+                    )
             )
-            .padding(.horizontal, Spacing.sm)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
         }
         .background(
             ZStack {
-                // Animated glowing border (matches group widget)
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
-                                challengeColor.opacity(0.7),
-                                Color.teal.opacity(0.5),
-                                challengeColor.opacity(0.3),
+                                Color.orange.opacity(0.7),
+                                Color.orange.opacity(0.5),
+                                Color.orange.opacity(0.3),
                                 Color.clear,
                                 Color.clear,
-                                challengeColor.opacity(0.2),
-                                Color.mint.opacity(0.4),
-                                challengeColor.opacity(0.6)
+                                Color.orange.opacity(0.2),
+                                Color.yellow.opacity(0.4),
+                                Color.orange.opacity(0.6)
                             ]),
                             center: .center,
                             angle: .degrees(challengeGlowPhase)
@@ -3205,7 +3181,6 @@ struct DashboardView: View {
                     )
                     .blur(radius: 2)
                 
-                // Main card background
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
@@ -3217,11 +3192,10 @@ struct DashboardView: View {
                         )
                     )
                 
-                // Inner border
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -3229,8 +3203,8 @@ struct DashboardView: View {
                     )
             }
         )
-        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
         .confirmationDialog(
             "Cancel Challenge?",
             isPresented: isShowingCancelForThis,
@@ -4355,7 +4329,7 @@ struct DashboardView: View {
     // MARK: - Get Started Challenge Widget - "Challenge a Friend!" entry point
     
     private var getStartedChallengeWidget: some View {
-        let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
+        let challengeColor = Color.orange
         
         return Button { showingChallengeCreation = true } label: {
             VStack(spacing: 0) {
@@ -4420,7 +4394,6 @@ struct DashboardView: View {
                     
                     Spacer()
                     
-                    // Teal Challenge button (compact)
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
                             .font(.ds_caption)
@@ -4435,7 +4408,7 @@ struct DashboardView: View {
                         Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [challengeColor, Color.mint],
+                                    colors: [.orange, Color(red: 1.0, green: 0.6, blue: 0.0)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -4473,14 +4446,14 @@ struct DashboardView: View {
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
-                                Color.teal.opacity(0.7),
-                                Color.teal.opacity(0.5),
-                                Color.teal.opacity(0.3),
+                                Color.orange.opacity(0.7),
+                                Color.orange.opacity(0.5),
+                                Color.orange.opacity(0.3),
                                 Color.clear,
                                 Color.clear,
-                                Color.teal.opacity(0.2),
-                                Color.mint.opacity(0.4),
-                                Color.teal.opacity(0.6)
+                                Color.orange.opacity(0.2),
+                                Color.yellow.opacity(0.4),
+                                Color.orange.opacity(0.6)
                             ]),
                             center: .center,
                             angle: .degrees(challengeGlowPhase)
@@ -4492,7 +4465,7 @@ struct DashboardView: View {
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.teal.opacity(0.5), Color.teal.opacity(0.3), Color.teal.opacity(0.2)],
+                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -4500,8 +4473,8 @@ struct DashboardView: View {
                     )
             }
         )
-        .shadow(color: Color.teal.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: Color.teal.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
         .onAppear {
             withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
                 challengeGlowPhase = 360

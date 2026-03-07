@@ -697,49 +697,54 @@ struct CommunityLeaderboardWidget: View {
         }
         .background(
             ZStack {
-                // ── Base fill: subtle gradient tint that matches the challenge type ──
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(themeColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 6)
+                    .blur(radius: 4)
+                
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 3)
+                
                 RoundedRectangle(cornerRadius: 20)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [themeColor.opacity(0.10), themeColor.opacity(0.04), Color(white: 0.08)]
-                                : [themeColor.opacity(0.06), themeColor.opacity(0.02), Color.white],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // ── Inner highlight shimmer along top edge ──
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: themeColor.opacity(colorScheme == .dark ? 0.12 : 0.08), location: 0),
-                                .init(color: .clear, location: 0.35)
-                            ],
+                                ? [Color(white: 0.14), Color(white: 0.09)]
+                                : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
+                
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                themeColor.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                themeGradient.last?.opacity(colorScheme == .dark ? 0.3 : 0.2) ?? themeColor.opacity(0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             }
-            // ── Outer glow: soft colored shadow ──
-            .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.25 : 0.18), radius: 16, x: 0, y: 8)
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 8, x: 0, y: 4)
         )
-        .overlay(
-            // ── Gradient stroke outline ──
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [themeColor.opacity(0.5), themeColor.opacity(0.15)]
-                            : [themeColor.opacity(0.35), themeColor.opacity(0.10)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Challenge Header

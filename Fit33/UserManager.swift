@@ -473,6 +473,72 @@ class UserManager: ObservableObject {
         return calculateMaxAllowedGap(daysPerWeek: availableDays) - 1  // -1 because gap includes workout day
     }
     
+    /// Check if streak should be broken due to inactivity (called by DailyResetService)
+    /// Unlike updateStreak(), this does NOT increment the streak or update lastWorkoutDate.
+    /// It only checks if the user has been inactive too long and breaks the streak if so.
+    func checkAndBreakStreakIfNeeded() {
+        guard let user = currentUser else { return }
+
+        guard user.currentStreak > 0 else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let lastWorkoutDate = user.lastWorkoutDate ?? Date.distantPast
+        
+        // If a streak shield was used after the last workout, treat the shield date
+        // as the effective reference point (extends the allowed gap window).
+        let effectiveDate: Date
+        if let shieldDate = StreakShieldService.shared.lastShieldUsedDate,
+           shieldDate > lastWorkoutDate {
+            effectiveDate = shieldDate
+        } else {
+            effectiveDate = lastWorkoutDate
+        }
+        
+        let daysSinceEffective = calendar.dateComponents([.day], from: calendar.startOfDay(for: effectiveDate), to: today).day ?? 0
+
+        let availableDays = max(2, Int(user.availableDays))
+        let maxAllowedGap = calculateMaxAllowedGap(daysPerWeek: availableDays)
+
+        #if DEBUG
+        let daysSinceLastWorkout = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastWorkoutDate), to: today).day ?? 0
+        print("🔥 [STREAK CHECK] Daily streak check:")
+        print("   └─ Days since last workout: \(daysSinceLastWorkout)")
+        print("   └─ Days since effective date: \(daysSinceEffective) (shield: \(effectiveDate != lastWorkoutDate))")
+        print("   └─ Max allowed gap: \(maxAllowedGap) days")
+        print("   └─ Current streak: \(user.currentStreak)")
+        #endif
+
+        if daysSinceEffective > maxAllowedGap {
+            // Too many days off - streak broken
+            let oldStreak = user.currentStreak
+            user.currentStreak = 0
+
+            #if DEBUG
+            print("   └─ ❌ Streak broken! (\(daysSinceEffective) > \(maxAllowedGap)) - was \(oldStreak), now 0")
+            #endif
+
+            SessionLogManager.shared.logStreakBroken(
+                previousStreak: Int(oldStreak),
+                streakType: "workout",
+                daysMissed: daysSinceEffective
+            )
+
+            do {
+                try viewContext.save()
+                scheduleDebouncedCloudSync()
+            } catch {
+                #if DEBUG
+                print("Error saving streak break: \(error)")
+                #endif
+            }
+        } else {
+            #if DEBUG
+            print("   └─ ✅ Streak safe (\(daysSinceEffective) ≤ \(maxAllowedGap))")
+            #endif
+        }
+    }
+
     func addXP(_ points: Int32) {
         guard let user = currentUser else { return }
         let oldLevel = getLevel()
@@ -593,6 +659,9 @@ class UserManager: ObservableObject {
                 // Check workout achievements
                 await BadgeService.shared.onWorkoutCompleted(totalWorkouts: Int(user.totalWorkouts))
                 await BadgeService.shared.onStreakUpdated(streak: Int(user.currentStreak))
+                
+                // Award streak shield for workout milestones (every 10 workouts)
+                StreakShieldService.shared.checkAndAwardShield(totalWorkouts: Int(user.totalWorkouts))
             }
         } catch {
             #if DEBUG

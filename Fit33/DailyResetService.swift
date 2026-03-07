@@ -308,15 +308,18 @@ class DailyResetService: ObservableObject {
     // MARK: - Step 7: Update Streaks
     
     private func updateDailyStreaks() async {
-        logStep("🔥 Updating daily streaks...")
-        
-        // Update workout streak
-        UserManager.shared.updateStreak()
-        
+        logStep("🔥 Checking daily streaks...")
+
+        // Check if workout streak should be broken due to inactivity
+        // NOTE: We only CHECK for breaks here, NOT increment.
+        // Streak increments happen in UserManager.updateStreak() which is called
+        // on actual workout completion (completeWorkout, Strava sync, Fitbit sync).
+        UserManager.shared.checkAndBreakStreakIfNeeded()
+
         // Hydration streak is handled by HydrationService
         // Weight streak is handled by WeightTrackingService
-        
-        logStep("✅ Streaks updated")
+
+        logStep("✅ Streaks checked")
     }
     
     // MARK: - Step 8: Refresh Friend Scores

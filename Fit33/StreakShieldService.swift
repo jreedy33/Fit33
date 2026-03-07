@@ -54,19 +54,20 @@ class StreakShieldService: ObservableObject {
     
     private func checkForMonthlyReset() {
         let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: Date())
-        let lastResetMonth = UserDefaults.standard.integer(forKey: lastResetMonthKey)
+        let now = Date()
+        let year = calendar.component(.year, from: now)
+        let month = calendar.component(.month, from: now)
+        let currentKey = "\(year)-\(month)"
+        let lastResetKey = UserDefaults.standard.string(forKey: lastResetMonthKey) ?? ""
         
-        if currentMonth != lastResetMonth {
-            // New month - reset shields used count and grant monthly shields
+        if currentKey != lastResetKey {
             shieldsUsedThisMonth = 0
             
-            // Grant monthly shields based on premium status
             let isPremium = PremiumManager.shared.isPremiumUser
             let monthlyGrant = isPremium ? premiumShieldsPerMonth : maxShieldsPerMonth
-            availableShields = min(availableShields + monthlyGrant, 5) // Cap at 5
+            availableShields = min(availableShields + monthlyGrant, 5)
             
-            UserDefaults.standard.set(currentMonth, forKey: lastResetMonthKey)
+            UserDefaults.standard.set(currentKey, forKey: lastResetMonthKey)
             saveShieldData()
             
             #if DEBUG
@@ -84,17 +85,25 @@ class StreakShieldService: ObservableObject {
             hoursUntilStreakLost = 0
             return
         }
-        
+
         let calendar = Calendar.current
         let now = Date()
         let lastWorkout = lastWorkoutDate ?? Date.distantPast
         
-        // Calculate hours since last workout
-        let hoursSinceLastWorkout = calendar.dateComponents([.hour], from: lastWorkout, to: now).hour ?? 0
-        
-        // Streak breaks after 48 hours (2 days)
-        let hoursRemaining = 48 - hoursSinceLastWorkout
-        
+        // If a shield was used after the last workout, measure from the shield date
+        let effectiveDate: Date
+        if let shieldDate = lastShieldUsedDate, shieldDate > lastWorkout {
+            effectiveDate = shieldDate
+        } else {
+            effectiveDate = lastWorkout
+        }
+
+        let hoursSinceEffective = calendar.dateComponents([.hour], from: effectiveDate, to: now).hour ?? 0
+
+        let maxGapDays = UserManager.shared.getMaxAllowedRestDays() + 1
+        let maxGapHours = maxGapDays * 24
+        let hoursRemaining = maxGapHours - hoursSinceEffective
+
         if hoursRemaining > 0 && hoursRemaining <= 24 {
             isStreakAtRisk = true
             hoursUntilStreakLost = hoursRemaining
@@ -137,7 +146,7 @@ class StreakShieldService: ObservableObject {
         
         // Log streak saved
         SessionLogManager.shared.logStreakSaved(
-            streakDays: WorkoutManager.shared.workoutStreak,
+            streakDays: Int(UserManager.shared.currentUser?.currentStreak ?? 0),
             saveMethod: "shield"
         )
         

@@ -3876,14 +3876,34 @@ class SupabaseManager: ObservableObject {
                     user.availableDays = Int16(availableDays)
                 }
                 
-                // Sync progress data
-                user.currentStreak = Int16(profile.currentStreak ?? 0)
-                user.longestStreak = Int16(profile.longestStreak ?? 0)
-                user.totalWorkouts = Int32(profile.totalWorkouts ?? 0)
-                user.xp = Int32(profile.xp ?? 0)
-                
-                if let lastWorkoutDateStr = profile.lastWorkoutDate {
-                    user.lastWorkoutDate = ISO8601DateFormatter().date(from: lastWorkoutDateStr)
+                // Sync progress data - merge strategy: keep the more recent/higher values
+                let cloudLastWorkoutDate = profile.lastWorkoutDate.flatMap { ISO8601DateFormatter().date(from: $0) }
+                let localLastWorkoutDate = user.lastWorkoutDate
+
+                // For streak data, use whichever source has the more recent lastWorkoutDate
+                let cloudIsNewer = {
+                    guard let cloudDate = cloudLastWorkoutDate else { return false }
+                    guard let localDate = localLastWorkoutDate else { return true }
+                    return cloudDate > localDate
+                }()
+
+                if cloudIsNewer {
+                    user.currentStreak = Int16(profile.currentStreak ?? 0)
+                    user.lastWorkoutDate = cloudLastWorkoutDate
+                }
+                // longestStreak: always keep the higher value
+                let cloudLongest = Int16(profile.longestStreak ?? 0)
+                if cloudLongest > user.longestStreak {
+                    user.longestStreak = cloudLongest
+                }
+                // totalWorkouts and XP: keep the higher value
+                let cloudWorkouts = Int32(profile.totalWorkouts ?? 0)
+                if cloudWorkouts > user.totalWorkouts {
+                    user.totalWorkouts = cloudWorkouts
+                }
+                let cloudXP = Int32(profile.xp ?? 0)
+                if cloudXP > user.xp {
+                    user.xp = cloudXP
                 }
                 
                 // Sync gender to UserDefaults for nutrition calculations
@@ -3911,6 +3931,10 @@ class SupabaseManager: ObservableObject {
                 // CRITICAL: Notify UserManager to reload its state
                 // This ensures hasCompletedOnboarding is updated after login sync
                 UserManager.shared.reloadCurrentUser()
+
+                // After syncing streak data from cloud, check if streak should be broken
+                // (cloud may have stale lastWorkoutDate that exceeds the allowed gap)
+                UserManager.shared.checkAndBreakStreakIfNeeded()
                 
             } catch {
                 print("❌ Error syncing user profile to Core Data: \(error)")

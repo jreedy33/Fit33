@@ -13,11 +13,13 @@
 
 import Foundation
 import CoreData
+import SwiftUI
 
 // MARK: - Test Runner
 
 /// Lightweight test runner for critical-path validation.
 /// Call `CriticalPathTests.runAll()` from DevMenuView to execute.
+@MainActor
 enum CriticalPathTests {
     
     struct TestResult {
@@ -37,6 +39,8 @@ enum CriticalPathTests {
         results.append(testAuthStateTransitions())
         results.append(testSharedWorkoutCloudPath())
         results.append(testLoggerProductionSafety())
+        
+        results.append(contentsOf: StreakLogicTests.runAll().map { TestResult(name: "Streak: \($0.name)", passed: $0.passed, detail: $0.detail) })
         
         let passed = results.filter { $0.passed }.count
         let total = results.count

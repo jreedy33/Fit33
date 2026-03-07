@@ -7409,13 +7409,16 @@ struct StreakInfoSheet: View {
                 VStack(spacing: 24) {
                     // Big flame with current streak
                     streakHeroSection
-                    
+
+                    // Real-time streak status (at risk / safe)
+                    statusSection
+
                     // How it works
                     howItWorksSection
-                    
+
                     // Your schedule
                     yourScheduleSection
-                    
+
                     // Tips
                     tipsSection
                 }
@@ -7608,7 +7611,7 @@ struct StreakInfoSheet: View {
                 streakRuleRow(
                     icon: "xmark.circle.fill",
                     color: .red,
-                    title: "Streak resets after \(maxRestDays + 1)+ days",
+                    title: "Streak resets after \(maxRestDays + 2)+ days",
                     subtitle: "Without completing a workout"
                 )
             }

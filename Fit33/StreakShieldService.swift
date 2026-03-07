@@ -84,17 +84,19 @@ class StreakShieldService: ObservableObject {
             hoursUntilStreakLost = 0
             return
         }
-        
+
         let calendar = Calendar.current
         let now = Date()
         let lastWorkout = lastWorkoutDate ?? Date.distantPast
-        
+
         // Calculate hours since last workout
         let hoursSinceLastWorkout = calendar.dateComponents([.hour], from: lastWorkout, to: now).hour ?? 0
-        
-        // Streak breaks after 48 hours (2 days)
-        let hoursRemaining = 48 - hoursSinceLastWorkout
-        
+
+        // Use the user's actual schedule-based max gap (in days), converted to hours
+        let maxGapDays = UserManager.shared.getMaxAllowedRestDays() + 1  // getMaxAllowedRestDays returns gap-1
+        let maxGapHours = maxGapDays * 24
+        let hoursRemaining = maxGapHours - hoursSinceLastWorkout
+
         if hoursRemaining > 0 && hoursRemaining <= 24 {
             isStreakAtRisk = true
             hoursUntilStreakLost = hoursRemaining
@@ -137,7 +139,7 @@ class StreakShieldService: ObservableObject {
         
         // Log streak saved
         SessionLogManager.shared.logStreakSaved(
-            streakDays: WorkoutManager.shared.workoutStreak,
+            streakDays: Int(UserManager.shared.currentUser?.currentStreak ?? 0),
             saveMethod: "shield"
         )
         

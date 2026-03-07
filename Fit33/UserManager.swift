@@ -473,6 +473,60 @@ class UserManager: ObservableObject {
         return calculateMaxAllowedGap(daysPerWeek: availableDays) - 1  // -1 because gap includes workout day
     }
     
+    /// Check if streak should be broken due to inactivity (called by DailyResetService)
+    /// Unlike updateStreak(), this does NOT increment the streak or update lastWorkoutDate.
+    /// It only checks if the user has been inactive too long and breaks the streak if so.
+    func checkAndBreakStreakIfNeeded() {
+        guard let user = currentUser else { return }
+
+        // If streak is already 0, nothing to break
+        guard user.currentStreak > 0 else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let lastWorkoutDate = user.lastWorkoutDate ?? Date.distantPast
+        let daysSinceLastWorkout = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastWorkoutDate), to: today).day ?? 0
+
+        let availableDays = max(2, Int(user.availableDays))
+        let maxAllowedGap = calculateMaxAllowedGap(daysPerWeek: availableDays)
+
+        #if DEBUG
+        print("🔥 [STREAK CHECK] Daily streak check:")
+        print("   └─ Days since last workout: \(daysSinceLastWorkout)")
+        print("   └─ Max allowed gap: \(maxAllowedGap) days")
+        print("   └─ Current streak: \(user.currentStreak)")
+        #endif
+
+        if daysSinceLastWorkout > maxAllowedGap {
+            // Too many days off - streak broken
+            let oldStreak = user.currentStreak
+            user.currentStreak = 0
+
+            #if DEBUG
+            print("   └─ ❌ Streak broken! (\(daysSinceLastWorkout) > \(maxAllowedGap)) - was \(oldStreak), now 0")
+            #endif
+
+            SessionLogManager.shared.logStreakBroken(
+                previousStreak: Int(oldStreak),
+                streakType: "workout",
+                daysMissed: daysSinceLastWorkout
+            )
+
+            do {
+                try viewContext.save()
+                scheduleDebouncedCloudSync()
+            } catch {
+                #if DEBUG
+                print("Error saving streak break: \(error)")
+                #endif
+            }
+        } else {
+            #if DEBUG
+            print("   └─ ✅ Streak safe (\(daysSinceLastWorkout) ≤ \(maxAllowedGap))")
+            #endif
+        }
+    }
+
     func addXP(_ points: Int32) {
         guard let user = currentUser else { return }
         let oldLevel = getLevel()

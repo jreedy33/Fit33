@@ -12,21 +12,12 @@ struct LimitationsSettingsView: View {
     @State private var limitationToDelete: UserLimitation?
     
     // Clean gradient card background matching app style
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                    : [Color(red: 0.85, green: 0.92, blue: 1.0), Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             ScrollView {
                 VStack(spacing: 20) {
@@ -122,7 +113,7 @@ struct LimitationsSettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
         )
     }
@@ -224,7 +215,7 @@ struct LimitationsSettingsView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
         }
@@ -263,9 +254,6 @@ struct LimitationRowCard: View {
     let onTap: () -> Void
     let onDelete: () -> Void
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         Button(action: onTap) {
@@ -328,7 +316,7 @@ struct LimitationRowCard: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
@@ -353,9 +341,6 @@ struct AddLimitationSheet: View {
     @State private var selectedType: LimitationType = .injury
     @State private var notes = ""
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         NavigationStack {
@@ -431,7 +416,7 @@ struct AddLimitationSheet: View {
                                 .padding(12)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(cardBackground)
+                                        .fill(Color.cardBackground)
                                 )
                         }
                     }
@@ -481,9 +466,6 @@ struct EditLimitationSheet: View {
     @State private var selectedType: LimitationType
     @State private var notes: String
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     init(limitation: UserLimitation, onSave: @escaping (UserLimitation) -> Void, onResolve: @escaping () -> Void) {
         self.limitation = limitation
@@ -529,7 +511,7 @@ struct EditLimitationSheet: View {
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(cardBackground)
+                                    .fill(Color.cardBackground)
                             )
                         }
                         
@@ -581,7 +563,7 @@ struct EditLimitationSheet: View {
                                 .padding(12)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(cardBackground)
+                                        .fill(Color.cardBackground)
                                 )
                         }
                         

@@ -18,9 +18,6 @@ struct SharedWorkoutPreviewView: View {
     @State private var showingError = false
     @State private var errorMessage = ""
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
@@ -176,22 +173,7 @@ struct SharedWorkoutPreviewView: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 5)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
+        .sleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - Exercise List
@@ -241,7 +223,7 @@ struct SharedWorkoutPreviewView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
         }
@@ -269,7 +251,7 @@ struct SharedWorkoutPreviewView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
         }

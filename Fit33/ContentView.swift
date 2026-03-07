@@ -16,34 +16,6 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - Robust Adaptive Card Modifier
-extension View {
-    func robustWhiteCard(cornerRadius: CGFloat = 24, shadowRadius: CGFloat = 5, shadowOpacity: Double = 0.1) -> some View {
-        self.modifier(AdaptiveWhiteCardModifier(cornerRadius: cornerRadius, shadowRadius: shadowRadius, shadowOpacity: shadowOpacity))
-    }
-}
-
-struct AdaptiveWhiteCardModifier: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-    let cornerRadius: CGFloat
-    let shadowRadius: CGFloat
-    let shadowOpacity: Double
-    
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.cardBackground)
-                    .shadow(color: colorScheme == .dark ? .clear : .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: 2)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.clear, lineWidth: 1)
-            )
-    }
-}
-
 // MARK: - Meal Types
 
 enum MealType: String, CaseIterable {

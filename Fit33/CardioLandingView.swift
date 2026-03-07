@@ -209,14 +209,8 @@ struct CardioLandingView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        LinearGradient(
-            gradient: Gradient(colors: colorScheme == .dark
-                ? [Color(red: 0.05, green: 0.08, blue: 0.12), Color.black]
-                : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .ignoresSafeArea()
+        AnimatedOrbBackground.workout(colorScheme: colorScheme)
+            .ignoresSafeArea()
     }
     
     // MARK: - Header

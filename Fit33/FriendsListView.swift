@@ -30,9 +30,6 @@ struct FriendsListView: View {
     @State private var friendSwipeDragOffset: CGFloat = 0
     
     // Adaptive colors
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
@@ -239,7 +236,7 @@ struct FriendsListView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(cardBackground.opacity(0.5))
+                .fill(Color.cardBackground.opacity(0.5))
         )
     }
     
@@ -667,7 +664,7 @@ struct FriendsListView: View {
                     }
                 }
                 .padding(12)
-                .background(cardBackground)
+                .background(Color.cardBackground)
                 .cornerRadius(12)
                 
                 // QR Code button (replaces separate Scan QR / My Code buttons)
@@ -895,22 +892,7 @@ struct FriendsListView: View {
         }
         .padding(.vertical, 24)
         .padding(.horizontal, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(cardBackground)
-                .shadow(color: .green.opacity(0.12), radius: 16, x: 0, y: 6)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(
-                    LinearGradient(
-                        colors: [.green.opacity(0.4), .teal.opacity(0.2)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
+        .sleekCard(cornerRadius: 24, accentColor: .green)
         .padding(.horizontal, 16)
     }
     
@@ -1057,22 +1039,7 @@ struct FriendsListView: View {
             }
             .padding(.vertical, 20)
             .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(cardBackground)
-                    .shadow(color: .green.opacity(0.1), radius: 12, x: 0, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: [.green.opacity(0.3), .teal.opacity(0.15)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
+            .sleekCard(cornerRadius: 20, accentColor: .green)
             .padding(.horizontal, 16)
         }
         .padding(.top, 10)

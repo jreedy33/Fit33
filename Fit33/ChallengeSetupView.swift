@@ -35,9 +35,6 @@ struct ChallengeSetupView: View {
     @State private var templates: [ChallengeTemplate] = []
     @State private var isLoadingTemplates = true
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
@@ -375,11 +372,7 @@ struct ChallengeSetupView: View {
             Spacer()
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - Custom Setup View
@@ -494,7 +487,7 @@ struct ChallengeSetupView: View {
                     .frame(maxWidth: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(cardBackground)
+                            .fill(Color.cardBackground)
                     )
                 }
                 .padding(.horizontal, 4)
@@ -518,7 +511,7 @@ struct ChallengeSetupView: View {
                                         Capsule()
                                             .fill(durationDays == days
                                                 ? LinearGradient(colors: selectedType.gradientColors, startPoint: .leading, endPoint: .trailing)
-                                                : LinearGradient(colors: [cardBackground, cardBackground], startPoint: .leading, endPoint: .trailing))
+                                                : LinearGradient(colors: [Color.cardBackground, Color.cardBackground], startPoint: .leading, endPoint: .trailing))
                                     )
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -619,11 +612,7 @@ struct ChallengeSetupView: View {
                 }
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-            )
+            .sleekCard(cornerRadius: 16, accentColor: .blue)
         }
     }
     
@@ -680,7 +669,7 @@ struct ChallengeSetupView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .background(cardBackground)
+            .background(Color.cardBackground)
         }
     }
     
@@ -720,7 +709,7 @@ struct ChallengeSetupView: View {
             .disabled(!canCreateCustom || isCreating)
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .background(cardBackground)
+            .background(Color.cardBackground)
         }
     }
     

@@ -71,14 +71,8 @@ struct GroupChallengeDetailView: View {
             .padding(.bottom, 40)
         }
         .background(
-            LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(white: 0.06), Color(white: 0.04)]
-                    : [Color(white: 0.96), Color.white],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AnimatedOrbBackground.home(colorScheme: colorScheme)
+                .ignoresSafeArea()
         )
         .navigationTitle(liveChallenge.displayTitle)
         .navigationBarTitleDisplayMode(.inline)

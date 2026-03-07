@@ -33,22 +33,13 @@ struct SmartMealPlannerView: View {
     @State private var planDays: Int = 7
     @State private var showingConfig = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background matching app style
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.04, green: 0.06, blue: 0.10), Color(red: 0.03, green: 0.04, blue: 0.06)]
-                        : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with Meals screens)
+                AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 if !hasGenerated {
                     setupView
@@ -298,7 +289,7 @@ struct SmartMealPlannerView: View {
                                 RoundedRectangle(cornerRadius: 14)
                                     .fill(selectedDayIndex == index
                                         ? AnyShapeStyle(LinearGradient(colors: [.mint, .green], startPoint: .top, endPoint: .bottom))
-                                        : AnyShapeStyle(cardBackground))
+                                        : AnyShapeStyle(Color.cardBackground))
                             )
                             .shadow(color: selectedDayIndex == index ? Color.mint.opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
                         }
@@ -361,11 +352,7 @@ struct SmartMealPlannerView: View {
             macroRing(label: "Fat", value: day.totalFat, goal: Int(Double(targetCalories) * 0.3 / 9), color: .purple, unit: "g")
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: 16, accentColor: .green)
     }
     
     private func macroRing(label: String, value: Int, goal: Int, color: Color, unit: String) -> some View {
@@ -422,11 +409,7 @@ struct SmartMealPlannerView: View {
             content()
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
-        )
+        .sleekCard(cornerRadius: 14, accentColor: .green)
     }
     
     // MARK: - Personalization Badge
@@ -586,9 +569,6 @@ struct PlanMealCard: View {
     let colorScheme: ColorScheme
     let onTap: () -> Void
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         Button(action: onTap) {
@@ -665,7 +645,7 @@ struct PlanMealCard: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                     
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(

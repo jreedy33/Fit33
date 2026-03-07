@@ -16,9 +16,6 @@ struct BugReportView: View {
     @State private var includeSessionLog = true
     @State private var showingLogPreview = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.05)
@@ -27,15 +24,9 @@ struct BugReportView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background
-                LinearGradient(
-                    colors: colorScheme == .dark 
-                        ? [Color(white: 0.08), Color.black]
-                        : [Color(red: 0.95, green: 0.95, blue: 0.97), Color.white],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with Profile/Stats screens)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -169,7 +160,7 @@ struct BugReportView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -233,7 +224,7 @@ struct BugReportView: View {
                 )
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -273,7 +264,7 @@ struct BugReportView: View {
                 )
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -320,7 +311,7 @@ struct BugReportView: View {
             .buttonStyle(.plain)
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -360,7 +351,7 @@ struct BugReportView: View {
                 )
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -408,7 +399,7 @@ struct BugReportView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -559,9 +550,6 @@ struct ManualBugReportView: View {
     @State private var selectedImage: UIImage?
     @State private var showingPhotoPicker = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.1)
@@ -570,15 +558,9 @@ struct ManualBugReportView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background
-                LinearGradient(
-                    colors: colorScheme == .dark 
-                        ? [Color(white: 0.08), Color.black]
-                        : [Color(red: 0.95, green: 0.95, blue: 0.97), Color.white],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with Profile/Stats screens)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -738,7 +720,7 @@ struct ManualBugReportView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -793,7 +775,7 @@ struct ManualBugReportView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -820,7 +802,7 @@ struct ManualBugReportView: View {
                 )
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -843,7 +825,7 @@ struct ManualBugReportView: View {
             Spacer()
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
         .onTapGesture {
@@ -877,7 +859,7 @@ struct ManualBugReportView: View {
                 )
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -925,7 +907,7 @@ struct ManualBugReportView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }

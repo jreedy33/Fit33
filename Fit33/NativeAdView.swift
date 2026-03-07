@@ -9,9 +9,6 @@ struct NativeAdCardView: View {
     @StateObject private var adLoader = NativeAdLoader()
     @StateObject private var premiumManager = PremiumManager.shared
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         Group {
@@ -19,7 +16,7 @@ struct NativeAdCardView: View {
             if !premiumManager.isPremiumUser {
                 if let nativeAd = adLoader.nativeAd {
                     // Native ad loaded - show custom layout
-                    NativeAdContentView(nativeAd: nativeAd, cardBackground: cardBackground)
+                    NativeAdContentView(nativeAd: nativeAd)
                 }
                 // If no ad loaded, show nothing (no grey placeholder)
             }
@@ -36,7 +33,6 @@ struct NativeAdCardView: View {
 // MARK: - Native Ad Content (Custom Layout)
 struct NativeAdContentView: View {
     let nativeAd: NativeAd
-    let cardBackground: Color
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -140,7 +136,7 @@ struct NativeAdContentView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
         )
     }
@@ -148,8 +144,6 @@ struct NativeAdContentView: View {
 
 // MARK: - Loading Ad Card
 struct LoadingAdCard: View {
-    let cardBackground: Color
-    
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -184,7 +178,7 @@ struct LoadingAdCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
         )
     }

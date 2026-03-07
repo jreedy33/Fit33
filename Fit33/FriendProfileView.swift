@@ -24,9 +24,6 @@ struct FriendProfileView: View {
     @State private var activeChallengesWithFriend: [ActiveChallenge] = []
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
@@ -39,15 +36,9 @@ struct FriendProfileView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.06, green: 0.08, blue: 0.14), Color(red: 0.04, green: 0.05, blue: 0.08)]
-                        : [Color(red: 0.92, green: 0.95, blue: 1.0), Color.white]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with friends tab)
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -880,22 +871,13 @@ struct CreateWorkoutForFriendView: View {
     @State private var showingPreview = false
     @State private var isSending = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.06, green: 0.08, blue: 0.14), Color(red: 0.04, green: 0.05, blue: 0.08)]
-                        : [Color(red: 0.92, green: 0.95, blue: 1.0), Color.white]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with friends tab)
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 20) {
@@ -984,11 +966,7 @@ struct CreateWorkoutForFriendView: View {
                 )
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: 16, accentColor: .cyan)
     }
     
     // MARK: - Workout Details Section
@@ -1035,7 +1013,7 @@ struct CreateWorkoutForFriendView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
             )
         }
     }
@@ -1081,7 +1059,7 @@ struct CreateWorkoutForFriendView: View {
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                 )
             }
         }
@@ -1123,7 +1101,7 @@ struct CreateWorkoutForFriendView: View {
         .padding(.vertical, 32)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
         )
     }
     
@@ -1153,7 +1131,7 @@ struct CreateWorkoutForFriendView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
             )
         }
     }
@@ -1184,7 +1162,7 @@ struct CreateWorkoutForFriendView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
             )
             
             // Difficulty
@@ -1210,7 +1188,7 @@ struct CreateWorkoutForFriendView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
             )
         }
     }
@@ -1261,7 +1239,7 @@ struct CreateWorkoutForFriendView: View {
         .padding(.vertical, 16)
         .background(
             Rectangle()
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
         )
     }
@@ -1435,9 +1413,6 @@ struct ExercisePickerView: View {
     
     private let categories = ["All", "Chest", "Back", "Legs", "Shoulders", "Arms", "Core"]
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var filteredExercises: [Exercise] {
         var exercises = Array(allExercises)
@@ -1458,14 +1433,8 @@ struct ExercisePickerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.06, green: 0.08, blue: 0.14), Color(red: 0.04, green: 0.05, blue: 0.08)]
-                        : [Color(red: 0.92, green: 0.95, blue: 1.0), Color.white]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+                    .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
                     // Search
@@ -1475,7 +1444,7 @@ struct ExercisePickerView: View {
                         TextField("Search exercises", text: $searchText)
                     }
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(cardBackground))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.cardBackground))
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     
@@ -1494,7 +1463,7 @@ struct ExercisePickerView: View {
                                             Capsule()
                                                 .fill(selectedCategory == category
                                                     ? LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
-                                                    : LinearGradient(colors: [cardBackground, cardBackground], startPoint: .leading, endPoint: .trailing))
+                                                    : LinearGradient(colors: [Color.cardBackground, Color.cardBackground], startPoint: .leading, endPoint: .trailing))
                                         )
                                 }
                             }
@@ -1526,7 +1495,7 @@ struct ExercisePickerView: View {
                         }
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(cardBackground)
+                                .fill(Color.cardBackground)
                         )
                         .padding(.horizontal, 16)
                         .padding(.bottom, 100)

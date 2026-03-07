@@ -15,8 +15,9 @@ struct ShoppingListSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                (colorScheme == .dark ? Color.black : Color(white: 0.95))
-                    .ignoresSafeArea()
+                // Animated orb background (consistent with Meals screens)
+                AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 if shoppingList.isEmpty && !isGenerating {
                     emptyState
@@ -317,8 +318,9 @@ struct RecipePickerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                (colorScheme == .dark ? Color.black : Color(white: 0.95))
-                    .ignoresSafeArea()
+                // Animated orb background (consistent with Meals screens)
+                AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 if spoonacularService.healthyRecipes.isEmpty {
                     ProgressView("Loading recipes...")
@@ -433,8 +435,9 @@ struct MyShoppingListView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                (colorScheme == .dark ? Color.black : Color(white: 0.95))
-                    .ignoresSafeArea()
+                // Animated orb background (consistent with Meals screens)
+                AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 if savedMealsService.shoppingListItems.isEmpty {
                     myEmptyState

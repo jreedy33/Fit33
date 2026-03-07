@@ -17,17 +17,22 @@ struct StravaSettingsView: View {
     @State private var showingAuthSheet = false
     
     var body: some View {
-        List {
-            // Connection Status Section
-            Section {
-                if strava.isConnected {
-                    connectedView
-                } else {
-                    disconnectedView
+        ZStack {
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+            
+            List {
+                // Connection Status Section
+                Section {
+                    if strava.isConnected {
+                        connectedView
+                    } else {
+                        disconnectedView
+                    }
+                } header: {
+                    Label("Connection", systemImage: "link")
                 }
-            } header: {
-                Label("Connection", systemImage: "link")
-            }
             
             // Activities Section (only show if connected)
             if strava.isConnected {
@@ -100,6 +105,8 @@ struct StravaSettingsView: View {
             } header: {
                 Label("About", systemImage: "info.circle")
             }
+        }
+        .scrollContentBackground(.hidden)
         }
         .navigationTitle("Strava")
         .navigationBarTitleDisplayMode(.inline)

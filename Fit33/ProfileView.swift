@@ -1601,9 +1601,6 @@ struct ProfileSection<Content: View>: View {
     @ViewBuilder let content: Content
     
     // Gradient card background matching app style
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1623,7 +1620,7 @@ struct ProfileSection<Content: View>: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
@@ -1646,9 +1643,6 @@ struct ProfileEditableSection<Content: View>: View {
     @ViewBuilder let content: Content
     
     // Gradient card background matching app style
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1686,7 +1680,7 @@ struct ProfileEditableSection<Content: View>: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(

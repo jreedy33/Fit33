@@ -1,21 +1,5 @@
 import SwiftUI
 
-// MARK: - Settings Navigation Route
-
-enum SettingsRoute: Hashable {
-    case trainingHub
-    case sessionLogs
-    case cloudBackup
-    case dataDownload
-    case inBody
-    case strava
-    case fitbit
-    case healthKit
-    case termsConditions
-    case privacyPolicy
-    case notifications
-}
-
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var notificationManager = NotificationManager.shared
@@ -39,21 +23,12 @@ struct SettingsView: View {
     @StateObject private var premiumManager = PremiumManager.shared
     
     // Clean gradient card background matching app style
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
-                // Background gradient
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                        : [Color(red: 0.85, green: 0.92, blue: 1.0), Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with Profile/Stats screens)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                    .ignoresSafeArea(.all, edges: .all)
                 
                 ScrollView {
                     VStack(spacing: 20) {
@@ -79,7 +54,7 @@ struct SettingsView: View {
                         settingsSection(title: "Developer Testing") {
                             VStack(spacing: 0) {
                                 // Widget / Training Hub
-                                NavigationLink(value: SettingsRoute.trainingHub) {
+                                NavigationLink(destination: TrainingHubView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -172,7 +147,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Session Logs (Developer only)
-                                NavigationLink(value: SettingsRoute.sessionLogs) {
+                                NavigationLink(destination: DevSessionLogsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -263,7 +238,7 @@ struct SettingsView: View {
                         // Data & Backup Section
                         settingsSection(title: "Data & Backup") {
                             VStack(spacing: 0) {
-                                NavigationLink(value: SettingsRoute.cloudBackup) {
+                                NavigationLink(destination: CloudBackupView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -357,7 +332,7 @@ struct SettingsView: View {
                                 
                                 Divider().padding(.leading, 68)
                                 
-                                NavigationLink(value: SettingsRoute.dataDownload) {
+                                NavigationLink(destination: DataDownloadView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -407,7 +382,7 @@ struct SettingsView: View {
                         settingsSection(title: "Integrations") {
                             VStack(spacing: 0) {
                                 // InBody Integration
-                                NavigationLink(value: SettingsRoute.inBody) {
+                                NavigationLink(destination: InBodySettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -459,7 +434,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Strava Integration
-                                NavigationLink(value: SettingsRoute.strava) {
+                                NavigationLink(destination: StravaSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -511,7 +486,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Fitbit Integration
-                                NavigationLink(value: SettingsRoute.fitbit) {
+                                NavigationLink(destination: FitbitSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -563,7 +538,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Apple Health Integration (Nike Run Club, Apple Watch, etc.)
-                                NavigationLink(value: SettingsRoute.healthKit) {
+                                NavigationLink(destination: HealthKitSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -725,16 +700,16 @@ struct SettingsView: View {
                                 .buttonStyle(.plain)
                                 
                                 #if DEBUG
-                                // Programmatic navigation to dev menu (after password authentication)
-                                EmptyView()
-                                    .navigationDestination(isPresented: $showDevMenu) {
-                                        DevMenuView()
-                                    }
+                                // Hidden NavigationLink to dev menu (after password authentication)
+                                NavigationLink(destination: DevMenuView(), isActive: $showDevMenu) {
+                                    EmptyView()
+                                }
+                                .hidden()
                                 #endif
                                 
                                 Divider().padding(.leading, 52)
                                 
-                                NavigationLink(value: SettingsRoute.termsConditions) {
+                                NavigationLink(destination: TermsConditionsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -767,7 +742,7 @@ struct SettingsView: View {
                                 
                                 Divider().padding(.leading, 52)
                                 
-                                NavigationLink(value: SettingsRoute.privacyPolicy) {
+                                NavigationLink(destination: PrivacyPolicyView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 8)
@@ -823,32 +798,6 @@ struct SettingsView: View {
             }
         }
         #endif
-        .navigationDestination(for: SettingsRoute.self) { route in
-            switch route {
-            case .trainingHub:
-                TrainingHubView()
-            case .sessionLogs:
-                DevSessionLogsView()
-            case .cloudBackup:
-                CloudBackupView()
-            case .dataDownload:
-                DataDownloadView()
-            case .inBody:
-                InBodySettingsView()
-            case .strava:
-                StravaSettingsView()
-            case .fitbit:
-                FitbitSettingsView()
-            case .healthKit:
-                HealthKitSettingsView()
-            case .termsConditions:
-                TermsConditionsView()
-            case .privacyPolicy:
-                PrivacyPolicyView()
-            case .notifications:
-                NotificationSettingsView()
-            }
-        }
         .sheet(isPresented: $showBugReportSheet) {
             ManualBugReportView()
         }
@@ -870,7 +819,7 @@ struct SettingsView: View {
             content()
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
                 )
         }
@@ -1305,7 +1254,7 @@ struct SettingsView: View {
     
     // MARK: - Notifications Row
     private func notificationsRow() -> some View {
-        NavigationLink(value: SettingsRoute.notifications) {
+        NavigationLink(destination: NotificationSettingsView()) {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()

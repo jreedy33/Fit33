@@ -36,9 +36,6 @@ struct ChallengePreviewWidget: View {
         challengeType.gradientColors
     }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -62,7 +59,7 @@ struct ChallengePreviewWidget: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                     
                     // Subtle gradient glow overlay
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -426,9 +423,6 @@ struct ActiveChallengeWidget: View {
         ChallengeProgressResolver.shared
     }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         Button(action: onTap) {
@@ -555,22 +549,7 @@ struct ActiveChallengeWidget: View {
                 }
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
-                    .shadow(color: resolvedType.color.opacity(0.08), radius: 8, x: 0, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [resolvedType.gradientColors[0].opacity(0.3), resolvedType.gradientColors[1].opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
+            .sleekCard(cornerRadius: 16, accentColor: resolvedType.color)
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingReactionPicker) {
@@ -718,9 +697,6 @@ struct GroupChallengeInviteWidget: View {
     private var themeColor: Color { challengeColor }
     private var gradientColors: [Color] { [Color(red: 0.0, green: 0.9, blue: 0.7), .teal] }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     /// Names of all OTHER members (not the current user)
     private var otherMemberNames: [String] {
@@ -815,7 +791,7 @@ struct GroupChallengeInviteWidget: View {
                                 showGradientRing: false,
                                 gradientColors: gradientColors
                             )
-                            .overlay(Circle().stroke(cardBackground, lineWidth: 1.5))
+                            .overlay(Circle().stroke(Color.cardBackground, lineWidth: 1.5))
                         }
                     }
                     
@@ -907,7 +883,7 @@ struct GroupChallengeInviteWidget: View {
                 
                 // Main card background
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                 
                 // Inner border for definition
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1005,9 +981,6 @@ struct PrivateChallengeInviteWidget: View {
     private let themeColor = Color.purple
     private var gradientColors: [Color] { [.purple, .blue] }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var challengeType: ChallengeType {
         ChallengeType(rawValue: invite.challengeType) ?? .steps
@@ -1169,7 +1142,7 @@ struct PrivateChallengeInviteWidget: View {
                 
                 // Main card background
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                 
                 // Inner border for definition
                 RoundedRectangle(cornerRadius: 24, style: .continuous)

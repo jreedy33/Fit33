@@ -2,22 +2,15 @@ import SwiftUI
 
 struct WorkoutInsightsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     let insights: WorkoutInsights?
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background gradient matching app aesthetic
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.blue.opacity(0.15),
-                        Color.purple.opacity(0.1),
-                        Color.white
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                // Animated orb background (consistent with other screens)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                    .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {

@@ -271,9 +271,6 @@ struct ReactionPickerSheet: View {
         isCompetition ? .orange : .cyan
     }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.14) : Color(white: 0.97)
-    }
     
     var body: some View {
         NavigationStack {
@@ -381,7 +378,7 @@ struct ReactionPickerSheet: View {
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 4, y: 2)
             )
             .overlay(
@@ -524,9 +521,6 @@ struct ReactionFeedView: View {
         isCompetition ? [.orange, .red] : [.blue, .cyan]
     }
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -567,7 +561,7 @@ struct ReactionFeedView: View {
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                 )
             }
         }
@@ -599,7 +593,7 @@ struct ReactionFeedView: View {
         .padding(.vertical, 24)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
         )
     }
     

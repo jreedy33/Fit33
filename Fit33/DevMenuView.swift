@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - Admin Password Gate
 struct AdminPasswordView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var isAuthenticated: Bool
     
     @State private var password = ""
@@ -19,13 +20,9 @@ struct AdminPasswordView: View {
     
     var body: some View {
         ZStack {
-            // Background
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.10, blue: 0.15), Color.black],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             VStack(spacing: 32) {
                 Spacer()
@@ -149,15 +146,9 @@ struct DevMenuView: View {
     
     var body: some View {
         ZStack {
-            // Background
-            LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(white: 0.08), Color.black]
-                    : [Color(red: 0.95, green: 0.96, blue: 0.98), Color.white],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             VStack(spacing: 0) {
                 // Custom header
@@ -289,9 +280,6 @@ struct InsightsTabContent: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = DeveloperAnalyticsViewModel()
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ScrollView {
@@ -382,7 +370,7 @@ struct InsightsTabContent: View {
                 .italic()
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
@@ -422,7 +410,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
@@ -485,7 +473,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
@@ -536,7 +524,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -568,7 +556,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -600,7 +588,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -635,7 +623,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -691,7 +679,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -726,7 +714,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -757,7 +745,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -788,7 +776,7 @@ struct InsightsTabContent: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
@@ -844,9 +832,6 @@ struct BugsTabContent: View {
     @State private var showingDeleteConfirmation = false
     @State private var bugToDelete: BugReport?
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
 
     var body: some View {
         ScrollView {
@@ -1009,7 +994,7 @@ struct BugsTabContent: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 4, x: 0, y: 2)
     }
@@ -1046,9 +1031,6 @@ struct BugReportCard: View {
     let onDelete: () -> Void
     let onTap: () -> Void
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
 
     var body: some View {
         Button(action: onTap) {
@@ -1149,7 +1131,7 @@ struct BugReportCard: View {
                 }
             }
             .padding()
-            .background(cardBackground)
+            .background(Color.cardBackground)
             .cornerRadius(12)
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 6, x: 0, y: 3)
         }
@@ -1178,9 +1160,6 @@ struct BugDetailView: View {
     @State private var showingShareSheet = false
     @State private var shareItems: [Any] = []
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
 
     var body: some View {
         NavigationStack {
@@ -1298,7 +1277,7 @@ struct BugDetailView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     
@@ -1377,7 +1356,7 @@ struct BugDetailView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     
@@ -1444,7 +1423,7 @@ struct BugDetailView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     
@@ -1508,7 +1487,7 @@ struct BugDetailView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     
@@ -1527,7 +1506,7 @@ struct BugDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     
@@ -1551,7 +1530,7 @@ struct BugDetailView: View {
             }
         }
         .padding()
-        .background(cardBackground)
+        .background(Color.cardBackground)
         .cornerRadius(12)
     }
     

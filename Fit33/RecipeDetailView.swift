@@ -639,7 +639,7 @@ struct RecipeDetailView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        AdaptiveGradient.universal(for: colorScheme)
+        AnimatedOrbBackground.meals(colorScheme: colorScheme)
     }
     
     // MARK: - Helper Methods

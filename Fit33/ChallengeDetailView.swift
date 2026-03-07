@@ -28,9 +28,6 @@ struct ChallengeDetailView: View {
     @State private var lastSyncedSteps = 0
     @State private var showingReactionPicker = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private var challengeType: ChallengeType {
         challenge.resolvedType
@@ -38,15 +35,9 @@ struct ChallengeDetailView: View {
     
     var body: some View {
         ZStack {
-            // Animated gradient background
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.06, green: 0.08, blue: 0.14), Color(red: 0.04, green: 0.05, blue: 0.08)]
-                    : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with challenge flow)
+            AnimatedOrbBackground.home(colorScheme: colorScheme)
+                .ignoresSafeArea()
             
             if isLoading {
                 ProgressView()
@@ -431,22 +422,7 @@ struct ChallengeDetailView: View {
             }
         }
         .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(cardBackground)
-                .shadow(color: challengeType.color.opacity(0.2), radius: 16, x: 0, y: 8)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(
-                    LinearGradient(
-                        colors: [challengeType.gradientColors[0].opacity(0.5), challengeType.gradientColors[1].opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
+        .sleekCard(cornerRadius: 24, accentColor: challengeType.color)
     }
     
     // MARK: - Reaction Send Section
@@ -495,22 +471,7 @@ struct ChallengeDetailView: View {
                     )
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
-                    .shadow(color: themeGradient[0].opacity(0.1), radius: 8, x: 0, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [themeGradient[0].opacity(0.4), themeGradient[1].opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
+            .sleekCard(cornerRadius: 16, accentColor: themeGradient[0])
         }
         .buttonStyle(.plain)
     }
@@ -605,7 +566,7 @@ struct ChallengeDetailView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(cardBackground)
+                    .fill(Color.cardBackground)
             )
         }
     }
@@ -767,7 +728,7 @@ struct ChallengeDetailView: View {
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                 )
             } else {
                 // Loading state
@@ -781,7 +742,7 @@ struct ChallengeDetailView: View {
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                 )
             }
         }
@@ -928,9 +889,6 @@ private struct ChallengeStatCard: View {
     let icon: String
     let color: Color
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -959,7 +917,7 @@ private struct ChallengeStatCard: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
         )
     }
 }

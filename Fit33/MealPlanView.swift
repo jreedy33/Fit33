@@ -92,14 +92,8 @@ struct MealPlanView: View {
             .padding()
         }
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color.green.opacity(0.15), Color.mint.opacity(0.05), Color(red: 0.05, green: 0.05, blue: 0.07)]
-                    : [Color.green.opacity(0.1), Color.mint.opacity(0.05), Color.white]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(.all)
+            AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
         )
         .sheet(item: $showingSavedMealDetail) { meal in
             SavedMealDetailView(meal: meal)

@@ -23,9 +23,6 @@ struct ReceivedWorkoutsView: View {
     @State private var navigateToDetail = false
     @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
@@ -963,11 +960,7 @@ struct ReceivedExerciseCard: View {
             }
             .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(Color.cardBackground)
-                    .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
-        )
+        .sleekCard(cornerRadius: 24, accentColor: .blue)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -983,9 +976,6 @@ struct EditReceivedWorkoutView: View {
     @Binding var exercises: [SelectedExerciseForFriend]
     let onStartWorkout: () -> Void
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
@@ -1050,9 +1040,6 @@ struct EditableExerciseCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var exercise: SelectedExerciseForFriend
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1111,11 +1098,7 @@ struct EditableExerciseCard: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
 }
 

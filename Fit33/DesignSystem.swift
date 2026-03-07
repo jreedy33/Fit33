@@ -130,35 +130,6 @@ struct SectionHeader: View {
     }
 }
 
-// MARK: - Standard Card Wrapper
-
-/// Consistent card container used for widgets, list items, etc.
-/// Prefer this over constructing ad-hoc RoundedRectangle backgrounds.
-struct DSCard<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
-    var cornerRadius: CGFloat = CornerRadius.xl
-    @ViewBuilder let content: () -> Content
-    
-    var body: some View {
-        content()
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.cardBackground)
-                    .shadow(
-                        color: colorScheme == .dark ? .clear : .black.opacity(0.08),
-                        radius: 8, x: 0, y: 4
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(
-                        colorScheme == .dark ? Color.white.opacity(0.08) : Color.clear,
-                        lineWidth: 1
-                    )
-            )
-    }
-}
-
 // MARK: - Standard Pill Button
 
 struct DSPillButton: View {

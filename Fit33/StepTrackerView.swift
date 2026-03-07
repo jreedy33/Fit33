@@ -331,6 +331,7 @@ struct StepTrackerCard: View {
 /// Full-screen detailed view for step tracking
 struct StepTrackerDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var healthKitManager = HealthKitManager.shared
     @State private var showingGoalEditor = false
     @State private var selectedTimeRange: TimeRange = .week
@@ -343,8 +344,8 @@ struct StepTrackerDetailView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Dark background
-                Color(red: 0.06, green: 0.07, blue: 0.09)
+                // Animated orb background (consistent with other screens)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
                     .ignoresSafeArea()
                 
                 ScrollView {

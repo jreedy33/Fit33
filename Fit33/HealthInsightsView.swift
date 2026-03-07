@@ -64,14 +64,8 @@ struct HealthInsightsView: View {
             .padding()
         }
         .background(
-            LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(red: 0.08, green: 0.08, blue: 0.12), Color(red: 0.05, green: 0.05, blue: 0.08)]
-                    : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea()
         )
         .navigationTitle("Health Insights")
         .navigationBarTitleDisplayMode(.large)
@@ -118,8 +112,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func sourceBadge(name: String, color: Color) -> some View {
@@ -198,8 +191,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func summaryMetric(icon: String, value: String, label: String, goal: Int?, current: Int?, color: Color) -> some View {
@@ -290,8 +282,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     // MARK: - Heart Rate Card
@@ -372,8 +363,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func hrZoneIndicator(hr: Int) -> some View {
@@ -492,8 +482,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func sleepStat(label: String, value: String, color: Color) -> some View {
@@ -551,8 +540,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func workoutStatCard(icon: String, value: String, label: String, color: Color) -> some View {
@@ -596,8 +584,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func hrZoneRow(name: String, minutes: Int, color: Color, icon: String) -> some View {
@@ -673,9 +660,6 @@ struct HealthInsightsView: View {
     
     // MARK: - Helpers
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     private func emptyStateView(message: String) -> some View {
         VStack(spacing: 8) {

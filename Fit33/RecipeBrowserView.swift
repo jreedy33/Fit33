@@ -444,13 +444,7 @@ struct RecipeBrowserView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color(white: 0.08), Color(white: 0.05)]
-                : [Color(red: 0.98, green: 0.96, blue: 0.94), .white],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        AnimatedOrbBackground.meals(colorScheme: colorScheme)
     }
 }
 

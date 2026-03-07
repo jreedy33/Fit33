@@ -26,17 +26,22 @@ struct InBodySettingsView: View {
     private let inbodyBlue = Color(red: 0/255, green: 122/255, blue: 204/255)
     
     var body: some View {
-        List {
-            // Connection Status Section
-            Section {
-                if inbody.isConnected {
-                    connectedView
-                } else {
-                    disconnectedView
+        ZStack {
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+            
+            List {
+                // Connection Status Section
+                Section {
+                    if inbody.isConnected {
+                        connectedView
+                    } else {
+                        disconnectedView
+                    }
+                } header: {
+                    Label("Connection", systemImage: "link")
                 }
-            } header: {
-                Label("Connection", systemImage: "link")
-            }
             
             // Latest Scan Section (only show if connected)
             if inbody.isConnected {
@@ -115,6 +120,8 @@ struct InBodySettingsView: View {
             } header: {
                 Label("About", systemImage: "info.circle")
             }
+        }
+        .scrollContentBackground(.hidden)
         }
         .navigationTitle("InBody")
         .navigationBarTitleDisplayMode(.inline)

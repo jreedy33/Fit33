@@ -27,8 +27,6 @@ struct DashboardView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     
     
-    // Dark mode adaptive colors - use the centralized Color extension
-    private var cardBackground: Color { Color.cardBackground }
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 

@@ -5,16 +5,13 @@ import SwiftUI
 struct DeveloperAnalyticsView: View {
     @StateObject private var viewModel = DeveloperAnalyticsViewModel()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                colors: [Color(red: 0.95, green: 0.96, blue: 0.98), Color.white],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             ScrollView {
                 VStack(spacing: 20) {

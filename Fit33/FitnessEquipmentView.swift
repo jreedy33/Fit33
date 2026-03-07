@@ -48,16 +48,8 @@ struct FitnessEquipmentView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                Color(red: 0.02, green: 0.06, blue: 0.12),
-                Color(red: 0.01, green: 0.03, blue: 0.08),
-                Color.black
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .ignoresSafeArea()
+        AnimatedOrbBackground.workout(colorScheme: colorScheme)
+            .ignoresSafeArea(.all, edges: .all)
     }
     
     // MARK: - Header Section

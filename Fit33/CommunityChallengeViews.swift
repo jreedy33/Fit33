@@ -1388,9 +1388,6 @@ struct CommunityLeaderboardView: View {
     @State private var showingShare = false
     @State private var showingLeave = false
     
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
@@ -1520,10 +1517,7 @@ struct CommunityLeaderboardView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(cardBackground)
-        )
+        .sleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - My Rank Card (Enriched)
@@ -1600,11 +1594,7 @@ struct CommunityLeaderboardView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
-                .shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func dividerLine(height: CGFloat) -> some View {
@@ -1719,7 +1709,7 @@ struct CommunityLeaderboardView: View {
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                 )
             } else {
                 Text("No leaderboard data yet. Be the first to log progress!")
@@ -1729,7 +1719,7 @@ struct CommunityLeaderboardView: View {
                     .padding(20)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(cardBackground)
+                            .fill(Color.cardBackground)
                     )
             }
         }

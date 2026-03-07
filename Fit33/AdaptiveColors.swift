@@ -289,37 +289,6 @@ struct AdaptiveGradient {
     }
 }
 
-/// View modifier for adaptive card styling
-struct AdaptiveCardStyle: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-    var cornerRadius: CGFloat = 16
-    
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.cardBackground)
-                    .shadow(
-                        color: colorScheme == .dark ? .clear : .black.opacity(0.1),
-                        radius: 10, x: 0, y: 4
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(
-                        colorScheme == .dark ? Color.white.opacity(0.1) : Color.clear,
-                        lineWidth: 1
-                    )
-            )
-    }
-}
-
-extension View {
-    func adaptiveCard(cornerRadius: CGFloat = 16) -> some View {
-        modifier(AdaptiveCardStyle(cornerRadius: cornerRadius))
-    }
-}
-
 // MARK: - Animated Orb Background
 /// Reusable animated background with floating gradient orbs
 /// Used across all main tabs for visual consistency

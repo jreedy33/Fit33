@@ -50,15 +50,9 @@ struct FavoriteRoutinesView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                    : [Color.orange.opacity(0.15), Color.yellow.opacity(0.08), Color(.systemGroupedBackground)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with workout screens)
+            AnimatedOrbBackground.workout(colorScheme: colorScheme)
+                .ignoresSafeArea()
             
             if uniqueFavoriteWorkouts.isEmpty {
                 emptyStateView

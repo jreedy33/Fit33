@@ -9,21 +9,12 @@ struct NotificationSettingsView: View {
     @State private var hasAppeared = false
     
     // Clean gradient card background matching app style
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
-    }
     
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                    : [Color(red: 0.85, green: 0.92, blue: 1.0), Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             ScrollView {
                 VStack(spacing: 20) {
@@ -121,7 +112,7 @@ struct NotificationSettingsView: View {
         .padding(24)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 4)
         )
     }
@@ -186,7 +177,7 @@ struct NotificationSettingsView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(cardBackground)
+                .fill(Color.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.red.opacity(0.3), lineWidth: 1)
@@ -590,7 +581,7 @@ struct NotificationSettingsView: View {
             content()
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(cardBackground)
+                        .fill(Color.cardBackground)
                         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
                 )
         }

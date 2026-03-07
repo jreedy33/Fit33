@@ -9,9 +9,15 @@ import SwiftUI
 
 struct TermsConditionsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        ScrollView {
+        ZStack {
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+            
+            ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
@@ -183,7 +189,7 @@ struct TermsConditionsView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        }
         .navigationTitle("Terms & Conditions")
         .navigationBarTitleDisplayMode(.inline)
     }

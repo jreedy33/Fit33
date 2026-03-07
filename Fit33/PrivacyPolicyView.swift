@@ -9,9 +9,15 @@ import SwiftUI
 
 struct PrivacyPolicyView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        ScrollView {
+        ZStack {
+            // Animated orb background (consistent with Profile/Stats screens)
+            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+            
+            ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
@@ -143,7 +149,7 @@ struct PrivacyPolicyView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        }
         .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }

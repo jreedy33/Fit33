@@ -15,13 +15,6 @@ enum PersonalizedProgramsRoute: Hashable {
     case dayPreview(programId: String, dayNumber: Int)
 }
 
-// MARK: - Personalized Program Navigation Route
-
-enum PersonalizedProgramRoute: Hashable {
-    case overview(programId: String)
-    case dayPreview(programId: String, dayId: String)
-}
-
 struct PersonalizedProgramsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -68,57 +61,8 @@ struct PersonalizedProgramsView: View {
             .padding(.bottom, 100)
         }
         .background(backgroundGradient)
-        .navigationDestination(for: PersonalizedProgramsRoute.self) { route in
-            switch route {
-            case .programOverview(let programId):
-                if let program = programEngine.userPrograms.first(where: { $0.id == programId }) {
-                    let template = programs.first(where: { $0.template.id == program.templateId })?.template
-                    SmartProgramOverviewView(program: program, template: template)
-                        .environmentObject(workoutManager)
-                        .environmentObject(userManager)
-                }
-            case .dayPreview(let programId, let dayNumber):
-                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
-                   let day = program.generatedDays.first(where: { $0.dayNumber == dayNumber }) {
-                    let template = programs.first(where: { $0.template.id == program.templateId })?.template
-                    let totalDays = template?.totalDays ?? program.generatedDays.count
-                    SmartProgramDayPreviewView(
-                        program: program,
-                        day: day,
-                        programName: program.personalizedName,
-                        totalDays: totalDays
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)
-                }
-            }
-        }
         .navigationTitle("Your Programs")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: PersonalizedProgramRoute.self) { route in
-            switch route {
-            case .overview(let programId):
-                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
-                   let template = programs.first(where: { $0.template.id == program.templateId })?.template {
-                    SmartProgramOverviewView(program: program, template: template)
-                        .environmentObject(workoutManager)
-                        .environmentObject(userManager)
-                }
-            case .dayPreview(let programId, let dayId):
-                if let program = programEngine.userPrograms.first(where: { $0.id == programId }),
-                   let day = program.generatedDays.first(where: { $0.id == dayId }) {
-                    let totalDays = programs.first(where: { $0.template.id == program.templateId })?.template.totalDays ?? program.generatedDays.count
-                    SmartProgramDayPreviewView(
-                        program: program,
-                        day: day,
-                        programName: program.personalizedName,
-                        totalDays: totalDays
-                    )
-                    .environmentObject(workoutManager)
-                    .environmentObject(userManager)
-                }
-            }
-        }
         .sheet(item: $selectedProgram) { program in
             ProgramDetailSheet(program: program, onStart: {
                 startProgram(program)
@@ -130,14 +74,8 @@ struct PersonalizedProgramsView: View {
     // MARK: - Background
     
     private var backgroundGradient: some View {
-        LinearGradient(
-            gradient: Gradient(colors: colorScheme == .dark
-                ? [Color.purple.opacity(0.15), Color.blue.opacity(0.1), Color.black]
-                : [Color.purple.opacity(0.2), Color.blue.opacity(0.1), Color.white]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
+        AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+            .ignoresSafeArea(.all, edges: .all)
     }
     
     
@@ -168,7 +106,7 @@ struct PersonalizedProgramsView: View {
                 
                 Spacer()
                 
-                NavigationLink(value: PersonalizedProgramRoute.overview(programId: program.id)) {
+                NavigationLink(value: PersonalizedProgramsRoute.programOverview(programId: program.id)) {
                     Text("View Details")
                         .font(.caption)
                         .foregroundColor(.green)

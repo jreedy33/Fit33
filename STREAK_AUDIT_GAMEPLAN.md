@@ -220,9 +220,11 @@ This line runs after all streak logic, regardless of whether a workout actually 
 |----------|--------|
 | User works out | Streak increments by 1 (correct) |
 | User takes allowed rest days | Streak maintained, no false alerts |
-| User exceeds gap | Streak properly resets to 1 |
+| User exceeds gap | Streak properly resets to 0 (was 1, now 0 to reflect no active streak) |
 | User checks streak info | Sees accurate rules + real-time status |
 | Shield alerts | Fire at correct times based on user schedule |
+| User works out offline then syncs | Local progress preserved (cloud doesn't overwrite newer local data) |
+| User syncs stale cloud data | Streak rechecked and broken if gap exceeded |
 
 ---
 
@@ -247,6 +249,15 @@ This line runs after all streak logic, regardless of whether a workout actually 
 ### Fix 5: StreakInfoSheet - Add Status Section
 - Added `statusSection` to the body VStack between `streakHeroSection` and `howItWorksSection`
 - Users now see real-time streak status (at risk, safe, days remaining)
+
+### Fix 6: Cloud Sync - Smart Merge Instead of Blind Overwrite
+- **Previously:** `syncUserProfileToCoreData()` blindly overwrote local streak data with cloud values
+- **Problem:** If user worked out offline, cloud sync would overwrite their local progress with stale cloud data
+- **Fix:** Implemented merge strategy:
+  - `currentStreak` + `lastWorkoutDate`: Keep whichever source has the more recent lastWorkoutDate
+  - `longestStreak`: Always keep the higher value (it should never decrease)
+  - `totalWorkouts` + `xp`: Always keep the higher value
+- Also calls `checkAndBreakStreakIfNeeded()` after sync to handle stale cloud data that exceeds the allowed gap
 
 ---
 
@@ -309,6 +320,15 @@ This line runs after all streak logic, regardless of whether a workout actually 
 - [ ] StreakInfoSheet shows real-time status (at risk / safe)
 - [ ] Strava workout import -> streak increments correctly
 - [ ] Fitbit workout import -> streak increments correctly
+
+### Cloud Sync Tests
+
+- [ ] Offline workout then cloud sync -> local streak preserved (not overwritten)
+- [ ] Cloud has newer lastWorkoutDate -> cloud streak wins
+- [ ] Local has newer lastWorkoutDate -> local streak preserved
+- [ ] Cloud longestStreak > local -> local updated to cloud value
+- [ ] Local longestStreak > cloud -> local value preserved
+- [ ] Stale cloud data synced -> checkAndBreakStreakIfNeeded() runs and breaks if needed
 
 ### Edge Cases
 

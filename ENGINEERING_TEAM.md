@@ -14,6 +14,7 @@
 | **Staff Data & Backend** | `DATA_BACKEND_AGENT.md` | Supabase schema, RLS, RPCs, Core Data, DTOs, edge functions | "How data flows correctly" |
 | **Staff Quality & Performance** | `QUALITY_PERFORMANCE_AGENT.md` | Testing, memory, performance, accessibility, error handling | "How it stays stable" |
 | **Staff Design System Enforcement** | `DESIGN_SYSTEM_AGENT.md` | Token migration, deduplication, metrics tracking | "How the design gets into the code" |
+| **Staff Fitness Expert** | `FITNESS_EXPERT_AGENT.md` | Exercise science, program design, workout validation, training recommendations | "What the workout should actually be" |
 
 ---
 
@@ -40,6 +41,12 @@ When a task comes in, route it to the right agent:
 | Add new database table | Data & Backend | Infra (RLS review) |
 | Performance optimization | Quality & Performance | — |
 | StoreKit integration | Product Engineer | Infra (receipt validation) |
+| Exercise pairing/substitution logic | Fitness Expert | Product Engineer (implementation) |
+| Program split recommendations | Fitness Expert | Data (user history) |
+| Workout sorting/ordering | Fitness Expert | Product Engineer (UI) |
+| Exercise database curation | Fitness Expert | Data (migrations) |
+| Auto-gen workout validation | Fitness Expert | Quality (regression tests) |
+| Rep/set/weight recommendations | Fitness Expert | Data (user strength data) |
 
 ---
 
@@ -63,6 +70,12 @@ When one agent needs something from another:
 | `AppConfig.swift` | Infra Agent | — | Single owner for configuration |
 | `SECURITY_CHECKLIST.md` | Infra Agent | Data Agent | Infra defines policy; Data implements in SQL |
 | `MASTER_TODO.md` | All Agents | — | Everyone updates their section |
+| `WorkoutComboRules.swift` | Fitness Expert | Product Engineer | Fitness Expert defines rules; PE implements |
+| `SmartExerciseSelectionEngine.swift` | Product Engineer | Fitness Expert | PE owns selection logic; Fitness Expert validates scoring |
+| `SmartExercisePairingEngine.swift` | Fitness Expert | Product Engineer | Fitness Expert defines pairings; PE implements UI |
+| `DynamicProgramGenerator.swift` | Fitness Expert | Product Engineer, Data | Fitness Expert defines splits/templates |
+| `ExerciseBundleEngine.swift` | Fitness Expert | Product Engineer | Fitness Expert defines bundles; PE uses for dedup |
+| `ProgramTemplateLibrary.swift` | Fitness Expert | Data Agent | Fitness Expert defines periodization; Data syncs to Supabase |
 
 ---
 
@@ -96,6 +109,7 @@ Step 2: Route to appropriate agent:
         - Data bug → Data Agent investigates schema/RLS/DTO
         - Security bug → Infra Agent (priority override: P0)
         - Performance bug → Quality Agent profiles and fixes
+        - Workout/exercise logic bug → Fitness Expert validates against training science
 Step 3: Fix implemented by owning agent
 Step 4: Quality Agent verifies fix doesn't regress
 ```
@@ -188,6 +202,7 @@ When you're an agent and unsure what to do, check this:
 - Database/schema → Data & Backend Agent
 - Testing/performance → Quality & Performance Agent
 - Token migration → Design System Enforcement Agent
+- Exercise/workout/program logic → Fitness Expert Agent
 
 ---
 

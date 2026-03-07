@@ -1,6 +1,6 @@
 # Fit33 Master TODO - Consolidated Improvement Tracker
 ## Updated: March 7, 2026
-**Source:** Merged from `IMPROVEMENT.md` (54 items) + `UI_AUDIT_INCONSISTENCIES.md` (15 sections) + fresh codebase scan of 256 Swift files
+**Source:** Merged from `IMPROVEMENT.md` (54 items) + `UI_AUDIT_INCONSISTENCIES.md` (15 sections) + deep codebase scan of 256 Swift files (253,399 total lines of code)
 
 ---
 
@@ -578,15 +578,21 @@
 
 | Metric | Current | Target | Gap |
 |--------|---------|--------|-----|
-| `.ds_` font token adoption | 8 usages (0.01%) | 100% | ~787 to fix |
-| `Spacing.*` adoption | 4 usages (0.001%) | 100% | ~2919 to fix |
-| `CornerRadius.*` adoption | 1 usage (0.001%) | 100% | ~1213 to fix |
-| `Color(white: 0.12)` violations | 97 in 30 files | 0 | 97 to fix |
+| `.ds_` font token adoption | 8 usages (0.4%) | 100% | **1,821 inline fonts to fix** |
+| `Spacing.*` adoption | 4 usages (0.8%) | 100% | **519+ hardcoded paddings to fix** |
+| `CornerRadius.*` adoption | 1 usage (0.3%) | 100% | **338 hardcoded radii to fix** |
+| `Color(white: 0.12)` violations | **141 in 46 files** | 0 | 141 to fix |
+| `.shadow()` without tokens | **660 in 98 files** | Tokenized | 660 to standardize |
 | Duplicate ScaleButtonStyles | 6 duplicates | 0 | 6 to delete |
-| AnimatedOrbBackground coverage | ~100% | 100% | DONE |
+| `.sleekCard()` adoption | 52 usages in 17 files | All content cards | Expand |
+| AnimatedOrbBackground | 51 of 97 view files (52.6%) | All full-page screens | DONE for main screens |
 | NavigationView usages | 3 | 0 | 3 to fix |
 | Accessibility labels | ~14 | 500+ | ~486 to add |
 | XCTest unit tests | 0 | 100+ | 100+ to write |
+| `[weak self]` usage | 5 instances | All async closures | **Critical gap** |
+| Force unwraps (`!`) | 118 across 29 files | 0 in production paths | 118 to fix |
+| Empty state components | 0 unified | 1 `DSEmptyState` | 928+ empty checks to standardize |
+| Total codebase | 253,399 lines / 256 files | — | — |
 
 ---
 

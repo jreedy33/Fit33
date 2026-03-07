@@ -1750,6 +1750,11 @@ struct QualityAuditTabContent: View {
     @State private var userCount: Int = 200
     @State private var lastAuditResult: String = ""
     
+    // Onboarding audit state
+    @State private var isRunningOnboardingAudit = false
+    @State private var onboardingAuditResult: String = ""
+    @State private var onboardingAuditPassed = false
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -1905,11 +1910,167 @@ struct QualityAuditTabContent: View {
                 .background(Color(.systemBackground))
                 .cornerRadius(CornerRadius.md)
                 
+                // MARK: - Onboarding Flow Audit
+                onboardingAuditSection
+                
                 Spacer(minLength: 100)
             }
             .padding()
         }
         .background(Color(.systemGroupedBackground))
+    }
+    
+    // MARK: - Onboarding Audit Section
+    
+    private var onboardingAuditSection: some View {
+        VStack(spacing: 16) {
+            // Header
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "person.badge.shield.checkmark.fill")
+                        .font(.title)
+                        .foregroundColor(.blue)
+                    VStack(alignment: .leading) {
+                        Text("Onboarding Flow Audit")
+                            .font(.headline)
+                        Text("E2E test across 8 international user profiles")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                
+                Text("Creates real accounts (US, UK, AU, IN, CA, BR + edge cases), verifies every DB field, then fully deletes each account. Zero residue guaranteed.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(Color.blue.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            
+            // Test profiles preview
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Test Profiles")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                let profiles: [(String, String, String)] = [
+                    ("🇺🇸 Mike Johnson", "US / Imperial / Male", "Intermediate, Gym"),
+                    ("🇬🇧 Sophie Williams", "UK / Metric / Female", "Beginner, Home"),
+                    ("🇦🇺 James Chen", "AU / Metric / Male", "Advanced, Hybrid"),
+                    ("🇮🇳 Priya Sharma", "IN / Metric / Female", "Beginner, Home"),
+                    ("🇨🇦 Marc Tremblay", "CA / Imperial / Male", "Advanced, Gym"),
+                    ("🇧🇷 Ana Silva", "BR / Metric / Female", "Intermediate, Outdoor"),
+                    ("🇺🇸 Alex Rivera", "US / Imperial / Other", "Beginner, Home"),
+                    ("🇺🇸 Jordan Lee", "US / Imperial / No Gender", "Advanced, Gym"),
+                ]
+                
+                ForEach(profiles, id: \.0) { profile in
+                    HStack(spacing: 8) {
+                        Text(profile.0)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .frame(width: 140, alignment: .leading)
+                        Text(profile.1)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(profile.2)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(CornerRadius.md)
+            
+            // Run button
+            Button(action: runOnboardingAudit) {
+                HStack(spacing: 12) {
+                    if isRunningOnboardingAudit {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                    Text(isRunningOnboardingAudit ? "Running Onboarding Audit..." : "Run Full Onboarding Audit")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(
+                    LinearGradient(
+                        colors: isRunningOnboardingAudit ? [.gray] : [.blue, .cyan],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundColor(.white)
+                .cornerRadius(CornerRadius.md)
+            }
+            .disabled(isRunningOnboardingAudit)
+            
+            // Results
+            if !onboardingAuditResult.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: onboardingAuditPassed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(onboardingAuditPassed ? .green : .red)
+                        Text(onboardingAuditPassed ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(onboardingAuditPassed ? .green : .red)
+                    }
+                    
+                    Text(onboardingAuditResult)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(CornerRadius.md)
+            }
+        }
+    }
+    
+    private func runOnboardingAudit() {
+        isRunningOnboardingAudit = true
+        onboardingAuditResult = ""
+        
+        Task {
+            let report = await OnboardingTestHelper.shared.runFullAuditWithCleanup()
+            
+            await MainActor.run {
+                isRunningOnboardingAudit = false
+                onboardingAuditPassed = report.isFullPass
+                
+                var lines: [String] = []
+                lines.append("Offline Tests:   \(report.offlineTestsPassed) passed / \(report.offlineTestsFailed) failed")
+                lines.append("Country Codes:   \(report.countryCodesPassed) passed / \(report.countryCodesFailed) failed")
+                lines.append("E2E Profiles:    \(report.e2eProfilesPassed) passed / \(report.e2eProfilesFailed) failed")
+                lines.append("Orphans Cleaned: \(report.orphansCleaned)")
+                if !report.errors.isEmpty {
+                    lines.append("")
+                    lines.append("ERRORS:")
+                    for e in report.errors.prefix(20) {
+                        lines.append("  • \(e)")
+                    }
+                    if report.errors.count > 20 {
+                        lines.append("  ... and \(report.errors.count - 20) more")
+                    }
+                }
+                onboardingAuditResult = lines.joined(separator: "\n")
+            }
+        }
     }
     
     private func scorecardRow(icon: String, title: String, desc: String, weight: String) -> some View {

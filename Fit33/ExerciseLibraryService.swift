@@ -44,7 +44,11 @@ class ExerciseLibraryService: ObservableObject {
     private var isPreWarming = false
     
     private init() {
-        // Pre-warm cache at startup for instant workout starts
+        let count = (try? viewContext.count(for: Exercise.fetchRequest())) ?? 0
+        if count > 100 {
+            isExercisesReady = true
+            print("✅ [ExerciseLibrary] Exercises ready at init: \(count) in Core Data")
+        }
         preWarmCache()
     }
     
@@ -574,6 +578,40 @@ class ExerciseLibraryService: ObservableObject {
             }
         } catch {
             print("❌ [DEFAULT] Error: \(error)")
+        }
+    }
+    
+    /// Seed Core Data from bundle JSON for true cold starts (empty database).
+    /// Safe to call multiple times -- exits early if exercises already exist.
+    func seedFromBundle() {
+        let count = (try? viewContext.count(for: Exercise.fetchRequest())) ?? 0
+        guard count < 100 else { return }
+        
+        let bundleExercises = ExerciseDataProvider.shared.exercises
+        guard !bundleExercises.isEmpty else { return }
+        
+        print("🌱 [ExerciseLibrary] Seeding \(bundleExercises.count) exercises from bundle...")
+        var inserted = 0
+        for data in bundleExercises {
+            guard !data.name.isEmpty, !data.category.isEmpty else { continue }
+            let exercise = Exercise(context: viewContext)
+            exercise.id = UUID()
+            exercise.name = data.name
+            exercise.category = data.category
+            exercise.muscleGroups = data.muscleGroups as NSObject
+            exercise.equipment = data.equipment
+            exercise.instructions = data.instructions
+            exercise.isFavorite = false
+            inserted += 1
+        }
+        
+        do {
+            try viewContext.save()
+            invalidateCache()
+            isExercisesReady = true
+            print("✅ [ExerciseLibrary] Seeded \(inserted) exercises from bundle")
+        } catch {
+            print("❌ [ExerciseLibrary] Bundle seed failed: \(error)")
         }
     }
     

@@ -116,6 +116,7 @@
 		7C6DE3C72F5BF98500BCA276 /* ProgressPhotoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3B92F5BF98500BCA276 /* ProgressPhotoService.swift */; };
 		7C6DE3C82F5BF98500BCA276 /* RecoveryExerciseDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3BD2F5BF98500BCA276 /* RecoveryExerciseDatabase.swift */; };
 		7C6DE3C92F5BF98500BCA276 /* RecoveryDayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3BB2F5BF98500BCA276 /* RecoveryDayEngine.swift */; };
+		7C6DE3EF2F5C932900BCA276 /* OnboardingTestHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3EE2F5C932900BCA276 /* OnboardingTestHelper.swift */; };
 		7C792ABD2F2A68480048A97E /* WeightTrackingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792ABC2F2A68480048A97E /* WeightTrackingService.swift */; };
 		7C792ABE2F2A68480048A97E /* WeightTrackerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792ABB2F2A68480048A97E /* WeightTrackerWidget.swift */; };
 		7C792AC32F2AAE6E0048A97E /* SpoonacularService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792AC22F2AAE6E0048A97E /* SpoonacularService.swift */; };
@@ -427,6 +428,7 @@
 		7C6DE3BE2F5BF98500BCA276 /* WhatToEatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatToEatView.swift; sourceTree = "<group>"; };
 		7C6DE3BF2F5BF98500BCA276 /* WorkoutReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReplayEngine.swift; sourceTree = "<group>"; };
 		7C6DE3C02F5BF98500BCA276 /* WorkoutReplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReplayView.swift; sourceTree = "<group>"; };
+		7C6DE3EE2F5C932900BCA276 /* OnboardingTestHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTestHelper.swift; sourceTree = "<group>"; };
 		7C792ABB2F2A68480048A97E /* WeightTrackerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightTrackerWidget.swift; sourceTree = "<group>"; };
 		7C792ABC2F2A68480048A97E /* WeightTrackingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightTrackingService.swift; sourceTree = "<group>"; };
 		7C792ABF2F2AAE6E0048A97E /* HealthyRecipesCarousel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthyRecipesCarousel.swift; sourceTree = "<group>"; };
@@ -829,6 +831,7 @@
 				7CB08C7B2ED81D0700236ECB /* Info.plist */,
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
+				7C6DE3EE2F5C932900BCA276 /* OnboardingTestHelper.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
 				7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */,
 				7C8405E12EE8BEE80009ED0F /* LimitationsService.swift */,
@@ -1179,6 +1182,7 @@
 				7C98FABC2EEBC75A001AE1F3 /* ProgressiveExerciseUnlockService.swift in Sources */,
 				7C8405CC2EE73ED70009ED0F /* StepTrackerView.swift in Sources */,
 				7CAA1F812F424534008200B9 /* AppHealthDiagnostics.swift in Sources */,
+				7C6DE3EF2F5C932900BCA276 /* OnboardingTestHelper.swift in Sources */,
 				7C8405D02EE7D2E50009ED0F /* SmartProgramEngine.swift in Sources */,
 				7CAA1F872F4255EE008200B9 /* ExerciseBundleEngine.swift in Sources */,
 				7CEA1ED52F54FB2D00CC468C /* WeeklyLeagueViews.swift in Sources */,

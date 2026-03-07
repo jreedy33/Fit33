@@ -206,3 +206,19 @@ grep -r "\.padding([0-9]" Fit33/*.swift | wc -l           # Spacing
 ---
 
 *You are the construction crew. The architect (Design Agent) drew the blueprints. The project manager (Product Engineer) approved them. You install every beam, every bolt, every wire according to spec. 787 fonts. 2,919 paddings. 1,213 corner radii. One at a time. No shortcuts.*
+
+---
+
+## Onboarding Responsibilities
+
+### Token Migration Target
+`NewOnboardingView.swift` is one of the highest-violation files for inline styles.
+After dead code removal it's 7,541 lines with many hardcoded fonts, padding, and colors.
+
+During UI-5/UI-6/UI-7 sprints:
+- Replace `.font(.system(size:))` with `.ds_*` tokens
+- Replace hardcoded padding with `Spacing.*`
+- Replace hardcoded corner radii with `CornerRadius.*`
+
+### Reference
+- `ONBOARDING_AUDIT.md` — Sections 10 (text field styling), 12 (design tokens)

@@ -67,6 +67,12 @@ final class StartupCache: ObservableObject {
         
         // Stage 4: Exercise count
         await warmExerciseCount(context: context)
+        warmupProgress = 0.90
+        
+        // Stage 5: Pre-warm exercise library so Exercise tab has data immediately
+        // This triggers ExerciseLibraryService init (eager Core Data check) + cache build
+        // at ~T=500ms instead of waiting for TabPreloader Phase 4 at T=4s
+        ExerciseLibraryService.shared.preWarmCache()
         warmupProgress = 1.0
         
         lastWarmTime = Date()

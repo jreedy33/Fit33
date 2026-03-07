@@ -751,10 +751,9 @@ struct CommunityLeaderboardWidget: View {
     
     private var challengeHeader: some View {
         HStack(spacing: 12) {
-            // Type badge
             ZStack {
                 Circle()
-                    .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
                     .frame(width: 40, height: 40)
                 Text(challenge.displayEmoji)
                     .font(.system(size: 20))
@@ -1247,10 +1246,9 @@ struct FeaturedChallengeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                // Gradient circle badge
                 ZStack {
                     Circle()
-                        .fill(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .stroke(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
                         .frame(width: 44, height: 44)
                     Text(challenge.displayEmoji)
                         .font(.system(size: 22))
@@ -2535,7 +2533,7 @@ struct FriendDiscoveryCard: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .stroke(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
                         .frame(width: 36, height: 36)
                     Text(challenge.displayEmoji)
                         .font(.ds_bodyLarge)

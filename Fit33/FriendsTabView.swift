@@ -290,25 +290,6 @@ struct FriendsTabView: View {
         autoRefreshTimer = nil
     }
     
-    // MARK: - Time-Ago Helpers
-    
-    private func timeAgoText(since date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
-        if seconds < 5 { return "just now" }
-        if seconds < 60 { return "\(seconds)s ago" }
-        let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes)m ago" }
-        let hours = minutes / 60
-        return "\(hours)h ago"
-    }
-    
-    private func timeAgoColor(since date: Date) -> Color {
-        let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return .green }       // Fresh (< 1 min)
-        if seconds < 300 { return .yellow }      // Slightly stale (< 5 min)
-        return .orange                            // Stale (> 5 min)
-    }
-    
     // MARK: - Header
     
     // MARK: - Refresh Helper
@@ -322,7 +303,8 @@ struct FriendsTabView: View {
         async let pending: () = friendService.fetchPendingRequests()
         async let invites: () = challengeService.fetchPendingInvites()
         async let privateInvites: () = PrivateChallengeService.shared.fetchPendingInvites()
-        _ = await (friends, ranked, pending, invites, privateInvites)
+        async let activityFeed: () = ActivityFeedService.shared.fetchFeed()
+        _ = await (friends, ranked, pending, invites, privateInvites, activityFeed)
         
         // Batch 2: Challenge data + league — all types in parallel
         async let active: () = challengeService.fetchActiveChallenges()
@@ -363,6 +345,24 @@ struct FriendsTabView: View {
                     .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
                 
                 Spacer()
+                
+                // Add Friend button
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    showingFriendsList = true
+                }) {
+                    Image(systemName: "person.badge.plus")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .padding(10)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: Color.cyan.opacity(0.2), radius: 8, x: 0, y: 2)
+                        )
+                }
                 
                 // Manual refresh button
                 Button(action: {
@@ -406,20 +406,6 @@ struct FriendsTabView: View {
                     )
                 }
                 .disabled(isManualRefreshing)
-            }
-            
-            // "Last refreshed X ago" indicator
-            if let lastRefresh = lastRefreshedAt {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(timeAgoColor(since: lastRefresh))
-                        .frame(width: 6, height: 6)
-                    
-                    Text("Updated \(timeAgoText(since: lastRefresh))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.leading, 6)
             }
         }
         .padding(.leading, 4)
@@ -659,6 +645,7 @@ struct FriendsTabView: View {
             FriendsQuickTile(
                 icon: "trophy.fill",
                 title: "Challenge",
+                subtitle: "Compete head-to-head",
                 gradient: [.orange, .red],
                 action: { showingChallengeCreation = true }
             )
@@ -666,6 +653,7 @@ struct FriendsTabView: View {
             FriendsQuickTile(
                 icon: "globe.americas.fill",
                 title: "Community",
+                subtitle: "Global leaderboards",
                 gradient: [.green, .mint],
                 action: { showingCommunityHub = true }
             )
@@ -2554,6 +2542,7 @@ struct FriendsTabView: View {
 struct FriendsQuickTile: View {
     let icon: String
     let title: String
+    var subtitle: String? = nil
     let gradient: [Color]
     let action: () -> Void
     
@@ -2595,6 +2584,13 @@ struct FriendsQuickTile: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
+                
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 120)

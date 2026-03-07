@@ -353,3 +353,22 @@ If a design decision conflicts with an engineering constraint:
 ---
 
 *This document is your engineering bible. When the Designer Agent says "make it blue," you know exactly which blue (`LinearGradient.ds_primaryAccent`), which card style (`.sleekCard(accentColor: .blue)`), and which animation (`UniversalScaleButtonStyle(.standard, withHaptic: true)`) to use. No guessing, no improvising, no duplicating.*
+
+---
+
+## Onboarding Responsibilities
+
+**Primary owner** of `NewOnboardingView.swift` and `PhoneVerificationSheet.swift`.
+
+### Completed
+- **H-12**: Removed 1,327 lines of dead code (duplicate PageTemplate step views)
+- **H-13**: Added progress checkpoint persistence via UserDefaults
+- **H-14**: Synced PhoneVerificationSheet to 45 countries, dialingCode, fromLocale(), maxAttempts=3
+- **M-20**: Verified forgot-password link is accessible from sign-in form
+
+### Remaining
+- **M-18**: Add birthday date format toggle (MM/DD vs DD/MM override)
+- Reduce file size further (7,541 lines → consider per-step file extraction)
+
+### Reference
+- `ONBOARDING_AUDIT.md` — Sections 3 (flow detail), 13 (components), 17 (validation checklist)

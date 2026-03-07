@@ -39,18 +39,39 @@ class OnboardingSessionManager: ObservableObject {
     @Published var currentSessionId: String?
     @Published var sessionStartTime: Date?
     
+    private var stepTimestamps: [Int: Date] = [:]
+    private var stepDurations: [Int: TimeInterval] = [:]
+    
+    private static let checkpointStepKey = "onboarding_checkpoint_step"
+    private static let checkpointDataKey = "onboarding_checkpoint_data"
+    
     private init() {}
     
     func startNewSession() {
         currentSessionId = UUID().uuidString
         sessionStartTime = Date()
+        stepTimestamps = [:]
+        stepDurations = [:]
         print("📱 [ONBOARDING] New session started: \(currentSessionId ?? "nil")")
+    }
+    
+    func trackStepStarted(_ stepIndex: Int) {
+        stepTimestamps[stepIndex] = Date()
+    }
+    
+    func trackStepCompleted(_ stepIndex: Int) {
+        if let started = stepTimestamps[stepIndex] {
+            stepDurations[stepIndex] = Date().timeIntervalSince(started)
+        }
     }
     
     func endSession() {
         if let startTime = sessionStartTime {
             let duration = Date().timeIntervalSince(startTime)
             print("📱 [ONBOARDING] Session ended. Duration: \(Int(duration))s")
+            for (step, dur) in stepDurations.sorted(by: { $0.key < $1.key }) {
+                print("📱 [ONBOARDING]   Step \(step): \(String(format: "%.1f", dur))s")
+            }
         }
         currentSessionId = nil
         sessionStartTime = nil
@@ -59,6 +80,25 @@ class OnboardingSessionManager: ObservableObject {
     var sessionDuration: TimeInterval {
         guard let startTime = sessionStartTime else { return 0 }
         return Date().timeIntervalSince(startTime)
+    }
+    
+    // MARK: - Progress Persistence
+    
+    func saveCheckpoint(step: Int, data: [String: String]) {
+        UserDefaults.standard.set(step, forKey: Self.checkpointStepKey)
+        UserDefaults.standard.set(data, forKey: Self.checkpointDataKey)
+    }
+    
+    func loadCheckpoint() -> (step: Int, data: [String: String])? {
+        let step = UserDefaults.standard.integer(forKey: Self.checkpointStepKey)
+        guard step > 0 else { return nil }
+        let data = UserDefaults.standard.dictionary(forKey: Self.checkpointDataKey) as? [String: String] ?? [:]
+        return (step: step, data: data)
+    }
+    
+    func clearCheckpoint() {
+        UserDefaults.standard.removeObject(forKey: Self.checkpointStepKey)
+        UserDefaults.standard.removeObject(forKey: Self.checkpointDataKey)
     }
 }
 
@@ -107,6 +147,12 @@ struct NewOnboardingView: View {
     @State private var phoneVerificationAttempts = 0  // Track send code attempts
     @State private var hasSkippedPhoneVerification = false  // Track if user skipped after max attempts
     @StateObject private var phoneVerificationService = PhoneVerificationService.shared
+    
+    // Email verification (required fallback when phone is skipped)
+    @State private var isEmailVerificationSent = false
+    @State private var isEmailVerified = false
+    @State private var emailVerificationError = ""
+    @State private var isCheckingEmailVerification = false
     
     // Constants for phone verification limits
     private let maxPhoneVerificationAttempts = 3
@@ -256,7 +302,7 @@ struct NewOnboardingView: View {
         switch currentStep {
         case .auth: return "Account"
         case .username: return "Profile"
-        case .phoneNumber: return "Security"
+        case .phoneNumber: return hasSkippedPhoneVerification ? "Email Verification" : "Security"
         case .basics: return "About You"
         case .body: return "Measurements"
         case .goal: return "Goals"
@@ -384,6 +430,9 @@ struct NewOnboardingView: View {
         print("   └─ Previous step: \(currentStep)")
         let previousStep = currentStep
         
+        OnboardingSessionManager.shared.trackStepCompleted(previousStep.rawValue)
+        OnboardingSessionManager.shared.trackStepStarted(step.rawValue)
+        
         // Map onboarding step to screen ID
         let screenMap: [OnboardingStep: SessionLogManager.Screen] = [
             .auth: .authScreen,
@@ -444,10 +493,17 @@ struct NewOnboardingView: View {
             )
         }
         
-        // Change step - let view-level animations handle transitions
-        print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
         currentStep = step
-        print("🔄 [NAV] currentStep now: \(currentStep)")
+        
+        // Save checkpoint so progress survives app close
+        if step != .complete {
+            OnboardingSessionManager.shared.saveCheckpoint(
+                step: step.rawValue,
+                data: collectCheckpointData()
+            )
+        } else {
+            OnboardingSessionManager.shared.clearCheckpoint()
+        }
     }
     
     // Navigation direction for slide animation
@@ -511,6 +567,7 @@ struct NewOnboardingView: View {
                                         .background(Circle().fill(Color(.systemGray6)))
                                         .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
                                 }
+                                .accessibilityHint("Returns to previous step")
                             } else {
                                 // If on first password/email, go back to welcome screen
                                 Button(action: {
@@ -526,6 +583,7 @@ struct NewOnboardingView: View {
                                         .background(Circle().fill(Color(.systemGray6)))
                                         .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
                                 }
+                                .accessibilityHint("Returns to previous step")
                             }
                             
                             // Continue button
@@ -566,6 +624,7 @@ struct NewOnboardingView: View {
                                 )
                             }
                             .disabled(!isAuthFormValid || supabaseManager.isLoading)
+                            .accessibilityHint("Proceeds to next onboarding step")
                         }
                     }
                     .padding(.horizontal, 24)
@@ -879,8 +938,12 @@ struct NewOnboardingView: View {
         // because it was incorrectly triggering on session restore at app launch.
         // The OAuthNewUserNeedsOnboarding notification is the correct and only trigger.
         .onAppear {
-            // Start a new onboarding session for logging
             OnboardingSessionManager.shared.startNewSession()
+            
+            // Restore progress from a prior interrupted session
+            if !supabaseManager.isAuthenticated {
+                restoreFromCheckpoint()
+            }
             
             // Log session start to cloud
             Task {
@@ -1021,7 +1084,7 @@ struct NewOnboardingView: View {
     private var onboardingStepTitle: String {
         switch currentStep {
         case .auth: return isSignUp ? "Create Account" : "Welcome Back"
-        case .phoneNumber: return "Secure Your Account"
+        case .phoneNumber: return hasSkippedPhoneVerification ? "Verify Your Email" : "Secure Your Account"
         case .username: return "Your Profile"
         case .basics: return "About You"
         case .body: return "Your Measurements"
@@ -1043,7 +1106,7 @@ struct NewOnboardingView: View {
     private var onboardingStepSubtitle: String {
         switch currentStep {
         case .auth: return isSignUp ? "Join the club" : "Continue your journey"
-        case .phoneNumber: return "Set up two-factor authentication"
+        case .phoneNumber: return hasSkippedPhoneVerification ? "Confirm your email address to secure your account" : "Set up two-factor authentication"
         case .username: return "Tell us about yourself and how friends will find you"
         case .basics: return "Help us personalize your experience"
         case .body: return "For accurate recommendations"
@@ -1065,7 +1128,7 @@ struct NewOnboardingView: View {
     private var onboardingStepExplanation: String {
         switch currentStep {
         case .auth: return ""
-        case .phoneNumber: return "Your phone number is private and will never be displayed publicly or shared with others"
+        case .phoneNumber: return hasSkippedPhoneVerification ? "A verification link has been sent to your email" : "Your phone number is private and will never be displayed publicly or shared with others"
         case .username: return "Friends can find and add you using your unique username"
         case .basics: return "We use your age to calculate calorie needs and tailor workout intensity"
         case .body: return "Height and weight help us recommend appropriate exercise loads"
@@ -1099,6 +1162,7 @@ struct NewOnboardingView: View {
                     .background(Circle().fill(Color(.systemGray6)))
                     .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
             }
+            .accessibilityHint("Returns to previous step")
             
             // Continue button
             Button(action: {
@@ -1150,6 +1214,7 @@ struct NewOnboardingView: View {
                     )
             }
             .disabled(!isCurrentStepValid)
+            .accessibilityHint("Proceeds to next onboarding step")
         }
     }
     
@@ -1165,6 +1230,9 @@ struct NewOnboardingView: View {
                 return "Continue"
             }
         case .phoneNumber:
+            if hasSkippedPhoneVerification {
+                return isEmailVerified ? "Continue" : "Waiting for Verification..."
+            }
             if !isVerificationCodeSent {
                 if sendCodeCountdown > 0 {
                     return "Retry in \(sendCodeCountdown)s"
@@ -1192,9 +1260,10 @@ struct NewOnboardingView: View {
         switch currentStep {
         case .auth: return isAuthFormValid
         case .phoneNumber: 
-            // Enable button when:
-            // 1. Phone valid and can send (sendCodeCountdown == 0)
-            // 2. Code already sent and verified
+            // If phone was skipped, require email verification
+            if hasSkippedPhoneVerification {
+                return isEmailVerified
+            }
             if !isVerificationCodeSent {
                 return isPhoneNumberValid && sendCodeCountdown == 0
             } else {
@@ -1234,6 +1303,54 @@ struct NewOnboardingView: View {
         return "\(selectedCountryCode.dialingCode)\(digits)"
     }
     
+    // MARK: - Checkpoint Persistence
+    
+    private func collectCheckpointData() -> [String: String] {
+        var data: [String: String] = [:]
+        if !email.isEmpty { data["email"] = email }
+        if !name.isEmpty { data["name"] = name }
+        if !username.isEmpty { data["username"] = username }
+        if !birthday.isEmpty { data["birthday"] = birthday }
+        if let gender = selectedGender { data["gender"] = gender }
+        if !heightFeetInchesDigits.isEmpty { data["heightFtIn"] = heightFeetInchesDigits }
+        if !heightCm.isEmpty { data["heightCm"] = heightCm }
+        if !weight.isEmpty { data["weight"] = weight }
+        data["heightUnit"] = heightUnit == .cm ? "cm" : "ft"
+        data["weightUnit"] = weightUnit == .lbs ? "lbs" : "kg"
+        if !selectedGoals.isEmpty { data["goals"] = selectedGoals.joined(separator: ",") }
+        if !selectedExperience.isEmpty { data["experience"] = selectedExperience }
+        if !selectedStrength.isEmpty { data["strength"] = selectedStrength }
+        if !selectedWorkoutLocation.isEmpty { data["location"] = selectedWorkoutLocation }
+        if !selectedEquipment.isEmpty { data["equipment"] = selectedEquipment.joined(separator: ",") }
+        return data
+    }
+    
+    private func restoreFromCheckpoint() {
+        guard let checkpoint = OnboardingSessionManager.shared.loadCheckpoint(),
+              checkpoint.step > 0 else { return }
+        
+        let data = checkpoint.data
+        if let e = data["email"] { email = e }
+        if let n = data["name"] { name = n }
+        if let u = data["username"] { username = u }
+        if let b = data["birthday"] { birthday = b }
+        selectedGender = data["gender"]
+        if let h = data["heightFtIn"] { heightFeetInchesDigits = h }
+        if let h = data["heightCm"] { heightCm = h }
+        if let w = data["weight"] { weight = w }
+        if data["heightUnit"] == "cm" { heightUnit = .cm }
+        if data["weightUnit"] == "kg" { weightUnit = .kg }
+        if let g = data["goals"] { selectedGoals = Set(g.split(separator: ",").map(String.init)) }
+        if let exp = data["experience"] { selectedExperience = exp }
+        if let s = data["strength"] { selectedStrength = s }
+        if let loc = data["location"] { selectedWorkoutLocation = loc }
+        if let eq = data["equipment"] { selectedEquipment = Set(eq.split(separator: ",").map(String.init)) }
+        
+        if let step = OnboardingStep(rawValue: checkpoint.step) {
+            currentStep = step
+        }
+    }
+    
     // MARK: - Navigation Helpers
     private func goToNextStep() {
         if currentStep == .confirmation {
@@ -1268,18 +1385,32 @@ struct NewOnboardingView: View {
         }
         
         // Special case: if on phone step with code sent, go back to phone input (not previous step)
-        // Start 30s countdown so user can't spam send code
         if currentStep == .phoneNumber && isVerificationCodeSent {
+            // If max attempts reached, going back triggers email verification fallback
+            if phoneVerificationAttempts >= maxPhoneVerificationAttempts {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    hasSkippedPhoneVerification = true
+                    isVerificationCodeSent = false
+                    verificationCode = ""
+                    verificationError = ""
+                }
+                sendEmailVerification()
+                return
+            }
             
             isVerificationCodeSent = false
             verificationCode = ""
             verificationError = ""
             
-            // Start 30s cooldown before they can send again
             sendCodeCountdown = 30
             startSendCodeCountdownTimer()
             
             focusedField = .phoneNumber
+            return
+        }
+        
+        // If on phone step showing email fallback, don't go back further
+        if currentStep == .phoneNumber && hasSkippedPhoneVerification {
             return
         }
         
@@ -1295,7 +1426,7 @@ struct NewOnboardingView: View {
     
     // MARK: - Content-Only Step Views (for sliding)
     // These are simplified versions that just show the content portion
-    // The existing full step views (basicsStep, bodyStep, etc.) are kept for reference
+    // Content-only step views used in the sliding ZStack layout
     
     private var phoneInputView: some View {
         let _ = print("📱 [PHONE INPUT] Rendering phoneInputView - selectedCountryCode: \(selectedCountryCode.rawValue)")
@@ -1350,6 +1481,7 @@ struct NewOnboardingView: View {
                     .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
             )
         }
+        .accessibilityLabel("Country code selector, currently \(selectedCountryCode.name)")
         .id("countryPicker-\(selectedCountryCode.rawValue)")
     }
     
@@ -1394,18 +1526,17 @@ struct NewOnboardingView: View {
     // MARK: - Phone Number Step Content (2FA / Account Security)
     private var phoneNumberStepContent: some View {
         let _ = print("📱 [PHONE STEP] Rendering phoneNumberStepContent")
-        let _ = print("   └─ isVerificationCodeSent: \(isVerificationCodeSent)")
-        let _ = print("   └─ isPhoneVerified: \(isPhoneVerified)")
-        let _ = print("   └─ phoneNumber: '\(phoneNumber)'")
-        let _ = print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
         
         return VStack(spacing: 20) {
+            // FALLBACK: Email verification (when phone was skipped after max attempts)
+            if hasSkippedPhoneVerification {
+                emailVerificationFallbackView
+            }
+            
             // STATE 1: PHONE NUMBER INPUT (before code sent)
-            if !isVerificationCodeSent && !isPhoneVerified {
-                let _ = print("📱 [PHONE STEP] Showing STATE 1: Phone input")
+            else if !isVerificationCodeSent && !isPhoneVerified {
                 phoneInputView
                 
-                // Privacy message
                 HStack(spacing: 10) {
                     Image(systemName: "lock.shield.fill")
                         .font(.system(size: 14))
@@ -1499,6 +1630,7 @@ struct NewOnboardingView: View {
                                             .foregroundColor(.primary)
                                     }
                                     .frame(width: tileWidth, height: tileHeight)
+                                    .accessibilityLabel("Verification digit \(index + 1) of 6")
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -1602,6 +1734,183 @@ struct NewOnboardingView: View {
         }
         .padding(.horizontal, 24)
         .id("phoneNumberStepContent-\(selectedCountryCode.rawValue)-\(isVerificationCodeSent)-\(isPhoneVerified)")
+    }
+    
+    // MARK: - Email Verification Fallback View
+    
+    private var emailVerificationFallbackView: some View {
+        VStack(spacing: 24) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.15), Color.cyan.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 80, height: 80)
+                
+                Image(systemName: isEmailVerified ? "checkmark.seal.fill" : "envelope.badge.fill")
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: isEmailVerified ? [.green, .mint] : [.blue, .cyan],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            
+            if isEmailVerified {
+                // Verified state
+                VStack(spacing: 8) {
+                    Text("Email Verified!")
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Your account is secured via email.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            } else if isEmailVerificationSent {
+                // Waiting for verification
+                VStack(spacing: 12) {
+                    Text("Check Your Email")
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.primary)
+                    
+                    Text("We sent a verification link to:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Text(email)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.blue)
+                    
+                    Text("Tap the link in the email, then come back here.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
+                
+                // Check verification status button
+                Button {
+                    checkEmailVerificationStatus()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isCheckingEmailVerification {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        Text(isCheckingEmailVerification ? "Checking..." : "I've Verified My Email")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(Capsule().fill(Color.blue))
+                }
+                .disabled(isCheckingEmailVerification)
+                .padding(.top, 8)
+                
+                // Resend option
+                Button {
+                    sendEmailVerification()
+                } label: {
+                    Text("Resend verification email")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+                .padding(.top, 4)
+                
+                // Error
+                if !emailVerificationError.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.caption)
+                        Text(emailVerificationError)
+                            .font(.caption)
+                    }
+                    .foregroundColor(.red)
+                }
+            } else {
+                // Sending state
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Sending verification email...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 20)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+    
+    // MARK: - Email Verification Functions
+    
+    private func sendEmailVerification() {
+        emailVerificationError = ""
+        isEmailVerificationSent = false
+        
+        Task {
+            do {
+                try await supabaseManager.supabaseClient.auth.update(user: .init(email: email))
+                await MainActor.run {
+                    withAnimation {
+                        isEmailVerificationSent = true
+                    }
+                }
+                print("📧 [EMAIL VERIFY] Verification email sent to \(email)")
+            } catch {
+                await MainActor.run {
+                    isEmailVerificationSent = true
+                    emailVerificationError = "Could not send email. Try again."
+                }
+                print("📧 [EMAIL VERIFY] Failed: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func checkEmailVerificationStatus() {
+        isCheckingEmailVerification = true
+        emailVerificationError = ""
+        
+        Task {
+            do {
+                // Refresh the session to get updated email_confirmed_at
+                try await supabaseManager.supabaseClient.auth.refreshSession()
+                let user = try await supabaseManager.supabaseClient.auth.session.user
+                
+                await MainActor.run {
+                    isCheckingEmailVerification = false
+                    if user.emailConfirmedAt != nil {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            isEmailVerified = true
+                        }
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
+                        print("📧 [EMAIL VERIFY] Email verified!")
+                    } else {
+                        emailVerificationError = "Email not yet verified. Check your inbox and tap the link."
+                        print("📧 [EMAIL VERIFY] Not verified yet")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isCheckingEmailVerification = false
+                    emailVerificationError = "Could not check status. Try again."
+                }
+                print("📧 [EMAIL VERIFY] Check failed: \(error.localizedDescription)")
+            }
+        }
     }
     
     // Helper to get digit at index for verification code display
@@ -2835,6 +3144,7 @@ struct NewOnboardingView: View {
                                 )
                                 .foregroundColor(selectedDays == day ? .white : .primary)
                         }
+                        .accessibilityLabel("\(day) days per week, \(selectedDays == day ? "selected" : "not selected")")
                     }
                 }
             }
@@ -3627,6 +3937,7 @@ struct NewOnboardingView: View {
                                     .background(Circle().fill(Color(.systemGray6)))
                                     .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
                             }
+                            .accessibilityHint("Returns to previous step")
                         }
                         
                         // Continue/Sign In button - full width, hollow when incomplete
@@ -3675,6 +3986,7 @@ struct NewOnboardingView: View {
                     }
                     .disabled(supabaseManager.isLoading || !isAuthFormValid)
                     .animation(.easeInOut(duration: 0.3), value: isAuthFormValid)
+                    .accessibilityHint("Proceeds to next onboarding step")
                     }
                 }
                 .padding(.horizontal, 24)
@@ -4187,1332 +4499,6 @@ struct NewOnboardingView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
-    }
-    
-    private var basicsStep: some View {
-        OnboardingPageTemplate(
-            title: "Tell us about yourself",
-            subtitle: "A few quick details",
-            helpText: "Birthday helps us recommend appropriate intensity. Gender is optional.",
-            canContinue: isBirthdayValid && calculatedAge >= 13 && calculatedAge <= 120,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.auth) },
-            onContinue: { 
-                impactFeedback.impactOccurred()
-                isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.body) 
-            },
-            showBackButton: !isEditingFromConfirmation,
-            currentStep: 1,
-            totalSteps: 9,
-            keyboardObserver: keyboardObserver
-        ) {
-            VStack(spacing: 32) {
-                // Birthday - simple text input
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Birthday")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                        // Show calculated age (UX improvement)
-                        if isBirthdayValid && calculatedAge >= 13 && calculatedAge <= 120 {
-                            Text("\(calculatedAge) years old ✓")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    
-                    OnboardingTextField(
-                        icon: "calendar",
-                        placeholder: usesMonthFirstDate ? "11/16/1994" : "16/11/1994",
-                        text: $birthday,
-                        keyboardType: .numberPad,
-                        focusedField: $focusedField,
-                        fieldValue: .birthday,
-                        isValid: isBirthdayValid && calculatedAge >= 13 && calculatedAge <= 120
-                    )
-                    .onChange(of: birthday) { _, newValue in
-                        let formatted = formatBirthday(newValue)
-                        if formatted != newValue {
-                            birthday = formatted
-                        }
-                    }
-                    
-                    // Validation error (UX Audit Fix #1)
-                    if let error = birthdayValidationError {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.caption)
-                            Text(error)
-                                .font(.caption)
-                        }
-                        .foregroundColor(.orange)
-                        .padding(.top, 4)
-                    }
-                }
-                
-                // Gender
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Gender (optional)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                    
-                    HStack(spacing: 12) {
-                        ForEach(["Male", "Female", "Other"], id: \.self) { gender in
-                            GenderButton(
-                                title: gender,
-                                isSelected: selectedGender == gender,
-                                action: { 
-                                    selectionFeedback.selectionChanged() // Haptic feedback (Fix #6)
-                                    // Toggle selection - tap again to unselect
-                                    if selectedGender == gender {
-                                        selectedGender = nil
-                                    } else {
-                                        selectedGender = gender
-                                    }
-                                    // (Fix #4) Allow keyboard to dismiss naturally - don't force it to stay
-                                    // User can tap birthday field again if they want keyboard back
-                                }
-                            )
-                            .accessibilityLabel("\(gender) gender option") // Accessibility (Fix #8)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
-        }
-    }
-    
-    // MARK: - Body Step (Height + Weight)
-    // Parse height from digits (format: "510" = 5'10", "61" = 6'1", "600" = 6'0")
-    private var parsedHeightFeetInches: (feet: Int, inches: Int)? {
-        let digits = heightDigits
-        guard !digits.isEmpty else { return nil }
-        
-        // First digit is always feet
-        let feet = Int(String(digits.prefix(1))) ?? 0
-        
-        // Remaining digits are inches
-        let inchDigits = String(digits.dropFirst())
-        let inches: Int
-        
-        if inchDigits.isEmpty {
-            inches = 0
-        } else if inchDigits.count == 1 {
-            // Single digit: could be 1-9
-            inches = Int(inchDigits) ?? 0
-        } else {
-            // Two digits: 00-11 (we'll validate below)
-            inches = Int(inchDigits.prefix(2)) ?? 0
-        }
-        
-        if feet >= 3 && feet <= 8 && inches >= 0 && inches <= 11 {
-            return (feet, inches)
-        }
-        return nil
-    }
-    
-    private var isHeightValid: Bool {
-        if heightUnit == .cm {
-            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return false }
-            // Try parsing as Int (handles "175") or Double then Int (handles "175.0")
-            let cm: Int?
-            if let intValue = Int(trimmed) {
-                cm = intValue
-            } else if let doubleValue = Double(trimmed) {
-                cm = Int(doubleValue)
-            } else {
-                cm = nil
-            }
-            guard let validCm = cm else { return false }
-            return validCm >= 90 && validCm <= 270  // Valid height range in cm
-        } else {
-            return parsedHeightFeetInches != nil
-        }
-    }
-    
-    private var isWeightValid: Bool {
-        let trimmed = weight.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return false }
-        
-        // Handle both "." and "," as decimal separators for international support
-        let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
-        guard let w = Double(normalized), w > 0 else { return false }
-        
-        // Valid range: 50-700 lbs or 23-320 kg (covers reasonable human weights)
-        if weightUnit == .lbs {
-            return w >= 50 && w <= 700
-        } else {
-            return w >= 23 && w <= 320
-        }
-    }
-    
-    // Convert height to cm for storage
-    private var heightInCm: Int {
-        if heightUnit == .cm {
-            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
-            if let intValue = Int(trimmed) {
-                return intValue
-            } else if let doubleValue = Double(trimmed) {
-                return Int(doubleValue)
-            }
-            return 0
-        } else if let parsed = parsedHeightFeetInches {
-            let totalInches = (parsed.feet * 12) + parsed.inches
-            return Int(Double(totalInches) * 2.54)
-        }
-        return 0
-    }
-    
-    private var bodyStep: some View {
-        OnboardingPageTemplate(
-            title: "Your measurements",
-            subtitle: "Let's crunch some numbers",
-            helpText: "Calculate your BMR and personalized targets. Adjust later as needed.",
-            canContinue: isHeightValid && isWeightValid,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.basics) },
-            onContinue: { 
-                impactFeedback.impactOccurred()
-                isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.goal) 
-            },
-            showBackButton: !isEditingFromConfirmation,
-            currentStep: 2,
-            totalSteps: 9,
-            keyboardObserver: keyboardObserver
-        ) {
-            VStack(spacing: 28) {
-                // Height Field with toggle INSIDE
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Height")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                        // Height preview (UX Audit Fix #3)
-                        if let preview = heightPreviewText {
-                            Text("→ \(preview) ✓")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    
-                    // Text field with toggle inside
-                    HStack(spacing: 12) {
-                        Image(systemName: "ruler")
-                            .font(.system(size: 18))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: isHeightValid ? [Color.blue, Color.purple] : [Color.gray.opacity(0.5), Color.gray.opacity(0.4)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 24)
-                        
-                        // Input + unit tightly together
-                        HStack(spacing: 2) {
-                            if heightUnit == .ftIn {
-                                HeightInputField(
-                                    heightDigits: $heightFeetInchesDigits,
-                                    focusedField: $focusedField
-                                )
-                                .onChange(of: heightFeetInchesDigits) { _, newValue in
-                                    // Auto-advance to weight when height is complete (faster timing - Fix #8)
-                                    let digits = newValue.filter { $0.isNumber }
-                                    if digits.count >= 2 {
-                                        let inchDigit = digits.dropFirst().first
-                                        if let inch = inchDigit, inch >= "2" && inch <= "9" {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                                focusedField = .weight
-                                            }
-                                        } else if digits.count >= 3 {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                                focusedField = .weight
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                TextField("175", text: $heightCm)
-                                    .keyboardType(.numberPad)
-                                    .focused($focusedField, equals: .height)
-                                    .fixedSize()
-                                    .onChange(of: heightCm) { _, newValue in
-                                        if newValue.count >= 3 {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                                focusedField = .weight
-                                            }
-                                        }
-                                    }
-                                
-                                Text("cm")
-                                    .foregroundColor(.secondary)
-                                    .font(.ds_bodyMedium)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        // Unit toggle at end
-                        InlineUnitToggle(
-                            options: HeightUnit.allCases.map { $0.rawValue },
-                            selected: heightUnit.rawValue,
-                            onSelect: { unit in
-                                let newUnit = HeightUnit(rawValue: unit) ?? .ftIn
-                                if newUnit == .cm && heightUnit == .ftIn && isHeightValid {
-                                    // Use round() to avoid truncation errors
-                                    let totalInches = Double(parsedHeightFeetInches?.feet ?? 0) * 12 + Double(parsedHeightFeetInches?.inches ?? 0)
-                                    heightCm = "\(Int(round(totalInches * 2.54)))"
-                                } else if newUnit == .ftIn && heightUnit == .cm, let cm = Int(heightCm) {
-                                    // Use round() to avoid truncation errors
-                                    let totalInches = Int(round(Double(cm) / 2.54))
-                                    let feet = totalInches / 12
-                                    let inches = totalInches % 12
-                                    heightFeetInchesDigits = "\(feet)\(inches < 10 ? "0" : "")\(inches)"
-                                }
-                                heightUnit = newUnit
-                                // Re-focus height field to keep keyboard up (same as weight toggle)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                    focusedField = .height
-                                }
-                            }
-                        )
-                    }
-                    .padding(Spacing.md)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(.systemBackground))
-                            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
-                            .shadow(color: isHeightValid ? Color.blue.opacity(0.25) : Color.black.opacity(0.05), radius: isHeightValid ? 16 : 8, x: 0, y: isHeightValid ? 4 : 2)
-                            .shadow(color: isHeightValid ? Color.purple.opacity(0.15) : .clear, radius: 24, x: 0, y: 8)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                LinearGradient(
-                                    colors: isHeightValid 
-                                        ? [Color.blue.opacity(0.6), Color.purple.opacity(0.5)]
-                                        : [Color.gray.opacity(0.2), Color.gray.opacity(0.15)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: isHeightValid ? 1.5 : 1
-                            )
-                    )
-                    .animation(.easeInOut(duration: 0.3), value: isHeightValid)
-                    
-                    // Height validation error (UX Audit Fix #1)
-                    if let error = heightValidationError {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.caption)
-                            Text(error)
-                                .font(.caption)
-                        }
-                        .foregroundColor(.orange)
-                        .padding(.top, 4)
-                    }
-                }
-                
-                // Weight Field with toggle INSIDE
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Weight")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                    
-                    // Text field with toggle inside
-                    HStack(spacing: 12) {
-                        Image(systemName: "scalemass")
-                            .font(.system(size: 18))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: isWeightValid ? [Color.blue, Color.purple] : [Color.gray.opacity(0.5), Color.gray.opacity(0.4)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 24)
-                        
-                        // Input + unit tightly together
-                        HStack(spacing: 2) {
-                            TextField(weightUnit == .lbs ? "160" : "73", text: $weight)
-                                .keyboardType(.decimalPad)
-                                .focused($focusedField, equals: .weight)
-                                .fixedSize()
-                            
-                            Text(weightUnit == .lbs ? "lbs" : "kg")
-                                .foregroundColor(.secondary)
-                                .font(.ds_bodyMedium)
-                        }
-                        
-                        Spacer()
-                        
-                        // Unit toggle at end
-                        InlineUnitToggle(
-                            options: WeightUnit.allCases.map { $0.rawValue },
-                            selected: weightUnit.rawValue,
-                            onSelect: { unit in
-                                let oldUnit = weightUnit
-                                weightUnit = WeightUnit(rawValue: unit) ?? .lbs
-                                if let currentWeight = Double(weight) {
-                                    if oldUnit == .kg && weightUnit == .lbs {
-                                        // Use round() for accurate conversion
-                                        weight = String(Int(round(currentWeight * 2.20462)))
-                                    } else if oldUnit == .lbs && weightUnit == .kg {
-                                        // Use round() for accurate conversion
-                                        weight = String(Int(round(currentWeight / 2.20462)))
-                                    }
-                                }
-                                // Re-focus weight field to keep keyboard up
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                    focusedField = .weight
-                                }
-                            }
-                        )
-                    }
-                    .padding(Spacing.md)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(.systemBackground))
-                            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
-                            .shadow(color: isWeightValid ? Color.blue.opacity(0.25) : Color.black.opacity(0.05), radius: isWeightValid ? 16 : 8, x: 0, y: isWeightValid ? 4 : 2)
-                            .shadow(color: isWeightValid ? Color.purple.opacity(0.15) : .clear, radius: 24, x: 0, y: 8)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                LinearGradient(
-                                    colors: isWeightValid 
-                                        ? [Color.blue.opacity(0.6), Color.purple.opacity(0.5)]
-                                        : [Color.gray.opacity(0.2), Color.gray.opacity(0.15)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: isWeightValid ? 1.5 : 1
-                            )
-                    )
-                    .animation(.easeInOut(duration: 0.3), value: isWeightValid)
-                }
-            }
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
-        }
-    }
-    
-    // MARK: - Goal Step
-    private var goalStep: some View {
-        let goals: [(String, String, String, Color)] = [
-            ("Build Muscle", "💪", "Gain size & strength", .blue),
-            ("Get Lean", "🔥", "Burn fat, stay toned", .orange),
-            ("Endurance", "🏃", "Better stamina", .green),
-            ("General Fitness", "🌟", "Stay healthy", .purple)
-        ]
-        
-        return OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.body) },
-            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.experience) },
-            continueEnabled: !selectedGoals.isEmpty,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 3,
-            totalSteps: 9,
-            question: "What's your goal?",
-            subtitle: "Select one or more"
-        ) {
-            VStack(spacing: 24) {
-                // Goal cards - 2x2 grid with new styling
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                    ForEach(goals, id: \.0) { goal in
-                        OnboardingLargeCard(
-                            title: goal.0,
-                            emoji: goal.1,
-                            subtitle: goal.2,
-                            color: goal.3,
-                            isSelected: selectedGoals.contains(goal.0),
-                            onTap: {
-                                selectionFeedback.selectionChanged()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    if selectedGoals.contains(goal.0) {
-                                        selectedGoals.remove(goal.0)
-                                    } else {
-                                        selectedGoals.insert(goal.0)
-                                    }
-                                }
-                            }
-                        )
-                        .accessibilityLabel("\(goal.0). \(goal.2)")
-                    }
-                }
-                .padding(.horizontal, 20)
-                
-                // Help text
-                Text("This helps us prioritize exercises and rep ranges for you")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-        }
-    }
-    
-    
-    // MARK: - Experience Step
-    private var experienceStep: some View {
-        let levels: [(String, String, String, Color)] = [
-            ("Beginner", "🌱", "New to working out", .green),
-            ("Intermediate", "🌿", "Some gym experience", .blue),
-            ("Advanced", "🌳", "Years of training", .purple)
-        ]
-        
-        return OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.goal) },
-            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.strengthAssessment) },
-            continueEnabled: !selectedExperience.isEmpty,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 4,
-            totalSteps: 9,
-            question: "Experience level?",
-            subtitle: "Be honest — no judgment here!"
-        ) {
-            VStack(spacing: 12) {
-                ForEach(levels, id: \.0) { level in
-                    OnboardingWideCard(
-                        title: level.0,
-                        subtitle: level.2,
-                        icon: level.0 == "Beginner" ? "leaf.fill" : level.0 == "Intermediate" ? "flame.fill" : "bolt.fill",
-                        color: level.3,
-                        isSelected: selectedExperience == level.0,
-                        onTap: {
-                            selectionFeedback.selectionChanged()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedExperience = level.0
-                            }
-                        }
-                    )
-                }
-            }
-            .padding(.horizontal, 20)
-        }
-    }
-    
-    // MARK: - Strength Assessment Step
-    private var strengthAssessmentStep: some View {
-        // Locale-aware weight descriptions
-        let strengthLevels: [(StrengthProfileRecommendationEngine.StrengthLevel, String, String, String, Color)] = [
-            (.veryLight, "📱", "Light Items", weightUnit == .lbs ? "Books, phones (~2 lbs)" : "Books, phones (~1 kg)", .gray),
-            (.light, "🥛", "Milk Jug", weightUnit == .lbs ? "Lift easily (~8 lbs)" : "Lift easily (~4 kg)", .green),
-            (.moderate, "🎳", "Bowling Ball", weightUnit == .lbs ? "Comfortable (~14 lbs)" : "Comfortable (~6 kg)", .blue),
-            (.strong, "🧳", "Heavy Suitcase", weightUnit == .lbs ? "Handle heavy (~40 lbs)" : "Handle heavy (~18 kg)", .orange),
-            (.veryStrong, "🏋️", "Heavy Weights", weightUnit == .lbs ? "Gym weights (~60+ lbs)" : "Gym weights (~27+ kg)", .red)
-        ]
-        
-        return OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.experience) },
-            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.workoutLocation) },
-            continueEnabled: selectedStrengthLevel != nil,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 5,
-            totalSteps: 9,
-            question: "How heavy can you lift?",
-            subtitle: "Pick the heaviest everyday item"
-        ) {
-            VStack(spacing: 12) {
-                ForEach(strengthLevels, id: \.0.rawValue) { level in
-                    OnboardingWideCard(
-                        title: level.2,
-                        subtitle: level.3,
-                        icon: level.0 == .veryLight ? "iphone" : level.0 == .light ? "drop.fill" : level.0 == .moderate ? "circle.fill" : level.0 == .strong ? "bag.fill" : "dumbbell.fill",
-                        color: level.4,
-                        isSelected: selectedStrengthLevel == level.0,
-                        onTap: {
-                            selectionFeedback.selectionChanged()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedStrengthLevel = level.0
-                            }
-                        }
-                    )
-                    .accessibilityLabel("\(level.2). \(level.3)")
-                }
-                
-                // Info tip
-                HStack(spacing: 10) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 14))
-                        .foregroundColor(.orange)
-                    
-                    Text("Helps suggest starting weights for workouts")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 8)
-            }
-            .padding(.horizontal, 20)
-        }
-    }
-    
-    // MARK: - Workout Location Step
-    private var workoutLocationStep: some View {
-        let locations: [(WorkoutEnvironmentService.WorkoutEnvironment, String, String, String, Color)] = [
-            (.gym, "🏋️", "Gym", "Full gym equipment access", .purple),
-            (.home, "🏠", "Home", "Bodyweight & home equipment", .green),
-            (.outdoor, "🌳", "Outdoor", "Parks & outdoor spaces", .teal),
-            (.hybrid, "🔄", "Hybrid", "Mix of locations", .orange)
-        ]
-        
-        return OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.strengthAssessment) },
-            onContinue: {
-                updateSuggestedEquipment()
-                isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.equipment)
-            },
-            continueEnabled: selectedWorkoutLocation != nil,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 6,
-            totalSteps: 9,
-            question: "Where do you typically workout?",
-            subtitle: "You can change this anytime"
-        ) {
-            VStack(spacing: 12) {
-                // Location grid - 2x2
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                    ForEach(locations, id: \.0.rawValue) { item in
-                        OnboardingLargeCard(
-                            title: item.2,
-                            emoji: item.1,
-                            subtitle: item.3,
-                            color: item.4,
-                            isSelected: selectedWorkoutLocation == item.0,
-                            onTap: {
-                                selectionFeedback.selectionChanged()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    selectedWorkoutLocation = item.0
-                                }
-                            }
-                        )
-                        .accessibilityLabel("\(item.0.displayName). \(item.3)")
-                    }
-                }
-                
-                // Info text
-                if selectedWorkoutLocation != nil {
-                    Text(workoutLocationInfoText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                }
-            }
-            .padding(.horizontal, 20)
-        }
-    }
-    
-    private var workoutLocationInfoText: String {
-        switch selectedWorkoutLocation {
-        case .gym:
-            return "We'll prioritize exercises using machines, racks, cables and gym equipment"
-        case .home:
-            return "We'll focus on dumbbells, bands, bodyweight and minimal equipment exercises"
-        case .outdoor:
-            return "We'll suggest bodyweight, pull-up bar, and outdoor-friendly exercises"
-        case .hybrid:
-            return "We'll mix gym and home exercises based on your equipment"
-        }
-    }
-    
-    private func mapWorkoutLocationToEquipmentLocation(_ location: WorkoutEnvironmentService.WorkoutEnvironment) -> EquipmentLocation {
-        switch location {
-        case .gym: return .gym
-        case .home: return .home
-        case .outdoor: return .outdoor
-        case .hybrid: return .hybrid
-        }
-    }
-    
-    private func updateSuggestedEquipment() {
-        // If equipment is empty, suggest based on location (smart defaults)
-        if selectedEquipment.isEmpty {
-            switch selectedWorkoutLocation {
-            case .gym:
-                // Gym: Auto-select core gym equipment + Bench, Pull-Up Bar, Dip Bars, Smith Machine (always included for gym)
-                selectedEquipment = ["Barbell", "Dumbbells", "Cables", "Machines", "Smith Machine", "Plates", "Bench", "Pull-Up Bar", "Dip Bars"]
-            case .home:
-                // Home: Bodyweight, bands, dumbbells + kettlebell, chair, wall
-                selectedEquipment = ["Bodyweight", "Bands", "Dumbbells", "Kettlebell", "Chair", "Wall"]
-            case .outdoor:
-                // Outdoor: Bodyweight + portable equipment (first 6 auto-selected)
-                selectedEquipment = ["Bodyweight", "Bands", "Pull-Up Bar", "Dip Bars", "Kettlebell", "Medicine Ball"]
-            case .hybrid:
-                // Hybrid: Mix of home and gym equipment (first 6 auto-selected)
-                selectedEquipment = ["Dumbbells", "Bodyweight", "Bands", "Cables", "Machines", "Bench"]
-            }
-        } else if selectedWorkoutLocation == .gym {
-            // Always ensure Bench, Pull-Up Bar, and Dip Bars are included for gym workouts
-            if !selectedEquipment.contains("Bench") { selectedEquipment.insert("Bench") }
-            if !selectedEquipment.contains("Pull-Up Bar") { selectedEquipment.insert("Pull-Up Bar") }
-            if !selectedEquipment.contains("Dip Bars") { selectedEquipment.insert("Dip Bars") }
-        }
-        // Save to environment service
-        WorkoutEnvironmentService.shared.userEnvironment = selectedWorkoutLocation
-    }
-    
-    // MARK: - Equipment Step (Location-Based)
-    @State private var showMoreEquipment = false
-    
-    private var equipmentStep: some View {
-        // Primary equipment based on workout location
-        // Note: Bench is auto-included for gym (not shown but added to selection)
-        let primaryEquipment: [(String, String, Color)] = {
-            switch selectedWorkoutLocation {
-            case .gym:
-                return [
-                    ("Barbell", "figure.strengthtraining.traditional", .purple),
-                    ("Dumbbells", "dumbbell.fill", .blue),
-                    ("Cables", "cable.connector", .orange),
-                    ("Machines", "gearshape.2.fill", .green),
-                    ("Smith Machine", "square.stack.3d.up.fill", .cyan),
-                    ("Plates", "circle.grid.2x2.fill", .gray),
-                    ("Kettlebell", "scalemass.fill", .orange),
-                    ("TRX/Rings", "link", .mint),
-                    ("Medicine Ball", "basketball.fill", .brown),
-                ]
-            case .home:
-                return [
-                    ("Bodyweight", "figure.walk", .teal),
-                    ("Bands", "circle.hexagongrid.fill", .pink),
-                    ("Dumbbells", "dumbbell.fill", .blue),
-                    ("Stability Ball", "circle.fill", .mint),
-                    ("Chair", "chair.fill", .brown),
-                    ("Wall", "rectangle.portrait.fill", .gray),
-                    ("Pull-Up Bar", "figure.gymnastics", .purple),
-                    ("Dip Bars", "arrow.down.to.line", .indigo),
-                    ("Kettlebell", "scalemass.fill", .orange),
-                    ("Bench", "rectangle.fill", .indigo),
-                ]
-            case .outdoor:
-                return [
-                    // Auto-selected (first 6)
-                    ("Bodyweight", "figure.walk", .teal),
-                    ("Bands", "circle.hexagongrid.fill", .pink),
-                    ("Pull-Up Bar", "figure.gymnastics", .purple),
-                    ("Dip Bars", "arrow.down.to.line", .indigo),
-                    ("Kettlebell", "scalemass.fill", .orange),
-                    ("Medicine Ball", "basketball.fill", .brown),
-                    // Not auto-selected (next 3)
-                    ("Box", "square.fill", .indigo),
-                    ("Dumbbells", "dumbbell.fill", .blue),
-                    ("TRX/Rings", "link", .mint),
-                    ("Bench", "rectangle.fill", .gray),
-                ]
-            case .hybrid:
-                return [
-                    // Auto-selected (first 6)
-                    ("Dumbbells", "dumbbell.fill", .blue),
-                    ("Bodyweight", "figure.walk", .teal),
-                    ("Bands", "circle.hexagongrid.fill", .pink),
-                    ("Cables", "cable.connector", .orange),
-                    ("Machines", "gearshape.2.fill", .green),
-                    ("Bench", "rectangle.fill", .indigo),
-                    // Not auto-selected (next 4)
-                    ("Barbell", "figure.strengthtraining.traditional", .purple),
-                    ("Kettlebell", "scalemass.fill", .orange),
-                    ("Pull-Up Bar", "figure.gymnastics", .purple),
-                    ("Dip Bars", "arrow.down.to.line", .indigo),
-                ]
-            }
-        }()
-        
-        // Secondary equipment (Show More) - ordered by likelihood of use
-        let secondaryEquipment: [(String, String, Color)] = {
-            switch selectedWorkoutLocation {
-            case .gym:
-                // Ordered from most to least likely in a gym
-                // Note: Pull-Up Bar and Dip Bars are auto-included but shown here for visibility
-                return [
-                    ("TRX/Rings", "link", .mint),
-                    ("Pull-Up Bar", "figure.gymnastics", .purple),
-                    ("Dip Bars", "arrow.down.to.line", .indigo),
-                    ("Landmine", "arrow.up.forward", .gray),
-                    ("Battle Ropes", "waveform", .red),
-                    ("Sled", "arrow.forward.square", .brown),
-                    ("Foam Roller", "cylinder.fill", .pink),
-                    ("Bands", "circle.hexagongrid.fill", .pink),
-                    ("Stability Ball", "circle.fill", .mint),
-                    ("Bodyweight", "figure.walk", .teal),
-                    ("Bench", "rectangle.fill", .indigo),  // Hidden but available if they want to see it
-                    ("Step Platform", "stairs", .gray),
-                    ("Chair", "chair.fill", .secondary),
-                    ("Wall", "rectangle.portrait.fill", .secondary),
-                    ("Towel", "rectangle.compress.vertical", .secondary),
-                ]
-            case .home:
-                // All other equipment in the app for home users
-                return [
-                    ("TRX/Rings", "link", .mint),
-                    ("Medicine Ball", "basketball.fill", .brown),
-                    ("Barbell", "figure.strengthtraining.traditional", .purple),
-                    ("Cables", "cable.connector", .orange),
-                    ("Machines", "gearshape.2.fill", .green),
-                    ("Smith Machine", "square.stack.3d.up.fill", .cyan),
-                    ("Plates", "circle.grid.2x2.fill", .gray),
-                    ("Box", "square.fill", .indigo),
-                    ("Landmine", "arrow.up.forward", .gray),
-                    ("Battle Ropes", "waveform", .red),
-                    ("Sled", "arrow.forward.square", .brown),
-                    ("Foam Roller", "cylinder.fill", .pink),
-                    ("Step Platform", "stairs", .gray),
-                    ("Towel", "rectangle.compress.vertical", .secondary),
-                ]
-            case .outdoor:
-                // All other equipment from most to least likely outdoors
-                return [
-                    ("Stability Ball", "circle.fill", .mint),
-                    ("Battle Ropes", "waveform", .red),
-                    ("Sled", "arrow.forward.square", .brown),
-                    ("Foam Roller", "cylinder.fill", .pink),
-                    ("Plates", "circle.grid.2x2.fill", .gray),
-                    ("Barbell", "figure.strengthtraining.traditional", .purple),
-                    ("Step Platform", "stairs", .gray),
-                    ("Landmine", "arrow.up.forward", .gray),
-                    ("Chair", "chair.fill", .secondary),
-                    ("Wall", "rectangle.portrait.fill", .secondary),
-                    ("Towel", "rectangle.compress.vertical", .secondary),
-                    ("Smith Machine", "square.stack.3d.up.fill", .secondary),
-                    ("Cables", "cable.connector", .secondary),
-                    ("Machines", "gearshape.2.fill", .secondary),
-                ]
-            case .hybrid:
-                // All other equipment from most to least likely for hybrid users
-                return [
-                    ("Smith Machine", "square.stack.3d.up.fill", .cyan),
-                    ("TRX/Rings", "link", .mint),
-                    ("Stability Ball", "circle.fill", .mint),
-                    ("Medicine Ball", "basketball.fill", .brown),
-                    ("Plates", "circle.grid.2x2.fill", .gray),
-                    ("Box", "square.fill", .indigo),
-                    ("Landmine", "arrow.up.forward", .gray),
-                    ("Battle Ropes", "waveform", .red),
-                    ("Sled", "arrow.forward.square", .brown),
-                    ("Foam Roller", "cylinder.fill", .pink),
-                    ("Chair", "chair.fill", .secondary),
-                    ("Wall", "rectangle.portrait.fill", .secondary),
-                    ("Step Platform", "stairs", .gray),
-                    ("Towel", "rectangle.compress.vertical", .secondary),
-                ]
-            }
-        }()
-        
-        let primaryNames = Set(primaryEquipment.map { $0.0 })
-        let allPrimarySelected = primaryNames.isSubset(of: selectedEquipment)
-        
-        return OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.workoutLocation) },
-            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.limitations) },
-            continueEnabled: !selectedEquipment.isEmpty,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 7,
-            totalSteps: 9,
-            question: "What equipment do you have access to?",
-            subtitle: "Select what you typically use (you can change this anytime)"
-        ) {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Select All Primary button
-                    Button(action: {
-                        selectionFeedback.selectionChanged()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            if allPrimarySelected {
-                                for name in primaryNames {
-                                    selectedEquipment.remove(name)
-                                }
-                            } else {
-                                selectedEquipment.formUnion(primaryNames)
-                            }
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: allPrimarySelected ? "checkmark.circle.fill" : "circle")
-                                .font(.ds_bodyRegular)
-                            Text(allPrimarySelected ? "Deselect All" : "Select All")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal, 20)
-                    
-                    // Primary Equipment grid - 3 columns
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                        ForEach(primaryEquipment, id: \.0) { item in
-                            OnboardingSelectionCard(
-                                title: item.0,
-                                subtitle: nil,
-                                icon: item.1,
-                                color: item.2,
-                                isSelected: selectedEquipment.contains(item.0),
-                                onTap: {
-                                    selectionFeedback.selectionChanged()
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        if selectedEquipment.contains(item.0) {
-                                            selectedEquipment.remove(item.0)
-                                        } else {
-                                            selectedEquipment.insert(item.0)
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Show More Button
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3)) {
-                            showMoreEquipment.toggle()
-                        }
-                    }) {
-                        HStack {
-                            Text(showMoreEquipment ? "Show Less" : "Show More Equipment")
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            Image(systemName: showMoreEquipment ? "chevron.up" : "chevron.down")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, Spacing.sm)
-                    }
-                    
-                    // Secondary Equipment (collapsed by default)
-                    if showMoreEquipment {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Additional equipment options:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 4)
-                            
-                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                                ForEach(secondaryEquipment, id: \.0) { item in
-                                    OnboardingSelectionCard(
-                                        title: item.0,
-                                        subtitle: nil,
-                                        icon: item.1,
-                                        color: item.2.opacity(0.8),
-                                        isSelected: selectedEquipment.contains(item.0),
-                                        onTap: {
-                                            selectionFeedback.selectionChanged()
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                                if selectedEquipment.contains(item.0) {
-                                                    selectedEquipment.remove(item.0)
-                                                } else {
-                                                    selectedEquipment.insert(item.0)
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        .padding(Spacing.md)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(CornerRadius.md)
-                        .padding(.horizontal, 20)
-                    }
-                    
-                    // Help text
-                    Text("You can change this anytime in settings")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 8)
-                }
-                .padding(.bottom, 20)
-            }
-        }
-    }
-    
-    
-    private var locationIcon: String {
-        switch selectedWorkoutLocation {
-        case .gym: return "building.2.fill"
-        case .home: return "house.fill"
-        case .outdoor: return "sun.max.fill"
-        case .hybrid: return "arrow.triangle.2.circlepath"
-        }
-    }
-    
-    // MARK: - Limitations Step (Injury/Pain Tracking)
-    private var limitationsStep: some View {
-        let commonAreas = AffectedArea.commonAreas
-        
-        return VStack(spacing: 0) {
-            // Top Navigation Bar
-            OnboardingNavBar(
-                canGoBack: !isEditingFromConfirmation,
-                onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.equipment) },
-                onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.schedule) },
-                continueEnabled: true,
-                continueLabel: isEditingFromConfirmation ? "Save" : "Continue"
-            )
-            
-            // Progress Bar
-            OnboardingProgressBar(
-                currentStep: 8,
-                totalSteps: 9,
-                stepName: ""
-            )
-            .padding(.top, 4)
-            
-            // Question header
-            OnboardingQuestionHeader(
-                question: "Any limitations?",
-                subtitle: "Help us keep you safe"
-            )
-            .padding(.top, 24)
-            .padding(.bottom, 16)
-            
-            // Skip button
-            Button(action: {
-                selectionFeedback.selectionChanged()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    selectedLimitations.removeAll()
-                    limitationAccommodations.removeAll()
-                }
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: selectedLimitations.isEmpty ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18))
-                    Text("No injuries or limitations")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(
-                    selectedLimitations.isEmpty
-                        ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-                        : AnyShapeStyle(Color.secondary)
-                )
-                .padding(.vertical, Spacing.sm)
-                .padding(.horizontal, 20)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(selectedLimitations.isEmpty ? Color.green.opacity(0.1) : Color.clear)
-                )
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-            
-            // Limitation cards - full screen scroll
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 12) {
-                    ForEach(commonAreas) { area in
-                        LimitationCardOnboardingWide(
-                            area: area,
-                            isSelected: selectedLimitations.contains(area),
-                            accommodation: limitationAccommodations[area] ?? .beCareful,
-                            needsSelection: selectedLimitations.contains(area) && !confirmedAccommodations.contains(area),
-                            action: {
-                                selectionFeedback.selectionChanged()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    if selectedLimitations.contains(area) {
-                                        selectedLimitations.remove(area)
-                                        limitationAccommodations.removeValue(forKey: area)
-                                        confirmedAccommodations.remove(area)
-                                    } else {
-                                        selectedLimitations.insert(area)
-                                        limitationAccommodations[area] = .beCareful
-                                        // Don't add to confirmed yet - they need to explicitly choose
-                                    }
-                                }
-                            },
-                            onAccommodationChange: { newLevel in
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    limitationAccommodations[area] = newLevel
-                                    confirmedAccommodations.insert(area)
-                                }
-                            }
-                        )
-                        .accessibilityLabel("\(area.rawValue). \(selectedLimitations.contains(area) ? "Selected" : "Not selected")")
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 40)
-            }
-        }
-    }
-    
-    // MARK: - Schedule Step
-    private var scheduleStep: some View {
-        OnboardingStepContainer(
-            canGoBack: !isEditingFromConfirmation,
-            onBack: { isEditingFromConfirmation ? navigateTo(.confirmation) : navigateTo(.limitations) },
-            onContinue: { isEditingFromConfirmation ? returnToConfirmation() : navigateTo(.profilePhoto) },
-            continueEnabled: true,
-            continueLabel: isEditingFromConfirmation ? "Save" : "Continue",
-            currentStep: 9,
-            totalSteps: 10,
-            question: "Weekly workouts?",
-            subtitle: "Pick what's realistic for you"
-        ) {
-            VStack(spacing: 24) {
-                // Large number display
-                VStack(spacing: 4) {
-                    Text("\(selectedDays)")
-                        .font(.system(size: 80, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)
-                        )
-                    
-                    Text(selectedDays == 1 ? "day per week" : "days per week")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
-                }
-                
-                // Day selector - larger buttons
-                HStack(spacing: 8) {
-                    ForEach(1...7, id: \.self) { day in
-                        DaySelectorButtonLarge(day: day, isSelected: selectedDays == day) {
-                            selectionFeedback.selectionChanged()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedDays = day
-                            }
-                        }
-                        .accessibilityLabel("\(day) days per week")
-                        .accessibilityHint(selectedDays == day ? "Currently selected" : "Double tap to select")
-                    }
-                }
-                .padding(.horizontal, Spacing.md)
-                
-                // Recommendation badge
-                Text(recommendationText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Capsule().fill(Color.blue.opacity(0.1)))
-                
-                // Help text
-                Text("Better to commit to 3 days than plan 6 and burn out")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-        }
-    }
-    
-    private var recommendationText: String {
-        switch selectedDays {
-        case 1...2: return "Great for beginners. Focus on full-body workouts."
-        case 3...4: return "Perfect balance for most goals. You'll see great results!"
-        case 5...6: return "Dedicated training. Make sure to include rest days."
-        case 7: return "Every day? Remember, recovery is when muscles grow!"
-        default: return ""
-        }
-    }
-    
-    // Helper to return to confirmation and reset editing flag
-    private func returnToConfirmation() {
-        // Navigate first without animation, then reset the flag
-        currentStep = .confirmation
-        isEditingFromConfirmation = false
-    }
-    
-    // MARK: - Confirmation Step (Review before creating account)
-    private var confirmationStep: some View {
-        VStack(spacing: 0) {
-            // Header - fixed at top
-            VStack(spacing: 4) {
-                Text("Review Your Profile")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.primary)
-                
-                Text("Tap any row to make changes")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.top, 24)
-            .padding(.bottom, 8)
-            
-            // Scrollable content
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    
-                    // Clean list view
-                    VStack(spacing: 0) {
-                        // Account Section
-                        ConfirmationListSection(title: "ACCOUNT") {
-                            ConfirmationListRow(icon: "person.fill", label: "Name", value: name) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.username)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .name
-                                }
-                            }
-                            ConfirmationListRow(icon: "envelope.fill", label: "Email", value: email) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.auth)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .email
-                                }
-                            }
-                            ConfirmationListRow(icon: "at", label: "Username", value: username.isEmpty ? "Not set" : "@\(username)") {
-                                isEditingFromConfirmation = true
-                                navigateTo(.username)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .username
-                                }
-                            }
-                        }
-                        
-                        // Personal Section
-                        ConfirmationListSection(title: "PERSONAL") {
-                            ConfirmationListRow(icon: "calendar", label: "Birthday", value: birthday) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.basics)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .birthday
-                                }
-                            }
-                            ConfirmationListRow(icon: "person.2.fill", label: "Gender", value: selectedGender ?? "Not set") {
-                                isEditingFromConfirmation = true
-                                navigateTo(.basics)
-                            }
-                            ConfirmationListRow(icon: "ruler", label: "Height", value: formattedHeight) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.body)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .height
-                                }
-                            }
-                            ConfirmationListRow(icon: "scalemass", label: "Weight", value: formattedWeight) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.body)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    focusedField = .weight
-                                }
-                            }
-                        }
-                        
-                        // Fitness Section
-                        ConfirmationListSection(title: "FITNESS") {
-                            ConfirmationListRow(icon: "target", label: "Goal", value: selectedGoals.isEmpty ? "Not set" : selectedGoals.sorted().joined(separator: ", ")) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.goal)
-                            }
-                            ConfirmationListRow(icon: "chart.bar.fill", label: "Experience", value: selectedExperience) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.experience)
-                            }
-                            ConfirmationListRow(icon: "dumbbell.fill", label: "Equipment", value: selectedEquipment.isEmpty ? "None" : Array(selectedEquipment).joined(separator: ", ")) {
-                                isEditingFromConfirmation = true
-                                navigateTo(.equipment)
-                            }
-                            // Show limitations with their accommodation levels
-                            if !selectedLimitations.isEmpty {
-                                ForEach(Array(selectedLimitations).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { limitation in
-                                    let accommodationLevel = limitationAccommodations[limitation] ?? .beCareful
-                                    ConfirmationListRow(
-                                        icon: "bandage.fill", 
-                                        label: limitation.rawValue, 
-                                        value: accommodationLevel.displayName
-                                    ) {
-                                        isEditingFromConfirmation = true
-                                        navigateTo(.limitations)
-                                    }
-                                }
-                            } else {
-                                ConfirmationListRow(icon: "checkmark.circle.fill", label: "Limitations", value: "None") {
-                                    isEditingFromConfirmation = true
-                                    navigateTo(.limitations)
-                                }
-                            }
-                            ConfirmationListRow(icon: "calendar.badge.clock", label: "Schedule", value: "\(selectedDays) days/week") {
-                                isEditingFromConfirmation = true
-                                navigateTo(.schedule)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Error message if account creation fails
-                    if showError {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 8)
-                    }
-                    
-                    Spacer().frame(height: 20)
-                }
-            }
-            
-            // Navigation buttons - fixed at bottom
-            HStack(spacing: 16) {
-                Button(action: { navigateTo(.profilePhoto) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.ds_labelLarge)
-                        .foregroundStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 52, height: 52)
-                        .background(Circle().fill(Color(.systemBackground)).shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4))
-                        .overlay(Circle().stroke(LinearGradient(colors: [.blue.opacity(0.3), .purple.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5))
-                }
-                
-                Button(action: { createAccountAndComplete() }) {
-                    HStack {
-                        if supabaseManager.isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text(isSignUp ? "Create Account" : "Finish Setup")
-                                .font(.headline).fontWeight(.bold)
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, Spacing.md)
-                    .background(
-                        Capsule()
-                            .fill(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
-                            .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
-                    )
-                }
-                .disabled(supabaseManager.isLoading)
-            }
-            .padding(.horizontal, 28)
-            .padding(.bottom, 30)
-        }
-    }
-    
-    // Formatted height for display
-    private var formattedHeight: String {
-        if heightUnit == .cm {
-            return "\(heightCm) cm"
-        } else if let parsed = parsedHeightFeetInches {
-            return "\(parsed.feet)'\(parsed.inches)\""
-        }
-        return heightFeetInchesDigits
-    }
-    
-    // Formatted weight for display
-    private var formattedWeight: String {
-        if weightUnit == .lbs {
-            return "\(weight) lbs"
-        } else {
-            return "\(weight) kg"
-        }
     }
     
     // Create account (for signup) and complete onboarding
@@ -6947,6 +5933,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                             }
                             .foregroundColor(.secondary)
                         }
+                        .accessibilityHint("Returns to previous step")
                     } else {
                         Spacer().frame(width: 60)
                     }
@@ -6969,6 +5956,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                         )
                     }
                     .disabled(!canContinue)
+                    .accessibilityHint("Proceeds to next onboarding step")
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, Spacing.sm)
@@ -7074,12 +6062,12 @@ struct GenderButton: View {
                     }
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(
-                            LinearGradient(
-                                colors: isSelected 
-                                    ? [Color.white.opacity(0.3), Color.clear]
-                                    : colorScheme == .dark
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
+                            .stroke(
+                                LinearGradient(
+                                    colors: isSelected 
+                                        ? [Color.white.opacity(0.3), Color.clear]
+                                        : colorScheme == .dark
                                     ? [Color.white.opacity(0.1), Color.clear]
                                     : [Color.gray.opacity(0.15), Color.clear],
                                 startPoint: .top,
@@ -7089,6 +6077,7 @@ struct GenderButton: View {
                         )
                 )
         }
+        .accessibilityLabel("\(title), \(isSelected ? "selected" : "not selected")")
         .buttonStyle(.plain)
         .scaleEffect(isSelected ? 1.03 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
@@ -7549,6 +6538,13 @@ struct DaySelectorButtonLarge: View {
         .buttonStyle(.plain)
         .scaleEffect(isSelected ? 1.15 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .accessibilityLabel("\(dayName), \(isSelected ? "selected" : "not selected")")
+    }
+    
+    private var dayName: String {
+        let names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        guard day >= 1, day <= 7 else { return "Day \(day)" }
+        return names[day - 1]
     }
 }
 

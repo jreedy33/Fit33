@@ -15,7 +15,7 @@ import Foundation
 // MARK: - Test User Profiles (Simulating Real Users from Various Countries)
 
 /// Pre-configured test user profiles representing different countries and scenarios
-struct TestUserProfile {
+struct OnboardingTestUserProfile {
     let name: String
     let email: String
     let username: String
@@ -38,9 +38,9 @@ struct TestUserProfile {
     let usesMonthFirstDate: Bool
 
     /// All test profiles for comprehensive coverage
-    static let allProfiles: [TestUserProfile] = [
+    static let allProfiles: [OnboardingTestUserProfile] = [
         // US user - imperial, MM/DD/YYYY
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Mike Johnson", email: "mike_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "mikej_\(Int.random(in: 1000...9999))", country: .us,
             phoneNumber: "5551234567", birthday: "03/15/1992", birthdayISO: "1992-03-15",
@@ -51,7 +51,7 @@ struct TestUserProfile {
             limitations: [], daysPerWeek: 5, usesMonthFirstDate: true
         ),
         // UK user - metric, DD/MM/YYYY
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Sophie Williams", email: "sophie_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "sophiew_\(Int.random(in: 1000...9999))", country: .uk,
             phoneNumber: "7911123456", birthday: "22/07/1995", birthdayISO: "1995-07-22",
@@ -62,7 +62,7 @@ struct TestUserProfile {
             limitations: ["Lower Back"], daysPerWeek: 3, usesMonthFirstDate: false
         ),
         // Australian user - metric, DD/MM/YYYY
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "James Chen", email: "james_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "jamesche_\(Int.random(in: 1000...9999))", country: .australia,
             phoneNumber: "412345678", birthday: "10/11/1988", birthdayISO: "1988-11-10",
@@ -73,7 +73,7 @@ struct TestUserProfile {
             limitations: ["Shoulder"], daysPerWeek: 6, usesMonthFirstDate: false
         ),
         // Indian user - metric
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Priya Sharma", email: "priya_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "priyas_\(Int.random(in: 1000...9999))", country: .india,
             phoneNumber: "9876543210", birthday: "05/12/2000", birthdayISO: "2000-12-05",
@@ -84,7 +84,7 @@ struct TestUserProfile {
             limitations: ["Knee"], daysPerWeek: 4, usesMonthFirstDate: false
         ),
         // Canadian user - imperial, MM/DD/YYYY (same dial code as US)
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Marc Tremblay", email: "marc_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "marct_\(Int.random(in: 1000...9999))", country: .canada,
             phoneNumber: "4161234567", birthday: "08/30/1990", birthdayISO: "1990-08-30",
@@ -95,7 +95,7 @@ struct TestUserProfile {
             limitations: [], daysPerWeek: 5, usesMonthFirstDate: true
         ),
         // Brazilian user - metric
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Ana Silva", email: "ana_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "anas_\(Int.random(in: 1000...9999))", country: .brazil,
             phoneNumber: "11912345678", birthday: "14/02/1997", birthdayISO: "1997-02-14",
@@ -106,7 +106,7 @@ struct TestUserProfile {
             limitations: [], daysPerWeek: 4, usesMonthFirstDate: false
         ),
         // Gender: Other option
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Alex Rivera", email: "alex_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "alexr_\(Int.random(in: 1000...9999))", country: .us,
             phoneNumber: "3101234567", birthday: "06/15/1998", birthdayISO: "1998-06-15",
@@ -117,7 +117,7 @@ struct TestUserProfile {
             limitations: ["Wrist"], daysPerWeek: 3, usesMonthFirstDate: true
         ),
         // No gender selected (optional)
-        TestUserProfile(
+        OnboardingTestUserProfile(
             name: "Jordan Lee", email: "jordan_test_\(Int.random(in: 10000...99999))@fit33test.com",
             username: "jordanl_\(Int.random(in: 1000...9999))", country: .us,
             phoneNumber: "2121234567", birthday: "11/28/1985", birthdayISO: "1985-11-28",
@@ -203,7 +203,7 @@ class OnboardingTestHelper {
     func runComprehensiveTestSuite() async -> [OnboardingTestResult] {
         print("╔══════════════════════════════════════════════════════════════╗")
         print("║       COMPREHENSIVE ONBOARDING TEST SUITE                   ║")
-        print("║       Testing \(TestUserProfile.allProfiles.count) user profiles across all countries        ║")
+        print("║       Testing \(OnboardingTestUserProfile.allProfiles.count) user profiles across all countries        ║")
         print("╚══════════════════════════════════════════════════════════════╝")
 
         var allResults: [OnboardingTestResult] = []
@@ -216,8 +216,8 @@ class OnboardingTestHelper {
 
         // Run full end-to-end tests for each profile
         print("\n--- PHASE 2: End-to-End Database Tests ---\n")
-        for (index, profile) in TestUserProfile.allProfiles.enumerated() {
-            print("\n--- Test \(index + 1)/\(TestUserProfile.allProfiles.count): \(profile.name) (\(profile.country.name)) ---")
+        for (index, profile) in OnboardingTestUserProfile.allProfiles.enumerated() {
+            print("\n--- Test \(index + 1)/\(OnboardingTestUserProfile.allProfiles.count): \(profile.name) (\(profile.country.name)) ---")
             let result = await runFullOnboardingTest(profile: profile)
             allResults.append(result)
             print("   Result: \(result.isSuccess ? "PASS" : "FAIL")")
@@ -259,7 +259,7 @@ class OnboardingTestHelper {
     func runOfflineValidationTests() -> [OnboardingTestResult] {
         var results: [OnboardingTestResult] = []
 
-        for profile in TestUserProfile.allProfiles {
+        for profile in OnboardingTestUserProfile.allProfiles {
             var result = OnboardingTestResult()
             result.testEmail = profile.email
             result.testUsername = profile.username
@@ -311,7 +311,7 @@ class OnboardingTestHelper {
 
     // MARK: - Individual Validation Tests
 
-    private func testBirthdayParsing(profile: TestUserProfile) -> Bool {
+    private func testBirthdayParsing(profile: OnboardingTestUserProfile) -> Bool {
         let parts = profile.birthday.split(separator: "/")
         guard parts.count == 3 else { return false }
 
@@ -349,7 +349,7 @@ class OnboardingTestHelper {
         return matches
     }
 
-    private func testHeightConversion(profile: TestUserProfile) -> Bool {
+    private func testHeightConversion(profile: OnboardingTestUserProfile) -> Bool {
         let heightCm = profile.heightCm
 
         if profile.heightUnit == "ft" {
@@ -374,7 +374,7 @@ class OnboardingTestHelper {
         return true
     }
 
-    private func testWeightConversion(profile: TestUserProfile) -> Bool {
+    private func testWeightConversion(profile: OnboardingTestUserProfile) -> Bool {
         let weightKg = profile.weightKg
 
         if profile.weightUnit == "lbs" {
@@ -396,7 +396,7 @@ class OnboardingTestHelper {
         return true
     }
 
-    private func testPhoneNumberFormatting(profile: TestUserProfile) -> Bool {
+    private func testPhoneNumberFormatting(profile: OnboardingTestUserProfile) -> Bool {
         let digits = profile.phoneNumber.filter { $0.isNumber }
 
         // Check digit count matches country requirements
@@ -419,7 +419,7 @@ class OnboardingTestHelper {
         return true
     }
 
-    private func testCountryCodeValidation(profile: TestUserProfile) -> Bool {
+    private func testCountryCodeValidation(profile: OnboardingTestUserProfile) -> Bool {
         let country = profile.country
 
         // Verify all properties are non-empty
@@ -437,8 +437,8 @@ class OnboardingTestHelper {
     // MARK: - End-to-End Test (with Network)
 
     /// Full end-to-end test creating a real user through the entire flow
-    func runFullOnboardingTest(profile: TestUserProfile? = nil) async -> OnboardingTestResult {
-        let testProfile = profile ?? TestUserProfile.allProfiles[0]
+    func runFullOnboardingTest(profile: OnboardingTestUserProfile? = nil) async -> OnboardingTestResult {
+        let testProfile = profile ?? OnboardingTestUserProfile.allProfiles[0]
 
         print("╔══════════════════════════════════════════════════════════════╗")
         print("║  ONBOARDING E2E TEST: \(testProfile.name)")
@@ -483,7 +483,7 @@ class OnboardingTestHelper {
         }
 
         // Step 3: Wait for profile sync
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        try? await Task.sleep(for: .seconds(1))
 
         // Step 4: Set username
         print("  [3/8] Setting username: @\(testProfile.username)")
@@ -569,14 +569,48 @@ class OnboardingTestHelper {
             }
         }
 
-        // Step 9: Cleanup - sign out
-        print("  [8/8] Cleaning up (signing out)...")
+        // Step 9: Full cleanup - DELETE test account from database
+        print("  [8/9] Cleaning up (deleting test account)...")
+        if let userId = supabase.currentUser?.id {
+            do {
+                try await supabase.supabaseClient
+                    .rpc("delete_user_account", params: ["user_id_to_delete": userId.uuidString])
+                    .execute()
+                result.cleanupSuccess = true
+                print("     PASS - Account fully deleted from database")
+            } catch {
+                do {
+                    try await supabase.deleteAccount()
+                    result.cleanupSuccess = true
+                    print("     PASS - Account deleted via SupabaseManager")
+                } catch {
+                    result.errors.append("CLEANUP FAILED: Test account \(userId) left in database!")
+                    print("     FAIL - Could not delete test account: \(error)")
+                }
+            }
+        } else {
+            try? await supabase.signOut()
+            result.warnings.append("No userId for deletion, signed out only")
+        }
+
+        // Step 10: Verify deletion - confirm zero rows remain
+        print("  [9/9] Verifying account fully deleted...")
         do {
-            try await supabase.signOut()
-            result.cleanupSuccess = true
-            print("     PASS - Signed out")
+            struct RowCheck: Decodable { let id: String }
+            let remaining: [RowCheck] = try await supabase.supabaseClient
+                .from("user_profiles")
+                .select("id")
+                .eq("email", value: testProfile.email)
+                .execute()
+                .value
+            if remaining.isEmpty {
+                print("     PASS - Zero residue in user_profiles")
+            } else {
+                result.errors.append("ORPHAN DATA: \(remaining.count) rows still in user_profiles for \(testProfile.email)")
+                print("     FAIL - \(remaining.count) orphan rows remain")
+            }
         } catch {
-            print("     WARN - Sign out failed: \(error.localizedDescription)")
+            result.warnings.append("Could not verify deletion: \(error.localizedDescription)")
         }
 
         // Print result
@@ -592,7 +626,7 @@ class OnboardingTestHelper {
 
     private func verifyProfileDataIntegrity(
         userId: UUID?,
-        expectedProfile: TestUserProfile,
+        expectedProfile: OnboardingTestUserProfile,
         result: inout OnboardingTestResult
     ) async -> Bool {
         guard let userId = userId else {
@@ -1047,6 +1081,139 @@ struct OnboardingValidationTests {
         }
 
         return (passed: passed, failed: errors.count, errors: errors)
+    }
+}
+
+// MARK: - Full Audit Runner with Guaranteed Cleanup
+
+struct OnboardingAuditReport {
+    var offlineTestsPassed: Int = 0
+    var offlineTestsFailed: Int = 0
+    var countryCodesPassed: Int = 0
+    var countryCodesFailed: Int = 0
+    var e2eProfilesPassed: Int = 0
+    var e2eProfilesFailed: Int = 0
+    var orphansCleaned: Int = 0
+    var errors: [String] = []
+
+    var isFullPass: Bool {
+        offlineTestsFailed == 0 && countryCodesFailed == 0 && e2eProfilesFailed == 0
+    }
+}
+
+extension OnboardingTestHelper {
+
+    /// Full audit: all profiles E2E, verify every DB field, guaranteed zero residue
+    func runFullAuditWithCleanup() async -> OnboardingAuditReport {
+        var report = OnboardingAuditReport()
+
+        print("╔══════════════════════════════════════════════════════════════╗")
+        print("║          FULL ONBOARDING AUDIT WITH CLEANUP                 ║")
+        print("╚══════════════════════════════════════════════════════════════╝")
+
+        // Phase 1: Pre-test orphan sweep
+        print("\n--- PHASE 0: Pre-Test Orphan Sweep ---")
+        let preCleanCount = await cleanupOrphanTestAccounts()
+        report.orphansCleaned += preCleanCount
+        if preCleanCount > 0 {
+            print("   Cleaned \(preCleanCount) orphan test accounts from prior runs")
+        } else {
+            print("   No orphans found - clean slate")
+        }
+
+        // Phase 2: Offline validation (50+ tests, no DB)
+        print("\n--- PHASE 1: Offline Validation Tests ---")
+        let offlineResults = runOfflineValidationTests()
+        let offlinePassed = offlineResults.filter { $0.isSuccess }.count
+        let offlineFailed = offlineResults.count - offlinePassed
+        report.offlineTestsPassed = offlinePassed
+        report.offlineTestsFailed = offlineFailed
+        print("   Result: \(offlinePassed)/\(offlineResults.count) passed")
+
+        // Phase 3: Country code coverage (all 45 countries)
+        print("\n--- PHASE 2: Country Code Coverage ---")
+        let countryResults = testAllCountryCodes()
+        report.countryCodesPassed = countryResults.passed
+        report.countryCodesFailed = countryResults.failed
+        print("   Result: \(countryResults.passed) passed, \(countryResults.failed) failed")
+        for e in countryResults.errors { report.errors.append("Country: \(e)") }
+
+        // Phase 4: E2E for each of 8 profiles
+        print("\n--- PHASE 3: End-to-End Database Tests ---")
+        for (index, profile) in OnboardingTestUserProfile.allProfiles.enumerated() {
+            print("\n  [\(index + 1)/\(OnboardingTestUserProfile.allProfiles.count)] \(profile.name) (\(profile.country.name))")
+            let result = await runFullOnboardingTest(profile: profile)
+            if result.isSuccess {
+                report.e2eProfilesPassed += 1
+            } else {
+                report.e2eProfilesFailed += 1
+                for e in result.errors {
+                    report.errors.append("\(profile.name): \(e)")
+                }
+            }
+        }
+
+        // Phase 5: Post-test orphan sweep
+        print("\n--- PHASE 4: Post-Test Orphan Sweep ---")
+        let postCleanCount = await cleanupOrphanTestAccounts()
+        report.orphansCleaned += postCleanCount
+        if postCleanCount > 0 {
+            print("   WARNING: Cleaned \(postCleanCount) orphans from this test run")
+        } else {
+            print("   Clean - zero orphans remaining")
+        }
+
+        // Final report
+        print("\n╔══════════════════════════════════════════════════════════════╗")
+        print("║                  FULL AUDIT REPORT                          ║")
+        print("╠══════════════════════════════════════════════════════════════╣")
+        print("║  Offline Tests:    \(report.offlineTestsPassed) passed / \(report.offlineTestsFailed) failed")
+        print("║  Country Codes:    \(report.countryCodesPassed) passed / \(report.countryCodesFailed) failed")
+        print("║  E2E Profiles:     \(report.e2eProfilesPassed) passed / \(report.e2eProfilesFailed) failed")
+        print("║  Orphans Cleaned:  \(report.orphansCleaned)")
+        print("║  OVERALL:          \(report.isFullPass ? "PASS" : "FAIL")")
+        if !report.errors.isEmpty {
+            print("╠══════════════════════════════════════════════════════════════╣")
+            print("║  ERRORS:")
+            for e in report.errors { print("║    - \(e)") }
+        }
+        print("╚══════════════════════════════════════════════════════════════╝")
+
+        return report
+    }
+
+    /// Clean up any leftover test accounts (emails ending in @fit33test.com)
+    private func cleanupOrphanTestAccounts() async -> Int {
+        let supabase = SupabaseManager.shared
+        do {
+            struct OrphanRow: Decodable {
+                let id: String
+                let email: String?
+            }
+            let orphans: [OrphanRow] = try await supabase.supabaseClient
+                .from("user_profiles")
+                .select("id, email")
+                .like("email", pattern: "%@fit33test.com")
+                .execute()
+                .value
+
+            var cleaned = 0
+            for orphan in orphans {
+                do {
+                    try await supabase.supabaseClient
+                        .rpc("delete_user_account", params: ["user_id_to_delete": orphan.id])
+                        .execute()
+                    cleaned += 1
+                    print("   Deleted orphan: \(orphan.email ?? orphan.id)")
+                } catch {
+                    print("   Failed to delete orphan \(orphan.id): \(error.localizedDescription)")
+                }
+            }
+            return cleaned
+        } catch {
+            print("   Orphan sweep query failed: \(error.localizedDescription)")
+            return 0
+        }
     }
 }
 

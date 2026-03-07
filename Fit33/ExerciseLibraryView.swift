@@ -896,27 +896,40 @@ struct ExerciseLibraryView: View {
                     ScrollView {
                         Color.clear.frame(height: 0).id("top")
                         
-                        LazyVStack(spacing: 10) {
-                            ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
-                                NavigationLink(value: exercise) {
-                                    CompactExerciseRowContent(exercise: exercise, showChevron: true)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .simultaneousGesture(TapGesture().onEnded {
-                                    // ⚡️ Track exercise selection for dynamic popularity ranking
-                                    if let name = exercise.name {
-                                        ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
+                        if filteredExercises.isEmpty && !exerciseLibrary.isExercisesReady {
+                            VStack(spacing: Spacing.md) {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                                    .tint(.blue)
+                                Text("Loading exercises...")
+                                    .font(.ds_bodyMedium)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, Spacing.xxl)
+                        } else {
+                            LazyVStack(spacing: 10) {
+                                ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
+                                    NavigationLink(value: exercise) {
+                                        CompactExerciseRowContent(exercise: exercise, showChevron: true)
                                     }
-                                })
-                                // 🚀 Smart prefetch: preload video when exercise becomes visible
-                                .onAppear {
-                                    prefetchVisibleExercise(exercise: exercise, index: index)
+                                    .buttonStyle(PlainButtonStyle())
+                                    .simultaneousGesture(TapGesture().onEnded {
+                                        // ⚡️ Track exercise selection for dynamic popularity ranking
+                                        if let name = exercise.name {
+                                            ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
+                                        }
+                                    })
+                                    // 🚀 Smart prefetch: preload video when exercise becomes visible
+                                    .onAppear {
+                                        prefetchVisibleExercise(exercise: exercise, index: index)
+                                    }
                                 }
                             }
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.top, 4)
+                            .padding(.bottom, 20)
                         }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.top, 4)
-                        .padding(.bottom, 20)
                     }
                     .scrollDismissesKeyboard(.immediately)
                     .id(forceRenderID)
@@ -1345,12 +1358,21 @@ struct ExerciseLibraryView: View {
     }
     
     private func loadExercises() {
-        // Only load if exercises are ready (have valid names from cloud sync)
-        guard exerciseLibrary.isExercisesReady else {
-            print("⏳ [LIBRARY] Waiting for exercises to be ready...")
-            return
+        let loaded = ExerciseLibraryService.shared.getAllExercises()
+        if !loaded.isEmpty {
+            exercises = loaded
+        } else if !exerciseLibrary.isExercisesReady {
+            seedFromBundleIfNeeded()
         }
-        exercises = ExerciseLibraryService.shared.getAllExercises()
+    }
+    
+    private func seedFromBundleIfNeeded() {
+        guard exercises.isEmpty else { return }
+        Task {
+            ExerciseLibraryService.shared.seedFromBundle()
+            loadExercises()
+            updateFilteredExercises()
+        }
     }
     
     // MARK: - 🚀 Smart Video Prefetching

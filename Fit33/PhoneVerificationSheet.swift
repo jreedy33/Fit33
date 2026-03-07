@@ -12,7 +12,7 @@ struct PhoneVerificationSheet: View {
     
     // Local state
     @State private var localPhoneNumber = ""
-    @State private var selectedCountryCode: CountryCode = .us
+    @State private var selectedCountryCode: CountryCode = CountryCode.fromLocale()
     @State private var verificationCode = ""
     @State private var isVerificationCodeSent = false
     @State private var isVerifyingCode = false
@@ -20,12 +20,14 @@ struct PhoneVerificationSheet: View {
     @State private var resendCountdown = 0
     @State private var sendCodeCountdown = 0
     @State private var attempts = 0
+    @State private var resendTimer: Timer?
+    @State private var sendCodeTimer: Timer?
     
     @FocusState private var focusedField: Field?
     
     @StateObject private var phoneVerificationService = PhoneVerificationService.shared
     
-    private let maxAttempts = 2
+    private let maxAttempts = 3
     
     enum Field {
         case phoneNumber, verificationCode
@@ -98,13 +100,15 @@ struct PhoneVerificationSheet: View {
             }
         }
         .onAppear {
-            // If phone is already verified, show masked format
             if isVerified && !phoneNumber.isEmpty {
                 localPhoneNumber = formatMaskedPhone(phoneNumber)
             } else {
                 localPhoneNumber = phoneNumber
             }
             focusedField = .phoneNumber
+        }
+        .onDisappear {
+            cleanupTimers()
         }
     }
     
@@ -138,7 +142,7 @@ struct PhoneVerificationSheet: View {
                         HStack(spacing: 6) {
                             Text(selectedCountryCode.flag)
                                 .font(.system(size: 18))
-                            Text(selectedCountryCode.rawValue)
+                            Text(selectedCountryCode.dialingCode)
                                 .font(.system(size: 14, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.primary)
                             Image(systemName: "chevron.down")
@@ -152,7 +156,7 @@ struct PhoneVerificationSheet: View {
                                 .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
                         )
                     }
-                    .id("countryPicker-\(selectedCountryCode.rawValue)")
+                    .id("countryPicker-\(selectedCountryCode.id)")
                     
                     // Phone number input
                     HStack(spacing: 12) {
@@ -371,7 +375,7 @@ struct PhoneVerificationSheet: View {
     
     private var fullPhoneNumber: String {
         let digits = localPhoneNumber.filter { $0.isNumber }
-        return "\(selectedCountryCode.rawValue)\(digits)"
+        return "\(selectedCountryCode.dialingCode)\(digits)"
     }
     
     
@@ -400,8 +404,8 @@ struct PhoneVerificationSheet: View {
     private func formatPhoneNumberForCountry(_ input: String) -> String {
         let digits = input.filter { $0.isNumber }
         let limited = String(digits.prefix(selectedCountryCode.maxDigits))
-        
-        if selectedCountryCode == .us {
+
+        if selectedCountryCode == .us || selectedCountryCode == .canada {
             var result = ""
             for (index, char) in limited.enumerated() {
                 if index == 0 { result += "(" }
@@ -411,7 +415,7 @@ struct PhoneVerificationSheet: View {
             }
             return result
         }
-        
+
         if selectedCountryCode == .uk {
             var result = ""
             for (index, char) in limited.enumerated() {
@@ -420,7 +424,52 @@ struct PhoneVerificationSheet: View {
             }
             return result
         }
-        
+
+        if selectedCountryCode == .india {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 5 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        if selectedCountryCode == .brazil {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 2 || index == 7 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        if selectedCountryCode == .japan || selectedCountryCode == .southKorea {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 2 || index == 6 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        if selectedCountryCode == .australia {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 3 || index == 6 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
+        if selectedCountryCode == .singapore || selectedCountryCode == .hongKong {
+            var result = ""
+            for (index, char) in limited.enumerated() {
+                if index == 4 { result += " " }
+                result += String(char)
+            }
+            return result
+        }
+
         var result = ""
         for (index, char) in limited.enumerated() {
             if index > 0 && index % 3 == 0 { result += " " }
@@ -431,7 +480,7 @@ struct PhoneVerificationSheet: View {
     
     private func formatInternationalNumber() -> String {
         let digits = localPhoneNumber.filter { $0.isNumber }
-        return "\(selectedCountryCode.rawValue) \(digits)"
+        return "\(selectedCountryCode.dialingCode) \(digits)"
     }
     
     /// Format phone number with masking for privacy display
@@ -518,23 +567,34 @@ struct PhoneVerificationSheet: View {
     
     private func startResendCountdown() {
         resendCountdown = 30
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+        resendTimer?.invalidate()
+        resendTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
             if resendCountdown > 0 {
                 resendCountdown -= 1
             } else {
                 timer.invalidate()
+                resendTimer = nil
             }
         }
     }
     
     private func startSendCodeCountdown() {
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+        sendCodeTimer?.invalidate()
+        sendCodeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
             if sendCodeCountdown > 0 {
                 sendCodeCountdown -= 1
             } else {
                 timer.invalidate()
+                sendCodeTimer = nil
             }
         }
+    }
+    
+    private func cleanupTimers() {
+        resendTimer?.invalidate()
+        resendTimer = nil
+        sendCodeTimer?.invalidate()
+        sendCodeTimer = nil
     }
 }
 

@@ -232,6 +232,38 @@
 
 ---
 
+### H-12: Onboarding Dead Code
+- **Status:** DONE
+- **Priority:** P1 HIGH
+- **Context:** Duplicate `basicsStep`/`bodyStep`/`goalStep` etc. (PageTemplate versions) were dead code — 1,327 lines removed.
+- **Files:** `NewOnboardingView.swift`
+
+---
+
+### H-13: Onboarding Progress Not Saved
+- **Status:** DONE
+- **Priority:** P1 HIGH
+- **Context:** App close during onboarding lost all progress. Added UserDefaults checkpoint per step with restore on relaunch.
+- **Files:** `NewOnboardingView.swift` (OnboardingSessionManager)
+
+---
+
+### H-14: PhoneVerificationSheet Country Mismatch
+- **Status:** DONE
+- **Priority:** P1 HIGH
+- **Context:** Settings phone verification sheet had 16 countries and maxAttempts=2 while onboarding had 45 countries and maxAttempts=3. Synced to use dialingCode, fromLocale(), all 45 countries, and country-specific formatting. Fixed timer memory leaks.
+- **Files:** `PhoneVerificationSheet.swift`
+
+---
+
+### H-15: Test Account Cleanup
+- **Status:** DONE
+- **Priority:** P1 HIGH
+- **Context:** OnboardingTestHelper only signed out test accounts — never deleted them from database. Now calls delete_user_account RPC and verifies zero residue.
+- **Files:** `OnboardingTestHelper.swift`, `supabase/cleanup_test_accounts.sql`
+
+---
+
 ## MEDIUM - Should Fix Before Production
 
 ### M-1: DispatchQueue.main.asyncAfter Overuse
@@ -368,6 +400,54 @@
 - **Context:** Many views still use hardcoded RGB values instead of semantic `DesignSystem.swift` tokens.
 - **Recommendation:** Migrate to `Color.cardBackground`, `Color.adaptiveText`, etc.
 - **Files:** 30+ view files
+
+---
+
+### M-16: Contact Phone Normalization
+- **Status:** DONE
+- **Priority:** P2 MEDIUM
+- **Context:** ContactsService used US-only last-10-digits strategy. Replaced with E.164-aware normalization that preserves country codes.
+- **Files:** `ContactsService.swift`
+
+---
+
+### M-17: Onboarding Analytics Drop-Off Tracking
+- **Status:** DONE
+- **Priority:** P2 MEDIUM
+- **Context:** OnboardingSessionManager now tracks per-step timing. Created onboarding_analytics table.
+- **Files:** `NewOnboardingView.swift`, `supabase/20260307_onboarding_analytics.sql`
+
+---
+
+### M-18: Birthday Date Format Toggle
+- **Status:** NOT STARTED
+- **Priority:** P2 MEDIUM
+- **Context:** Birthday format auto-detected from locale but no manual MM/DD vs DD/MM override.
+- **Files:** `NewOnboardingView.swift`
+
+---
+
+### M-19: No Email Verification During Signup
+- **Status:** NOT STARTED
+- **Priority:** P2 MEDIUM
+- **Context:** Supabase supports email confirmation but it needs to be enabled in Dashboard settings.
+- **Recommendation:** Enable Supabase "Confirm email" setting and show interstitial after signup.
+
+---
+
+### M-20: Forgot Password Visibility in Onboarding
+- **Status:** DONE (already existed)
+- **Priority:** P2 MEDIUM
+- **Context:** "Forgot Password?" link already visible when user switches to sign-in mode. Verified accessible.
+- **Files:** `NewOnboardingView.swift`
+
+---
+
+### M-21: Orphan Test Account Cleanup SQL
+- **Status:** DONE
+- **Priority:** P2 MEDIUM
+- **Context:** Created cleanup_test_accounts() Supabase function to find and delete all *@fit33test.com accounts.
+- **Files:** `supabase/cleanup_test_accounts.sql`
 
 ---
 
@@ -619,6 +699,7 @@
 14. UI-3: Replace all `Color(white: 0.12)` with tokens
 15. UI-4: Delete duplicate ScaleButtonStyles
 16. UI-8: Unify navigation flow patterns
+17. H-12 (DONE), H-14 (DONE), H-15 (DONE)
 
 ### Sprint 4: Design System Enforcement (Week 4+)
 17. UI-5: Typography token adoption (787+ replacements)
@@ -632,6 +713,7 @@
 23. H-2: Accessibility support
 24. M-11: CI/CD pipeline
 25. A-3: Unit test infrastructure
+26. H-13 (DONE), M-16 (DONE), M-17 (DONE), M-19 (NOT STARTED), M-21 (DONE)
 
 ---
 

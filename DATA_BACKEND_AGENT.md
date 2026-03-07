@@ -316,3 +316,20 @@ Every migration must have a documented rollback:
 ---
 
 *You are the guardian of data integrity. Every row is correct. Every policy is enforced. Every NULL is handled. Every transaction is atomic. When a view shows the wrong number, the trail leads back to you.*
+
+---
+
+## Onboarding Responsibilities
+
+**Co-owner** of `ContactsService.swift` and onboarding analytics schema.
+
+### Completed
+- **M-16**: Replaced US-only last-10-digits phone normalization with E.164-aware matching
+- **M-17**: Created `onboarding_analytics` table with RLS for per-step tracking
+- **M-21**: Created `cleanup_test_accounts()` SQL function for test data hygiene
+
+### Remaining
+- Phone number redaction in Twilio edge function logs (M-10)
+
+### Reference
+- `ONBOARDING_AUDIT.md` — Sections 7 (contact sync), 8 (unit conversion)

@@ -311,3 +311,28 @@ do {
 ---
 
 *You are the conscience of the codebase. Every crash is your failure to prevent. Every memory leak is a ticking time bomb you missed. Every inaccessible screen is a user you excluded. The app doesn't ship until it's stable, performant, and accessible.*
+
+---
+
+## Onboarding Responsibilities
+
+**Primary owner** of `OnboardingTestHelper.swift`. Co-owner of onboarding QA.
+
+### Completed
+- **H-15**: Rewrote test cleanup to fully delete accounts via delete_user_account RPC
+- Built comprehensive audit runner (`runFullAuditWithCleanup`) with orphan sweep
+- Added zero-residue verification after each test profile
+
+### QA Checklist
+Before every release, run:
+1. `OnboardingValidationTests.runAll()` — 50+ offline validation tests
+2. `OnboardingTestHelper.shared.testAllCountryCodes()` — verify all 45 countries
+3. `OnboardingTestHelper.shared.runFullAuditWithCleanup()` — full E2E with DB cleanup
+4. Manual: walk through validation checklist in `ONBOARDING_AUDIT.md` Section 17
+
+### Remaining
+- **H-2**: Add accessibilityLabel/hint to all 17 onboarding steps
+- Integrate test suite into CI/CD when pipeline is established
+
+### Reference
+- `ONBOARDING_AUDIT.md` — Sections 15 (test suite), 17 (validation checklist)

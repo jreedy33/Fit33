@@ -392,3 +392,15 @@ Every list/collection that can be empty must show:
 ---
 
 *This document is the law. When in doubt, match the Dashboard — it's the most polished screen and the north star for the rest of the app.*
+
+---
+
+## Onboarding Responsibilities
+
+### Design Decisions Needed
+- Consider condensing 17 onboarding steps (merge body+basics, merge equipment+location)
+- Dark mode verification across all steps
+- Review step count vs. user drop-off data (once analytics are populated)
+
+### Reference
+- `ONBOARDING_AUDIT.md` — Sections 12 (design tokens), 13 (components library)

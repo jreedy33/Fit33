@@ -76,6 +76,11 @@ When one agent needs something from another:
 | `DynamicProgramGenerator.swift` | Fitness Expert | Product Engineer, Data | Fitness Expert defines splits/templates |
 | `ExerciseBundleEngine.swift` | Fitness Expert | Product Engineer | Fitness Expert defines bundles; PE uses for dedup |
 | `ProgramTemplateLibrary.swift` | Fitness Expert | Data Agent | Fitness Expert defines periodization; Data syncs to Supabase |
+| `NewOnboardingView.swift` | Product Engineer | Data Backend, Infra Security | PE owns flow; Data owns profile sync; Infra owns auth/phone |
+| `OnboardingTestHelper.swift` | Quality Performance | Product Engineer | QP owns tests; PE validates flow logic |
+| `PhoneVerificationSheet.swift` | Product Engineer | Infra Security | PE owns UI; Infra owns verification security |
+| `ContactsService.swift` | Data Backend | Product Engineer | Data owns normalization; PE owns UI |
+| `ONBOARDING_AUDIT.md` | All Agents | — | Reference doc for onboarding work |
 
 ---
 

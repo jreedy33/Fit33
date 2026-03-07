@@ -134,13 +134,22 @@ class ContactsService: ObservableObject {
                             }
                         }
                         
-                        // Collect phone numbers (normalized — last 10 digits for US)
+                        // Collect phone numbers (E.164-aware normalization)
                         for phone in contact.phoneNumbers {
-                            let digits = phone.value.stringValue
-                                .components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                            let normalized = digits.count >= 10 ? String(digits.suffix(10)) : digits
-                            if !normalized.isEmpty {
-                                phones.insert(normalized)
+                            let raw = phone.value.stringValue
+                            let hasPlus = raw.trimmingCharacters(in: .whitespaces).hasPrefix("+")
+                            let digits = raw.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                            guard !digits.isEmpty else { continue }
+                            
+                            if hasPlus {
+                                phones.insert("+\(digits)")
+                            } else if digits.count > 10 {
+                                phones.insert("+\(digits)")
+                            } else if digits.count == 10 {
+                                phones.insert("+1\(digits)")
+                                phones.insert(digits)
+                            } else {
+                                phones.insert(digits)
                             }
                         }
                     }
@@ -158,12 +167,18 @@ class ContactsService: ObservableObject {
         print("📇 [CONTACTS] Found \(result.emails.count) emails and \(result.phones.count) phone numbers")
     }
     
-    /// Normalize phone number by removing non-digits
+    /// Normalize phone number to E.164 format where possible
     nonisolated private func normalizePhoneNumber(_ phone: String) -> String {
-        let digits = phone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-        // Return last 10 digits for US numbers, or full number for international
-        if digits.count >= 10 {
-            return String(digits.suffix(10))
+        let raw = phone.trimmingCharacters(in: .whitespaces)
+        let hasPlus = raw.hasPrefix("+")
+        let digits = raw.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        
+        if hasPlus {
+            return "+\(digits)"
+        } else if digits.count > 10 {
+            return "+\(digits)"
+        } else if digits.count == 10 {
+            return "+1\(digits)"
         }
         return digits
     }
@@ -346,31 +361,41 @@ class ContactsService: ObservableObject {
                         // Extract all digits from user's phone
                         let userDigits = userPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
                         
-                        // Try multiple matching strategies to handle country codes
                         var matched = false
-                        
-                        // Strategy 1: Last 10 digits (standard US matching)
-                        let userLast10 = String(userDigits.suffix(10))
                         let userName = user.name ?? user.username ?? "Unknown"
-                        if contactPhoneNumbers.contains(userLast10) {
+                        let userE164 = userPhone.trimmingCharacters(in: .whitespaces).hasPrefix("+") ? "+\(userDigits)" : userDigits
+                        
+                        // Strategy 1: E.164 exact match (e.g., +14161234567)
+                        if contactPhoneNumbers.contains(userE164) {
                             matched = true
-                            print("   ✅ Phone match (last 10)! \(userName) - \(userLast10)")
+                            print("   ✅ Phone match (E.164)! \(userName)")
                         }
                         
-                        // Strategy 2: Full number with country code (e.g., +17163079290 matches 17163079290)
+                        // Strategy 2: Last 10 digits (backward-compatible US matching)
+                        if !matched && userDigits.count >= 10 {
+                            let userLast10 = String(userDigits.suffix(10))
+                            if contactPhoneNumbers.contains(userLast10) {
+                                matched = true
+                                print("   ✅ Phone match (last 10)! \(userName)")
+                            }
+                        }
+                        
+                        // Strategy 3: Full digits match
                         if !matched && contactPhoneNumbers.contains(userDigits) {
                             matched = true
-                            print("   ✅ Phone match (full)! \(userName) - \(userDigits)")
+                            print("   ✅ Phone match (full digits)! \(userName)")
                         }
                         
-                        // Strategy 3: Check if contact has country code prefix
+                        // Strategy 4: Contact has country code, user doesn't (or vice versa)
                         if !matched {
                             for contactPhone in contactPhoneNumbers {
-                                // Try with +1 prefix
-                                if userDigits == "1\(contactPhone)" || userDigits == contactPhone {
-                                    matched = true
-                                    print("   ✅ Phone match (country code)! \(userName) - \(contactPhone)")
-                                    break
+                                let contactDigits = contactPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                                if userDigits.hasSuffix(contactDigits) || contactDigits.hasSuffix(userDigits) {
+                                    if min(userDigits.count, contactDigits.count) >= 7 {
+                                        matched = true
+                                        print("   ✅ Phone match (suffix)! \(userName)")
+                                        break
+                                    }
                                 }
                             }
                         }

@@ -47,6 +47,7 @@ class RealtimeService: ObservableObject {
     private var communityChallengeChannel: RealtimeChannelV2?
     private var communityParticipantsChannel: RealtimeChannelV2?
     private var privateMembersChannel: RealtimeChannelV2?
+    private var friendActivityFeedChannel: RealtimeChannelV2?
     
     // MARK: - Debounce State
     
@@ -265,6 +266,7 @@ class RealtimeService: ObservableObject {
         await subscribeCommunityChallengeProgress(userId: userId)
         await subscribeCommunityParticipants(userId: userId)
         await subscribePrivateMembers(userId: userId)
+        await subscribeFriendActivityFeed(userId: userId)
         
         // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
         startAutoTrackedRefreshTimer()
@@ -273,7 +275,7 @@ class RealtimeService: ObservableObject {
         connectionError = nil
         print("✅ [REALTIME] Connected to all channels")
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All 8 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members + auto-tracked refresh timer")
+                        details: "✅ All 9 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed + auto-tracked refresh timer")
     }
     
     /// Disconnect from all realtime channels
@@ -304,6 +306,9 @@ class RealtimeService: ObservableObject {
         if let channel = privateMembersChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        if let channel = friendActivityFeedChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
         
         // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
         // Without this, the services hold a stale channel reference and the guard in
@@ -326,9 +331,39 @@ class RealtimeService: ObservableObject {
         communityChallengeChannel = nil
         communityParticipantsChannel = nil
         privateMembersChannel = nil
+        friendActivityFeedChannel = nil
         
         isConnected = false
         print("✅ [REALTIME] Disconnected from all channels")
+    }
+    
+    // MARK: - Friend Activity Feed Subscription
+    
+    private func subscribeFriendActivityFeed(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("friend_activity_feed-\(userId.uuidString)")
+        
+        let insertions = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "friend_activity_feed"
+        )
+        
+        Task {
+            for await _ in insertions {
+                print("📰 [REALTIME] New friend activity feed item!")
+                logRealtimeEvent(type: "INSERT", source: "friend_activity_feed",
+                                details: "New activity in feed — refreshing")
+                await ActivityFeedService.shared.fetchFeed()
+                ActivityFeedService.shared.lastRealtimeUpdate = Date()
+            }
+        }
+        
+        await channel.subscribe()
+        friendActivityFeedChannel = channel
+        
+        print("📡 [REALTIME] Subscribed to friend_activity_feed for user \(userId)")
     }
     
     // MARK: - Friend Requests Subscription

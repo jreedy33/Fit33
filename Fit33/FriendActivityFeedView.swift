@@ -116,6 +116,7 @@ class ActivityFeedService: ObservableObject {
     @Published var activities: [FriendActivity] = []
     @Published var myReactions: [MyActivityReaction] = []
     @Published var isLoading = false
+    @Published var lastRealtimeUpdate: Date?
     
     private init() {}
     

@@ -598,6 +598,10 @@ struct DashboardView: View {
             await FriendService.shared.loadReceivedWorkouts()
             await FriendService.shared.fetchFriends() // ⚡️ Pre-fetch for Friends tab (caches to disk)
             
+            // Pre-fetch contact suggestions so friend icons are ready before tapping Friends tab
+            await ContactsService.shared.refreshSuggestions()
+            await ActivityFeedService.shared.fetchFeed()
+            
             // Load active challenges, pending invites, and pending sent challenges
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)

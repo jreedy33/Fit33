@@ -457,7 +457,7 @@ class OnboardingTestHelper {
         result.countryCodeValid = true
 
         let supabase = SupabaseManager.shared
-        let testPassword = "TestPassword123!"
+        let testPassword = "Ft33_Aud!t\(Int.random(in: 1000...9999))xQ"
 
         // Step 1: Sign Up
         print("  [1/8] Creating account: \(testProfile.email)")

@@ -58,6 +58,7 @@ struct DashboardView: View {
     @ObservedObject private var friendService = FriendService.shared
     @StateObject private var dailyQuestService = DailyQuestService.shared
     @ObservedObject private var stravaService = StravaService.shared
+    @ObservedObject private var streakShieldService = StreakShieldService.shared
     @ObservedObject private var healthKitService = HealthKitService.shared
     @State private var navigateToCustomWorkout = false
     @State private var navigateToAutoWorkout = false
@@ -511,6 +512,14 @@ struct DashboardView: View {
             }
         }
         .onAppear {
+            // Update streak shield risk status
+            if let user = userManager.currentUser {
+                streakShieldService.checkStreakRisk(
+                    lastWorkoutDate: user.lastWorkoutDate,
+                    currentStreak: Int(user.currentStreak)
+                )
+            }
+            
             // Fetch friend reactions for workout stickers
             Task { await ActivityFeedService.shared.fetchMyReactions() }
             
@@ -644,6 +653,14 @@ struct DashboardView: View {
             // Only refresh when coming from background (not from inactive which happens during navigation)
             // This prevents refresh from interfering with navigation
             if oldPhase == .background && newPhase == .active {
+                // Re-check streak shield risk when returning from background
+                if let user = userManager.currentUser {
+                    streakShieldService.checkStreakRisk(
+                        lastWorkoutDate: user.lastWorkoutDate,
+                        currentStreak: Int(user.currentStreak)
+                    )
+                }
+                
                 Task {
                     // 🌙 MIDNIGHT AUTO-SYNC: Check if the day has changed
                     let calendar = Calendar.current
@@ -7541,6 +7558,7 @@ struct StreakInfoSheet: View {
                     Capsule()
                         .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                 )
+                .accessibilityHint(premiumManager.isPremiumUser ? "Opens streak editor" : "Requires premium subscription")
             }
             
             // Best streak
@@ -7555,6 +7573,8 @@ struct StreakInfoSheet: View {
                 .foregroundColor(.secondary)
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Current workout streak: \(currentStreak) days")
         .padding(.vertical, 20)
     }
     
@@ -7577,6 +7597,8 @@ struct StreakInfoSheet: View {
                     .fill(streakStatus.isAtRisk ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
             )
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(streakStatus.isAtRisk ? "Warning: \(streakStatus.message)" : "Status: \(streakStatus.message)")
     }
     
     // MARK: - How It Works Section
@@ -7717,6 +7739,8 @@ struct StreakInfoSheet: View {
             RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color(.systemGray6))
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
     
     private func tipRow(_ emoji: String, _ text: String) -> some View {
@@ -7799,11 +7823,13 @@ struct EditStreakSheet: View {
                             .foregroundColor(newStreak > 0 ? .orange : .gray.opacity(0.3))
                     }
                     .disabled(newStreak <= 0)
+                    .accessibilityLabel("Decrease streak")
                     
                     Text("\(newStreak)")
                         .font(.system(size: 48, weight: .black, design: .rounded))
                         .foregroundColor(.primary)
                         .frame(minWidth: 80)
+                        .accessibilityLabel("Streak value: \(newStreak) days")
                     
                     Button(action: {
                         HapticManager.selectionChanged()
@@ -7813,6 +7839,7 @@ struct EditStreakSheet: View {
                             .font(.system(size: 44))
                             .foregroundColor(.orange)
                     }
+                    .accessibilityLabel("Increase streak")
                 }
                 
                 Text("days")

@@ -117,6 +117,9 @@
 		7C6DE3C82F5BF98500BCA276 /* RecoveryExerciseDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3BD2F5BF98500BCA276 /* RecoveryExerciseDatabase.swift */; };
 		7C6DE3C92F5BF98500BCA276 /* RecoveryDayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3BB2F5BF98500BCA276 /* RecoveryDayEngine.swift */; };
 		7C6DE3EF2F5C932900BCA276 /* OnboardingTestHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3EE2F5C932900BCA276 /* OnboardingTestHelper.swift */; };
+		7C6DE3F12F5CAD4700BCA276 /* StreakShieldService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3F02F5CAD4700BCA276 /* StreakShieldService.swift */; };
+		7C6DE3F32F5CAD4D00BCA276 /* StreakLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3F22F5CAD4D00BCA276 /* StreakLogicTests.swift */; };
+		7C6DE3F52F5CAD7400BCA276 /* CriticalPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6DE3F42F5CAD7400BCA276 /* CriticalPathTests.swift */; };
 		7C792ABD2F2A68480048A97E /* WeightTrackingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792ABC2F2A68480048A97E /* WeightTrackingService.swift */; };
 		7C792ABE2F2A68480048A97E /* WeightTrackerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792ABB2F2A68480048A97E /* WeightTrackerWidget.swift */; };
 		7C792AC32F2AAE6E0048A97E /* SpoonacularService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C792AC22F2AAE6E0048A97E /* SpoonacularService.swift */; };
@@ -429,6 +432,9 @@
 		7C6DE3BF2F5BF98500BCA276 /* WorkoutReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReplayEngine.swift; sourceTree = "<group>"; };
 		7C6DE3C02F5BF98500BCA276 /* WorkoutReplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReplayView.swift; sourceTree = "<group>"; };
 		7C6DE3EE2F5C932900BCA276 /* OnboardingTestHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTestHelper.swift; sourceTree = "<group>"; };
+		7C6DE3F02F5CAD4700BCA276 /* StreakShieldService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakShieldService.swift; sourceTree = "<group>"; };
+		7C6DE3F22F5CAD4D00BCA276 /* StreakLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakLogicTests.swift; sourceTree = "<group>"; };
+		7C6DE3F42F5CAD7400BCA276 /* CriticalPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CriticalPathTests.swift; sourceTree = "<group>"; };
 		7C792ABB2F2A68480048A97E /* WeightTrackerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightTrackerWidget.swift; sourceTree = "<group>"; };
 		7C792ABC2F2A68480048A97E /* WeightTrackingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightTrackingService.swift; sourceTree = "<group>"; };
 		7C792ABF2F2AAE6E0048A97E /* HealthyRecipesCarousel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthyRecipesCarousel.swift; sourceTree = "<group>"; };
@@ -854,6 +860,9 @@
 				7C0C42852F184C0B00F02E84 /* OnboardingTestHelper.swift */,
 				7C792ACB2F2ABA150048A97E /* OrientationManager.swift */,
 				7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */,
+				7C6DE3F42F5CAD7400BCA276 /* CriticalPathTests.swift */,
+				7C6DE3F22F5CAD4D00BCA276 /* StreakLogicTests.swift */,
+				7C6DE3F02F5CAD4700BCA276 /* StreakShieldService.swift */,
 				7CEAFD142EF9D38900874B57 /* PersistenceController.swift */,
 				A12345678901234567890161 /* PersistenceController.swift */,
 				7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */,
@@ -1159,6 +1168,7 @@
 				7C0C41CE2F00A63D00F02E84 /* LimitationFilterEngine.swift in Sources */,
 				7C47F9E32EE3BF8600BEC4D7 /* StretchModeView.swift in Sources */,
 				7CACB57D2F2E9722003A7C91 /* ChallengePreviewWidget.swift in Sources */,
+				7C6DE3F52F5CAD7400BCA276 /* CriticalPathTests.swift in Sources */,
 				7CACB57F2F5A000100AAAAAA /* ChallengeReactionsView.swift in Sources */,
 				7CB08C9F2EDE246D00236ECB /* ProgramCustomizationService.swift in Sources */,
 				7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */,
@@ -1193,6 +1203,7 @@
 				7C792AF22F2B04610048A97E /* PremiumUpgradeView.swift in Sources */,
 				7CEAFD0B2EF9C30E00874B57 /* DataDownloadView.swift in Sources */,
 				7C558B142ED4D3A000A01E1F /* SupabaseManager.swift in Sources */,
+				7C6DE3F12F5CAD4700BCA276 /* StreakShieldService.swift in Sources */,
 				7CB08C7A2ED8178000236ECB /* AdaptiveColors.swift in Sources */,
 				7C8405E42EE8C57E0009ED0F /* OnboardingComponents.swift in Sources */,
 				7C1B0B132F5212C10094AF68 /* PrivateChallengeService.swift in Sources */,
@@ -1343,6 +1354,7 @@
 				7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */,
 				7CAFD55A2EDF780500920F0D /* HydrationService.swift in Sources */,
 				7C8405CA2EE70AFB0009ED0F /* FavoriteBasedDiscoveryEngine.swift in Sources */,
+				7C6DE3F32F5CAD4D00BCA276 /* StreakLogicTests.swift in Sources */,
 				7C0C41D02F00B0A900F02E84 /* LimitationRuleTables.swift in Sources */,
 				7CAFD5542EDE594100920F0D /* VideoStreamingService.swift in Sources */,
 				7C6DE3812F5BE05F00BCA276 /* AchievementService.swift in Sources */,

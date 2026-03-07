@@ -1138,9 +1138,14 @@ extension OnboardingTestHelper {
         print("   Result: \(countryResults.passed) passed, \(countryResults.failed) failed")
         for e in countryResults.errors { report.errors.append("Country: \(e)") }
 
-        // Phase 4: E2E for each of 8 profiles
+        // Phase 4: E2E for each of 8 profiles (with delay to avoid Supabase email rate limit)
         print("\n--- PHASE 3: End-to-End Database Tests ---")
+        print("   (15s delay between profiles to respect Supabase rate limits)")
         for (index, profile) in OnboardingTestUserProfile.allProfiles.enumerated() {
+            if index > 0 {
+                print("   Waiting 15s before next profile...")
+                try? await Task.sleep(for: .seconds(15))
+            }
             print("\n  [\(index + 1)/\(OnboardingTestUserProfile.allProfiles.count)] \(profile.name) (\(profile.country.name))")
             let result = await runFullOnboardingTest(profile: profile)
             if result.isSuccess {

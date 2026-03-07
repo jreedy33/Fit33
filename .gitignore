@@ -79,11 +79,13 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# Secrets
+# Secrets & Signing
 *.p8
 !DO\ NOT\ DELETE/*.p8
 *.pem
 *.key
+*.p12
+*.mobileprovision
 .env
 .env.local
 secrets.json

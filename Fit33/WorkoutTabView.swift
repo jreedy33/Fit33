@@ -70,7 +70,7 @@ struct WorkoutTabView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.red)
-                            .cornerRadius(12)
+                            .cornerRadius(CornerRadius.md)
                     }
                     .padding(.horizontal, 40)
                 }
@@ -327,7 +327,7 @@ struct WorkoutHomeView: View {
                         .environmentObject(userManager)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 20)
             }
@@ -359,7 +359,7 @@ struct WorkoutHomeView: View {
     private var customWorkoutHeaderView: some View {
         HStack {
             Text("Workout")
-                .font(.system(size: 42, weight: .bold))
+                .font(.ds_displayLarge)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.green, Color.green, Color(red: 0.4, green: 0.95, blue: 0.5).opacity(0.8)],
@@ -379,7 +379,7 @@ struct WorkoutHomeView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(.ultraThinMaterial)
                     )
             }
@@ -413,7 +413,7 @@ struct WorkoutHomeView: View {
                                 .frame(width: 44, height: 44)
                             
                             Image(systemName: "figure.run")
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                                 .foregroundStyle(
                                     LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 )
@@ -437,7 +437,7 @@ struct WorkoutHomeView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
@@ -470,7 +470,7 @@ struct WorkoutHomeView: View {
                                 .frame(width: 44, height: 44)
                             
                             Image(systemName: "figure.flexibility")
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                                 .foregroundStyle(
                                     LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 )
@@ -494,7 +494,7 @@ struct WorkoutHomeView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
@@ -637,7 +637,7 @@ struct WorkoutHomeView: View {
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: program.icon)
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                     
@@ -679,10 +679,10 @@ struct WorkoutHomeView: View {
                             .foregroundColor(programColor)
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Today's workout with rounded inner card
                 if let currentDay = generatedProgramService.currentDay {
@@ -712,8 +712,8 @@ struct WorkoutHomeView: View {
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.xs)
                                 .background(
                                     LinearGradient(
                                         colors: [programColor, programColor.opacity(0.8)],
@@ -728,19 +728,19 @@ struct WorkoutHomeView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
                         )
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.bottom, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [programColor.opacity(0.5), programColor.opacity(0.2)],
@@ -1462,13 +1462,13 @@ struct QuickActionCard: View {
             .frame(width: 160, height: 140)
             .background(Color.cardBackground)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.1), radius: 5, x: 0, y: 2)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.white.opacity(0.01), lineWidth: 1)
             )
         }
@@ -1586,17 +1586,7 @@ struct DepthQuickActionCard: View {
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
             .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
-        .buttonStyle(WorkoutDepthButtonStyle())
-    }
-}
-
-// MARK: - Depth Button Style
-struct WorkoutDepthButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .opacity(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
 }
 
@@ -1681,7 +1671,7 @@ struct SmartProgramWidget: View {
             Spacer()
         }
         .background(Color(.systemGray6))
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
     }
     
     private var fallbackCard: some View {
@@ -1702,7 +1692,7 @@ struct SmartProgramWidget: View {
             }
             .padding()
             .background(Color(.systemGray6))
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -1767,10 +1757,10 @@ struct SmartProgramWidget: View {
                     
                     Spacer()
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Middle Section - Why This Program
                 VStack(alignment: .leading, spacing: 10) {
@@ -1804,10 +1794,10 @@ struct SmartProgramWidget: View {
                         )
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Bottom Section - Program Stats & CTA
                 HStack(spacing: 12) {
@@ -1829,17 +1819,17 @@ struct SmartProgramWidget: View {
                             .font(.caption)
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         LinearGradient(colors: [matchColor, matchColor.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                     )
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
             .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .background(
                 ZStack {
                     // Depth shadow layers
@@ -1852,11 +1842,11 @@ struct SmartProgramWidget: View {
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                     
                     // Inner highlight
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -1869,7 +1859,7 @@ struct SmartProgramWidget: View {
                         )
                     
                     // Colored accent border
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(colors: [matchColor.opacity(colorScheme == .dark ? 0.4 : 0.3), matchColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1
@@ -1879,7 +1869,7 @@ struct SmartProgramWidget: View {
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
             .shadow(color: matchColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
-        .buttonStyle(WorkoutDepthButtonStyle())
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
     
     private func compatibilityBadge(icon: String, label: String, status: String, color: Color) -> some View {
@@ -1897,9 +1887,9 @@ struct SmartProgramWidget: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(color.opacity(0.1))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
     
     private func miniStat(icon: String, value: String, label: String, color: Color) -> some View {
@@ -2010,7 +2000,7 @@ struct ProgramSuggestionCard: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(program.primaryColor.opacity(0.12))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         
                         Text(program.title)
                             .font(.title3)
@@ -2046,7 +2036,7 @@ struct ProgramSuggestionCard: View {
                                 .padding(.vertical, 5)
                                 .background(program.primaryColor.opacity(0.1))
                                 .foregroundColor(program.primaryColor)
-                                .cornerRadius(8)
+                                .cornerRadius(CornerRadius.sm)
                         }
                     }
                 }
@@ -2083,7 +2073,7 @@ struct ProgramSuggestionCard: View {
                         .padding(.vertical, 4)
                         .background(program.secondaryColor.opacity(0.15))
                         .foregroundColor(program.secondaryColor)
-                        .cornerRadius(8)
+                        .cornerRadius(CornerRadius.sm)
                 }
                 
                 // Prominent CTA Button
@@ -2108,7 +2098,7 @@ struct ProgramSuggestionCard: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: program.primaryColor.opacity(0.3), radius: 8, x: 0, y: 4)
                     
                     Spacer()
@@ -2184,17 +2174,17 @@ struct NearAchievementCard: View {
                     .foregroundColor(color)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .frame(width: 140)
         .background(Color.cardBackground)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.white.opacity(0.01), lineWidth: 1)
         )
     }
@@ -2254,16 +2244,16 @@ struct WorkoutTabRecentCard: View {
                     .foregroundColor(.blue)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color.cardBackground)
                 .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.05), radius: 3, x: 0, y: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.white.opacity(0.01), lineWidth: 1)
         )
     }
@@ -2310,13 +2300,13 @@ struct EmptyRecentActivityCard: View {
         .padding(32)
         .background(Color.cardBackground)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.05), radius: 3, x: 0, y: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.white.opacity(0.01), lineWidth: 1)
         )
     }
@@ -2422,7 +2412,7 @@ struct NextGoalCard: View {
                         .minimumScaleFactor(0.85)
                     
                     Text(goal.remaining)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.ds_labelSmall)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -2437,7 +2427,7 @@ struct NextGoalCard: View {
                             .font(.system(size: 10, weight: .bold))
                     }
                     .foregroundColor(gradientColors[0])
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
@@ -2466,7 +2456,7 @@ struct NextGoalCard: View {
                         .offset(y: 4)
                     
                     // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -2478,7 +2468,7 @@ struct NextGoalCard: View {
                         )
                     
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -2491,7 +2481,7 @@ struct NextGoalCard: View {
                         )
                     
                     // Colored accent border
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: [
@@ -2508,7 +2498,7 @@ struct NextGoalCard: View {
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
             .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
-        .buttonStyle(WorkoutDepthButtonStyle())
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
 }
 
@@ -2537,7 +2527,7 @@ struct EmptyNextGoalsCard: View {
                     .foregroundColor(.primary)
                 
                 Text("Goals complete")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
             }
             .multilineTextAlignment(.center)
@@ -2550,7 +2540,7 @@ struct EmptyNextGoalsCard: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .foregroundColor(.green)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()
@@ -2572,7 +2562,7 @@ struct EmptyNextGoalsCard: View {
                     .offset(y: 4)
                 
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -2584,7 +2574,7 @@ struct EmptyNextGoalsCard: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -2597,7 +2587,7 @@ struct EmptyNextGoalsCard: View {
                     )
                 
                 // Colored accent border
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -2758,7 +2748,7 @@ struct ActiveProgramProgressCard: View {
     
     var body: some View {
         cardContent
-            .buttonStyle(WorkoutDepthButtonStyle())
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard, withHaptic: true))
             .onAppear {
                 withAnimation(.easeOut(duration: 1.0).delay(0.2)) {
                     animateProgress = true
@@ -2794,7 +2784,7 @@ struct ActiveProgramProgressCard: View {
                                 .font(.system(size: 20, weight: .bold, design: .rounded))
                                 .foregroundColor(programColor)
                             Text("%")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.ds_caption)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -2826,13 +2816,13 @@ struct ActiveProgramProgressCard: View {
                     
                     Spacer()
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 // Thin divider
                 Rectangle()
                     .fill(Color.gray.opacity(0.08))
                     .frame(height: 1)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Stats Grid - Clean 3-column layout
                 HStack(spacing: 0) {
@@ -2889,7 +2879,7 @@ struct ActiveProgramProgressCard: View {
                 )
             }
             .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .background(
                 ZStack {
                     // Depth shadows
@@ -2902,11 +2892,11 @@ struct ActiveProgramProgressCard: View {
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                     
                     // Inner highlight
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: colorScheme == .dark 
@@ -2919,7 +2909,7 @@ struct ActiveProgramProgressCard: View {
                         )
                     
                     // Accent border
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(colors: [programColor.opacity(colorScheme == .dark ? 0.4 : 0.25), programColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1
@@ -2936,14 +2926,14 @@ struct ActiveProgramProgressCard: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.ds_labelSmall)
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
                 .textCase(.uppercase)
         }
@@ -2965,7 +2955,7 @@ struct ProgressStatItem: View {
                     .font(.system(size: 12))
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(.primary)
             }
             Text(label)
@@ -3342,7 +3332,7 @@ struct SmartInsightsCard: View {
                         .fill(scoreColor.opacity(0.12))
                 )
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 14)
             .padding(.bottom, 10)
             
@@ -3393,7 +3383,7 @@ struct SmartInsightsCard: View {
             // Insights as stacked text with icons
             if !positiveInsights.isEmpty || !actionableInsights.isEmpty {
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     // Positive insights
@@ -3406,14 +3396,14 @@ struct SmartInsightsCard: View {
                         TrainingInsightRow(insight: insight)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
             }
             
             // Muscle Recovery Status (compact horizontal scroll)
             if !muscleRecoveryStatus.isEmpty {
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -3421,14 +3411,14 @@ struct SmartInsightsCard: View {
                             MuscleRecoveryBadge(muscle: item.muscle, status: item.status, daysRested: item.daysRested)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 }
                 .padding(.vertical, 10)
             }
             
             // View Program Link - subtle, inline style
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             Button(action: { HapticManager.impact(.light); onViewProgram() }) {
                 HStack(spacing: 10) {
@@ -3464,10 +3454,10 @@ struct SmartInsightsCard: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 14)
             }
             .buttonStyle(PlainButtonStyle())
@@ -3476,7 +3466,7 @@ struct SmartInsightsCard: View {
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - colored based on score
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(scoreColor.opacity(colorScheme == .dark ? 0.15 : 0.1))
                     .offset(y: 10)
                     .blur(radius: 6)
@@ -3611,8 +3601,8 @@ struct InsightChip: View {
                 .foregroundColor(.primary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
                 .fill(tint.opacity(0.12))
@@ -3659,7 +3649,7 @@ struct MuscleRecoveryBadge: View {
                 )
             
             Text(muscle.capitalized)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.primary)
                 .lineLimit(1)
             
@@ -3668,7 +3658,7 @@ struct MuscleRecoveryBadge: View {
                 .foregroundColor(status.color)
         }
         .frame(width: 60)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(status.color.opacity(0.08))
@@ -3687,14 +3677,14 @@ struct QuickTrainingStat: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(color)
                 Text(value)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -3786,14 +3776,14 @@ struct InsightStatCell: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.ds_labelSmall)
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
                 .textCase(.uppercase)
         }
@@ -3867,7 +3857,7 @@ struct WorkoutTabProgramCard: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         LinearGradient(
                             colors: [programColor, programColor.opacity(0.8)],
@@ -3875,10 +3865,10 @@ struct WorkoutTabProgramCard: View {
                             endPoint: .trailing
                         )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .frame(height: 150)
         .background(
             RoundedRectangle(cornerRadius: 14)

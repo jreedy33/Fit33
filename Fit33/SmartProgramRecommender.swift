@@ -158,24 +158,28 @@ class SmartProgramRecommender {
         }
         
         // ==========================================
-        // AGE CONSIDERATIONS (0-20 points)
+        // AGE CONSIDERATIONS (0-25 points)
         // ==========================================
         if profile.age > 50 {
-            // Prefer programs with lower intensity and more rest days
             if daysPerWeek <= 4 {
                 score += 15
             }
-            // Prefer programs that aren't labeled "intense" or "extreme"
-            if !program.name.lowercased().contains("intense") &&
-               !program.name.lowercased().contains("extreme") &&
-               !program.name.lowercased().contains("blitz") {
+            if programDifficulty == .beginner || programDifficulty == .intermediate {
                 score += 10
             }
-        } else if profile.age < 30 {
-            // Younger users can handle more intense programs
-            if program.name.lowercased().contains("intense") ||
-               program.name.lowercased().contains("blitz") {
+        } else if profile.age > 40 {
+            if daysPerWeek <= 5 {
                 score += 10
+            }
+            if programDifficulty != .advanced {
+                score += 5
+            }
+        } else if profile.age < 30 {
+            if programDifficulty == .intermediate || programDifficulty == .advanced {
+                score += 10
+            }
+            if daysPerWeek >= 4 {
+                score += 5
             }
         }
         
@@ -236,6 +240,10 @@ class SmartProgramRecommender {
                 return 80
             case .bodyweight:
                 return 70
+            case .hypertrophy:
+                return 60
+            case .strength, .powerbuilding:
+                return 50
             default:
                 return 30
             }

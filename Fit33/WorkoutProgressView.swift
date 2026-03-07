@@ -620,7 +620,7 @@ struct WorkoutProgressView: View {
                             statsContent
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     .padding(.bottom, 20)
                 }
@@ -750,7 +750,7 @@ struct WorkoutProgressView: View {
     private var customProgressHeaderView: some View {
         HStack {
             Text("Stats")
-                .font(.system(size: 42, weight: .bold))
+                .font(.ds_displayLarge)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.purple, .purple, .purple, Color(red: 0.7, green: 0.4, blue: 0.95).opacity(0.8)],
@@ -770,7 +770,7 @@ struct WorkoutProgressView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(.ultraThinMaterial)
                     )
             }
@@ -799,8 +799,8 @@ struct WorkoutProgressView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             LinearGradient(
                                 gradient: Gradient(colors: [.purple, .blue]),
@@ -882,7 +882,7 @@ struct WorkoutProgressView: View {
             HStack(spacing: 16) {
                 // Icon with gradient background
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(
                             LinearGradient(
                                 colors: [.purple, .indigo],
@@ -948,10 +948,10 @@ struct WorkoutProgressView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         }
@@ -1379,7 +1379,7 @@ struct WorkoutProgressView: View {
             // Legend
             HStack {
                 Text("Less")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                 
                 ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { intensity in
@@ -1389,7 +1389,7 @@ struct WorkoutProgressView: View {
                 }
                 
                 Text("More")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                 
                 Spacer()
@@ -1429,7 +1429,7 @@ struct WorkoutProgressView: View {
             }
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.12), radius: 16, x: 0, y: 8)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
     }
     
     // MARK: - Ring Stamp Calendar Card
@@ -1511,7 +1511,7 @@ struct WorkoutProgressView: View {
                     // Perfect Days This Month
                     VStack(spacing: 4) {
                         Text("\(perfectRingDaysThisMonth)")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .font(.ds_stat)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.purple, .pink],
@@ -1535,7 +1535,7 @@ struct WorkoutProgressView: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 2) {
                             Text("\(bestRingStreak)")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.ds_stat)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [.orange, .red],
@@ -1565,7 +1565,7 @@ struct WorkoutProgressView: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 2) {
                             Text("\(currentRingStreak)")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.ds_stat)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [.green, .teal],
@@ -1586,7 +1586,7 @@ struct WorkoutProgressView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(
@@ -1617,7 +1617,7 @@ struct WorkoutProgressView: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.8), lineWidth: 1)
         )
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
     }
     
     // MARK: - Ring Calendar Helpers
@@ -2197,10 +2197,10 @@ struct WorkoutProgressView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(Color(.systemGray6))
                     )
                 }
@@ -2219,7 +2219,7 @@ struct WorkoutProgressView: View {
                                 .foregroundColor(.secondary)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(muscle.color.opacity(0.1))
@@ -2227,9 +2227,9 @@ struct WorkoutProgressView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color(.systemBackground))
                     .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 1)
             )
@@ -2489,7 +2489,7 @@ struct WorkoutProgressView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     LinearGradient(
                         gradient: Gradient(colors: [Color.blue.opacity(0.05), Color.purple.opacity(0.05)]),
@@ -2498,7 +2498,7 @@ struct WorkoutProgressView: View {
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(Color.blue.opacity(0.1), lineWidth: 1)
                 )
         )
@@ -3133,7 +3133,7 @@ struct EnhancedStatCard: View {
             Spacer(minLength: 0)
         }
         .frame(height: 120)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -3209,7 +3209,7 @@ struct PRCard: View {
             Spacer(minLength: 0)
         }
         .frame(height: 120)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -3289,7 +3289,7 @@ struct AchievementBadge: View {
             }
         }
         .frame(width: 120)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -3478,7 +3478,7 @@ struct AllAchievementsView: View {
             }
         }
         .padding(.vertical, 20)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -3562,13 +3562,13 @@ struct StatPill: View {
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(color.opacity(0.1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(color.opacity(0.3), lineWidth: 1)
                 )
         )
@@ -3632,7 +3632,7 @@ struct EnhancedAchievementCard: View {
             Spacer(minLength: 0)
         }
         .frame(height: 180)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -3681,7 +3681,7 @@ struct MuscleMapView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Muscle Map")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(.ds_stat)
                         .foregroundColor(.primary)
                     
                     Text("Targeted muscle groups")
@@ -3702,7 +3702,7 @@ struct MuscleMapView: View {
                 .pickerStyle(SegmentedPickerStyle())
                 .frame(width: 140)
                 .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .cornerRadius(CornerRadius.sm)
             }
             .padding(.horizontal, 20)
             
@@ -3806,7 +3806,7 @@ struct MuscleMapView: View {
                                     Text(muscle.name)
                                         .font(.system(size: 10, weight: .bold, design: .rounded))
                                         .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
+                                        .padding(.horizontal, Spacing.xs)
                                         .padding(.vertical, 3)
                                         .background(
                                             Capsule()
@@ -3836,7 +3836,7 @@ struct MuscleMapView: View {
                     // Primary muscles section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Primary Muscles")
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .font(.ds_statSmall)
                             .foregroundColor(.primary)
                         
                         LazyVGrid(columns: [
@@ -3880,8 +3880,8 @@ struct MuscleMapView: View {
                                     
                                     Spacer()
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.sm)
                                 .background(
                                     RoundedRectangle(cornerRadius: 14)
                                         .fill(Color(.systemGray6).opacity(0.6))
@@ -3924,7 +3924,7 @@ struct MuscleMapView: View {
             }
         }
         .background(Color(.systemBackground))
-        .cornerRadius(24)
+        .cornerRadius(CornerRadius.xl)
         .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
     }
     
@@ -4590,7 +4590,7 @@ struct RingLegendRow: View {
                     .rotationEffect(.degrees(-90))
                 
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(color)
             }
             
@@ -4608,7 +4608,7 @@ struct RingLegendRow: View {
                 }
                 
                 Text(subtitle)
-                    .font(.system(size: 11))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -4640,7 +4640,7 @@ struct CompactRingLegend: View {
                     .shadow(color: color.opacity(0.4), radius: 3, x: 0, y: 1)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.white)
             }
             
@@ -4651,13 +4651,13 @@ struct CompactRingLegend: View {
                 
                 HStack(spacing: 2) {
                     Text(value)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.ds_labelSmall)
                         .foregroundColor(color)
                     Text("/")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                     Text(goal)
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                 }
             }

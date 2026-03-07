@@ -138,7 +138,7 @@ struct HealthyRecipesCarousel: View {
         let bottomRow = allRecipes.count > midpoint ? Array(allRecipes.suffix(from: midpoint)) : []
         
         return ScrollView(.horizontal, showsIndicators: false) {
-            VStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
                 // Top Row
                 HStack(spacing: 16) {
                     ForEach(Array(topRow.enumerated()), id: \.element.id) { index, recipe in

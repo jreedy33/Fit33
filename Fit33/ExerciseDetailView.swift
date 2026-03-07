@@ -212,7 +212,7 @@ struct ExerciseDetailView: View {
                         // Bottom padding for tab bar
                         Spacer(minLength: 100)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 20)
                 }
             }
@@ -250,7 +250,7 @@ struct ExerciseDetailView: View {
                         // Black outline behind the filled star for visibility
                         if isFavorite {
                             Image(systemName: "star.fill")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.black.opacity(0.5))
                                 .offset(x: 0.3, y: 0.3) // Slight offset for shadow-like outline
                         }
@@ -272,7 +272,7 @@ struct ExerciseDetailView: View {
                     .shadow(color: isFavorite ? .yellow.opacity(0.3) : .black.opacity(0.15), radius: 8, x: 0, y: 2)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
         }
         .ignoresSafeArea(edges: .bottom)
@@ -385,7 +385,7 @@ struct ExerciseDetailView: View {
             }
             .foregroundColor(.white)
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 ZStack {
                     // Gradient background
@@ -462,7 +462,7 @@ struct ExerciseDetailView: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -507,7 +507,7 @@ struct ExerciseDetailView: View {
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
         .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 20, x: 0, y: 4)
         .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 30, x: 0, y: 0)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 8)
     }
     
@@ -552,11 +552,11 @@ struct ExerciseDetailView: View {
             Image(systemName: categoryIcon)
                 .font(.system(size: 12, weight: .semibold))
             Text(exercise.category ?? "General")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.ds_labelMedium)
         }
         .foregroundColor(.white)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             ZStack {
                 // Glow layer
@@ -588,7 +588,7 @@ struct ExerciseDetailView: View {
         }
         .foregroundColor(colorScheme == .dark ? .white : .primary)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
                 .fill(Color.cardBackground)
@@ -604,11 +604,11 @@ struct ExerciseDetailView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12))
             Text("\(totalTimesPerformed)×")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.ds_labelMedium)
         }
         .foregroundColor(.green)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
                 .fill(Color.green.opacity(0.15))
@@ -699,7 +699,7 @@ struct ExerciseDetailView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.orange)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()
@@ -722,7 +722,7 @@ struct ExerciseDetailView: View {
             
             // Date
             Text(formatRelativeDate(date))
-                .font(.system(size: 11))
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -754,7 +754,7 @@ struct ExerciseDetailView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(categoryColor)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()
@@ -777,7 +777,7 @@ struct ExerciseDetailView: View {
             
             // Date
             Text(formatRelativeDate(date))
-                .font(.system(size: 11))
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -818,7 +818,7 @@ struct ExerciseDetailView: View {
             }
             
             Text(description)
-                .font(.system(size: 15))
+                .font(.ds_bodyMedium)
                 .foregroundColor(.secondary)
                 .lineSpacing(6)
                 .fixedSize(horizontal: false, vertical: true)
@@ -912,7 +912,7 @@ struct ExerciseDetailView: View {
                         
                         // Step Text
                         Text(step)
-                            .font(.system(size: 15))
+                            .font(.ds_bodyMedium)
                             .foregroundColor(.primary.opacity(0.9))
                             .lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
@@ -970,7 +970,7 @@ struct ExerciseDetailView: View {
                     .fill(categoryColor)
                     .frame(width: 8, height: 8)
                 Text(primaryMuscle)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.primary)
             }
             
@@ -985,7 +985,7 @@ struct ExerciseDetailView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -996,7 +996,7 @@ struct ExerciseDetailView: View {
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(categoryColor.opacity(0.2), lineWidth: 1)
                 )
                 .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
@@ -1025,12 +1025,12 @@ struct ExerciseDetailView: View {
                         .frame(width: 36, height: 36)
                     
                     Image(systemName: equipmentIcon)
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(categoryColor)
                 }
                 
                 Text(exercise.equipment ?? "Bodyweight")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.primary)
                     .lineLimit(2)
             }
@@ -1038,7 +1038,7 @@ struct ExerciseDetailView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -1049,7 +1049,7 @@ struct ExerciseDetailView: View {
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(categoryColor.opacity(0.2), lineWidth: 1)
                 )
                 .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
@@ -1246,7 +1246,7 @@ struct NativeStyleBackButton: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .semibold))
                 Text("Back")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.ds_bodyLarge)
             }
             .foregroundColor(.blue) // iOS blue
         }

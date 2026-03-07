@@ -179,6 +179,47 @@ extension View {
     func sleekCard(cornerRadius: CGFloat = 24, accentColor: Color = .blue) -> some View {
         modifier(SleekCardModifier(cornerRadius: cornerRadius, accentColor: accentColor))
     }
+    
+    /// Gradient card without the colored glow/outline — just the gradient fill + subtle depth
+    func sleekCardSubtle(cornerRadius: CGFloat = 16) -> some View {
+        modifier(SleekCardSubtleModifier(cornerRadius: cornerRadius))
+    }
+}
+
+struct SleekCardSubtleModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    : [Color.white, Color.white.opacity(0.93)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.4), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 6, x: 0, y: 3)
+    }
 }
 
 /// Adaptive gradient backgrounds for different tabs - Now unified for consistency
@@ -420,6 +461,7 @@ struct AnimatedOrbBackground: View {
             }
         }
         .ignoresSafeArea()
+        .accessibilityHidden(true)
         .onAppear {
             animatePulse = true
         }

@@ -27,6 +27,25 @@ unauthorized data access. If RLS is disabled on any table, that table is publicl
 | `step_tracking` | ☐ | ☐ | HealthKit step data |
 | `food_logs` | ☐ | ☐ | Detailed food tracking entries |
 
+### Challenge & Social Tables
+
+| Table | RLS Enabled | Policies Verified | Notes |
+|-------|:-----------:|:-----------------:|-------|
+| `group_challenges` | ☐ | ☐ | SELECT (all auth), INSERT/UPDATE/DELETE (creator only). Migration: `20260306_challenge_rls_hardening.sql` |
+| `challenge_participants` | ☑ | ☑ | Full CRUD policies via `fix_challenge_participants.sql` |
+| `challenge_daily_progress` | ☑ | ☑ | SELECT (own challenges), INSERT/UPDATE (own rows). DELETE via RPCs. |
+| `group_challenge_nudges` | ☐ | ☐ | SELECT (sender/recipient). All writes via SECURITY DEFINER RPCs. Migration: `20260306_challenge_rls_hardening.sql` |
+| `group_challenge_members` | N/A | N/A | RLS intentionally disabled — only accessed via SECURITY DEFINER RPCs. See `fix_group_challenge_members_recursion.sql` |
+| `community_challenges` | ☑ | ☑ | SELECT open to authenticated (for Realtime). Writes via RPCs. |
+| `community_challenge_participants` | ☑ | ☑ | SELECT open to authenticated (for Realtime). Writes via RPCs. |
+| `community_challenge_daily_progress` | ☑ | ☑ | SELECT open to authenticated. INSERT/UPDATE (own rows). |
+| `challenge_reactions` | ☑ | ☑ | SELECT (own challenges), INSERT (own sender_id). |
+| `private_challenges` | ☑ | ☑ | SELECT (members + invited). UPDATE (admin). Writes via RPCs. |
+| `private_challenge_members` | ☑ | ☐ | SELECT only. All writes via SECURITY DEFINER RPCs. |
+| `private_challenge_invites` | ☑ | ☐ | SELECT (invited/inviter). All writes via SECURITY DEFINER RPCs. |
+| `private_challenge_daily_progress` | ☑ | ☐ | SELECT (members). All writes via SECURITY DEFINER RPCs. |
+| `private_challenge_chat` | ☑ | ☐ | SELECT (members). All writes via SECURITY DEFINER RPCs. |
+
 ### Additional Tables to Audit
 
 As new tables are added, they should be listed here and verified before deploying.

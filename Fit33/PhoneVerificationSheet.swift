@@ -145,10 +145,10 @@ struct PhoneVerificationSheet: View {
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(.secondary)
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 14)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
                         )
                     }
@@ -174,15 +174,15 @@ struct PhoneVerificationSheet: View {
                         }
                     }
                     .font(.system(size: 16, weight: .medium))
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                             .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(isPhoneNumberValid ? Color.blue.opacity(0.4) : Color.clear, lineWidth: 1.5)
                     )
                 }
@@ -207,7 +207,7 @@ struct PhoneVerificationSheet: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(canSend ? .white : .gray)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         Capsule()
                             .fill(canSend ? Color.blue : Color.gray.opacity(0.3))
@@ -226,7 +226,7 @@ struct PhoneVerificationSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 10)
@@ -247,7 +247,7 @@ struct PhoneVerificationSheet: View {
                 Text("Code sent to \(formatInternationalNumber())")
                     .font(.subheadline.weight(.medium))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 10)
@@ -263,10 +263,10 @@ struct PhoneVerificationSheet: View {
                         .font(.caption)
                 }
                 .foregroundColor(.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(Color.orange.opacity(0.1))
                 )
             }
@@ -283,12 +283,12 @@ struct PhoneVerificationSheet: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 18)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                         .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(colors: [Color.blue.opacity(0.4), Color.cyan.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1.5

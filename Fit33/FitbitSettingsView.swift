@@ -196,8 +196,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -246,8 +246,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -305,8 +305,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -388,8 +388,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -409,7 +409,7 @@ struct FitbitSettingsView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Sleep Data Card
@@ -436,8 +436,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -486,7 +486,7 @@ struct FitbitSettingsView: View {
         return Text(label)
             .font(.caption2)
             .fontWeight(.medium)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(color.opacity(0.15))
             .foregroundColor(color)
@@ -523,8 +523,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -640,7 +640,7 @@ struct FitbitSettingsView: View {
                 )
             )
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(fitbit.isLoading)
     }
@@ -656,7 +656,7 @@ struct FitbitSettingsView: View {
             .padding(.vertical, 14)
             .background(Color.red.opacity(0.1))
             .foregroundColor(.red)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
     }
     
@@ -699,8 +699,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -734,8 +734,8 @@ struct FitbitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -747,7 +747,7 @@ struct FitbitSettingsView: View {
             .padding(.vertical, 6)
             .background(Color(red: 0, green: 0.73, blue: 0.77).opacity(0.15))
             .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
-            .cornerRadius(8)
+            .cornerRadius(CornerRadius.sm)
     }
     
     private var connectButton: some View {
@@ -772,7 +772,7 @@ struct FitbitSettingsView: View {
                 )
             )
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(isAuthenticating)
     }
@@ -910,7 +910,7 @@ struct FitbitCompactCard: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color(UIColor.secondarySystemBackground))
             )
         }

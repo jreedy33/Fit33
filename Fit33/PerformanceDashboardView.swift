@@ -100,7 +100,7 @@ struct PerformanceDashboardView: View {
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .padding(.horizontal)
     }
     
@@ -211,7 +211,7 @@ struct PerformanceDashboardView: View {
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var summaryCard: some View {
@@ -229,7 +229,7 @@ struct PerformanceDashboardView: View {
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private func summaryItem(label: String, value: String) -> some View {
@@ -309,7 +309,7 @@ struct PerformanceDashboardView: View {
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .padding(.horizontal)
     }
     
@@ -350,7 +350,7 @@ struct PerformanceDashboardView: View {
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .padding(.horizontal)
     }
     
@@ -399,14 +399,14 @@ struct PerformanceDashboardView: View {
                 .font(.caption2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(issue.severity == .critical ? Color.red : Color.orange)
                 .cornerRadius(6)
         }
         .padding()
         .background(Color(.systemBackground).opacity(0.9))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Empty State

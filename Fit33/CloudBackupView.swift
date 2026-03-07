@@ -123,7 +123,7 @@ struct CloudBackupView: View {
         .frame(maxWidth: .infinity)
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
         )
@@ -168,7 +168,7 @@ struct CloudBackupView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
         )
@@ -195,7 +195,7 @@ struct CloudBackupView: View {
             .padding(.bottom, 8)
         }
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
         )
@@ -232,7 +232,7 @@ struct CloudBackupView: View {
                 .foregroundColor(syncStatus[dataType]?.isSynced == true ? .green : .gray)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Actions Card
@@ -267,7 +267,7 @@ struct CloudBackupView: View {
                     )
                 )
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(!supabaseManager.isAuthenticated || isSyncing)
             
@@ -288,16 +288,16 @@ struct CloudBackupView: View {
                 .background(Color.cardBackground)
                 .foregroundColor(.blue)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.blue, lineWidth: 2)
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(!supabaseManager.isAuthenticated || isSyncing)
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
         )
@@ -323,7 +323,7 @@ struct CloudBackupView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
         )

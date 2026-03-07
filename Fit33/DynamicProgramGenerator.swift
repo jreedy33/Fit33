@@ -30,8 +30,8 @@ class DynamicProgramGenerator {
             
             var restBetweenSets: Int {
                 switch self {
-                case .beginner: return 90
-                case .intermediate: return 75
+                case .beginner: return 120
+                case .intermediate: return 90
                 case .advanced: return 60
                 }
             }
@@ -89,6 +89,7 @@ class DynamicProgramGenerator {
             case pushPullLegs = "Push/Pull/Legs"
             case broSplit = "Bro Split"
             case pushPull = "Push/Pull"
+            case arnoldSplit = "Arnold Split"
             
             var description: String {
                 switch self {
@@ -97,6 +98,7 @@ class DynamicProgramGenerator {
                 case .pushPullLegs: return "Divide workouts by movement pattern"
                 case .broSplit: return "One muscle group per day"
                 case .pushPull: return "Push muscles one day, pull the next"
+                case .arnoldSplit: return "Chest+Back, Shoulders+Arms, Legs — antagonist pairing"
                 }
             }
         }
@@ -261,9 +263,9 @@ class DynamicProgramGenerator {
         case 5:
             return [.pushPullLegs, .upperLower, .broSplit]
         case 6:
-            return [.pushPullLegs, .broSplit, .upperLower]
+            return [.pushPullLegs, .arnoldSplit, .broSplit, .upperLower]
         case 7:
-            return [.pushPullLegs, .broSplit]
+            return [.pushPullLegs]
         default:
             return [.fullBody]
         }
@@ -555,6 +557,8 @@ class DynamicProgramGenerator {
             splitDescriptor = "Split"
         case .pushPull:
             splitDescriptor = "Push/Pull"
+        case .arnoldSplit:
+            splitDescriptor = "Arnold"
         }
         
         return "\(baseName) - \(splitDescriptor)"

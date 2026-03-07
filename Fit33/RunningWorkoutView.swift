@@ -118,7 +118,7 @@ struct RunningWorkoutView: View {
                 // Top: Hero Metrics 2x2 Grid
                 heroMetricsGrid
                     .padding(.top, 60)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // GPS Status + Map Controls
                 mapControlsBar
@@ -136,12 +136,12 @@ struct RunningWorkoutView: View {
                     
                     // Live Chart Strip
                     liveChartStrip
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     
                     // Goal Progress (if set)
                     if runningManager.goalType != .none {
                         goalProgressStrip
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                     }
                     
                     // Quick Controls Row
@@ -230,12 +230,12 @@ struct RunningWorkoutView: View {
                 .tracking(1)
         }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(.ultraThinMaterial.opacity(0.6))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(color.opacity(0.3), lineWidth: 1)
                 )
         )
@@ -335,7 +335,7 @@ struct RunningWorkoutView: View {
                     .foregroundColor(accentColor)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
         .background(
             Capsule()
@@ -360,7 +360,7 @@ struct RunningWorkoutView: View {
                         Text(tab.title)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(selectedChartTab == tab ? .white : .white.opacity(0.5))
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(
                                 selectedChartTab == tab ?
@@ -388,10 +388,10 @@ struct RunningWorkoutView: View {
                 }
             }
             .frame(height: 56)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(.ultraThinMaterial.opacity(0.6))
             )
         }
@@ -527,12 +527,12 @@ struct RunningWorkoutView: View {
             }
             .frame(height: 6)
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(.ultraThinMaterial.opacity(0.6))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(accentColor.opacity(0.2), lineWidth: 1)
                 )
         )
@@ -826,9 +826,9 @@ struct RunningWorkoutView: View {
                         .font(.headline)
                         .foregroundColor(.black)
         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(accentGradient)
-                        .cornerRadius(16)
+                        .cornerRadius(CornerRadius.lg)
                 }
                 .padding(.horizontal, 40)
                 
@@ -1242,11 +1242,11 @@ struct GoalSetupSheet: View {
                             .font(.headline)
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(colors: [accentColor, accentColor.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                             )
-                            .cornerRadius(16)
+                            .cornerRadius(CornerRadius.lg)
                     }
                     .padding(.horizontal)
                     .padding(.bottom)
@@ -1274,9 +1274,9 @@ struct GoalSetupSheet: View {
             }
             .foregroundColor(selectedGoalType == type ? .black : .white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(selectedGoalType == type ? accentColor : Color.white.opacity(0.1))
             )
         }
@@ -1361,7 +1361,7 @@ struct RunCompletionView: View {
                                 
                                 RoutePreviewMap(coordinates: result.routeCoordinates)
                                     .frame(height: 200)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                                     .padding(.horizontal, 20)
                             }
                         }
@@ -1396,7 +1396,7 @@ struct RunCompletionView: View {
                                                 .fontWeight(.semibold)
                                         }
                                         .padding(.horizontal, 20)
-                                        .padding(.vertical, 8)
+                                        .padding(.vertical, Spacing.xs)
                                     }
                                 }
                             }
@@ -1420,13 +1420,13 @@ struct RunCompletionView: View {
                                 .font(.headline)
                                 .foregroundColor(savedToHealth ? accentColor : .white)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(
                                     savedToHealth 
                                         ? Color.white.opacity(0.1) 
                                         : Color.red.opacity(0.8)
                                 )
-                                .cornerRadius(16)
+                                .cornerRadius(CornerRadius.lg)
                             }
                             .disabled(isSavingToHealth || savedToHealth)
                             .padding(.horizontal, 20)
@@ -1438,11 +1438,11 @@ struct RunCompletionView: View {
                                 .font(.headline)
                                 .foregroundColor(.black)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(
                                     LinearGradient(colors: [accentColor, accentColor.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                                 )
-                                .cornerRadius(16)
+                                .cornerRadius(CornerRadius.lg)
                         }
                         .padding(.horizontal, 20)
                         .padding(.bottom, 40)
@@ -1484,9 +1484,9 @@ struct RunCompletionView: View {
                 .foregroundColor(.white.opacity(0.6))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(Color.white.opacity(0.05))
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
     }
     
     private func formatPace(_ pace: Double) -> String {
@@ -1808,7 +1808,7 @@ struct RunChallengeCard: View {
                         .foregroundColor(.white.opacity(0.3))
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(isCompleted 

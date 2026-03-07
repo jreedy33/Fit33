@@ -143,7 +143,7 @@ struct FitnessEquipmentView: View {
                 }
                 .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(accentColor)
@@ -281,7 +281,7 @@ struct FitnessEquipmentView: View {
                             Text("Disconnect")
                                 .font(.caption)
                                 .foregroundColor(.red)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
@@ -374,7 +374,7 @@ struct FitnessEquipmentView: View {
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.4))
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.white.opacity(0.03))
@@ -427,13 +427,13 @@ struct DiscoveredDeviceCard: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.cyan)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         Capsule()
                             .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
                     )
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color.white.opacity(0.05))
@@ -491,7 +491,7 @@ struct LiveDataCell: View {
                 .foregroundColor(.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(color.opacity(0.1))

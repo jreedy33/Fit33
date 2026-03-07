@@ -97,7 +97,7 @@ struct SevenDayProgramDetailView: View {
                     statPill(icon: "figure.run", value: "\(program.workoutsPerWeek)x/wk")
                 }
                 .padding(.top, 14)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 
                 // Cards container
                 VStack(spacing: 10) {
@@ -138,14 +138,14 @@ struct SevenDayProgramDetailView: View {
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 8)
+                                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                                             .fill(Color.blue.opacity(0.1))
                                     )
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 14)
                 
                 Spacer()
@@ -160,7 +160,7 @@ struct SevenDayProgramDetailView: View {
                     }
                     .foregroundStyle(accentGradient)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(colorScheme == .dark ? Color.black.opacity(0.3) : Color.white.opacity(0.8))
@@ -184,7 +184,7 @@ struct SevenDayProgramDetailView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(accentGradient)
-                        .padding(8)
+                        .padding(Spacing.xs)
                         .background(Circle().fill(Color.white.opacity(colorScheme == .dark ? 0.1 : 0.8)))
                 }
             }
@@ -209,7 +209,7 @@ struct SevenDayProgramDetailView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.primary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 5)
         .background(
             Capsule()
@@ -235,13 +235,13 @@ struct SevenDayProgramDetailView: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.white.opacity(0.8))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(Color.white.opacity(colorScheme == .dark ? 0.1 : 0.3), lineWidth: 1)
         )
     }

@@ -322,10 +322,10 @@ struct QuickActionTile: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(
@@ -335,17 +335,7 @@ struct QuickActionTile: View {
                     )
             )
         }
-        .buttonStyle(MealsScaleButtonStyle())
-    }
-}
-
-// MARK: - Meals Scale Button Style
-struct MealsScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .opacity(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
 }
 
@@ -454,7 +444,7 @@ struct MealPlanGeneratorSheet: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private var configurationSection: some View {
@@ -471,10 +461,10 @@ struct MealPlanGeneratorSheet: View {
                 }
                 .pickerStyle(SegmentedPickerStyle())
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
             
             // Calories
@@ -497,10 +487,10 @@ struct MealPlanGeneratorSheet: View {
                         .frame(width: 60)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
             
             // Diet
@@ -523,10 +513,10 @@ struct MealPlanGeneratorSheet: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
             
             // Excluded Foods
@@ -542,10 +532,10 @@ struct MealPlanGeneratorSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
         }
     }
@@ -564,7 +554,7 @@ struct MealPlanGeneratorSheet: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [.mint, .green],
@@ -652,7 +642,7 @@ struct DietChip: View {
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected
@@ -746,7 +736,7 @@ struct MealPlanMealCard: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         )
     }

@@ -89,14 +89,14 @@ struct FriendsTabView: View {
                             recommendedChallengeWidget
                         }
                         
-                        // Quick Actions
-                        socialQuickActions
+                        // Friend Activity Feed (replaces Quick Actions)
+                        FriendActivityFeedSection()
                         
                         // Bottom padding for tab bar
                         Spacer(minLength: 100)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
                 .padding(.bottom, 20)
             }
@@ -350,7 +350,7 @@ struct FriendsTabView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Friends")
-                    .font(.system(size: 42, weight: .bold))
+                    .font(.ds_displayLarge)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
@@ -392,8 +392,8 @@ struct FriendsTabView: View {
                     .foregroundStyle(
                         LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         Capsule()
                             .fill(Color.cyan.opacity(0.12))
@@ -653,22 +653,36 @@ struct FriendsTabView: View {
     // MARK: - Quick Action Tiles (Add Friend, New Challenge, Join Community)
     
     private var friendsQuickActionTiles: some View {
-        HStack(spacing: 12) {
-            // New Challenge → same flow as "Challenge a Friend" on home screen
-            FriendsQuickTile(
-                icon: "trophy.fill",
-                title: "New\nChallenge",
-                gradient: [.orange, .red],
-                action: { showingChallengeCreation = true }
-            )
-            
-            // Join Community → community challenges hub
-            FriendsQuickTile(
-                icon: "globe.americas.fill",
-                title: "Join\nCommunity",
-                gradient: [.green, .mint],
-                action: { showingCommunityHub = true }
-            )
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                FriendsQuickTile(
+                    icon: "person.2.fill",
+                    title: "Friends",
+                    gradient: [.cyan, .blue],
+                    action: { showingFriendsList = true }
+                )
+                
+                FriendsQuickTile(
+                    icon: "trophy.fill",
+                    title: "Challenge",
+                    gradient: [.orange, .red],
+                    action: { showingChallengeCreation = true }
+                )
+                
+                FriendsQuickTile(
+                    icon: "globe.americas.fill",
+                    title: "Community",
+                    gradient: [.green, .mint],
+                    action: { showingCommunityHub = true }
+                )
+                
+                FriendsQuickTile(
+                    icon: "qrcode.viewfinder",
+                    title: "Scan QR",
+                    gradient: [.purple, .pink],
+                    action: { showingFriendsList = true }
+                )
+            }
         }
     }
     
@@ -707,7 +721,7 @@ struct FriendsTabView: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .sleekCard(cornerRadius: 24, accentColor: .yellow)
                 }
             } else {
@@ -743,7 +757,7 @@ struct FriendsTabView: View {
                     )
                     
                     Text(medalEmoji)
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .offset(x: 4, y: 4)
                 }
                 
@@ -841,7 +855,7 @@ struct FriendsTabView: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing)
                 )
@@ -1026,14 +1040,14 @@ struct FriendsTabView: View {
                 Spacer()
                 
                 Text(isAccountability ? "🤝" : "⚔️")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             
             // Inner gray status bar — identical to home screen
             HStack(spacing: 0) {
@@ -1048,19 +1062,19 @@ struct FriendsTabView: View {
                     friendsTabCompetitionBar(challenge: challenge, typeColor: typeColor, typeGradient: typeGradient)
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark
                         ? Color.white.opacity(0.04)
                         : Color.black.opacity(0.03))
             )
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.bottom, 12)
         }
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1071,7 +1085,7 @@ struct FriendsTabView: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
@@ -1253,7 +1267,7 @@ struct FriendsTabView: View {
                 HStack(spacing: 4) {
                     if challenge.myCurrentStreak > 0 {
                         Image(systemName: "flame.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.orange)
                         Text("\(challenge.myCurrentStreak)-day streak together")
                             .font(.caption2)
@@ -1382,17 +1396,17 @@ struct FriendsTabView: View {
                 
                 HStack(spacing: 4) {
                     Image(systemName: "person.3.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("\(participantCount)")
                         .font(.caption)
                         .fontWeight(.bold)
                 }
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Color.gray.opacity(0.15)))
             }
-            .padding(16)
+            .padding(Spacing.md)
             
             // Progress bar
             let target = challenge.dailyTarget ?? 0
@@ -1424,7 +1438,7 @@ struct FriendsTabView: View {
                         .foregroundColor(resolvedType.color)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.bottom, 14)
         }
         .sleekCard(cornerRadius: 20, accentColor: resolvedType.color)
@@ -1650,7 +1664,7 @@ struct FriendsTabView: View {
                     .disabled(sentRecommendedChallenge)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .sleekCard(cornerRadius: 24, accentColor: .purple)
         }
     }
@@ -1782,7 +1796,7 @@ struct FriendsTabView: View {
                     
                     if liveTargetHit {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.green)
                     }
                     
@@ -1821,13 +1835,13 @@ struct FriendsTabView: View {
             }
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1900,7 +1914,7 @@ struct FriendsTabView: View {
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                         .background(
                             LinearGradient(colors: [.green.opacity(0.8), .mint.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                         )
@@ -2007,12 +2021,12 @@ struct FriendsTabView: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         LinearGradient(colors: typeGradient, startPoint: .leading, endPoint: .trailing)
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: resolvedType.color.opacity(0.25), radius: 6, x: 0, y: 2)
             }
         }
@@ -2086,7 +2100,7 @@ struct FriendsTabView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -2104,7 +2118,7 @@ struct FriendsTabView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .sleekCard(cornerRadius: 18, accentColor: gradient.first ?? .blue)
         }
         .buttonStyle(.plain)
@@ -2140,7 +2154,7 @@ struct FriendsTabView: View {
                 }
                 .padding(24)
                 .background(
-                    RoundedRectangle(cornerRadius: 24)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl)
                         .fill(.ultraThinMaterial)
                         .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
                 )

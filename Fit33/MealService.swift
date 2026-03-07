@@ -33,6 +33,29 @@ class MealService: ObservableObject {
     // MARK: - Public Methods
     
     func addMealEntry(_ foodEntry: FoodEntry, mealType: MealType, user: User) {
+        // Input validation - return early on invalid data
+        let trimmedName = foodEntry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, trimmedName.count <= 200 else {
+            print("❌ [MEAL SERVICE] Validation failed: food name must be 1-200 characters")
+            return
+        }
+        guard (0...10000).contains(foodEntry.calories) else {
+            print("❌ [MEAL SERVICE] Validation failed: calories must be 0-10000")
+            return
+        }
+        guard (0...1000).contains(foodEntry.protein) else {
+            print("❌ [MEAL SERVICE] Validation failed: protein must be 0-1000g")
+            return
+        }
+        guard (0...1000).contains(foodEntry.carbs) else {
+            print("❌ [MEAL SERVICE] Validation failed: carbs must be 0-1000g")
+            return
+        }
+        guard (0...1000).contains(foodEntry.fat) else {
+            print("❌ [MEAL SERVICE] Validation failed: fat must be 0-1000g")
+            return
+        }
+
         print("📥 [MEAL SERVICE] === addMealEntry called ===")
         print("📥 [MEAL SERVICE] Food: \(foodEntry.name)")
         print("📥 [MEAL SERVICE] Meal type: \(mealType.rawValue)")
@@ -41,7 +64,7 @@ class MealService: ObservableObject {
         
         let mealEntry = MealEntry(context: viewContext)
         mealEntry.id = UUID()
-        mealEntry.foodName = foodEntry.name
+        mealEntry.foodName = trimmedName
         mealEntry.quantity = Double(foodEntry.quantity)
         mealEntry.unit = foodEntry.unit
         mealEntry.calories = Int32(foodEntry.calories)
@@ -71,11 +94,11 @@ class MealService: ObservableObject {
             // Log to cloud database for history tracking
             if let fdcId = foodEntry.fdcId {
                 Task {
-                    print("📝 [MEAL SERVICE] Logging food to cloud: \(foodEntry.name) (FDC: \(fdcId))")
+                    print("📝 [MEAL SERVICE] Logging food to cloud: \(trimmedName) (FDC: \(fdcId))")
                     do {
                         try await foodDatabase.logFoodToHistory(
                             fdcId: fdcId,
-                            foodName: foodEntry.name,
+                            foodName: trimmedName,
                             mealType: mealType,
                             quantity: Double(foodEntry.quantity),
                             servingUnit: foodEntry.unit,
@@ -97,7 +120,7 @@ class MealService: ObservableObject {
             // This helps personalize recipe suggestions based on what users eat
             Task { @MainActor in
                 RecipePreferenceService.shared.trackFoodAdded(
-                    foodName: foodEntry.name,
+                    foodName: trimmedName,
                     calories: foodEntry.calories,
                     protein: foodEntry.protein
                 )

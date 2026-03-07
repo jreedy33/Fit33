@@ -260,7 +260,7 @@ struct ReceivedWorkoutCard: View {
                 }
                 
                 Divider()
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                 
                 // Bottom section - Stats (matching RecentWorkoutCard)
                 HStack(spacing: 0) {
@@ -340,7 +340,7 @@ struct ReceivedWorkoutCard: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
@@ -377,7 +377,7 @@ struct ReceivedWorkoutCard: View {
                 .font(.caption2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Color.blue))
         case "saved":
@@ -391,7 +391,7 @@ struct ReceivedWorkoutCard: View {
                         .fontWeight(.bold)
                 }
                 .foregroundColor(.black.opacity(0.8))
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(
                     Capsule().fill(
@@ -411,7 +411,7 @@ struct ReceivedWorkoutCard: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.green)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(Capsule().stroke(Color.green, lineWidth: 1))
             }
@@ -501,7 +501,7 @@ struct ReceivedWorkoutDetailView: View {
                     // Exercise list section
                     exerciseListSection
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
                 .padding(.bottom, 120)
             }
@@ -712,7 +712,7 @@ struct ReceivedWorkoutDetailView: View {
                 .italic()
                 .foregroundColor(.primary)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -958,8 +958,8 @@ struct ReceivedExerciseCard: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.secondary.opacity(0.5))
             }
-            .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .sleekCard(cornerRadius: 24, accentColor: .blue)
         }
         .buttonStyle(PlainButtonStyle())
@@ -1006,7 +1006,7 @@ struct EditReceivedWorkoutView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             LinearGradient(
                                 colors: [Color.green, Color.mint],
@@ -1014,7 +1014,7 @@ struct EditReceivedWorkoutView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(16)
+                        .cornerRadius(CornerRadius.lg)
                     }
                     .padding(.top, 8)
                 }
@@ -1089,15 +1089,15 @@ struct EditableExerciseCard: View {
                         .font(.body)
                         .fontWeight(.semibold)
                         .frame(width: 80)
-                        .padding(8)
+                        .padding(Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color(.systemGray6))
                         )
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
 }

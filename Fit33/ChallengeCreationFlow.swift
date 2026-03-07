@@ -421,7 +421,7 @@ struct ChallengeCreationFlow: View {
                                 .fill(Color.white.opacity(0.3))
                                 .frame(height: 1)
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         
                         // Preset Options
                         ForEach(getOptionsForActivity(activity)) { option in
@@ -481,7 +481,7 @@ struct ChallengeCreationFlow: View {
                                 .shadow(color: isCustomDuration ? Color.blue.opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
                             
                             Text("✏️")
-                                .font(.system(size: 22))
+                                .font(.ds_heading2)
                         }
                         
                         VStack(alignment: .leading, spacing: 3) {
@@ -518,11 +518,11 @@ struct ChallengeCreationFlow: View {
                             }
                             
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 22))
+                                .font(.ds_heading2)
                                 .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -979,7 +979,7 @@ struct ModeSelectionCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1055,7 +1055,7 @@ struct ActivityTypeCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1196,7 +1196,7 @@ struct CustomTargetCard: View {
                     VStack(spacing: 4) {
                         if isEditingText {
                             TextField("", text: $editText)
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .font(.ds_stat)
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
                                 .keyboardType(.numberPad)
@@ -1207,7 +1207,7 @@ struct CustomTargetCard: View {
                                 }
                         } else {
                             Text("\(customTarget)")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .font(.ds_stat)
                                 .foregroundColor(.white)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -1230,7 +1230,7 @@ struct CustomTargetCard: View {
                                             .font(.caption)
                                             .fontWeight(hydrationUnit == unit ? .bold : .regular)
                                             .foregroundColor(hydrationUnit == unit ? .white : .white.opacity(0.5))
-                                            .padding(.horizontal, 8)
+                                            .padding(.horizontal, Spacing.xs)
                                             .padding(.vertical, 4)
                                             .background(
                                                 Capsule()
@@ -1264,7 +1264,7 @@ struct CustomTargetCard: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - colored glow for selected
@@ -1285,7 +1285,7 @@ struct CustomTargetCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1412,7 +1412,7 @@ struct ChallengeOptionCard: View {
                         .shadow(color: isSelected ? gradientColors[0].opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
                     
                     Text(titleEmoji.isEmpty ? "🎯" : titleEmoji)
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                 }
                 
                 // Title + description
@@ -1445,11 +1445,11 @@ struct ChallengeOptionCard: View {
                 // Checkmark
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundStyle(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
             .background(
                 ZStack {
@@ -1468,7 +1468,7 @@ struct ChallengeOptionCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1564,7 +1564,7 @@ struct ChallengeDurationCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1652,7 +1652,7 @@ struct GradientButton: View {
                 LinearGradient(colors: [.gray], startPoint: .leading, endPoint: .trailing)
             )
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .overlay(
                 Capsule()
                     .stroke(

@@ -362,9 +362,9 @@ struct CardioLandingView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(.systemGray6))
             )
             
@@ -485,16 +485,16 @@ struct QuickStartCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white)
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(activity.color.opacity(0.2), lineWidth: 1)
             )
         }
-        .buttonStyle(CardioScaleButtonStyle())
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
 }
 
@@ -508,7 +508,7 @@ struct EquipmentCard: View {
         Button(action: onTap) {
             VStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(
                             LinearGradient(
                                 colors: [activity.color.opacity(0.3), activity.color.opacity(0.1)],
@@ -540,7 +540,7 @@ struct EquipmentCard: View {
             }
             .frame(width: 100)
         }
-        .buttonStyle(CardioScaleButtonStyle())
+        .scaleButtonStyle(.standard, withHaptic: true)
     }
 }
 
@@ -586,9 +586,9 @@ struct CardioExerciseRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color(.systemGray6).opacity(0.5))
             )
         }
@@ -609,22 +609,13 @@ struct CardioFilterChip: View {
                 .fontWeight(.medium)
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected ? Color.green : Color(.systemGray5))
                 )
         }
         .buttonStyle(PlainButtonStyle())
-    }
-}
-
-// MARK: - Cardio Scale Button Style
-struct CardioScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 

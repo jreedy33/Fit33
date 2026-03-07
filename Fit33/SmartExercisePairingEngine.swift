@@ -94,6 +94,10 @@ final class SmartExercisePairingEngine {
         case antiRotation = "Anti-Rotation"          // Pallof press
         case plank = "Plank/Isometric"               // Planks
         
+        // Shoulders
+        case lateralRaise = "Lateral Raise"          // Lateral raises, upright rows
+        case shrug = "Shrug"                         // Shrugs, trap work
+        
         // Full Body / Compound
         case olympicLift = "Olympic Lift"            // Cleans, snatches
         case carry = "Carry"                         // Farmer's walks
@@ -129,6 +133,8 @@ final class SmartExercisePairingEngine {
             case .olympicLift: return [.hipHinge, .squat]
             case .carry: return [.plank]
             case .complexMovement: return [.squat, .horizontalPush]
+            case .lateralRaise: return [.verticalPush, .shrug]
+            case .shrug: return [.lateralRaise, .verticalPull]
             case .isolation: return []
             case .cardio: return []
             case .stretch: return []
@@ -452,7 +458,7 @@ final class SmartExercisePairingEngine {
         // Rows
         if nameLower.contains("row") {
             if nameLower.contains("upright") {
-                return .verticalPull
+                return .lateralRaise
             }
             return .horizontalPull
         }
@@ -609,11 +615,14 @@ final class SmartExercisePairingEngine {
     private func isCompoundMovement(name: String, muscles: [String]) -> Bool {
         let lower = name.lowercased()
         
-        // Compound indicators
         let compoundKeywords = ["squat", "deadlift", "press", "row", "pull up", "pullup", "chin up", "chinup",
-                                "clean", "snatch", "lunge", "thrust", "dip", "push up", "pushup"]
+                                "clean", "snatch", "lunge", "thrust", "push up", "pushup"]
         
-        // Isolation indicators
+        // "dip" only counts as compound in specific contexts (not "bench dip")
+        if lower.contains("dip") && !lower.contains("bench dip") && !lower.contains("assisted dip") {
+            return true
+        }
+        
         let isolationKeywords = ["curl", "extension", "raise", "fly", "flye", "kickback", "pullover",
                                  "crunch", "shrug", "rotation"]
         
@@ -625,13 +634,28 @@ final class SmartExercisePairingEngine {
             return false
         }
         
-        // Fallback: multiple muscle groups = compound
         return muscles.count > 1
     }
     
     private func estimateDifficulty(name: String, equipment: String) -> Int {
         let lower = name.lowercased()
-        var difficulty = 5 // Default medium
+        let equipLower = equipment.lowercased()
+        
+        // Base difficulty by equipment type
+        var difficulty: Int
+        if equipLower.contains("machine") || equipLower.contains("smith") {
+            difficulty = 3
+        } else if equipLower.contains("cable") {
+            difficulty = 4
+        } else if equipLower.contains("dumbbell") {
+            difficulty = 5
+        } else if equipLower.contains("barbell") || equipLower.contains("ez bar") {
+            difficulty = 6
+        } else if equipLower.contains("bodyweight") || equipLower.isEmpty {
+            difficulty = 5
+        } else {
+            difficulty = 5
+        }
         
         // Harder indicators
         if lower.contains("single leg") || lower.contains("one leg") { difficulty += 2 }
@@ -646,7 +670,6 @@ final class SmartExercisePairingEngine {
         if lower.contains("assisted") { difficulty -= 2 }
         if lower.contains("beginner") { difficulty -= 2 }
         if lower.contains("modified") { difficulty -= 1 }
-        if lower.contains("machine") || equipment.lowercased().contains("machine") { difficulty -= 1 }
         
         return max(1, min(10, difficulty))
     }

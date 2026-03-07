@@ -29,7 +29,7 @@ struct DashboardView: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     @State private var showingWorkoutCreation = false
@@ -263,6 +263,13 @@ struct DashboardView: View {
                     dailyQuestsSection
                         .padding(.bottom, 16)
                     
+                    // Recovery Day widget (shows when muscles are recovering)
+                    if RecoveryDayEngine.shared.shouldShowRecoveryWidget {
+                        RecoveryDayDashboardWidget()
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.bottom, 16)
+                    }
+                    
                     // "Ready for today's workout?" title
                     Text("Ready for today's workout?")
                         .font(.title3)
@@ -307,7 +314,7 @@ struct DashboardView: View {
                     statsOverview
                         .id("statsOverview")
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 20)
                 }
                 .scrollContentBackground(.hidden)
@@ -504,6 +511,9 @@ struct DashboardView: View {
             }
         }
         .onAppear {
+            // Fetch friend reactions for workout stickers
+            Task { await ActivityFeedService.shared.fetchMyReactions() }
+            
             // ⚡️ PERFORMANCE: Only log, don't trigger heavy refreshes on every appear
             SessionLogManager.shared.logScreen(.dashboard, metadata: [
                 "workouts_count": recentWorkouts.count,
@@ -867,7 +877,7 @@ struct DashboardView: View {
                                 .shadow(color: accentColor.opacity(0.4), radius: 12, x: 0, y: 6)
                             
                             Image(systemName: generatedProgramService.activeProgram?.icon ?? "calendar")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(.ds_heading1)
                                 .foregroundColor(.white)
                         }
                         
@@ -931,11 +941,11 @@ struct DashboardView: View {
                                     .foregroundColor(.white.opacity(0.8))
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                             .padding(.vertical, 14)
                             .background(
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 16)
+                                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                                         .fill(
                                             LinearGradient(
                                                 colors: [accentColor, accentColor.opacity(0.85)],
@@ -945,13 +955,13 @@ struct DashboardView: View {
                                         )
                                     
                                     // Subtle inner highlight
-                                    RoundedRectangle(cornerRadius: 16)
+                                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                                 }
                             )
                             .shadow(color: accentColor.opacity(0.3), radius: 8, x: 0, y: 4)
                         }
-                        .buttonStyle(ScaleButtonStyle())
+                        .scaleButtonStyle(.standard, withHaptic: true)
                         
                         // Skip and continue with custom/auto workout - Secondary action
                         Button(action: {
@@ -970,10 +980,10 @@ struct DashboardView: View {
                         }) {
                             HStack(spacing: 10) {
                                 Image(systemName: pendingWorkoutType == .custom ? "plus.circle.fill" : "bolt.circle.fill")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.ds_heading3)
                                 
                                 Text("Start \(pendingWorkoutType == .custom ? "Custom" : "Auto") Workout Instead")
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.ds_labelLarge)
                             }
                             .foregroundColor(accentColor)
                             .padding(.vertical, 14)
@@ -988,7 +998,7 @@ struct DashboardView: View {
                                 }
                             )
                         }
-                        .buttonStyle(ScaleButtonStyle())
+                        .scaleButtonStyle(.standard, withHaptic: true)
                         
                         // Cancel button - Tertiary action
                         Button(action: {
@@ -1011,13 +1021,13 @@ struct DashboardView: View {
                 .background(
                     ZStack {
                         // Main background
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
                             .fill(colorScheme == .dark 
-                                ? Color(white: 0.12) 
+                                ? Color.cardBackground 
                                 : Color.white)
                         
                         // Subtle gradient overlay
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
                             .fill(
                                 LinearGradient(
                                     colors: [
@@ -1030,7 +1040,7 @@ struct DashboardView: View {
                             )
                         
                         // Border
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
                             .stroke(
                                 LinearGradient(
                                     colors: colorScheme == .dark 
@@ -1051,15 +1061,6 @@ struct DashboardView: View {
             }
             .transition(.opacity)
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showingProgramConflictAlert)
-        }
-    }
-    
-    // Scale button style for interactive feedback
-    struct ScaleButtonStyle: ButtonStyle {
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
-                .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
         }
     }
     
@@ -1084,7 +1085,7 @@ struct DashboardView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(.ultraThinMaterial)
                         )
                         .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -1217,7 +1218,7 @@ struct DashboardView: View {
                     Image(systemName: "xmark")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
-                        .padding(8)
+                        .padding(Spacing.xs)
                 }
             }
             
@@ -1256,7 +1257,7 @@ struct DashboardView: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
                         colors: [Color.orange, Color.red],
@@ -1264,12 +1265,12 @@ struct DashboardView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         )
@@ -1315,6 +1316,7 @@ struct DashboardView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(userManager.getLevelColor())
                 }
+                .accessibilityLabel("Level \(userManager.getLevel()): \(userManager.getLevelTitle())")
             }
             
             // Bottom section with icon and user info
@@ -1358,6 +1360,7 @@ struct DashboardView: View {
                     }
                     .frame(width: 58, height: 58)
                 }
+                .accessibilityLabel("Current streak: \(userManager.currentUser?.currentStreak ?? 0) days")
                 .buttonStyle(.plain)
                 
                 // User info section - moved to the right
@@ -1381,7 +1384,7 @@ struct DashboardView: View {
                 Spacer()
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
         .background(
             ZStack {
@@ -1532,6 +1535,7 @@ struct DashboardView: View {
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
                 .shadow(color: .blue.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
                 }
+                .accessibilityLabel("Start custom workout")
                 .buttonStyle(PlainButtonStyle())
                 
             // Auto Workout Button
@@ -1625,6 +1629,7 @@ struct DashboardView: View {
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
                 .shadow(color: .purple.opacity(0.12), radius: 20, x: 0, y: 10)
                 }
+                .accessibilityLabel("Start auto workout")
                 .buttonStyle(PlainButtonStyle())
             
             }
@@ -1800,7 +1805,7 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - teal color glow
@@ -1919,7 +1924,7 @@ struct DashboardView: View {
                                 .frame(maxHeight: 70, alignment: .bottom)
                             
                             Text("\(mealsLogged)")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.ds_caption)
                                 .foregroundColor(hasData ? .primary : .secondary)
                         }
                         .frame(maxWidth: .infinity)
@@ -1927,7 +1932,7 @@ struct DashboardView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - teal color glow
@@ -2657,7 +2662,7 @@ struct DashboardView: View {
                         // Right: Start button
                         HStack(spacing: 4) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                             Text("Start")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
@@ -2675,7 +2680,7 @@ struct DashboardView: View {
                         .clipShape(Capsule())
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
@@ -2689,11 +2694,11 @@ struct DashboardView: View {
         .background(
             ZStack {
                 // Base gradient
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -2701,7 +2706,7 @@ struct DashboardView: View {
                     )
                 
                 // Inner glow
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2714,7 +2719,7 @@ struct DashboardView: View {
                     )
                 
                 // Accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [programColor.opacity(0.3), programColor.opacity(0.15)],
@@ -3087,7 +3092,7 @@ struct DashboardView: View {
                 Spacer()
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             
             // Inner card section - Left accent bar style (matching active challenge)
             HStack(spacing: 0) {
@@ -3148,14 +3153,14 @@ struct DashboardView: View {
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                             Text("Cancel")
                                 .font(.caption)
                                 .fontWeight(.bold)
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             Capsule()
                                 .fill(Color.red.opacity(0.85))
@@ -3167,20 +3172,20 @@ struct DashboardView: View {
                 .padding(.leading, 12)
                 .padding(.trailing, 14)
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark 
                         ? Color.white.opacity(0.04) 
                         : Color.black.opacity(0.03))
             )
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.bottom, 12)
         }
         .background(
             ZStack {
                 // Animated glowing border (matches group widget)
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
@@ -3201,7 +3206,7 @@ struct DashboardView: View {
                     .blur(radius: 2)
                 
                 // Main card background
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -3213,7 +3218,7 @@ struct DashboardView: View {
                     )
                 
                 // Inner border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
@@ -3410,14 +3415,14 @@ struct DashboardView: View {
                     
                     // Mode badge
                     Text(isAccountability ? "🤝" : "⚔️")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                     
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -3435,20 +3440,20 @@ struct DashboardView: View {
                     competitionProgressSection(challenge: challenge, challengeColor: typeColor, typeGradient: typeGradient)
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark
                         ? Color.white.opacity(0.04)
                         : Color.black.opacity(0.03))
             )
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.bottom, 12)
         }
         .background(
             ZStack {
                 // Animated glowing border — type-colored
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
@@ -3468,7 +3473,7 @@ struct DashboardView: View {
                     )
                     .blur(radius: 2)
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -3479,7 +3484,7 @@ struct DashboardView: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
@@ -3553,7 +3558,7 @@ struct DashboardView: View {
                 HStack(spacing: 4) {
                     if challenge.myCurrentStreak > 0 {
                         Image(systemName: "flame.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.orange)
                         Text("\(challenge.myCurrentStreak)-day streak together")
                             .font(.caption2)
@@ -3845,14 +3850,14 @@ struct DashboardView: View {
                     Spacer()
                     
                     Text(isAccountability ? "🤝" : "⚔️")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                     
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -3896,7 +3901,7 @@ struct DashboardView: View {
                                             Text("Nudge")
                                                 .font(.system(size: 9, weight: .semibold))
                                                 .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
+                                                .padding(.horizontal, Spacing.xs)
                                                 .padding(.vertical, 4)
                                                 .background(Capsule().fill(Color.teal.opacity(0.7)))
                                         }
@@ -3915,7 +3920,7 @@ struct DashboardView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                 } else {
                     // ACTIVE: Head-to-head battle layout
                     let currentUserId = SupabaseManager.shared.currentUser?.id
@@ -3934,7 +3939,7 @@ struct DashboardView: View {
                             if index > 0 {
                                 // VS divider
                                 Text("⚔️")
-                                    .font(.system(size: 11))
+                                    .font(.ds_labelSmall)
                                     .frame(minWidth: 20)
                             }
                             
@@ -3979,16 +3984,16 @@ struct DashboardView: View {
             }
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
             )
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.bottom, 12)
         }
         .background(
             ZStack {
                 // Animated glowing border (always on — teal glow for consistency)
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
@@ -4008,7 +4013,7 @@ struct DashboardView: View {
                     )
                     .blur(radius: 2)
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -4019,7 +4024,7 @@ struct DashboardView: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
@@ -4228,7 +4233,7 @@ struct DashboardView: View {
                         .font(.caption2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
@@ -4266,7 +4271,7 @@ struct DashboardView: View {
                     .fill(Color.gray.opacity(0.2))
                     .frame(height: 1)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             
             // Or explore all programs
             Button(action: {
@@ -4279,10 +4284,10 @@ struct DashboardView: View {
             }
             .padding(.bottom, 4)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -4294,7 +4299,7 @@ struct DashboardView: View {
                     )
                 
                 // Subtle accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [accentColor.opacity(0.3), accentColor.opacity(0.1), Color.clear],
@@ -4382,7 +4387,7 @@ struct DashboardView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 14)
                 .padding(.bottom, 10)
                 
@@ -4418,14 +4423,14 @@ struct DashboardView: View {
                     // Teal Challenge button (compact)
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ds_caption)
                         Text("Challenge")
                             .font(.caption)
                             .fontWeight(.bold)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         Capsule()
                             .fill(
@@ -4437,7 +4442,7 @@ struct DashboardView: View {
                             )
                     )
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
@@ -4453,7 +4458,7 @@ struct DashboardView: View {
         .buttonStyle(.plain)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -4464,7 +4469,7 @@ struct DashboardView: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [
@@ -4484,7 +4489,7 @@ struct DashboardView: View {
                     )
                     .blur(radius: 2)
                 
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [Color.teal.opacity(0.5), Color.teal.opacity(0.3), Color.teal.opacity(0.2)],
@@ -4523,12 +4528,12 @@ struct DashboardView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(
                             LinearGradient(colors: [gradient[0].opacity(0.4), gradient[1].opacity(0.2)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -4571,7 +4576,7 @@ struct DashboardView: View {
                             .rotationEffect(.degrees(-90))
                         
                         Text("\(program.matchPercentage)%")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ds_caption)
                             .foregroundColor(programColor)
                     }
                     
@@ -4606,7 +4611,7 @@ struct DashboardView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -4639,7 +4644,7 @@ struct DashboardView: View {
                                     .foregroundColor(.primary)
                                 
                                 Image(systemName: template.category.icon)
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                     .foregroundColor(.white)
                                     .padding(4)
                                     .background(
@@ -4665,13 +4670,13 @@ struct DashboardView: View {
                         // Start button
                         HStack(spacing: 4) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                             Text("Start")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.vertical, 10)
                         .background(
                             Capsule()
@@ -4685,16 +4690,16 @@ struct DashboardView: View {
                         )
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(programColor.opacity(0.2), lineWidth: 1)
                         )
                 )
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.bottom, 12)
             }
             .buttonStyle(PlainButtonStyle())
@@ -4702,7 +4707,7 @@ struct DashboardView: View {
         .background(
             ZStack {
                 // Main card background
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -4714,7 +4719,7 @@ struct DashboardView: View {
                     )
                 
                 // Subtle accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [programColor.opacity(0.25), programColor.opacity(0.1), Color.clear],
@@ -4778,7 +4783,7 @@ struct DashboardView: View {
                             .rotationEffect(.degrees(-90))
                         
                         Text("\(Int(progress))%")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ds_caption)
                             .foregroundColor(programColor)
                     }
                     
@@ -4813,7 +4818,7 @@ struct DashboardView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -4854,7 +4859,7 @@ struct DashboardView: View {
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(programColor)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
@@ -4866,10 +4871,10 @@ struct DashboardView: View {
                 }
                 .padding(14)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(Color.green.opacity(colorScheme == .dark ? 0.08 : 0.06))
                 )
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.bottom, 12)
             } else if let day = dayToShow {
                 // Active workout - Left accent bar style (navigates to Workout tab)
@@ -4927,13 +4932,13 @@ struct DashboardView: View {
                             // Start button
                             HStack(spacing: 4) {
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                 Text("Start")
                                     .font(.subheadline)
                                     .fontWeight(.bold)
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                             .padding(.vertical, 10)
                             .background(
                                 Capsule()
@@ -4949,16 +4954,16 @@ struct DashboardView: View {
                         .padding(.leading, 12)
                         .padding(.trailing, 14)
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(colorScheme == .dark 
                                 ? Color.white.opacity(0.04) 
                                 : Color.black.opacity(0.03))
                     )
                 }
                 .buttonStyle(PlainButtonStyle())
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.bottom, 12)
             } else {
                 // All days completed
@@ -4989,7 +4994,7 @@ struct DashboardView: View {
                 }
                 
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -5001,7 +5006,7 @@ struct DashboardView: View {
                     )
                 
                 // Subtle accent border - enhanced when visible
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: isTodayCompleted 
@@ -5055,7 +5060,7 @@ struct DashboardView: View {
                             .frame(width: 44, height: 44)
                         
                         Image(systemName: template?.category.icon ?? "dumbbell.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.ds_heading3)
                             .foregroundColor(programColor)
                     }
                     
@@ -5078,7 +5083,7 @@ struct DashboardView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -5142,13 +5147,13 @@ struct DashboardView: View {
                             // Start button
                             HStack(spacing: 4) {
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                 Text("Start")
                                     .font(.subheadline)
                                     .fontWeight(.bold)
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                             .padding(.vertical, 10)
                             .background(
                                 Capsule()
@@ -5162,16 +5167,16 @@ struct DashboardView: View {
                             )
                         }
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                            .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(programColor.opacity(0.2), lineWidth: 1)
                             )
                     )
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                     .padding(.bottom, 12)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -5206,10 +5211,10 @@ struct DashboardView: View {
                     .font(.subheadline)
                                     .fontWeight(.bold)
                                 Image(systemName: "arrow.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                             }
                     .foregroundColor(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                             .padding(.vertical, 10)
                     .background(
                         Capsule()
@@ -5223,16 +5228,16 @@ struct DashboardView: View {
                             )
                         }
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
         .background(
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
+                            .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(programColor.opacity(0.2), lineWidth: 1)
                             )
                     )
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                     .padding(.bottom, 12)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -5241,7 +5246,7 @@ struct DashboardView: View {
         .background(
             ZStack {
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -5253,7 +5258,7 @@ struct DashboardView: View {
                     )
                 
                 // Subtle accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [programColor.opacity(0.25), programColor.opacity(0.1), Color.clear],
@@ -5303,14 +5308,14 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 20)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -5509,7 +5514,7 @@ struct DashboardView: View {
                             // Right: Start button
                             HStack(spacing: 4) {
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                 Text("Start")
                                     .font(.subheadline)
                                     .fontWeight(.bold)
@@ -5527,7 +5532,7 @@ struct DashboardView: View {
                             .clipShape(Capsule())
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                     }
                     .buttonStyle(PlainButtonStyle())
                 } else if isTodayCompleted {
@@ -5552,7 +5557,7 @@ struct DashboardView: View {
                         
                         Spacer()
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color.green.opacity(0.12))
@@ -5578,7 +5583,7 @@ struct DashboardView: View {
                         
                         Spacer()
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color.blue.opacity(0.12))
@@ -5590,11 +5595,11 @@ struct DashboardView: View {
         .background(
             ZStack {
                 // Base gradient
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -5602,7 +5607,7 @@ struct DashboardView: View {
                     )
                 
                 // Inner glow
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -5615,7 +5620,7 @@ struct DashboardView: View {
                     )
                 
                 // Accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [programColor.opacity(0.3), programColor.opacity(0.15)],
@@ -5713,7 +5718,7 @@ struct DashboardView: View {
                         .frame(width: 50, height: 50)
                     
                     Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 .shadow(color: accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
@@ -5732,7 +5737,7 @@ struct DashboardView: View {
                         Text("\(matchPercent)% match")
                             .foregroundColor(accentColor)
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
                 }
                 
@@ -5747,8 +5752,8 @@ struct DashboardView: View {
                     Text("Start")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             Capsule()
                                 .fill(
@@ -5762,7 +5767,7 @@ struct DashboardView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     // Animated glow border - more evenly distributed
@@ -6056,7 +6061,7 @@ struct SmartProgramMiniCard: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         LinearGradient(
                             colors: [programColor, programColor.opacity(0.8)],
@@ -6064,10 +6069,10 @@ struct SmartProgramMiniCard: View {
                             endPoint: .trailing
                         )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .frame(height: 140)
         .background(
             RoundedRectangle(cornerRadius: 14)
@@ -6317,7 +6322,7 @@ struct RecentWorkoutCard: View {
                 }
                 
                 Divider()
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                 
                 // Bottom section - Stats
                 HStack(spacing: 0) {
@@ -6406,7 +6411,7 @@ struct RecentWorkoutCard: View {
                                 .font(.caption2)
                                 .fontWeight(.medium)
                                 .foregroundColor(workoutGradient[0])
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
@@ -6418,7 +6423,7 @@ struct RecentWorkoutCard: View {
                     .padding(.top, 12)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 // Premium layered background for workout cards
                 ZStack {
@@ -6440,7 +6445,7 @@ struct RecentWorkoutCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color(white: 0.12)]
+                                    ? [Color(white: 0.18), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.95)],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -6479,6 +6484,9 @@ struct RecentWorkoutCard: View {
             .shadow(color: isMostRecent ? workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12) : Color.clear, radius: 20, x: 0, y: 10)
         }
         .buttonStyle(PlainButtonStyle())
+        .overlay(alignment: .topTrailing) {
+            reactionStickerOverlay
+        }
         .onAppear {
             // Initialize local state from Core Data
             isFavorite = workout.isFavorite
@@ -6488,6 +6496,36 @@ struct RecentWorkoutCard: View {
             if isFavorite != newValue {
                 isFavorite = newValue
             }
+        }
+    }
+    
+    /// Reaction sticker: shows when a friend sent an emoji on this workout
+    @ViewBuilder
+    private var reactionStickerOverlay: some View {
+        let workoutIdStr = workout.objectID.uriRepresentation().lastPathComponent
+        let matchingReactions = ActivityFeedService.shared.myReactions.filter { $0.workoutId == workoutIdStr }
+        
+        if let reaction = matchingReactions.first {
+            HStack(spacing: 3) {
+                Text(reaction.emoji)
+                    .font(.system(size: 16))
+                Text("\(reaction.senderFirstName) sent you \(reaction.emoji)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .orange.opacity(0.3), radius: 6, x: 0, y: 2)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            )
+            .rotationEffect(.degrees(-3))
+            .offset(x: -8, y: -6)
         }
     }
     
@@ -6789,7 +6827,7 @@ struct RecentCardioWorkoutCard: View {
                     }
                 
                     Divider()
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                 
                     // Bottom section - Cardio Stats
                     HStack(spacing: 0) {
@@ -6875,13 +6913,13 @@ struct RecentCardioWorkoutCard: View {
                         HStack(spacing: 6) {
                             HStack(spacing: 4) {
                                 Image(systemName: "heart.fill")
-                                    .font(.system(size: 10))
+                                    .font(.ds_caption)
                                 Text("\(heartRate) bpm")
                                     .font(.caption2)
                                     .fontWeight(.medium)
                             }
                             .foregroundColor(.red)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
@@ -6893,7 +6931,7 @@ struct RecentCardioWorkoutCard: View {
                         .padding(.top, 12)
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 .background(
                     // Premium layered background for cardio workout cards
                     ZStack {
@@ -6915,7 +6953,7 @@ struct RecentCardioWorkoutCard: View {
                             .fill(
                                 LinearGradient(
                                     colors: colorScheme == .dark
-                                        ? [Color(white: 0.18), Color(white: 0.12)]
+                                        ? [Color(white: 0.18), Color.cardBackground]
                                         : [Color.white, Color.white.opacity(0.95)],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -6983,8 +7021,8 @@ struct StatCard: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 100)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 12)
+        .padding(.vertical, Spacing.md)
+        .padding(.horizontal, Spacing.sm)
         .background(
             ZStack {
                 // Card fill - lighter to pop from container
@@ -7052,9 +7090,9 @@ struct ProgramStatPill: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(color.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
     }
 }
 
@@ -7217,13 +7255,13 @@ struct HistoryStatPill: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color.cardBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04), lineWidth: 1)
         )
     }
@@ -7508,13 +7546,13 @@ struct StreakInfoSheet: View {
                     
                     if !premiumManager.isPremiumUser {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.yellow)
                     }
                 }
                 .foregroundColor(.orange)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(Color.orange.opacity(0.15))
@@ -7555,7 +7593,7 @@ struct StreakInfoSheet: View {
             .padding()
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(streakStatus.isAtRisk ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
             )
         }
@@ -7600,7 +7638,7 @@ struct StreakInfoSheet: View {
             .padding()
             .frame(minHeight: 240)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color(.systemGray6))
             )
         }
@@ -7654,7 +7692,7 @@ struct StreakInfoSheet: View {
             .padding()
             .frame(minHeight: 240)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color(.systemGray6))
             )
         }
@@ -7694,9 +7732,9 @@ struct StreakInfoSheet: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color(.systemGray6))
         )
     }
@@ -7815,7 +7853,7 @@ struct EditStreakSheet: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [.orange, .red],
@@ -7971,13 +8009,13 @@ struct DashboardWeightWidget: View {
             if !premiumManager.isPremiumUser {
                 HStack(spacing: 4) {
                     Image(systemName: "crown.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                     Text("PRO")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                         .tracking(1)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
@@ -8160,7 +8198,7 @@ struct DashboardWeightWidget: View {
             } else if weeklyChange < 0 {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.down.right")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                     Text("7-day: losing weight")
                         .font(.caption)
                 }
@@ -8168,7 +8206,7 @@ struct DashboardWeightWidget: View {
             } else {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                     Text("7-day: gaining weight")
                         .font(.caption)
                 }
@@ -8292,7 +8330,7 @@ struct WeightInputSheet: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: gradientColors,
@@ -8414,7 +8452,7 @@ struct DashboardHydrationWidget: View {
                     .rotationEffect(.degrees(-90))
                 
                 Image(systemName: "drop.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundStyle(
                         LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom)
                     )
@@ -8468,7 +8506,7 @@ struct DashboardHydrationWidget: View {
                     .rotationEffect(.degrees(-90))
                 
                 Image(systemName: "drop.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundStyle(
                         LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom)
                     )
@@ -8610,7 +8648,7 @@ struct HydrationQuickAddSheet: View {
                         .background(
                             usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
                         )
-                        .cornerRadius(8)
+                        .cornerRadius(CornerRadius.sm)
                 }
                 
                 Button(action: {
@@ -8627,7 +8665,7 @@ struct HydrationQuickAddSheet: View {
                         .background(
                             !usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
                         )
-                        .cornerRadius(8)
+                        .cornerRadius(CornerRadius.sm)
                 }
             }
             .padding(4)
@@ -8730,11 +8768,11 @@ struct HydrationQuickAddSheet: View {
             .frame(maxWidth: .infinity)
             .frame(height: 60)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.95))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(
                         LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
                         lineWidth: 1
@@ -8801,7 +8839,7 @@ struct WidgetSettingsSheet: View {
                             
                             HStack(spacing: 4) {
                                 Image(systemName: "crown.fill")
-                                    .font(.system(size: 11))
+                                    .font(.ds_labelSmall)
                                     .foregroundColor(.yellow)
                                 Text("Premium Required")
                                     .font(.caption)
@@ -8862,7 +8900,7 @@ struct WidgetSettingsSheet: View {
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [.blue, .cyan],
@@ -8923,7 +8961,7 @@ struct WidgetSettingsSheet: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                 }
                 
@@ -8991,13 +9029,13 @@ struct WidgetSettingsSheet: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         // Show lock color for free users, or selected color for premium users
                         !premiumManager.isPremiumUser
@@ -9117,11 +9155,11 @@ struct WidgetSettingsSheet: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         !premiumManager.isPremiumUser
                             ? LinearGradient(colors: [Color.orange.opacity(0.3), Color.red.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -9240,11 +9278,11 @@ struct WidgetSettingsSheet: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         !premiumManager.isPremiumUser
                             ? LinearGradient(colors: [Color.green.opacity(0.3), Color.teal.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)

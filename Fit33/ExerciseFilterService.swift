@@ -672,6 +672,10 @@ final class ExerciseFilterService {
         }
         
         // Fallback to keyword matching for main equipment types
+        // Check compound machine names BEFORE generic keywords to prevent collisions
+        // (e.g., "dumbbell row machine" should be Machines, not Dumbbells)
+        if equipment.contains("row machine") || equipment.contains("rowing machine") { return "Machines" }
+        if equipment.contains("resistance machine") { return "Machines" }
         if equipment.contains("dumbbell") { return "Dumbbells" }
         // Check Smith Machine BEFORE Barbell to ensure proper separation
         if equipment.contains("smith") { return "Smith Machine" }
@@ -698,7 +702,7 @@ final class ExerciseFilterService {
         // Generic machine check (fallback)
         if equipment.contains("lever") || (equipment.contains("machine") && !equipment.contains("smith") && !equipment.contains("cable")) { return "Machines" }
         if equipment.contains("kettlebell") { return "Kettlebell" }
-        if equipment.contains("band") || equipment.contains("resistance") { return "Bands" }
+        if equipment.contains("band") || (equipment.contains("resistance") && !equipment.contains("machine")) { return "Bands" }
         if equipment.contains("trx") || equipment.contains("ring") || equipment.contains("suspension") { return "TRX/Rings" }
         if equipment.contains("stability ball") || equipment.contains("swiss ball") { return "Stability Ball" }
         if equipment.contains("medicine ball") { return "Medicine Ball" }
@@ -773,12 +777,14 @@ final class ExerciseFilterService {
             .filter { !$0.isEmpty }
         
         // Common items that don't need explicit user selection (truly no equipment)
-        // These are accessories/support items, not primary equipment
-        // NOTE: "chair", "wall", "step" are NOT included - they are home/improvised equipment
-        // and should only be available when user explicitly selects them
-        let commonItems: Set<String> = ["floor", "mat", "body weight", "bench", "flat bench", "incline bench", 
-                                        "decline bench", "box", "hack squat machine",
+        // NOTE: bench variants are NOT included -- they require either explicit "Bench"
+        // selection or the user having dumbbells/barbell/machines (gym implies bench access)
+        let commonItems: Set<String> = ["floor", "mat", "body weight", "box",
                                         "anchor point", "door anchor", "rack", "support"]
+        
+        let userHasBenchAccess = userEquipLower.contains { equip in
+            equip.contains("bench") || equip.contains("dumbbell") || equip.contains("barbell") || equip.contains("machine")
+        }
         
         // Equipment that requires SPECIFIC selection (not just bodyweight)
         let specializedEquipment: Set<String> = [
@@ -791,6 +797,10 @@ final class ExerciseFilterService {
         return requiredParts.allSatisfy { requiredPart in
             // Skip common items that are truly equipment-free
             if commonItems.contains(requiredPart) { return true }
+            
+            // Bench variants pass if user has bench access (gym equipment implies bench)
+            let benchVariants: Set<String> = ["bench", "flat bench", "incline bench", "decline bench"]
+            if benchVariants.contains(requiredPart) && userHasBenchAccess { return true }
             
             // Check if this requires specialized equipment
             let isSpecialized = specializedEquipment.contains { requiredPart.contains($0) }
@@ -822,7 +832,7 @@ final class ExerciseFilterService {
                 if requiredCategory == "machines" && userCategory == "machines" { return true }
                 if requiredPart.contains("lever") && userEquip.contains("machine") { return true }
                 if requiredPart.contains("machine") && userEquip.contains("machine") && !requiredPart.contains("smith") { return true }
-                if requiredPart.contains("sled") && userEquip.contains("machine") { return true }
+                if requiredPart.contains("sled") && userEquip.contains("sled") { return true }
                 if requiredPart.contains("press machine") && userEquip.contains("machine") { return true }
                 if requiredPart.contains("leg press") && userEquip.contains("machine") { return true }
                 if requiredPart.contains("calf raise machine") && userEquip.contains("machine") { return true }

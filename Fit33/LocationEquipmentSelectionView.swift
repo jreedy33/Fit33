@@ -105,7 +105,7 @@ struct LocationEquipmentSelectionView: View {
                         .font(.caption)
                 }
                 .foregroundColor(.blue)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
             }
             
             if showMoreEquipment {
@@ -131,7 +131,7 @@ struct LocationEquipmentSelectionView: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
     }
@@ -220,14 +220,14 @@ struct LocationSelectionCard: View {
                     .lineLimit(2)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 8)
+            .padding(.vertical, Spacing.md)
+            .padding(.horizontal, Spacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? Color.blue : Color(.systemGray6))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
             )
         }
@@ -266,7 +266,7 @@ struct LocationEquipmentButton: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .padding(.horizontal, 4)
             .background(
                 RoundedRectangle(cornerRadius: 10)

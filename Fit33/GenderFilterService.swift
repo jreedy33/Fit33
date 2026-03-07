@@ -113,23 +113,19 @@ final class GenderFilterService: ObservableObject {
         let key = exerciseName.lowercased()
         
         guard let info = exerciseGenderCache[key] else {
-            // No gender info cached - show exercise (might not have gender data)
             return true
         }
         
-        // If exercise has preferred gender version, show it
         if info.isAvailable(for: preferredGender) {
             return true
         }
         
-        // If exercise ONLY exists for opposite gender, still show it (fallback)
+        // Only show opposite-gender exercise if it's the ONLY version available
         if info.isAvailable(for: preferredGender.opposite) && !info.hasBothGenders {
             return true
         }
         
-        // Exercise exists for both genders but preferred not available - shouldn't happen
-        // but return true as safety
-        return true
+        return false
     }
     
     /// Get the correct video filename for an exercise based on gender
@@ -267,17 +263,14 @@ final class GenderFilterService: ObservableObject {
         return false
     }
     
-    /// Filter a list of exercises to show only appropriate ones
-    /// This is the main filtering function used by views
+    /// Filter a list of exercises to show only appropriate ones for the user's gender
     func filterExercises(_ exercises: [Exercise]) -> [Exercise] {
-        // For now, show all exercises since videos handle gender fallback
-        // In future, could hide exercises without any video for user's gender
-        return exercises
+        return exercises.filter { shouldShowExercise($0.name ?? "") }
     }
     
     /// Filter generated exercises by gender availability
     func filterGeneratedExercises(_ exercises: [GeneratedExercise]) -> [GeneratedExercise] {
-        return exercises
+        return exercises.filter { shouldShowExercise($0.name) }
     }
     
     // MARK: - Cache Management

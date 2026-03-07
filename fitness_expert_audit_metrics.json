@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-03-06T23:54:15.137235",
+  "label": "Fake Users (500)",
+  "profile_count": 500,
+  "overall_pass_rate": 100.0,
+  "user_avg_score": 100.0,
+  "categories": {
+    "push_pull_legs_coverage": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "rest_day_enforcement": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "exercise_count_consistency": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "upper_lower_variation": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "full_body_coverage": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "push_day_rear_delt": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "goal_rep_alignment": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "hamstring_balance": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "standalone_combo_rules": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "push_pull_ratio": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    },
+    "split_appropriateness": {
+      "pass_rate": 100.0,
+      "avg_score": 100.0,
+      "pass_count": 500,
+      "fail_count": 0
+    }
+  }
+}

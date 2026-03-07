@@ -80,7 +80,7 @@ struct ChallengeDetailView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 16)
                     .padding(.bottom, 40)
                 }
@@ -183,10 +183,10 @@ struct ChallengeDetailView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(Color.red.opacity(0.3), lineWidth: 1)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(Color.red.opacity(colorScheme == .dark ? 0.1 : 0.05))
                     )
             )
@@ -386,7 +386,7 @@ struct ChallengeDetailView: View {
             // Notification toggle (show for both active and pending challenges)
             if challenge.status == "active" || challenge.status == "pending" {
                 Divider()
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                 
                 HStack(spacing: 12) {
                     Image(systemName: notifyOnOpponentComplete ? "bell.fill" : "bell.slash")
@@ -470,7 +470,7 @@ struct ChallengeDetailView: View {
                         LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
                     )
             }
-            .padding(16)
+            .padding(Spacing.md)
             .sleekCard(cornerRadius: 16, accentColor: themeGradient[0])
         }
         .buttonStyle(.plain)
@@ -505,12 +505,12 @@ struct ChallengeDetailView: View {
                         let livePercent = ChallengeProgressResolver.shared.progressPercentage(for: challenge)
                         ZStack(alignment: .leading) {
                             // Background
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color.gray.opacity(0.2))
                                 .frame(height: 12)
                             
                             // Progress — type-colored
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(
                                     LinearGradient(
                                         colors: challengeType.gradientColors,
@@ -543,12 +543,12 @@ struct ChallengeDetailView: View {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             // Background
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color.gray.opacity(0.2))
                                 .frame(height: 12)
                             
                             // Progress
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(
                                     LinearGradient(
                                         colors: [.orange, .red],
@@ -563,9 +563,9 @@ struct ChallengeDetailView: View {
                     .frame(height: 12)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
             )
         }
@@ -725,23 +725,23 @@ struct ChallengeDetailView: View {
                         }
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                 )
             } else {
                 // Loading state
                 VStack(spacing: 12) {
                     ForEach(0..<7, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(Color.gray.opacity(0.1))
                             .frame(height: 44)
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                 )
             }
@@ -916,7 +916,7 @@ private struct ChallengeStatCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color.cardBackground)
         )
     }

@@ -56,7 +56,7 @@ struct PersonalizedProgramsView: View {
                 // All Programs Grid
                 allProgramsSection
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 100)
         }
@@ -216,9 +216,9 @@ struct PersonalizedProgramsView: View {
                     ? Color(white: 0.15)
                     : Color.white
             )
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(Color.green.opacity(0.4), lineWidth: 2)
             )
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
@@ -249,7 +249,7 @@ struct PersonalizedProgramsView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(Color.green.opacity(0.15))
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
             }
             
             Button(action: { selectedProgram = program }) {
@@ -422,9 +422,9 @@ struct TopMatchCard: View {
                 ? Color(white: 0.15)
                 : Color.white
         )
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(program.template.category.color.opacity(0.3), lineWidth: 1.5)
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
@@ -499,7 +499,7 @@ struct ProgressiveSeriesRow: View {
                     .blur(radius: 4)
                 
                 // Middle shadow layer
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
@@ -622,11 +622,11 @@ struct SeriesLevelCard: View {
                 .foregroundColor(.secondary)
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .frame(width: 140)
         .background(
             colorScheme == .dark 
-                ? Color(white: 0.12)
+                ? Color.cardBackground
                 : Color.white
         )
         .cornerRadius(14)
@@ -691,7 +691,7 @@ struct ProgramCard: View {
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(difficultyColor(program.template.difficulty))
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
@@ -719,7 +719,7 @@ struct ProgramCard: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .frame(height: 180)
         .background(
             colorScheme == .dark 
@@ -758,7 +758,7 @@ struct ProgramTag: View {
             .font(.caption2)
             .fontWeight(.medium)
             .foregroundColor(color)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(color.opacity(0.15))
             .cornerRadius(6)
@@ -890,9 +890,9 @@ struct ProgramDetailSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var dayScheduleSection: some View {
@@ -922,13 +922,13 @@ struct ProgramDetailSheet: View {
                             .foregroundColor(.secondary)
                         Spacer()
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var startButton: some View {
@@ -941,7 +941,7 @@ struct ProgramDetailSheet: View {
             .fontWeight(.bold)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [program.template.category.color, program.template.category.color.opacity(0.8)],
@@ -973,11 +973,11 @@ struct ProgramDetailSheet: View {
             
             Spacer()
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
         )
     }
@@ -1005,7 +1005,7 @@ struct ProgramStatItem: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(Color.cardBackground)
         .cornerRadius(10)
     }
@@ -1070,7 +1070,7 @@ struct DayPreviewRow: View {
         }
         .padding(10)
         .background(day.isRestDay ? Color.gray.opacity(0.05) : color.opacity(0.05))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
 }
 

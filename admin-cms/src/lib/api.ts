@@ -1,72 +1,27 @@
-// Helper for making authenticated admin API calls
+// Authenticated admin API calls — tokens are in httpOnly cookies (sent automatically)
 
-// Check if the session token is expired or about to expire
-function isTokenExpiring(): boolean {
-  const expiresAt = sessionStorage.getItem('admin_expires_at')
-  if (!expiresAt) return false
-  // Refresh if within 5 minutes of expiry
-  return Date.now() / 1000 > Number(expiresAt) - 300
-}
-
-// Refresh the session token using the refresh token
 async function refreshSession(): Promise<boolean> {
-  const refreshToken = sessionStorage.getItem('admin_refresh')
-  if (!refreshToken) return false
-
   try {
-    const { createClient } = await import('@supabase/supabase-js')
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    )
-
-    const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken })
-    if (error || !data.session) return false
-
-    sessionStorage.setItem('admin_token', data.session.access_token)
-    sessionStorage.setItem('admin_refresh', data.session.refresh_token)
-    sessionStorage.setItem('admin_expires_at', String(data.session.expires_at))
-    return true
+    const res = await fetch('/api/auth/refresh', { method: 'POST' })
+    return res.ok
   } catch {
     return false
   }
 }
 
 export async function adminApi(action: string, params: Record<string, unknown> = {}) {
-  let token = sessionStorage.getItem('admin_token')
-  if (!token) {
-    window.location.href = '/login'
-    throw new Error('Not authenticated')
-  }
-
-  // Auto-refresh if token is about to expire
-  if (isTokenExpiring()) {
-    const refreshed = await refreshSession()
-    if (refreshed) {
-      token = sessionStorage.getItem('admin_token')
-    }
-  }
-
   const res = await fetch('/api/admin', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...params }),
   })
 
   if (res.status === 401) {
-    // Try one refresh before giving up
     const refreshed = await refreshSession()
     if (refreshed) {
-      const retryToken = sessionStorage.getItem('admin_token')
       const retryRes = await fetch('/api/admin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${retryToken}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, ...params }),
       })
       if (retryRes.ok) {
@@ -74,7 +29,6 @@ export async function adminApi(action: string, params: Record<string, unknown> =
       }
     }
 
-    sessionStorage.clear()
     window.location.href = '/login'
     throw new Error('Session expired')
   }
@@ -88,7 +42,7 @@ export async function adminApi(action: string, params: Record<string, unknown> =
   return data
 }
 
-export function logout() {
-  sessionStorage.clear()
+export async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' })
   window.location.href = '/login'
 }

@@ -128,7 +128,7 @@ struct WelcomeTutorialView: View {
                     if currentPage < tutorialPages.count - 1 {
                         Button(action: skipTutorial) {
                             Text("Skip")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.secondary.opacity(0.8))
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 10)
@@ -139,7 +139,7 @@ struct WelcomeTutorialView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 12)
                 
                 // Main content
@@ -199,7 +199,7 @@ struct WelcomeTutorialView: View {
                                     .shadow(color: tutorialPages[currentPage].gradient[0].opacity(0.5), radius: 16, x: 0, y: 8)
                             )
                         }
-                        .buttonStyle(TutorialScaleButtonStyle())
+                        .scaleButtonStyle(.standard, withHaptic: true)
                         .padding(.horizontal, 36)
                     } else {
                         // Continue button - hollow style with gradient border
@@ -236,7 +236,7 @@ struct WelcomeTutorialView: View {
                                     )
                             )
                         }
-                        .buttonStyle(TutorialScaleButtonStyle())
+                        .scaleButtonStyle(.standard, withHaptic: true)
                         .padding(.horizontal, 36)
                     }
                 }
@@ -520,7 +520,7 @@ struct TutorialPageView: View {
                     }
                     
                     Text(page.subtitle)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -530,7 +530,7 @@ struct TutorialPageView: View {
                         .padding(.bottom, 14)
                     
                     Text(page.description)
-                        .font(.system(size: 16, weight: .regular))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color.black.opacity(0.55))
                         .multilineTextAlignment(.center)
                         .lineSpacing(5)
@@ -540,7 +540,7 @@ struct TutorialPageView: View {
                         .offset(y: animateContent ? 0 : 10)
                 }
                 .animation(.easeOut(duration: 0.5).delay(0.15), value: animateContent)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 
                 // Bottom spacer
                 Spacer(minLength: 30)
@@ -803,17 +803,6 @@ struct ParticleData: Identifiable {
     var opacity: Double
 }
 
-// MARK: - Tutorial Button Style
-
-struct TutorialScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.65), value: configuration.isPressed)
-    }
-}
-
 // MARK: - Tutorial Program Widget
 
 struct TutorialProgramWidget: View {
@@ -855,7 +844,7 @@ struct TutorialProgramWidget: View {
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundColor(gradient.first ?? .green)
                         Text("%")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -891,10 +880,10 @@ struct TutorialProgramWidget: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             // Today's workout card
             HStack(spacing: 12) {
@@ -935,14 +924,14 @@ struct TutorialProgramWidget: View {
                 // Start button
                 HStack(spacing: 6) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                     Text("Start")
                         .font(.caption)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     LinearGradient(
                         colors: gradient,
@@ -952,7 +941,7 @@ struct TutorialProgramWidget: View {
                 )
                 .clipShape(Capsule())
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
         .frame(maxWidth: 340)
         .background(
@@ -1191,7 +1180,7 @@ struct TutorialMealTracking: View {
                     .shadow(color: meal.gradientColors[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: meal.icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
             }
             
@@ -1236,8 +1225,8 @@ struct TutorialMealTracking: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Subtle shadow layers
@@ -1255,7 +1244,7 @@ struct TutorialMealTracking: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -1485,7 +1474,7 @@ struct TutorialWaterTracking: View {
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
-                            ? [Color(white: 0.15), Color(white: 0.12)]
+                            ? [Color(white: 0.15), Color.cardBackground]
                             : [Color.white, Color.white.opacity(0.95)],
                         startPoint: .top,
                         endPoint: .bottom

@@ -40,13 +40,22 @@ enum AppConfig {
     // Actual secret values live in Secrets.swift (gitignored).
     // See Secrets.template.swift for the schema.
     
+    // MARK: - Supabase Configuration
+    
+    enum Supabase {
+        /// Supabase project URL — used by SupabaseManager, FoodDatabaseService, SocialAuthService
+        static let url = Secrets.supabaseURL
+        /// Supabase anon key — safe client-side when RLS is enforced. See SECURITY_CHECKLIST.md.
+        static let anonKey = Secrets.supabaseAnonKey
+    }
+    
     /// Spoonacular API key for recipe services
     static let spoonacularApiKey: String = Secrets.spoonacularApiKey
     
     // MARK: - Strava Configuration
     
     enum Strava {
-        static let clientId = "198007"
+        static let clientId = Secrets.stravaClientId
         static let clientSecret = Secrets.stravaClientSecret
         /// IMPORTANT: In Strava API settings (https://www.strava.com/settings/api),
         /// set "Authorization Callback Domain" to: localhost
@@ -61,7 +70,7 @@ enum AppConfig {
     // MARK: - Fitbit Configuration
     
     enum Fitbit {
-        static let clientId = "23TRK9"
+        static let clientId = Secrets.fitbitClientId
         static let clientSecret = Secrets.fitbitClientSecret
         static let redirectUri = "fit33://fitbit"
         static let authorizationUrl = "https://www.fitbit.com/oauth2/authorize"
@@ -84,8 +93,9 @@ enum AppConfig {
     // MARK: - Dev Menu (Debug Only)
     
     #if DEBUG
-    /// Admin password for dev menu access - only available in debug builds
-    static let devMenuPassword = "WhatsApp26!"
+    /// Admin password for dev menu access - only available in debug builds.
+    /// Value lives in Secrets.swift (gitignored) to keep it out of version control.
+    static let devMenuPassword = Secrets.devMenuPassword
     #endif
     
     // MARK: - App Store / Distribution

@@ -46,7 +46,7 @@ struct CloudProgramLibraryView: View {
                 // Programs Grid
                 programsGrid
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 12)
             .padding(.bottom, 100)
         }
@@ -147,7 +147,7 @@ struct CloudProgramLibraryView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 // Depth shadow
@@ -161,11 +161,11 @@ struct CloudProgramLibraryView: View {
                     .offset(y: 3)
                 
                 // Main card
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 
                 // Top highlight
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -178,7 +178,7 @@ struct CloudProgramLibraryView: View {
                     )
                 
                 // Accent border
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [Color.purple.opacity(0.25), Color.blue.opacity(0.15)],
@@ -277,7 +277,7 @@ struct CloudProgramLibraryView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(colors: [.purple, .blue], startPoint: .leading, endPoint: .trailing)
                     )
@@ -318,7 +318,7 @@ struct ProgramFilterChip: View {
                 .fontWeight(isSelected ? .semibold : .medium)
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Group {
                         if isSelected {
@@ -452,7 +452,7 @@ struct DepthProgramCard: View {
                     .blur(radius: 4)
                 
                 // Middle shadow
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
                     .offset(y: 3)
                 
@@ -575,7 +575,7 @@ struct CloudProgramDetailView: View {
                                 .lineSpacing(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .padding(Spacing.md)
         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
@@ -602,7 +602,7 @@ struct CloudProgramDetailView: View {
         }
     }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
@@ -620,7 +620,7 @@ struct CloudProgramDetailView: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(programColor)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(programColor.opacity(0.1))
                         .clipShape(Capsule())
@@ -628,7 +628,7 @@ struct CloudProgramDetailView: View {
             }
         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
@@ -669,7 +669,7 @@ struct CloudProgramDetailView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .shadow(color: programColor.opacity(0.4), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(PlainButtonStyle())
@@ -688,11 +688,11 @@ struct CloudProgramDetailView: View {
                             }
                             .foregroundColor(programColor)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+                            .padding(.vertical, Spacing.sm)
                             .background(colorScheme == .dark ? Color.cardBackground : programColor.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .stroke(programColor.opacity(0.3), lineWidth: 1)
                             )
                         }

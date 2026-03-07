@@ -45,11 +45,11 @@ struct NativeAdContentView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
                 } else {
                     // Fallback icon
                     ZStack {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(Color.orange.opacity(0.2))
                             .frame(width: 40, height: 40)
                         
@@ -71,7 +71,7 @@ struct NativeAdContentView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                         .foregroundColor(.orange)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 2)
                         .background(
                             Capsule()
@@ -104,8 +104,8 @@ struct NativeAdContentView: View {
                             .font(.system(size: 10, weight: .bold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         LinearGradient(
                             colors: [.orange, .yellow],
@@ -133,9 +133,9 @@ struct NativeAdContentView: View {
                 Spacer()
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
         )
@@ -148,7 +148,7 @@ struct LoadingAdCard: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 // Placeholder icon
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .fill(Color.gray.opacity(0.2))
                     .frame(width: 40, height: 40)
                 
@@ -175,9 +175,9 @@ struct LoadingAdCard: View {
                     .frame(height: 10)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
         )
@@ -346,7 +346,7 @@ struct WorkoutNativeAdContent: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 6)
                     .background(
                         LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)

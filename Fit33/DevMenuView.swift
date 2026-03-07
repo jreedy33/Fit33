@@ -61,10 +61,10 @@ struct AdminPasswordView: View {
                         .textFieldStyle(.plain)
                         .padding()
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         .foregroundColor(.white)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(showError ? Color.red : Color.white.opacity(0.2), lineWidth: 1)
                         )
                     
@@ -90,7 +90,7 @@ struct AdminPasswordView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                 }
                 .padding(.horizontal, 32)
                 .disabled(password.isEmpty)
@@ -238,7 +238,7 @@ struct DevMenuView: View {
             }
         }
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(.ultraThinMaterial)
     }
     
@@ -371,7 +371,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
@@ -406,12 +406,12 @@ struct InsightsTabContent: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
@@ -460,7 +460,7 @@ struct InsightsTabContent: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .alert("Reset Workout State?", isPresented: $showingWorkoutResetConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -474,7 +474,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
@@ -525,7 +525,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -557,7 +557,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -589,7 +589,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -624,7 +624,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -656,7 +656,7 @@ struct InsightsTabContent: View {
                             .foregroundColor(.white)
                             .frame(width: 24, height: 24)
                             .background(rankColor(for: index + 1))
-                            .cornerRadius(12)
+                            .cornerRadius(CornerRadius.md)
                         
                         Text(workout.workoutName)
                             .font(.subheadline)
@@ -674,13 +674,13 @@ struct InsightsTabContent: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                 }
             }
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -715,7 +715,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -746,7 +746,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -777,7 +777,7 @@ struct InsightsTabContent: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -802,7 +802,7 @@ struct InsightsTabContent: View {
                     endPoint: .trailing
                 )
             )
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(viewModel.isLoading)
         .opacity(viewModel.isLoading ? 0.6 : 1.0)
@@ -910,7 +910,7 @@ struct BugsTabContent: View {
         }
         .padding()
         .background(Color.orange.opacity(0.15))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var refreshHeader: some View {
@@ -939,7 +939,7 @@ struct BugsTabContent: View {
                 .fontWeight(.medium)
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     LinearGradient(
                         colors: [.blue, .purple],
@@ -993,9 +993,9 @@ struct BugsTabContent: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 4, x: 0, y: 2)
     }
     
@@ -1042,7 +1042,7 @@ struct BugReportCard: View {
                         .font(.caption2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(statusColor)
                         .cornerRadius(6)
@@ -1132,7 +1132,7 @@ struct BugReportCard: View {
             }
             .padding()
             .background(Color.cardBackground)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 6, x: 0, y: 3)
         }
         .buttonStyle(.plain)
@@ -1278,7 +1278,7 @@ struct BugDetailView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var userInfoSection: some View {
@@ -1357,7 +1357,7 @@ struct BugDetailView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var screenshotSection: some View {
@@ -1390,24 +1390,24 @@ struct BugDetailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 300)
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .overlay(
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 .font(.title2)
                                 .foregroundColor(.white)
-                                .padding(8)
+                                .padding(Spacing.xs)
                                 .background(Color.black.opacity(0.5))
-                                .cornerRadius(8)
-                                .padding(8),
+                                .cornerRadius(CornerRadius.sm)
+                                .padding(Spacing.xs),
                             alignment: .bottomTrailing
                         )
                 }
             } else {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color.gray.opacity(0.1))
                     .frame(height: 200)
                     .overlay(
@@ -1424,7 +1424,7 @@ struct BugDetailView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var sessionLogSection: some View {
@@ -1477,10 +1477,10 @@ struct BugDetailView: View {
                         }
                         .font(.subheadline)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.xs)
                         .background(Color.orange)
-                        .cornerRadius(8)
+                        .cornerRadius(CornerRadius.sm)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -1488,7 +1488,7 @@ struct BugDetailView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private func detailSection(title: String, icon: String, color: Color, content: String) -> some View {
@@ -1507,7 +1507,7 @@ struct BugDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private var deviceInfoSection: some View {
@@ -1531,7 +1531,7 @@ struct BugDetailView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     private func infoRow(label: String, value: String) -> some View {
@@ -1564,7 +1564,7 @@ struct BugDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.orange)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
             }
             
@@ -1584,7 +1584,7 @@ struct BugDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.green)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
             }
             
@@ -1601,7 +1601,7 @@ struct BugDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color.red)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
     }
@@ -1731,8 +1731,8 @@ struct FullScreenScreenshotView: View {
                 }
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.7))
-                .padding(.vertical, 8)
-                .padding(.horizontal, 16)
+                .padding(.vertical, Spacing.xs)
+                .padding(.horizontal, Spacing.md)
                 .background(Color.black.opacity(0.5))
                 .cornerRadius(20)
                 .padding(.bottom, 30)
@@ -1776,10 +1776,10 @@ struct QualityAuditTabContent: View {
                 }
                 .padding()
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.orange.opacity(0.1))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                         )
                 )
@@ -1811,7 +1811,7 @@ struct QualityAuditTabContent: View {
                 }
                 .padding()
                 .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 
                 // Run Audit Button
                 Button(action: runAudit) {
@@ -1835,7 +1835,7 @@ struct QualityAuditTabContent: View {
                         )
                     )
                     .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
                 .disabled(isRunningAudit)
                 
@@ -1853,7 +1853,7 @@ struct QualityAuditTabContent: View {
                     }
                     .padding()
                     .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
                 
                 // Scorecard Legend
@@ -1873,7 +1873,7 @@ struct QualityAuditTabContent: View {
                 }
                 .padding()
                 .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 
                 // Instructions
                 VStack(alignment: .leading, spacing: 8) {
@@ -1903,7 +1903,7 @@ struct QualityAuditTabContent: View {
                 }
                 .padding()
                 .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 
                 Spacer(minLength: 100)
             }
@@ -1933,7 +1933,7 @@ struct QualityAuditTabContent: View {
             Text(weight)
                 .font(.caption2)
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(Color.gray.opacity(0.2))
                 .cornerRadius(6)
@@ -2013,7 +2013,7 @@ struct BugReportFullLogView: View {
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(colorScheme == .dark ? Color(white: 0.1) : Color(white: 0.95))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         .padding(.horizontal)
                 }
                 .padding(.vertical)
@@ -2064,10 +2064,10 @@ struct BugReportFullLogView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 6)
         .background(Color.blue.opacity(0.1))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
 }
 

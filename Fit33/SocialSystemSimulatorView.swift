@@ -128,10 +128,10 @@ struct SocialSystemSimulatorView: View {
                             .font(.subheadline)
                             .foregroundColor(.primary)
                     }
-                    .padding(8)
+                    .padding(Spacing.xs)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
                 }
                 
                 Image(systemName: "arrow.left.arrow.right")
@@ -211,7 +211,7 @@ struct SocialSystemSimulatorView: View {
                     LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)
                 )
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(simulator.isRunning)
             
@@ -234,7 +234,7 @@ struct SocialSystemSimulatorView: View {
                     LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
                 )
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(simulator.isRunning)
             
@@ -249,7 +249,7 @@ struct SocialSystemSimulatorView: View {
                 }
                 .font(.subheadline)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(Color.red.opacity(0.15))
                 .foregroundColor(.red)
                 .cornerRadius(10)
@@ -262,8 +262,8 @@ struct SocialSystemSimulatorView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
         )
     }
@@ -293,8 +293,8 @@ struct SocialSystemSimulatorView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
         )
     }
@@ -325,8 +325,8 @@ struct SocialSystemSimulatorView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
         )
     }
@@ -359,7 +359,7 @@ struct SocialSystemSimulatorView: View {
                 .monospacedDigit()
         }
         .padding(.vertical, 4)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(entry.success ? Color.clear : Color.red.opacity(0.08))
@@ -468,8 +468,8 @@ struct SocialSystemSimulatorView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
         )
     }
@@ -485,7 +485,7 @@ struct SocialSystemSimulatorView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(color.opacity(0.1))
@@ -748,7 +748,7 @@ struct QuickRealtimeTestResultView: View {
                                     .fontWeight(.medium)
                             }
                             .foregroundColor(result.latencyMs < 1000 ? .green : (result.latencyMs < 3000 ? .orange : .red))
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()

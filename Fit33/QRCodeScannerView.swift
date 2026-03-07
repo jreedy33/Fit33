@@ -120,7 +120,7 @@ struct QRCodeScannerView: View {
                 .mask(
                     ZStack {
                         Rectangle()
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
                             .frame(width: 280, height: 280)
                             .blendMode(.destinationOut)
                     }
@@ -128,7 +128,7 @@ struct QRCodeScannerView: View {
                 )
             
             // Scanning frame border
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(
                     LinearGradient(
                         colors: [.blue, .cyan],
@@ -177,7 +177,7 @@ struct QRCodeScannerView: View {
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.7))
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .padding(.horizontal, 24)
         .background(
             Capsule()
@@ -466,13 +466,13 @@ private struct ScannedUserSheet: View {
                 Label("Already Friends", systemImage: "checkmark.circle.fill")
                     .font(.headline)
                     .foregroundColor(.green)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
             } else if user.hasPendingRequest {
                 if user.requestDirection == "sent" {
                     Label("Request Pending", systemImage: "clock.fill")
                         .font(.headline)
                         .foregroundColor(.orange)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                 } else {
                     // They sent us a request - tapping will accept
                     Button(action: {
@@ -491,7 +491,7 @@ private struct ScannedUserSheet: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(Color.green)
                         .clipShape(Capsule())
                     }
@@ -514,7 +514,7 @@ private struct ScannedUserSheet: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [.blue, .cyan],
@@ -542,7 +542,7 @@ private struct ScannedUserSheet: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
     }
     
     private func statusIcon(for status: String) -> String {

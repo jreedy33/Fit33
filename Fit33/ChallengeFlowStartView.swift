@@ -102,7 +102,7 @@ struct ChallengeFlowStartView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.white.opacity(0.5))
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                     
                     TextField("Search", text: $searchText)
                         .font(.body)
@@ -117,10 +117,10 @@ struct ChallengeFlowStartView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
                 .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 
                 Button(action: {
                     HapticManager.impact(.medium)
@@ -131,7 +131,7 @@ struct ChallengeFlowStartView: View {
                         .foregroundColor(.white)
                         .frame(width: 48, height: 48)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                 }
             }
         }
@@ -439,7 +439,7 @@ struct ChallengeFlowStartView: View {
                         : AnyShapeStyle(Color.gray)
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(.ultraThinMaterial)
@@ -632,7 +632,7 @@ struct ChallengeFlowStartView: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [.green, .teal],
@@ -640,7 +640,7 @@ struct ChallengeFlowStartView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
             }
             .padding(.horizontal, 10)
@@ -678,7 +678,7 @@ struct ChallengeFlowStartView: View {
             }
             .foregroundColor(.white.opacity(0.4))
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private var friendSelectionCard: some View {
@@ -764,7 +764,7 @@ struct ChallengeFlowStartView: View {
                     Text("\(sentFriendRequests.count) request\(sentFriendRequests.count == 1 ? "" : "s") sent ✓")
                         .font(.caption)
                         .foregroundColor(.green)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.green.opacity(0.15)))
                         .padding(.top, 4)
@@ -941,7 +941,7 @@ struct ChallengeFlowStartView: View {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        colors: [Color(white: 0.18), Color.cardBackground],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -1013,7 +1013,7 @@ struct ChallengeFlowStartView: View {
                                         Circle()
                                             .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                             .frame(width: 28, height: 28)
-                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 10, weight: .bold)).foregroundColor(.white))
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.ds_caption).foregroundColor(.white))
                                     }
                                     
                                     Rectangle()
@@ -1062,7 +1062,7 @@ struct ChallengeFlowStartView: View {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        colors: [Color(white: 0.18), Color.cardBackground],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -1142,12 +1142,12 @@ struct ChallengeFlowStartView: View {
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.purple)
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.white.opacity(0.08))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
+                                RoundedRectangle(cornerRadius: CornerRadius.lg)
                                     .stroke(
                                         LinearGradient(colors: [.purple.opacity(0.5), .pink.opacity(0.3)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1188,12 +1188,12 @@ struct ChallengeFlowStartView: View {
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.blue)
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.white.opacity(0.08))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
+                                RoundedRectangle(cornerRadius: CornerRadius.lg)
                                     .stroke(
                                         LinearGradient(colors: [.blue.opacity(0.5), .cyan.opacity(0.3)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1382,7 +1382,7 @@ struct ChallengeFlowStartView: View {
                                 .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(
                         ZStack {
@@ -1393,7 +1393,7 @@ struct ChallengeFlowStartView: View {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        colors: [Color(white: 0.18), Color.cardBackground],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -1563,7 +1563,7 @@ struct ChallengeFlowStartView: View {
                                     
                                     Spacer()
                                 }
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                             }
                         }
                         
@@ -1624,7 +1624,7 @@ struct ChallengeFlowStartView: View {
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color(white: 0.18), Color(white: 0.12)],
+                                        colors: [Color(white: 0.18), Color.cardBackground],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -1903,8 +1903,8 @@ struct ChallengeFlowStartView: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(isRequestSent ? .green : .white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Group {
                         if isRequestSent {
@@ -1918,8 +1918,8 @@ struct ChallengeFlowStartView: View {
             }
             .disabled(isRequestSent || isLoading)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.md)
         .background(Color.white.opacity(0.08))
         .cornerRadius(14)
     }
@@ -2013,7 +2013,7 @@ struct ChallengeFlowFriendCard: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(

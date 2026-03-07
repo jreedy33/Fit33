@@ -33,7 +33,7 @@ struct TrainingHubView: View {
                 // - PR tracking
                 // - Weekly summary
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 16)
             .padding(.bottom, 40)
         }
@@ -314,7 +314,7 @@ struct TrainingInsightsWidget: View {
                 
                 WidgetStat(value: "\(currentStreak)", label: "Streak", icon: "bolt.fill", color: currentStreak >= 3 ? .orange : .gray)
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             
             Divider()
                 .padding(.horizontal, 20)
@@ -338,7 +338,7 @@ struct TrainingInsightsWidget: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
             }
             .buttonStyle(PlainButtonStyle())
         }

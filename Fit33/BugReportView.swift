@@ -137,14 +137,14 @@ struct BugReportView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxHeight: 200)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
             } else {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(inputBackground)
                     .frame(height: 150)
                     .overlay(
@@ -161,7 +161,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -184,7 +184,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.orange.opacity(colorScheme == .dark ? 0.2 : 0.1))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Description Section
@@ -201,12 +201,12 @@ struct BugReportView: View {
             
             TextEditor(text: $bugDescription)
                 .frame(minHeight: 100)
-                .padding(8)
+                .padding(Spacing.xs)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
                 .overlay(
@@ -215,8 +215,8 @@ struct BugReportView: View {
                             Text("Describe the bug in detail. What were you doing when it happened?")
                                 .font(.subheadline)
                                 .foregroundColor(.gray.opacity(0.5))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 16)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, Spacing.md)
                                 .allowsHitTesting(false)
                         }
                     },
@@ -225,7 +225,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -241,12 +241,12 @@ struct BugReportView: View {
             
             TextEditor(text: $expectedBehavior)
                 .frame(minHeight: 80)
-                .padding(8)
+                .padding(Spacing.xs)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
                 .overlay(
@@ -255,8 +255,8 @@ struct BugReportView: View {
                             Text("What did you expect to happen instead?")
                                 .font(.subheadline)
                                 .foregroundColor(.gray.opacity(0.5))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 16)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, Spacing.md)
                                 .allowsHitTesting(false)
                         }
                     },
@@ -265,7 +265,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -312,7 +312,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -328,12 +328,12 @@ struct BugReportView: View {
             
             TextEditor(text: $additionalNotes)
                 .frame(minHeight: 60)
-                .padding(8)
+                .padding(Spacing.xs)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
                 .overlay(
@@ -342,8 +342,8 @@ struct BugReportView: View {
                             Text("Any other details that might help us fix this...")
                                 .font(.subheadline)
                                 .foregroundColor(.gray.opacity(0.5))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 16)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, Spacing.md)
                                 .allowsHitTesting(false)
                         }
                     },
@@ -352,7 +352,7 @@ struct BugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -395,12 +395,12 @@ struct BugReportView: View {
                 }
                 .padding(10)
                 .background(Color.green.opacity(colorScheme == .dark ? 0.2 : 0.1))
-                .cornerRadius(8)
+                .cornerRadius(CornerRadius.sm)
             }
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -672,9 +672,9 @@ struct ManualBugReportView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 200)
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
@@ -695,7 +695,7 @@ struct ManualBugReportView: View {
                     HapticManager.selectionChanged()
                     showingPhotoPicker = true
                 }) {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(inputBackground)
                         .frame(height: 120)
                         .overlay(
@@ -709,7 +709,7 @@ struct ManualBugReportView: View {
                             }
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(Color.blue.opacity(0.3), style: StrokeStyle(lineWidth: 2, dash: [8]))
                         )
                 }
@@ -721,7 +721,7 @@ struct ManualBugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -744,7 +744,7 @@ struct ManualBugReportView: View {
         }
         .padding()
         .background(Color.orange.opacity(colorScheme == .dark ? 0.2 : 0.1))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Description Section
@@ -761,12 +761,12 @@ struct ManualBugReportView: View {
             
             TextEditor(text: $bugDescription)
                 .frame(minHeight: 100)
-                .padding(12)
+                .padding(Spacing.sm)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
             
@@ -776,7 +776,7 @@ struct ManualBugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -792,18 +792,18 @@ struct ManualBugReportView: View {
             
             TextEditor(text: $expectedBehavior)
                 .frame(minHeight: 80)
-                .padding(12)
+                .padding(Spacing.sm)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -826,7 +826,7 @@ struct ManualBugReportView: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
         .onTapGesture {
             HapticManager.selectionChanged()
@@ -849,18 +849,18 @@ struct ManualBugReportView: View {
             
             TextEditor(text: $additionalNotes)
                 .frame(minHeight: 60)
-                .padding(12)
+                .padding(Spacing.sm)
                 .scrollContentBackground(.hidden)
                 .background(inputBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -903,12 +903,12 @@ struct ManualBugReportView: View {
                 }
                 .padding(10)
                 .background(Color.green.opacity(colorScheme == .dark ? 0.2 : 0.1))
-                .cornerRadius(8)
+                .cornerRadius(CornerRadius.sm)
             }
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -932,7 +932,7 @@ struct ManualBugReportView: View {
                     .opacity(bugDescription.isEmpty ? 0.5 : 1.0)
             )
             .foregroundColor(.white)
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
             .shadow(color: .red.opacity(0.3), radius: 8, x: 0, y: 4)
         }
         .disabled(bugDescription.isEmpty || isSubmitting)

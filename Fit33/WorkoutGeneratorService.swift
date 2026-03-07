@@ -95,25 +95,10 @@ struct WorkoutGenerationResponse: Codable {
 class WorkoutGeneratorService: ObservableObject {
     static let shared = WorkoutGeneratorService()
     
-    /// Get recommended exercise count based on workout duration
-    /// Rules:
-    /// - 15-20 min: 4 exercises
-    /// - 25-35 min: 5 exercises
-    /// - 40 min: 6 exercises (cap for "quick" workouts)
-    /// - 45-50 min: 7 exercises
-    /// - 60+ min: 8 exercises (hard cap)
+    /// Get recommended exercise count based on workout duration.
+    /// Delegates to the canonical implementation in WorkoutComboRules.
     static func exerciseCountForDuration(_ durationMinutes: Int) -> Int {
-        if durationMinutes <= 20 {
-            return 4
-        } else if durationMinutes <= 35 {
-            return 5
-        } else if durationMinutes <= 40 {
-            return 6  // Cap for "quick" workouts
-        } else if durationMinutes <= 50 {
-            return 7
-        } else {
-            return 8  // Hard cap
-        }
+        return getExerciseCountForDuration(durationMinutes)
     }
     
     // ⚡️ Use the shared Supabase client instead of duplicating credentials
@@ -497,8 +482,25 @@ class WorkoutGeneratorService: ObservableObject {
             relevantSplits = workoutSplits
         }
         
-        // Randomly select one of the relevant splits
-        let selectedSplit = relevantSplits.randomElement() ?? workoutSplits[0]
+        // Weighted selection: prefer splits that match the user's goal more closely
+        // and avoid recently used splits for variety
+        let weightedSplits = relevantSplits.map { split -> (split: (name: String, muscles: [String], forGoals: [String]), weight: Int) in
+            var weight = 1
+            let goalMatchCount = split.forGoals.filter { userGoal.contains($0) }.count
+            weight += goalMatchCount * 2
+            if split.muscles.count >= 3 { weight += 1 }
+            return (split, weight)
+        }
+        let totalWeight = weightedSplits.reduce(0) { $0 + $1.weight }
+        var roll = Int.random(in: 0..<max(1, totalWeight))
+        var selectedSplit = weightedSplits[0].split
+        for ws in weightedSplits {
+            roll -= ws.weight
+            if roll < 0 {
+                selectedSplit = ws.split
+                break
+            }
+        }
         
         #if DEBUG
         print("🎲 Surprise workout (Goal-Optimized):")
@@ -908,8 +910,8 @@ class WorkoutGeneratorService: ObservableObject {
             }
             
             // STRICT: Exercise must primarily target one of user's selected muscles
-            // OR match the category (fallback for incomplete data)
-            let matchesMuscle = primaryMuscleMatchesTarget || (categoryMatchesTarget && exercisePrimaryMuscle.isEmpty)
+            // Category fallback only applies when muscle data is missing AND category is present
+            let matchesMuscle = primaryMuscleMatchesTarget || (categoryMatchesTarget && exercisePrimaryMuscle.isEmpty && !exerciseCategory.isEmpty)
             
             // Must match muscle groups as PRIMARY target
             guard matchesMuscle else {
@@ -1237,18 +1239,14 @@ class WorkoutGeneratorService: ObservableObject {
             score += finalLearnedBoost
             
             // 👤 GENDER MATCH - HIGH PRIORITY (+200 for matching gender)
-            // This ensures user almost always sees their gender's exercises
-            // Check VideoStreamingService's gender cache
+            // Only score exercises that have video data; no bonus/penalty for unknowns
             let exerciseKey = name
-            var genderMatches = true // Default to true if no video info
             if let genderInfo = genderVideoCache[exerciseKey] {
-                genderMatches = genderInfo.filename(for: preferredVideoGender) != nil
-            }
-            
-            if genderMatches {
-                score += 200  // Massive boost for gender match
-            } else {
-                score -= 150  // Heavy penalty for opposite gender (only used as fallback)
+                if genderInfo.filename(for: preferredVideoGender) != nil {
+                    score += 200
+                } else {
+                    score -= 150
+                }
             }
             
             // ⭐ FAVORITES AS GENTLE HINTS (not guarantees)
@@ -2040,7 +2038,7 @@ class WorkoutGeneratorService: ObservableObject {
                     n.contains("press down") ||
                     n.contains("skull crusher") ||
                     (n.contains("extension") && !n.contains("leg extension") && !n.contains("back extension") && !n.contains("hip extension")) ||
-                    (n.contains("dip") && !n.contains("assist") && !n.contains("chip")) ||
+                    (n.contains("dip") && !n.contains("assisted") && !n.contains("chin")) ||
                     (n.contains("kickback") && !n.contains("glute") && !n.contains("leg"))
                 
                 if isTricepsExercise {
@@ -2624,7 +2622,7 @@ class WorkoutGeneratorService: ObservableObject {
                         
                         // 🆕 Muscle balance check: Don't over-represent one muscle group
                         let currentMuscleCount = usedNormalizedMuscles[normalizedMuscle] ?? 0
-                        let maxPerMuscle = max(2, Int(ceil(Double(count) / Double(max(1, normalizedTargetMuscles.count)))) + 1)
+                        let maxPerMuscle = max(2, Int(ceil(Double(count) / Double(max(1, normalizedTargetMuscles.count)))))
                         if currentMuscleCount >= maxPerMuscle && normalizedTargetMuscles.count > 1 {
                             continue
                         }
@@ -2692,7 +2690,7 @@ class WorkoutGeneratorService: ObservableObject {
                         }
                         
                         // 🆕 ROW CAP: Max 2 rows, prefer at least one supported
-                        let isRow = nameLower.contains(" row") || nameLower.hasPrefix("row")
+                        let isRow = (nameLower.contains(" row") || nameLower.hasPrefix("row")) && !nameLower.contains("upright")
                         if isRow {
                             if rowCount >= maxRows {
                                 continue
@@ -2855,13 +2853,6 @@ class WorkoutGeneratorService: ObservableObject {
                             #endif
                             continue
                         }
-                        if isVerticalPress && verticalPressCount >= maxVerticalPress {
-                            #if DEBUG
-                            print("   🚫 [VERTICAL PRESS CAP] Skipping '\(name)': already have \(verticalPressCount) vertical press (max: \(maxVerticalPress))")
-                            #endif
-                            continue
-                        }
-                        
                         // 🆕 BACK PRIORITY - If back is primary and we need more back exercises
                         let detectedPatternCheck = WorkoutComboRules.detectExercisePattern(name, equipment: exercise.equipment ?? "")
                         let backPatternsCheck = ["horizontal_row", "chest_supported_row", "vertical_pull", "rear_delt", "lat_isolation", "shrug"]

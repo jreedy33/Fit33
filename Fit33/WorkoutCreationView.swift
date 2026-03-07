@@ -173,7 +173,7 @@ struct WorkoutCreationView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(
                             gradient: Gradient(colors: [.blue, .purple]),
@@ -338,8 +338,8 @@ struct GeneratedExerciseCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 25)
                 .fill(Color.white)
@@ -424,8 +424,8 @@ struct CustomExerciseCard: View {
                     .font(.system(size: 20))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 25)
                 .fill(Color.white)

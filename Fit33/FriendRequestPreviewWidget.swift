@@ -29,7 +29,7 @@ struct FriendRequestPreviewWidget: View {
                 headerSection
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Action buttons
                 actionButtonsSection
@@ -121,7 +121,7 @@ struct FriendRequestPreviewWidget: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Sender Avatar View
@@ -167,7 +167,7 @@ struct FriendRequestPreviewWidget: View {
                 }
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color.secondary.opacity(0.15))
@@ -192,7 +192,7 @@ struct FriendRequestPreviewWidget: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(
@@ -206,7 +206,7 @@ struct FriendRequestPreviewWidget: View {
             }
             .disabled(isAccepting || isDeclining)
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Actions

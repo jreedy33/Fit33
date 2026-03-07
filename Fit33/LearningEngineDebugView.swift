@@ -101,7 +101,7 @@ struct LearningEngineDebugView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Learning Profile
@@ -136,7 +136,7 @@ struct LearningEngineDebugView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Equipment Preferences
@@ -191,7 +191,7 @@ struct LearningEngineDebugView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Recent Exercises
@@ -216,10 +216,10 @@ struct LearningEngineDebugView: View {
                     ForEach(Array(profile.recentlyDoneExercises.prefix(12)), id: \.self) { exercise in
                         Text(exercise.capitalized)
                             .font(.caption)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(Color.purple.opacity(0.2))
-                            .cornerRadius(8)
+                            .cornerRadius(CornerRadius.sm)
                     }
                 }
             } else {
@@ -230,7 +230,7 @@ struct LearningEngineDebugView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Program Stats
@@ -263,7 +263,7 @@ struct LearningEngineDebugView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Actions
@@ -284,7 +284,7 @@ struct LearningEngineDebugView: View {
                 .padding()
                 .background(Color.blue)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(isRefreshing)
             
@@ -297,7 +297,7 @@ struct LearningEngineDebugView: View {
                 .padding()
                 .background(Color.purple)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
             .disabled(learningEngine.isAnalyzing)
             
@@ -310,7 +310,7 @@ struct LearningEngineDebugView: View {
                 .padding()
                 .background(Color.green)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
     }

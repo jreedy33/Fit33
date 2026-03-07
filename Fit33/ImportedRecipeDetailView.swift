@@ -240,10 +240,10 @@ struct ImportedRecipeDetailView: View {
             }
             .frame(height: 8)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         )
     }
@@ -324,12 +324,12 @@ struct ImportedRecipeDetailView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: [.blue.opacity(0.3), .cyan.opacity(0.2)],
@@ -378,7 +378,7 @@ struct ImportedRecipeDetailView: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan],
@@ -386,7 +386,7 @@ struct ImportedRecipeDetailView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .blue.opacity(0.4), radius: 8, x: 0, y: 4)
             }
             .buttonStyle(PlainButtonStyle())
@@ -418,7 +418,7 @@ struct ImportedRecipeDetailView: View {
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [Color.purple, Color.pink],
@@ -426,7 +426,7 @@ struct ImportedRecipeDetailView: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -468,7 +468,7 @@ struct ImportedRecipeDetailView: View {
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                        .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
@@ -502,11 +502,11 @@ struct ImportedRecipeDetailView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
                 .lineSpacing(6)
-                .padding(16)
+                .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.98))
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.98))
                 )
         }
     }
@@ -545,9 +545,9 @@ struct ImportedRecipeDetailView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
             )
@@ -574,9 +574,9 @@ struct ImportedRecipeDetailView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
             )
@@ -764,8 +764,8 @@ struct ImportedIngredientRow: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             
             if !isLast {
                 Divider()
@@ -877,12 +877,12 @@ struct ImportedRecipeMealPickerSheet: View {
                                 
                                 Spacer()
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, Spacing.sm)
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Nutrition preview
@@ -921,8 +921,8 @@ struct ImportedRecipeMealPickerSheet: View {
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Meal type selector
@@ -946,8 +946,8 @@ struct ImportedRecipeMealPickerSheet: View {
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Add button
@@ -964,7 +964,7 @@ struct ImportedRecipeMealPickerSheet: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [.blue, .cyan],

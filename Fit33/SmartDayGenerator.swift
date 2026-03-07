@@ -40,6 +40,8 @@ class SmartDayGenerator {
             return getBroSplitTitles(programType: programType, days: daysPerWeek)
         case .pushPull:
             return getPushPullTitles(programType: programType, days: daysPerWeek)
+        case .arnoldSplit:
+            return getArnoldSplitTitles(programType: programType, days: daysPerWeek)
         }
     }
     
@@ -87,7 +89,7 @@ class SmartDayGenerator {
                 titles.append(DayTitleTemplate(
                     title: pushTitles[i % pushTitles.count],
                     targetMuscles: ["Chest", "Shoulders", "Triceps"],
-                    secondaryMuscles: ["Core"]
+                    secondaryMuscles: ["Rear Delts", "Core"]
                 ))
             case "pull":
                 titles.append(DayTitleTemplate(
@@ -140,17 +142,39 @@ class SmartDayGenerator {
         
         for i in 0..<days {
             if i % 2 == 0 {
-                titles.append(DayTitleTemplate(
-                    title: upperTitles[i / 2 % upperTitles.count],
-                    targetMuscles: ["Chest", "Back", "Shoulders"],
-                    secondaryMuscles: ["Biceps", "Triceps", "Core"]
-                ))
+                // Upper A (even) = Horizontal focus: Bench + Rows + Arms
+                // Upper B (odd upper) = Vertical focus: OHP + Pulldowns + Rear Delts
+                let upperVariant = (i / 2) % 2
+                if upperVariant == 0 {
+                    titles.append(DayTitleTemplate(
+                        title: upperTitles[i / 2 % upperTitles.count],
+                        targetMuscles: ["Chest", "Back", "Triceps"],
+                        secondaryMuscles: ["Biceps", "Shoulders", "Core"]
+                    ))
+                } else {
+                    titles.append(DayTitleTemplate(
+                        title: upperTitles[i / 2 % upperTitles.count],
+                        targetMuscles: ["Shoulders", "Lats", "Biceps"],
+                        secondaryMuscles: ["Rear Delts", "Triceps", "Core"]
+                    ))
+                }
             } else {
-                titles.append(DayTitleTemplate(
-                    title: lowerTitles[i / 2 % lowerTitles.count],
-                    targetMuscles: ["Quadriceps", "Hamstrings", "Glutes"],
-                    secondaryMuscles: ["Calves", "Core", "Lower Back"]
-                ))
+                // Lower A (first lower) = Quad-dominant: Squats + Extensions + Calves
+                // Lower B (second lower) = Hip-dominant: RDLs + Leg Curls + Glute work
+                let lowerVariant = (i / 2) % 2
+                if lowerVariant == 0 {
+                    titles.append(DayTitleTemplate(
+                        title: lowerTitles[i / 2 % lowerTitles.count],
+                        targetMuscles: ["Quadriceps", "Glutes", "Calves"],
+                        secondaryMuscles: ["Hamstrings", "Core"]
+                    ))
+                } else {
+                    titles.append(DayTitleTemplate(
+                        title: lowerTitles[i / 2 % lowerTitles.count],
+                        targetMuscles: ["Hamstrings", "Glutes", "Lower Back"],
+                        secondaryMuscles: ["Quadriceps", "Calves", "Core"]
+                    ))
+                }
             }
         }
         
@@ -180,19 +204,20 @@ class SmartDayGenerator {
         }
         
         for i in 0..<days {
-            // Rotate emphasis each day
-            let emphasis: [String]
+            // Each full body day covers all movement patterns (push, pull, squat, hinge)
+            // but varies the specific compound emphasis for exercise variety
+            let primaryCompound: String
             switch i % 3 {
-            case 0: emphasis = ["Chest", "Back", "Quadriceps"] // Push/Pull/Legs emphasis
-            case 1: emphasis = ["Shoulders", "Lats", "Hamstrings"]
-            case 2: emphasis = ["Back", "Chest", "Glutes"]
-            default: emphasis = ["Chest", "Back", "Legs"]
+            case 0: primaryCompound = "Chest"      // Bench focus day
+            case 1: primaryCompound = "Shoulders"   // OHP focus day
+            case 2: primaryCompound = "Back"        // Row/DL focus day
+            default: primaryCompound = "Chest"
             }
             
             titles.append(DayTitleTemplate(
                 title: dayTitles[i % dayTitles.count],
-                targetMuscles: emphasis,
-                secondaryMuscles: ["Biceps", "Triceps", "Core", "Calves"]
+                targetMuscles: [primaryCompound, "Back", "Quadriceps", "Hamstrings"],
+                secondaryMuscles: ["Shoulders", "Biceps", "Triceps", "Glutes", "Core", "Calves"]
             ))
         }
         
@@ -266,6 +291,49 @@ class SmartDayGenerator {
         return titles
     }
     
+    // MARK: - Arnold Split Titles
+    
+    private func getArnoldSplitTitles(programType: DynamicProgramGenerator.GeneratedProgram.ProgramType, days: Int) -> [DayTitleTemplate] {
+        var titles: [DayTitleTemplate] = []
+        
+        // Arnold Split: Chest+Back, Shoulders+Arms, Legs (2x per week for 6 days)
+        let arnoldDays: [(title: String, primary: [String], secondary: [String])]
+        
+        switch programType {
+        case .hypertrophy:
+            arnoldDays = [
+                ("Chest & Back Volume", ["Chest", "Back", "Lats"], ["Core"]),
+                ("Shoulders & Arms Pump", ["Shoulders", "Biceps", "Triceps"], ["Rear Delts", "Forearms"]),
+                ("Leg Day Mass", ["Quadriceps", "Hamstrings", "Glutes"], ["Calves", "Core"])
+            ]
+        case .strength:
+            arnoldDays = [
+                ("Heavy Chest & Back", ["Chest", "Back"], ["Core"]),
+                ("Heavy Shoulders & Arms", ["Shoulders", "Biceps", "Triceps"], ["Rear Delts"]),
+                ("Heavy Legs", ["Quadriceps", "Hamstrings", "Glutes"], ["Calves", "Lower Back"])
+            ]
+        default:
+            arnoldDays = [
+                ("Chest & Back", ["Chest", "Back", "Lats"], ["Core"]),
+                ("Shoulders & Arms", ["Shoulders", "Biceps", "Triceps"], ["Rear Delts", "Forearms"]),
+                ("Leg Day", ["Quadriceps", "Hamstrings", "Glutes"], ["Calves", "Core"])
+            ]
+        }
+        
+        // Cycle through the 3-day rotation for however many days requested
+        for i in 0..<days {
+            let day = arnoldDays[i % 3]
+            let suffix = (i >= 3) ? " II" : ""
+            titles.append(DayTitleTemplate(
+                title: "\(day.title)\(suffix)",
+                targetMuscles: day.primary,
+                secondaryMuscles: day.secondary
+            ))
+        }
+        
+        return titles
+    }
+    
     // MARK: - Push/Pull Titles
     
     private func getPushPullTitles(programType: DynamicProgramGenerator.GeneratedProgram.ProgramType, days: Int) -> [DayTitleTemplate] {
@@ -293,14 +361,14 @@ class SmartDayGenerator {
             if i % 2 == 0 {
                 titles.append(DayTitleTemplate(
                     title: pushTitles[i / 2 % pushTitles.count],
-                    targetMuscles: ["Chest", "Shoulders", "Triceps"],
-                    secondaryMuscles: ["Core"]
+                    targetMuscles: ["Chest", "Shoulders", "Triceps", "Quadriceps"],
+                    secondaryMuscles: ["Core", "Calves"]
                 ))
             } else {
                 titles.append(DayTitleTemplate(
                     title: pullTitles[i / 2 % pullTitles.count],
-                    targetMuscles: ["Back", "Lats", "Biceps"],
-                    secondaryMuscles: ["Rear Delts", "Forearms"]
+                    targetMuscles: ["Back", "Lats", "Biceps", "Hamstrings", "Glutes"],
+                    secondaryMuscles: ["Rear Delts", "Forearms", "Lower Back"]
                 ))
             }
         }

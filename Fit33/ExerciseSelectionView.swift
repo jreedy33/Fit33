@@ -512,7 +512,7 @@ struct ExerciseSelectionView: View {
                 .foregroundColor(.blue)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(.ultraThinMaterial)
             
             // Compact search and filters
@@ -589,10 +589,10 @@ struct ExerciseSelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color(.systemGray6).opacity(0.6))
             )
             
@@ -611,7 +611,7 @@ struct ExerciseSelectionView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 }
                 
                 if selectedCategory != "All" {
@@ -626,7 +626,7 @@ struct ExerciseSelectionView: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     }
                 }
                 
@@ -641,7 +641,7 @@ struct ExerciseSelectionView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 }
             }
         }
@@ -677,7 +677,7 @@ struct ExerciseSelectionView: View {
                         .padding(.top, 40)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
         }
         .scrollDismissesKeyboard(.immediately)
@@ -798,9 +798,9 @@ struct SeamlessExerciseSelectionRow: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color(.systemBackground))
                     .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
             )
@@ -928,9 +928,9 @@ struct CompactExerciseSelectionRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.sm))
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -1001,7 +1001,7 @@ struct SelectionFilterChip: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 10)
                 .background(
                     Capsule()
@@ -1060,14 +1060,14 @@ struct ExerciseSelectionCard: View {
                     HStack {
                         Text(exercise.category ?? "")
                             .font(.caption)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(Color.blue.opacity(0.2))
                             .cornerRadius(6)
                         
                         Text(exercise.equipment ?? "")
                             .font(.caption)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(Color.gray.opacity(0.2))
                             .cornerRadius(6)
@@ -1092,7 +1092,7 @@ struct ExerciseSelectionCard: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? Color.blue.opacity(0.1) : Color.white)
                     .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
                     .shadow(color: .gray.opacity(0.2), radius: 2, x: 0, y: 1)

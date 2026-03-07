@@ -238,7 +238,7 @@ struct StreakAtRiskAlert: View {
             }
             
             Divider()
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
             
             // Options
             VStack(spacing: 12) {
@@ -269,7 +269,7 @@ struct StreakAtRiskAlert: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                     }
                 }
                 
@@ -287,7 +287,7 @@ struct StreakAtRiskAlert: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(Color.green, lineWidth: 2)
                     )
                 }
@@ -333,7 +333,7 @@ struct StreakShieldBadge: View {
                     .font(.system(size: 12, weight: .bold))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()

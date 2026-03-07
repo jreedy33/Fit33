@@ -227,7 +227,7 @@ struct InBodySettingsView: View {
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
                         colors: [inbodyBlue, inbodyBlue.opacity(0.8)],
@@ -294,7 +294,7 @@ struct InBodySettingsView: View {
                 .padding(.top, 8)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private func metricCard(icon: String, value: String, unit: String, label: String, color: Color) -> some View {
@@ -463,7 +463,7 @@ struct InBodySettingsView: View {
             }
             
             Divider()
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
             
             Text("How it helps your goals")
                 .font(.subheadline)
@@ -477,7 +477,7 @@ struct InBodySettingsView: View {
             }
             
             Divider()
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
             
             Text("Compatible Devices")
                 .font(.subheadline)
@@ -563,7 +563,7 @@ struct InBodyAuthSheet: View {
                     permissionRow(icon: "chart.line.uptrend.xyaxis", text: "Track your progress over time")
                 }
                 .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
+                .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color(.systemGray6)))
                 .padding(.horizontal)
                 
                 if let error = errorMessage {
@@ -588,7 +588,7 @@ struct InBodyAuthSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [inbodyBlue, inbodyBlue.opacity(0.8)],
@@ -597,7 +597,7 @@ struct InBodyAuthSheet: View {
                         )
                     )
                     .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
                 .disabled(isAuthenticating)
                 .padding(.horizontal)
@@ -774,8 +774,8 @@ struct InBodyCompactCard: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
             .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
         }

@@ -601,12 +601,12 @@ struct GoalProgress {
 
 struct BodyCompositionInsight: Identifiable {
     let id = UUID()
-    let type: InsightType
+    let type: BodyCompInsightType
     let title: String
     let message: String
     let actionText: String?
     
-    enum InsightType {
+    enum BodyCompInsightType {
         case success
         case warning
         case info

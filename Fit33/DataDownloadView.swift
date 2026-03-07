@@ -145,7 +145,7 @@ struct DataDownloadView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private var categoriesSection: some View {
@@ -160,9 +160,9 @@ struct DataDownloadView: View {
                     categoryRow(category)
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
     }
     
@@ -176,7 +176,7 @@ struct DataDownloadView: View {
         } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(category.color.opacity(0.15))
                         .frame(width: 36, height: 36)
                     Image(systemName: category.icon)
@@ -194,7 +194,7 @@ struct DataDownloadView: View {
                     .font(.title3)
                     .foregroundColor(selectedCategories.contains(category) ? .blue : .secondary.opacity(0.5))
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -229,7 +229,7 @@ struct DataDownloadView: View {
                         .padding()
                 }
                 .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             } else {
                 // Show selected range summary
                 HStack {
@@ -247,7 +247,7 @@ struct DataDownloadView: View {
                 }
                 .padding()
                 .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
     }
@@ -264,7 +264,7 @@ struct DataDownloadView: View {
             Text(preset.rawValue)
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(selectedDatePreset == preset ? Color.blue : Color(.secondarySystemGroupedBackground))
                 .foregroundColor(selectedDatePreset == preset ? .white : .primary)
                 .cornerRadius(20)
@@ -304,12 +304,12 @@ struct DataDownloadView: View {
                     .font(.caption.bold())
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(selectedFormat == format ? Color.blue.opacity(0.15) : Color(.secondarySystemGroupedBackground))
             .foregroundColor(selectedFormat == format ? .blue : .secondary)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(selectedFormat == format ? Color.blue : Color.clear, lineWidth: 2)
             )
         }
@@ -331,7 +331,7 @@ struct DataDownloadView: View {
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(colors: selectedCategories.isEmpty ? [.gray, .gray] : [.blue, .cyan],
                              startPoint: .leading, endPoint: .trailing)

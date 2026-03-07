@@ -226,7 +226,7 @@ struct StravaSettingsView: View {
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
                         colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
@@ -266,7 +266,7 @@ struct StravaSettingsView: View {
                 label: "Burned"
             )
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private func statCard(icon: String, value: String, unit: String, label: String) -> some View {
@@ -392,7 +392,7 @@ struct StravaAuthSheet: View {
                     permissionRow(icon: "flame.fill", text: "View calories burned")
                 }
                 .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
+                .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color(.systemGray6)))
                 .padding(.horizontal)
                 
                 if let error = errorMessage {
@@ -417,7 +417,7 @@ struct StravaAuthSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
@@ -426,7 +426,7 @@ struct StravaAuthSheet: View {
                         )
                     )
                     .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
                 .disabled(isAuthenticating)
                 .padding(.horizontal)
@@ -570,7 +570,7 @@ struct StravaCompactCard: View {
                 }
             }
             .padding()
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+            .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color(.systemBackground)))
             .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
         }
     }

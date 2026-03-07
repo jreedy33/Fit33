@@ -82,12 +82,12 @@ struct FriendSelectionSheet: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
                 
                 // Friend list
@@ -96,7 +96,7 @@ struct FriendSelectionSheet: View {
                         FriendRowButton(friend: friend, onSelect: onSelect)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
             }
         }
@@ -164,10 +164,10 @@ struct FriendRowButton: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
         }
         .buttonStyle(PlainButtonStyle())

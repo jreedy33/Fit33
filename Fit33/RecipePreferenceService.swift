@@ -39,14 +39,17 @@ class RecipePreferenceService: ObservableObject {
     private var totalRecipesAdded: Int = 0
     private var totalRecipesFavorited: Int = 0
     
+    // Rate-limit learnFromFoodHistory() to avoid redundant processing
+    private var lastFoodHistoryLearn: Date?
+    private let foodHistoryLearnInterval: TimeInterval = 5 * 60 // 5 minutes
+    
     private init() {
         loadLocalPreferences()
         hasPreferencesSet = !likedIngredients.isEmpty || !dislikedIngredients.isEmpty
         
-        // Sync from cloud in background and learn from food history
         Task {
             await syncPreferencesFromCloud()
-            await learnFromFoodHistory()
+            await learnFromFoodHistory(force: true)
         }
     }
     
@@ -54,8 +57,14 @@ class RecipePreferenceService: ObservableObject {
     
     /// Analyze user's food logging history to automatically learn their ingredient preferences
     /// This powers the "smart" recipe recommendations based on what users actually eat
-    func learnFromFoodHistory() async {
+    func learnFromFoodHistory(force: Bool = false) async {
         guard SupabaseManager.shared.isAuthenticated else { return }
+        
+        if !force, let lastLearn = lastFoodHistoryLearn,
+           Date().timeIntervalSince(lastLearn) < foodHistoryLearnInterval {
+            return
+        }
+        lastFoodHistoryLearn = Date()
         
         let frequentFoods = FoodDatabaseService.shared.frequentFoods
         guard !frequentFoods.isEmpty else {

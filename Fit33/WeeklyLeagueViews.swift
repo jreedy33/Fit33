@@ -101,7 +101,7 @@ struct WeeklyLeagueWidget: View {
                     }
                     
                     Text("of \(standing.groupSize)")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                 }
                 
@@ -109,7 +109,7 @@ struct WeeklyLeagueWidget: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text("\(standing.myPoints)")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .font(.ds_stat)
                             .foregroundColor(.primary)
                         Text("pts")
                             .font(.caption)
@@ -121,7 +121,7 @@ struct WeeklyLeagueWidget: View {
                     if standing.isInPromotionZone, let nextTier = standing.nextTierName {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 11))
+                                .font(.ds_labelSmall)
                                 .foregroundColor(.green)
                             Text("Promoting to \(nextTier)!")
                                 .font(.caption2)
@@ -131,7 +131,7 @@ struct WeeklyLeagueWidget: View {
                     } else if standing.isInRelegationZone, let prevTier = standing.prevTierName {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 11))
+                                .font(.ds_labelSmall)
                                 .foregroundColor(.red)
                             Text("Relegation zone — \(prevTier)")
                                 .font(.caption2)
@@ -141,7 +141,7 @@ struct WeeklyLeagueWidget: View {
                     } else {
                         HStack(spacing: 4) {
                             Image(systemName: "shield.fill")
-                                .font(.system(size: 11))
+                                .font(.ds_labelSmall)
                                 .foregroundColor(.secondary)
                             Text("Safe zone")
                                 .font(.caption2)
@@ -187,7 +187,7 @@ struct WeeklyLeagueWidget: View {
                 Spacer()
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 24, accentColor: standing.tierSwiftUIColor)
     }
     
@@ -229,7 +229,7 @@ struct WeeklyLeagueWidget: View {
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                 } else {
                     Text("#\(entry.rank)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -278,7 +278,7 @@ struct WeeklyLeagueWidget: View {
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 4)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(entry.isCurrentUser
@@ -427,7 +427,7 @@ struct WeeklyLeagueDetailView: View {
                 // Placeholder for balance
                 Color.clear.frame(width: 36, height: 36)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             
             // Stats bar
@@ -460,13 +460,13 @@ struct WeeklyLeagueDetailView: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(Color.gray.opacity(0.15), lineWidth: 1)
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             }
         }
         .padding(.bottom, 8)
@@ -478,7 +478,7 @@ struct WeeklyLeagueDetailView: View {
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundColor(color)
             Text(label)
-                .font(.system(size: 9, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -527,7 +527,7 @@ struct WeeklyLeagueDetailView: View {
                     if standing.promotionCount > 0 {
                         HStack {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 11))
+                                .font(.ds_labelSmall)
                                 .foregroundColor(.green)
                             Text("Promotion Zone — Top \(standing.promotionCount) advance to \(standing.nextTierName ?? "next tier")")
                                 .font(.caption2)
@@ -612,13 +612,13 @@ struct WeeklyLeagueDetailView: View {
             // Zone arrow
             if isPromoZone {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.green)
                     .padding(4)
                     .background(Circle().fill(Color.green.opacity(0.15)))
             } else if isRelegZone {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.red)
                     .padding(4)
                     .background(Circle().fill(Color.red.opacity(0.15)))
@@ -634,7 +634,7 @@ struct WeeklyLeagueDetailView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -653,7 +653,7 @@ struct WeeklyLeagueDetailView: View {
                     lineWidth: 1
                 )
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 1)
     }
     
@@ -664,7 +664,7 @@ struct WeeklyLeagueDetailView: View {
                 .frame(height: 1)
             
             Text(text)
-                .font(.system(size: 10, weight: .bold))
+                .font(.ds_caption)
                 .foregroundColor(color)
                 .lineLimit(1)
             
@@ -702,7 +702,7 @@ struct WeeklyLeagueDetailView: View {
                         historyRow(entry: entry)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
             }
             
@@ -738,7 +738,7 @@ struct WeeklyLeagueDetailView: View {
                     if entry.wasPromoted {
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                             Text("Promoted")
                                 .font(.caption2)
                                 .fontWeight(.bold)
@@ -747,7 +747,7 @@ struct WeeklyLeagueDetailView: View {
                     } else if entry.wasRelegated {
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                             Text("Relegated")
                                 .font(.caption2)
                                 .fontWeight(.bold)
@@ -775,7 +775,7 @@ struct WeeklyLeagueDetailView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)

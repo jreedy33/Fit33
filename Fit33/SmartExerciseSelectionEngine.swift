@@ -198,9 +198,9 @@ class SmartExerciseSelectionEngine {
                     return true
                 }
                 
-                // Check each exercise equipment part
+                // Check each exercise equipment part (only forward match to avoid false positives)
                 for part in exerciseParts {
-                    if part.contains(pattern) || pattern.contains(part) {
+                    if part.contains(pattern) {
                         return true
                     }
                 }
@@ -209,7 +209,7 @@ class SmartExerciseSelectionEngine {
         
         // Check if exercise only requires common items (benches, floor, wall)
         let nonCommonParts = exerciseParts.filter { part in
-            !commonItems.contains(where: { part.contains($0) || $0.contains(part) })
+            !commonItems.contains(where: { part.contains($0) })
         }
         
         // If all parts are common items, check if user has the base equipment
@@ -342,66 +342,46 @@ class SmartExerciseSelectionEngine {
             let userEquipmentNormalized = Set(userEquipment.map { $0.lowercased() })
             let isBodyweightExercise = equipment.isEmpty || equipment == "bodyweight"
             
-            // 🏋️🔥🔥🔥 GYM USER BODYWEIGHT FILTER - STRICT MODE 🔥🔥🔥
-            // User selected GYM - they want MACHINES, BARBELLS, CABLES, DUMBBELLS
-            // NOT floor exercises, NOT planks, NOT push-ups, NOT home workout stuff
+            // GYM USER BODYWEIGHT FILTER
+            // Gym users primarily want machines, barbells, cables, dumbbells.
+            // Gym-appropriate bodyweight (pull-ups, dips) always allowed.
+            // Floor bodyweight deprioritized via score penalty, available for fat loss / circuits.
+            var gymBodyweightPenalty = false
             if isGymUser && isBodyweightExercise {
-                // ═══════════════════════════════════════════════════════════════
-                // 🚫🚫🚫 FLOOR EXERCISES TO HARD EXCLUDE - NO EXCEPTIONS
-                // User is PAYING for a gym - these have NO place in a gym workout!
-                // ═══════════════════════════════════════════════════════════════
-                let floorExercisesToExclude = [
-                    // Position keywords
+                let hardExcludeFloor = [
                     "floor", "lying", "prone", "supine", "ground",
-                    // Floor ab/core exercises
-                    "dead bug", "bird dog", "superman", "plank", "crunches", "crunch",
-                    "sit-up", "sit up", "leg raise", "bicycle", "mountain climber",
-                    // Floor movements
-                    "renegade", "burpee", "bear crawl", "inchworm", "push-up", "pushup",
-                    "push up", "pike push",
-                    // Floor glute/hip exercises
+                    "dead bug", "bird dog", "superman",
+                    "sit-up", "sit up", "bicycle",
+                    "bear crawl", "inchworm",
                     "glute bridge", "hip thrust on floor", "hip raise",
                     "fire hydrant", "donkey kick", "clam", "flutter kick"
                 ]
                 
-                // ═══════════════════════════════════════════════════════════════
-                // ✅ GYM-APPROPRIATE BODYWEIGHT: ONLY these (equipment-based)
-                // These use gym equipment (pull-up bar, dip station, etc.)
-                // ═══════════════════════════════════════════════════════════════
-                let gymAppropriateBodyweight = [
-                    "pull-up", "pullup", "chin-up", "chinup",  // Pull-up bar
-                    "dip",                                      // Dip station (NOT floor dips!)
-                    "hanging",                                  // Hanging exercises
-                    "muscle up", "muscle-up",                   // Bar work
-                    "inverted row"                              // Smith machine rows
+                let contextualBodyweight = [
+                    "push-up", "pushup", "push up", "pike push",
+                    "plank", "crunches", "crunch",
+                    "mountain climber", "burpee", "renegade", "leg raise"
                 ]
                 
-                // 🚫 HARD CHECK: Is this a floor exercise?
-                let isFloorExercise = floorExercisesToExclude.contains { keyword in
-                    nameLower.contains(keyword)
-                }
+                let gymAppropriateBodyweight = [
+                    "pull-up", "pullup", "chin-up", "chinup",
+                    "dip", "hanging", "muscle up", "muscle-up", "inverted row"
+                ]
                 
-                // ✅ Is it gym-appropriate bodyweight?
-                let isGymAppropriate = gymAppropriateBodyweight.contains { keyword in
-                    nameLower.contains(keyword)
-                }
+                let isFloorExercise = hardExcludeFloor.contains { nameLower.contains($0) }
+                let isContextual = contextualBodyweight.contains { nameLower.contains($0) }
+                let isGymAppropriate = gymAppropriateBodyweight.contains { nameLower.contains($0) }
                 
-                // 🚫 EXCLUDE: ANY floor exercise - NO EXCEPTIONS
-                if isFloorExercise {
-                    print("   🚫🚫🚫 [GYM FILTER] HARD EXCLUDING '\(exerciseName)': FLOOR EXERCISE - user has gym equipment!")
+                if isFloorExercise && !isContextual {
                     equipmentMatch = false
-                }
-                // 🚫 EXCLUDE: "floor" variants of gym-appropriate (like "Floor Dip")
-                else if isGymAppropriate && nameLower.contains("floor") {
-                    print("   🚫🚫🚫 [GYM FILTER] HARD EXCLUDING '\(exerciseName)': floor variant of gym exercise")
-                    equipmentMatch = false
-                }
-                // 🚫 EXCLUDE: ALL other bodyweight that's not gym-appropriate
-                else if !isGymAppropriate {
-                    print("   🚫 [GYM FILTER] Excluding '\(exerciseName)': bodyweight not gym-appropriate - user has gym equipment!")
+                } else if isGymAppropriate && !nameLower.contains("floor") {
+                    equipmentMatch = true
+                } else if isContextual {
+                    equipmentMatch = true
+                    gymBodyweightPenalty = true
+                } else if !isGymAppropriate {
                     equipmentMatch = false
                 } else {
-                    // ✅ ALLOW: Gym-appropriate bodyweight (pull-ups, chin-ups, dips, hanging)
                     equipmentMatch = true
                 }
             } else if userEquipment.isEmpty {
@@ -513,6 +493,10 @@ class SmartExerciseSelectionEngine {
             // ═══════════════════════════════════════════════════════════════
             var score: Double = 100.0
             
+            if gymBodyweightPenalty {
+                score -= 80
+            }
+            
             // ┌─────────────────────────────────────────────────────────────┐
             // │ 🌟 FOUNDATIONAL EXERCISE BOOST (For New Users)              │
             // │ Prioritizes well-known, common exercises for beginners      │
@@ -591,6 +575,21 @@ class SmartExerciseSelectionEngine {
             // └─────────────────────────────────────────────────────────────┘
             if isGymUser {
                 score += scoreGymEquipmentPriority(equipment: equipment, exerciseName: nameLower)
+            }
+            
+            // ┌─────────────────────────────────────────────────────────────┐
+            // │ GENDER VIDEO MATCH SCORING                                  │
+            // │ Prefer exercises with videos matching user's gender          │
+            // └─────────────────────────────────────────────────────────────┘
+            let genderVideoCache = VideoStreamingService.shared.genderVideoCache
+            if let genderInfo = genderVideoCache[exerciseName] ?? genderVideoCache[nameLower] {
+                let userGender = UserManager.shared.currentUser?.gender?.lowercased() ?? "male"
+                let preferredGender: VideoStreamingService.VideoGender = userGender.contains("female") ? .female : .male
+                if genderInfo.filename(for: preferredGender) != nil {
+                    score += 150
+                } else if genderInfo.filenameWithFallback(preferred: preferredGender) != nil {
+                    score -= 100
+                }
             }
             
             // ┌─────────────────────────────────────────────────────────────┐

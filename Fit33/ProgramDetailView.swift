@@ -56,7 +56,7 @@ struct SmartProgramOverviewView: View {
                 
                 Spacer(minLength: 30)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 80)
         }
@@ -188,7 +188,7 @@ struct SmartProgramOverviewView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     colorScheme == .dark 
                         ? Color(white: 0.15)
@@ -196,7 +196,7 @@ struct SmartProgramOverviewView: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(programColor.opacity(0.2), lineWidth: 1.5)
         )
     }
@@ -256,7 +256,7 @@ struct SmartProgramOverviewView: View {
                     )
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(
@@ -381,9 +381,9 @@ struct ProgramOverviewStatCard: View {
             
             Spacer()
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(
                     colorScheme == .dark 
                         ? Color(white: 0.15)
@@ -391,7 +391,7 @@ struct ProgramOverviewStatCard: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(color.opacity(0.15), lineWidth: 1)
         )
     }
@@ -508,7 +508,7 @@ struct DayCard: View {
             .frame(width: 70)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(
                         colorScheme == .dark 
                             ? Color(white: 0.15)
@@ -516,7 +516,7 @@ struct DayCard: View {
                     )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(
                         isToday ? color.opacity(0.4) : Color.gray.opacity(0.1),
                         lineWidth: isToday ? 2 : 1
@@ -577,7 +577,7 @@ struct UpcomingWorkoutRow: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(
                     colorScheme == .dark 
                         ? Color(white: 0.15)
@@ -585,7 +585,7 @@ struct UpcomingWorkoutRow: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
     }

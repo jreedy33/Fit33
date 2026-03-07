@@ -730,7 +730,7 @@ struct CustomWorkoutBuilderView: View {
                                             toggleExerciseSelection(exercise)
                                         }
                                     )
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     // 🚀 Prefetch when exercise appears in viewport
                                     .onAppear {
                                         prefetchVisibleExercise(exercise: exercise, index: index)
@@ -849,7 +849,7 @@ struct CustomWorkoutBuilderView: View {
                 VStack {
                     Spacer().frame(height: 160) // Position below filters
                     BannerAdView()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     Spacer()
                 }
             }
@@ -955,7 +955,7 @@ struct CustomWorkoutBuilderView: View {
                             )
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.top, max(geometry.safeAreaInsets.top + 4, 56))
                 
                 // Title - left aligned, animates size on scroll
@@ -964,7 +964,7 @@ struct CustomWorkoutBuilderView: View {
                     .fontWeight(.bold)
                     .foregroundColor(Color(red: 0.3, green: 0.5, blue: 0.7))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.bottom, 8)
             }
             .background(Color.clear)
@@ -1034,7 +1034,7 @@ struct CustomWorkoutBuilderView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
                         }
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(
                             LinearGradient(
@@ -1043,7 +1043,7 @@ struct CustomWorkoutBuilderView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(8)
+                        .cornerRadius(CornerRadius.sm)
                     }
                 }
                 
@@ -1078,10 +1078,10 @@ struct CustomWorkoutBuilderView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(Color(.systemGray6))
                 )
             }
@@ -1162,14 +1162,14 @@ struct CustomWorkoutBuilderView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.bottom, 4)
         .zIndex(10)
     }
@@ -1415,8 +1415,8 @@ struct CustomWorkoutExerciseRow: View {
             }
             .buttonStyle(PlainButtonStyle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     @ViewBuilder
@@ -1438,7 +1438,7 @@ struct CustomWorkoutExerciseRow: View {
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark 
-                            ? [Color(white: 0.15), Color(white: 0.12)]
+                            ? [Color(white: 0.15), Color.cardBackground]
                             : [Color.white, Color.white.opacity(0.98)],
                         startPoint: .top,
                         endPoint: .bottom
@@ -1677,7 +1677,7 @@ struct AddCustomExerciseView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
     }
     
     private var exerciseNameField: some View {
@@ -1692,7 +1692,7 @@ struct AddCustomExerciseView: View {
                 .font(.body)
                 .padding()
                 .background(Color.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         }
     }
@@ -1718,8 +1718,8 @@ struct AddCustomExerciseView: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundColor(selectedCategory == category ? .white : .primary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.xs)
                                 .background(
                                     selectedCategory == category ?
                                     LinearGradient(
@@ -1768,20 +1768,20 @@ struct AddCustomExerciseView: View {
                                 .fontWeight(.medium)
                         }
                         .foregroundColor(selection.wrappedValue.contains(muscle) ? .white : .primary)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             selection.wrappedValue.contains(muscle) ?
                             Color.blue :
                             Color(.systemGray5)
                         )
-                        .cornerRadius(16)
+                        .cornerRadius(CornerRadius.lg)
                     }
                 }
             }
             .padding()
             .background(Color.white)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         }
     }
@@ -1804,8 +1804,8 @@ struct AddCustomExerciseView: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundColor(selectedEquipment == equipment ? .white : .primary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.xs)
                                 .background(
                                     selectedEquipment == equipment ?
                                     Color.orange :
@@ -1828,12 +1828,12 @@ struct AddCustomExerciseView: View {
             
             TextEditor(text: $instructions)
                 .frame(height: 120)
-                .padding(8)
+                .padding(Spacing.xs)
                 .background(Color.white)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color(.systemGray4), lineWidth: 0.5)
                 )
         }
@@ -2051,8 +2051,8 @@ struct CustomWorkoutExerciseRowWithNav: View {
             }
             .buttonStyle(PlainButtonStyle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored
@@ -2071,7 +2071,7 @@ struct CustomWorkoutExerciseRowWithNav: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom

@@ -312,7 +312,7 @@ struct AutoWorkoutPreviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 120)
         }
@@ -805,7 +805,7 @@ struct AutoExerciseCard: View {
                     Image(systemName: "arrow.triangle.swap")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(categoryColor)
-                        .padding(8)
+                        .padding(Spacing.xs)
                         .background(
                             Circle()
                                 .fill(categoryColor.opacity(0.1))
@@ -814,8 +814,8 @@ struct AutoExerciseCard: View {
             }
             .disabled(isSwapping)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .sleekCard(cornerRadius: 20, accentColor: categoryColor)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
@@ -874,9 +874,9 @@ struct AutoExerciseSwapView: View {
                     TextField("Search exercises...", text: $searchText)
                         .textFieldStyle(PlainTextFieldStyle())
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(Color(.systemGray6))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .padding(.horizontal)
                 .padding(.top)
                 
@@ -902,7 +902,7 @@ struct AutoExerciseSwapView: View {
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                 }
                 
                 // Exercise list
@@ -974,8 +974,8 @@ struct CategoryChip: View {
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected ? color : Color(.systemGray5))
@@ -1028,7 +1028,7 @@ struct ExerciseDataDetailView: View {
                     // Exercise Name & Category Badge
                     VStack(alignment: .leading, spacing: 12) {
                         Text(exerciseData.name)
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.ds_heading1)
                             .foregroundColor(.primary)
                         
                         HStack(spacing: 12) {
@@ -1040,7 +1040,7 @@ struct ExerciseDataDetailView: View {
                                     .font(.system(size: 13, weight: .semibold))
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(
                                 LinearGradient(
@@ -1059,7 +1059,7 @@ struct ExerciseDataDetailView: View {
                                     .font(.system(size: 13, weight: .medium))
                             }
                             .foregroundColor(colorScheme == .dark ? .white : .black)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(Color(.systemGray5))
                             .cornerRadius(20)
@@ -1096,7 +1096,7 @@ struct ExerciseDataDetailView: View {
                     } else if !exerciseData.instructions.isEmpty {
                         sectionCard(title: "Instructions", icon: "text.alignleft") {
                             Text(exerciseData.instructions)
-                                .font(.system(size: 15))
+                                .font(.ds_bodyMedium)
                                 .foregroundColor(.secondary)
                                 .lineSpacing(4)
                         }
@@ -1162,7 +1162,7 @@ struct ExerciseDataDetailView: View {
             
             content()
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 20, accentColor: categoryColor)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
@@ -1172,7 +1172,7 @@ struct ExerciseDataDetailView: View {
         Text(muscle)
             .font(.system(size: 14, weight: isPrimary ? .semibold : .medium))
             .foregroundColor(isPrimary ? .white : .primary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .background(
                 Capsule()
@@ -1193,7 +1193,7 @@ struct ExerciseDataDetailView: View {
                 )
             
             Text(text)
-                .font(.system(size: 15))
+                .font(.ds_bodyMedium)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1274,7 +1274,7 @@ struct GeneratedExerciseDetailView: View {
                     // Exercise Name & Category Badge
                     VStack(alignment: .leading, spacing: 12) {
                         Text(exercise.name)
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.ds_heading1)
                             .foregroundColor(.primary)
                         
                         HStack(spacing: 12) {
@@ -1286,7 +1286,7 @@ struct GeneratedExerciseDetailView: View {
                                     .font(.system(size: 13, weight: .semibold))
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(
                                 LinearGradient(
@@ -1305,7 +1305,7 @@ struct GeneratedExerciseDetailView: View {
                                     .font(.system(size: 13, weight: .medium))
                             }
                             .foregroundColor(colorScheme == .dark ? .white : .black)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(Color(.systemGray5))
                             .cornerRadius(20)
@@ -1318,7 +1318,7 @@ struct GeneratedExerciseDetailView: View {
                         Text(exercise.primaryMuscle)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
@@ -1334,7 +1334,7 @@ struct GeneratedExerciseDetailView: View {
                                     Text(muscle)
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.primary)
-                                        .padding(.horizontal, 12)
+                                        .padding(.horizontal, Spacing.sm)
                                         .padding(.vertical, 6)
                                         .background(
                                             Capsule()
@@ -1350,7 +1350,7 @@ struct GeneratedExerciseDetailView: View {
                     if let instructions = exercise.instructions, !instructions.isEmpty {
                         sectionCard(title: "Instructions", icon: "text.alignleft") {
                             Text(instructions)
-                                .font(.system(size: 15))
+                                .font(.ds_bodyMedium)
                                 .foregroundColor(.secondary)
                                 .lineSpacing(4)
                         }
@@ -1388,7 +1388,7 @@ struct GeneratedExerciseDetailView: View {
             
             content()
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 20, accentColor: categoryColor)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }

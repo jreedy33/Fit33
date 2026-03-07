@@ -200,9 +200,9 @@ struct OptimizedExerciseRow: View {
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .background(Color(.systemBackground).opacity(0.8))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
 }
 

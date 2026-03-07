@@ -40,7 +40,7 @@ struct RecipePreferencesView: View {
                     
                     Spacer(minLength: 100)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
             }
             .background(backgroundGradient.ignoresSafeArea())
@@ -114,7 +114,7 @@ struct RecipePreferencesView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -162,8 +162,8 @@ struct RecipePreferencesView: View {
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.95))
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.95))
             )
             
             // Content based on tab
@@ -207,7 +207,7 @@ struct RecipePreferencesView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -283,7 +283,7 @@ struct RecipePreferencesView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -318,7 +318,7 @@ struct RecipePreferencesView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -354,7 +354,7 @@ struct RecipePreferencesView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -403,7 +403,7 @@ struct RecipePreferencesView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
     }
     
@@ -432,8 +432,8 @@ struct RecipePreferencesView: View {
     }
     
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 16)
-            .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+        RoundedRectangle(cornerRadius: CornerRadius.lg)
+            .fill(colorScheme == .dark ? Color.cardBackground : .white)
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
     }
 }
@@ -1143,7 +1143,7 @@ struct PreferenceTabButton: View {
             }
             .foregroundColor(isSelected ? .white : color)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? color : Color.clear)
@@ -1171,8 +1171,8 @@ struct IngredientChip: View {
             }
         }
         .foregroundColor(color)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
                 .fill(color.opacity(0.15))
@@ -1199,8 +1199,8 @@ struct CategoryPill: View {
                     .fontWeight(isSelected ? .semibold : .regular)
             }
             .foregroundColor(isSelected ? .white : .primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
                 Capsule()
                     .fill(isSelected ? Color.orange : Color.gray.opacity(0.15))
@@ -1239,13 +1239,13 @@ struct PopularIngredientButton: View {
                     .foregroundColor(.primary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(backgroundColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(borderColor, lineWidth: isLiked || isDisliked ? 2 : 1)
             )
         }
@@ -1383,13 +1383,13 @@ struct DietaryToggle: View {
             }
             .foregroundColor(isEnabled ? (isAllergy ? .red : .green) : .primary)
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(backgroundColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(borderColor, lineWidth: isEnabled ? 2 : 1)
             )
         }
@@ -1452,13 +1452,13 @@ struct PreferenceToggleRow: View {
                     .font(.title3)
                     .foregroundColor(isEnabled ? color : .gray.opacity(0.3))
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isEnabled ? color.opacity(0.1) : (colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97)))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(isEnabled ? color.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
             )
         }

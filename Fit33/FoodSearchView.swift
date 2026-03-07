@@ -153,7 +153,7 @@ struct FoodSearchView: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: mealTypeColor.opacity(0.15), radius: 8, x: 0, y: 4)
             )
@@ -201,7 +201,7 @@ struct FoodSearchView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 ZStack {
                     // Bottom shadow layer - subtle color glow
@@ -416,10 +416,10 @@ struct FoodSearchView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color(.systemGray6))
                         )
                     }
@@ -450,7 +450,7 @@ struct FoodSearchView: View {
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
@@ -612,7 +612,7 @@ struct FoodSearchView: View {
                         }
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                                 .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                         )
@@ -752,8 +752,8 @@ struct FoodSearchResultRow: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -772,7 +772,7 @@ struct FoodSearchResultRow: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -957,8 +957,8 @@ struct QuickAccessFoodRow: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -977,7 +977,7 @@ struct QuickAccessFoodRow: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom

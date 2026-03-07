@@ -131,7 +131,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -163,7 +163,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -195,7 +195,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -230,7 +230,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -263,7 +263,7 @@ struct DeveloperAnalyticsView: View {
                             .foregroundColor(.white)
                             .frame(width: 24, height: 24)
                             .background(rankColor(for: index + 1))
-                            .cornerRadius(12)
+                            .cornerRadius(CornerRadius.md)
                         
                         // Workout name
                         Text(workout.workoutName)
@@ -283,13 +283,13 @@ struct DeveloperAnalyticsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                 }
             }
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -339,7 +339,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -370,7 +370,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -401,7 +401,7 @@ struct DeveloperAnalyticsView: View {
         }
         .padding()
         .background(.white)
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
@@ -426,7 +426,7 @@ struct DeveloperAnalyticsView: View {
                     endPoint: .trailing
                 )
             )
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(viewModel.isLoading)
         .opacity(viewModel.isLoading ? 0.6 : 1.0)
@@ -460,7 +460,7 @@ struct StatBubble: View {
         .frame(maxWidth: .infinity)
         .padding()
         .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-        .cornerRadius(12)
+        .cornerRadius(CornerRadius.md)
     }
 }
 
@@ -505,7 +505,7 @@ struct ExerciseAnalyticsRow: View {
                 .foregroundColor(.white)
                 .frame(width: 24, height: 24)
                 .background(rankColor)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             
             // Exercise info
             VStack(alignment: .leading, spacing: 2) {
@@ -542,7 +542,7 @@ struct ExerciseAnalyticsRow: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private var displayValue: String {

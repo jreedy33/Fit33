@@ -233,9 +233,9 @@ struct FriendsListView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color.cardBackground.opacity(0.5))
         )
     }
@@ -328,7 +328,7 @@ struct FriendsListView: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.green)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 3)
                     .background(
                         Capsule()
@@ -530,7 +530,7 @@ struct FriendsListView: View {
                 .font(.headline)
                 .foregroundColor(.white)
                 .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
                         colors: [Color.blue, Color.purple.opacity(0.8)],
@@ -663,9 +663,9 @@ struct FriendsListView: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(Color.cardBackground)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 
                 // QR Code button (replaces separate Scan QR / My Code buttons)
                 Button(action: { showingQROptions = true }) {
@@ -680,7 +680,7 @@ struct FriendsListView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                 }
                 .confirmationDialog("QR Code", isPresented: $showingQROptions) {
                     Button("Scan QR Code") { showingQRScanner = true }
@@ -866,7 +866,7 @@ struct FriendsListView: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [.green, .teal],
@@ -874,7 +874,7 @@ struct FriendsListView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
             }
             .padding(.horizontal, 30)
@@ -891,9 +891,9 @@ struct FriendsListView: View {
             .padding(.top, 4)
         }
         .padding(.vertical, 24)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .sleekCard(cornerRadius: 24, accentColor: .green)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
     }
     
     private var suggestedFriendsSection: some View {
@@ -1024,9 +1024,9 @@ struct FriendsListView: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 
                 // Privacy note
                 HStack(spacing: 4) {
@@ -1038,9 +1038,9 @@ struct FriendsListView: View {
                 .foregroundColor(.secondary.opacity(0.7))
             }
             .padding(.vertical, 20)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .sleekCard(cornerRadius: 20, accentColor: .green)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
         }
         .padding(.top, 10)
     }
@@ -1094,7 +1094,7 @@ struct SuggestedFriendCard: View {
             // Action button
             actionButton
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .blue))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
         .shadow(color: .blue.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
@@ -1145,8 +1145,8 @@ struct SuggestedFriendCard: View {
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundColor(.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .stroke(Color.orange, lineWidth: 1)
@@ -1161,8 +1161,8 @@ struct SuggestedFriendCard: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(Color.blue)
@@ -1187,8 +1187,8 @@ struct SuggestedFriendCard: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .frame(minWidth: 60, minHeight: 32)
                 .background(
                     Capsule()
@@ -1320,7 +1320,7 @@ struct FriendCard: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.secondary.opacity(0.5))
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(PremiumCardBackground(accentColor: .blue))
         }
         .buttonStyle(PlainButtonStyle())
@@ -1401,7 +1401,7 @@ struct FriendRequestCard: View {
                 .disabled(isProcessing)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .green))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
         .shadow(color: .green.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 16, x: 0, y: 8)
@@ -1513,8 +1513,8 @@ struct SentFriendRequestCard: View {
                         .font(.system(size: 13, weight: .medium))
                 }
                 .foregroundColor(.red)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(Color.red.opacity(0.12))
@@ -1523,7 +1523,7 @@ struct SentFriendRequestCard: View {
             .disabled(isProcessing)
             .opacity(isProcessing ? 0.5 : 1)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .orange))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
         .shadow(color: .orange.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
@@ -1604,7 +1604,7 @@ struct UserSearchResultCard: View {
             // Action button based on status
             actionButton
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .purple))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
         .shadow(color: .purple.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
@@ -1646,8 +1646,8 @@ struct UserSearchResultCard: View {
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundColor(.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .stroke(Color.orange, lineWidth: 1)
@@ -1663,8 +1663,8 @@ struct UserSearchResultCard: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(LinearGradient(
@@ -1694,8 +1694,8 @@ struct UserSearchResultCard: View {
                     }
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .frame(minWidth: 60, minHeight: 32)
                 .background(
                     Capsule()
@@ -1851,7 +1851,7 @@ struct RankedFriendCard: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.secondary.opacity(0.5))
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(PremiumCardBackground(accentColor: rankedFriend.relationshipTier.color))
         }
         .buttonStyle(PlainButtonStyle())

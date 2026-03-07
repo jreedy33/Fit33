@@ -285,7 +285,7 @@ struct ReactionPickerSheet: View {
                     // Daily limit indicator
                     dailyLimitBadge
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 30)
             }
             .background(
@@ -374,7 +374,7 @@ struct ReactionPickerSheet: View {
                 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -410,7 +410,7 @@ struct ReactionPickerSheet: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .padding(.horizontal, 14)
         .background(
             Capsule()
@@ -488,7 +488,7 @@ struct ReactionPickerSheet: View {
             }
             .padding(32)
             .background(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: themeGradient,
@@ -558,9 +558,9 @@ struct ReactionFeedView: View {
                         reactionBubble(reaction)
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                 )
             }
@@ -592,7 +592,7 @@ struct ReactionFeedView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
         )
     }
@@ -639,8 +639,8 @@ struct ReactionFeedView: View {
                         .fontWeight(.medium)
                         .foregroundColor(reaction.isMine ? .white : .primary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
@@ -780,7 +780,7 @@ struct ReactionToast: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
@@ -788,7 +788,7 @@ struct ReactionToast: View {
                     )
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
     }

@@ -38,7 +38,7 @@ struct ChallengeSetupView: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     
@@ -371,7 +371,7 @@ struct ChallengeSetupView: View {
             
             Spacer()
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
@@ -445,7 +445,7 @@ struct ChallengeSetupView: View {
                         .textFieldStyle(PlainTextFieldStyle())
                         .padding(14)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(Color(.systemGray6))
                         )
                 }
@@ -483,10 +483,10 @@ struct ChallengeSetupView: View {
                                 .foregroundColor(.blue)
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.cardBackground)
                     )
                 }
@@ -505,7 +505,7 @@ struct ChallengeSetupView: View {
                                     .font(.subheadline)
                                     .fontWeight(durationDays == days ? .semibold : .regular)
                                     .foregroundColor(durationDays == days ? .white : .primary)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 10)
                                     .background(
                                         Capsule()
@@ -535,7 +535,7 @@ struct ChallengeSetupView: View {
                 // Preview Card
                 challengePreviewCard
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 16)
             .padding(.bottom, 120)
         }
@@ -611,7 +611,7 @@ struct ChallengeSetupView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .sleekCard(cornerRadius: 16, accentColor: .blue)
         }
     }
@@ -668,7 +668,7 @@ struct ChallengeSetupView: View {
                 .disabled(isCreating)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(Color.cardBackground)
         }
     }
@@ -694,7 +694,7 @@ struct ChallengeSetupView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(
@@ -708,7 +708,7 @@ struct ChallengeSetupView: View {
             }
             .disabled(!canCreateCustom || isCreating)
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(Color.cardBackground)
         }
     }
@@ -870,7 +870,7 @@ struct TemplateCard: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     
@@ -908,8 +908,8 @@ struct TemplateCard: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 8)
+            .padding(.vertical, Spacing.md)
+            .padding(.horizontal, Spacing.xs)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - color glow
@@ -982,7 +982,7 @@ struct TemplateRow: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     
@@ -1026,7 +1026,7 @@ struct TemplateRow: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
@@ -1042,7 +1042,7 @@ struct TemplateRow: View {
                             : AnyShapeStyle(Color.secondary.opacity(0.3))
                     )
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
             .background(
                 ZStack {

@@ -482,6 +482,11 @@ class DailyQuestService: ObservableObject {
                     lastCompletedQuest = quests[idx]
                     showQuestCompletionCelebration = true
                     
+                    // Award XP to user profile for quest completion
+                    if old.xpReward > 0 {
+                        UserManager.shared.addXP(Int32(old.xpReward))
+                    }
+                    
                     // Award league points for quest completion
                     await WeeklyLeagueService.shared.addPoints(source: .challengeTarget)
                     
@@ -501,6 +506,11 @@ class DailyQuestService: ObservableObject {
                     allComplete = true
                     bonusXp = result.bonusXp ?? 50
                     bonusLeaguePoints = result.bonusLeaguePoints ?? 30
+                    
+                    // Award bonus XP to user profile
+                    if bonusXp > 0 {
+                        UserManager.shared.addXP(Int32(bonusXp))
+                    }
                     
                     // Celebrate bonus!
                     Task { @MainActor in

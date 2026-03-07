@@ -17,7 +17,9 @@ struct FriendProfileView: View {
     @State private var showingCreateChallenge = false
     @State private var showingChallengeFlow = false
     @State private var showingUnfriendConfirmation = false
+    @State private var showingBlockConfirmation = false
     @State private var isUnfriending = false
+    @State private var isBlocking = false
     @State private var friendChallenges: [FriendChallenge] = []
     @State private var selectedChallenge: ActiveChallenge?
     @State private var showingChallengeDetail = false
@@ -27,7 +29,7 @@ struct FriendProfileView: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     
@@ -67,10 +69,13 @@ struct FriendProfileView: View {
                         // Shared Workouts History
                         sharedHistorySection
                         
-                        // Unfriend Button
-                        unfriendButton
+                        // Unfriend & Block Buttons
+                        VStack(spacing: Spacing.xs) {
+                            unfriendButton
+                            blockButton
+                        }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 20)
                     .padding(.bottom, 40)
                 }
@@ -126,6 +131,14 @@ struct FriendProfileView: View {
                 }
             } message: {
                 Text("You will no longer be able to share workouts with each other.")
+            }
+            .alert("Block \(friend.displayName)?", isPresented: $showingBlockConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Block", role: .destructive) {
+                    blockUser()
+                }
+            } message: {
+                Text("They won't be able to find you, send you requests, or see your activity. You will also be unfriended.")
             }
             .onAppear {
                 print("📱 [FRIEND PROFILE] View appeared for \(friend.friendName ?? "friend")")
@@ -265,7 +278,7 @@ struct FriendProfileView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(
             ZStack {
                 // Main card background with gradient
@@ -324,7 +337,7 @@ struct FriendProfileView: View {
                         .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: "dumbbell.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -351,7 +364,7 @@ struct FriendProfileView: View {
                         )
                     )
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     // Main card background with gradient
@@ -439,7 +452,7 @@ struct FriendProfileView: View {
                     .shadow(color: .orange.opacity(0.4), radius: 6, x: 0, y: 3)
                 
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -466,7 +479,7 @@ struct FriendProfileView: View {
                     )
                 )
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
                 // Main card background with gradient
@@ -554,7 +567,7 @@ struct FriendProfileView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(resolvedType.color)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -763,11 +776,36 @@ struct FriendProfileView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color.red.opacity(0.1))
             )
         }
         .disabled(isUnfriending)
+    }
+    
+    // MARK: - Block Button
+    
+    private var blockButton: some View {
+        Button(action: { showingBlockConfirmation = true }) {
+            HStack {
+                if isBlocking {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: "hand.raised.slash")
+                    Text("Block")
+                }
+            }
+            .font(.subheadline)
+            .foregroundColor(.red.opacity(0.7))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(Color.red.opacity(0.05))
+            )
+        }
+        .disabled(isBlocking)
     }
     
     // MARK: - Helpers
@@ -786,6 +824,17 @@ struct FriendProfileView: View {
                 dismiss()
             }
             isUnfriending = false
+        }
+    }
+    
+    private func blockUser() {
+        isBlocking = true
+        Task {
+            let success = await FriendService.shared.blockUser(userId: friend.friendId)
+            if success {
+                dismiss()
+            }
+            isBlocking = false
         }
     }
 }
@@ -810,7 +859,7 @@ struct SharedWorkoutHistoryRow: View {
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: workout.statusIcon)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(workout.statusColor)
             }
             
@@ -838,7 +887,7 @@ struct SharedWorkoutHistoryRow: View {
                         .fill(workout.statusColor.opacity(0.15))
                 )
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
     
@@ -896,7 +945,7 @@ struct CreateWorkoutForFriendView: View {
                         // Duration & Difficulty
                         metadataSection
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 16)
                     .padding(.bottom, 100)
                 }
@@ -965,7 +1014,7 @@ struct CreateWorkoutForFriendView: View {
                     )
                 )
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 16, accentColor: .cyan)
     }
     
@@ -987,7 +1036,7 @@ struct CreateWorkoutForFriendView: View {
                     
                     TextField("e.g., Full Body Blast", text: $workoutName)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .padding(12)
+                        .padding(Spacing.sm)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(Color(.systemGray6))
@@ -1003,16 +1052,16 @@ struct CreateWorkoutForFriendView: View {
                     TextField("What's this workout about?", text: $workoutDescription, axis: .vertical)
                         .textFieldStyle(PlainTextFieldStyle())
                         .lineLimit(2...4)
-                        .padding(12)
+                        .padding(Spacing.sm)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(Color(.systemGray6))
                         )
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
             )
         }
@@ -1058,7 +1107,7 @@ struct CreateWorkoutForFriendView: View {
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                 )
             }
@@ -1084,7 +1133,7 @@ struct CreateWorkoutForFriendView: View {
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     Capsule()
                         .fill(
@@ -1100,7 +1149,7 @@ struct CreateWorkoutForFriendView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
         )
     }
@@ -1122,15 +1171,15 @@ struct CreateWorkoutForFriendView: View {
                 
                 TextEditor(text: $personalMessage)
                     .frame(height: 80)
-                    .padding(8)
+                    .padding(Spacing.xs)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color(.systemGray6))
                     )
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
             )
         }
@@ -1159,9 +1208,9 @@ struct CreateWorkoutForFriendView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color.cardBackground)
             )
             
@@ -1185,9 +1234,9 @@ struct CreateWorkoutForFriendView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color.cardBackground)
             )
         }
@@ -1236,7 +1285,7 @@ struct CreateWorkoutForFriendView: View {
             .disabled(!canSend)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(
             Rectangle()
                 .fill(Color.cardBackground)
@@ -1331,7 +1380,7 @@ struct ExerciseConfigRow: View {
                         .foregroundColor(.red.opacity(0.6))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
             
             // Expanded config
@@ -1386,7 +1435,7 @@ struct ExerciseConfigRow: View {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 14)
             }
         }
@@ -1443,9 +1492,9 @@ struct ExercisePickerView: View {
                             .foregroundColor(.secondary)
                         TextField("Search exercises", text: $searchText)
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.cardBackground))
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     
                     // Categories
@@ -1458,7 +1507,7 @@ struct ExercisePickerView: View {
                                         .fontWeight(.medium)
                                         .foregroundColor(selectedCategory == category ? .white : .primary)
                                         .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
+                                        .padding(.vertical, Spacing.xs)
                                         .background(
                                             Capsule()
                                                 .fill(selectedCategory == category
@@ -1468,8 +1517,8 @@ struct ExercisePickerView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
                     }
                     
                     // Exercise List
@@ -1494,10 +1543,10 @@ struct ExercisePickerView: View {
                             }
                         }
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .fill(Color.cardBackground)
                         )
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.bottom, 100)
                     }
                 }
@@ -1567,8 +1616,8 @@ struct ExercisePickerRow: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(isSelected ? Color.blue.opacity(0.08) : Color.clear)
         }
         .buttonStyle(PlainButtonStyle())

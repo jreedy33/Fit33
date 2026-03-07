@@ -5,6 +5,8 @@ import SwiftUI
 class UserManager: ObservableObject {
     @Published var currentUser: User?
     @Published var hasCompletedOnboarding: Bool = false
+    @Published var showLevelUpCelebration: Bool = false
+    @Published var newLevelReached: Int = 0
     
     private let viewContext = PersistenceController.shared.container.viewContext
     private let supabaseManager = SupabaseManager.shared
@@ -164,9 +166,38 @@ class UserManager: ObservableObject {
     #endif
     
     func createUser(name: String, age: Int16, gender: String?, email: String?, height: Int16, weight: Int16, fitnessGoal: String, experienceLevel: String, equipment: [String], availableDays: Int16, strengthLevel: String? = nil, workoutEnvironment: String? = nil, birthday: String? = nil, weightLbs: Double? = nil, heightInches: Int16? = nil, phoneNumber: String? = nil) {
+        // Input validation - return early on invalid data
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, trimmedName.count <= 100 else {
+            print("❌ [ONBOARDING] Validation failed: name must be 1-100 characters")
+            return
+        }
+        guard (13...120).contains(age) else {
+            print("❌ [ONBOARDING] Validation failed: age must be 13-120")
+            return
+        }
+        guard (1...300).contains(height) else {
+            print("❌ [ONBOARDING] Validation failed: height must be 1-300 cm")
+            return
+        }
+        guard (1...1000).contains(weight) else {
+            print("❌ [ONBOARDING] Validation failed: weight must be 1-1000 kg")
+            return
+        }
+        let validationInches = heightInches ?? Int16(Double(height) / 2.54)
+        guard (1...120).contains(validationInches) else {
+            print("❌ [ONBOARDING] Validation failed: height must be 1-120 inches")
+            return
+        }
+        let lbs = weightLbs ?? Double(weight) * 2.20462
+        guard (1...1000).contains(lbs) else {
+            print("❌ [ONBOARDING] Validation failed: weight must be 1-1000 lbs")
+            return
+        }
+
         let newUser = User(context: viewContext)
         newUser.id = UUID()
-        newUser.name = name
+        newUser.name = trimmedName
         newUser.age = age
         newUser.gender = gender
         newUser.email = email
@@ -451,8 +482,11 @@ class UserManager: ObservableObject {
         do {
             try viewContext.save()
             
-            // Check for level up achievement
+            // Trigger level-up celebration
             if newLevel > oldLevel {
+                newLevelReached = newLevel
+                showLevelUpCelebration = true
+                HapticManager.notification(.success)
                 awardAchievement(type: "level_\(newLevel)")
             }
             
@@ -536,9 +570,29 @@ class UserManager: ObservableObject {
                 await WeeklyLeagueService.shared.addPoints(source: .workout)
                 
                 // Update daily quest progress for workout completion
-                let totalSets = (workout.exercises?.allObjects as? [WorkoutExercise])?.count ?? 0
+                let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
+                let totalSets = exercises.reduce(0) { total, ex in
+                    total + ((ex.sets?.allObjects as? [WorkoutSet])?.filter(\.isCompleted).count ?? 0)
+                }
                 let durationSeconds = Int(workout.duration)
                 await DailyQuestService.shared.onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
+                
+                // Post to friend activity feed
+                let muscleGroups = exercises.compactMap { $0.safeMuscleGroups.first?.lowercased() }
+                let uniqueMuscles = Array(Set(muscleGroups))
+                await ActivityFeedService.shared.postWorkoutActivity(
+                    workoutId: workout.objectID.uriRepresentation().lastPathComponent,
+                    name: workout.name ?? "Workout",
+                    duration: durationSeconds,
+                    exercises: exercises.count,
+                    sets: totalSets,
+                    xp: Int(workout.xpEarned),
+                    muscles: uniqueMuscles
+                )
+                
+                // Check workout achievements
+                await BadgeService.shared.onWorkoutCompleted(totalWorkouts: Int(user.totalWorkouts))
+                await BadgeService.shared.onStreakUpdated(streak: Int(user.currentStreak))
             }
         } catch {
             #if DEBUG
@@ -647,15 +701,23 @@ class UserManager: ObservableObject {
 class PremiumManager: ObservableObject {
     static let shared = PremiumManager()
     
-    @Published var isPremiumUser: Bool = true {
+    @Published var isPremiumUser: Bool = false {
         didSet {
             UserDefaults.standard.set(isPremiumUser, forKey: "isPremiumUser")
         }
     }
     
     private init() {
-        // Load saved premium status (default to true/premium if not set)
-        self.isPremiumUser = UserDefaults.standard.object(forKey: "isPremiumUser") as? Bool ?? true
+        // Defaults to false (free tier) until StoreKit confirms an active subscription.
+        // TestFlight uses Apple's Sandbox -- testers see the full purchase flow but are never charged real money.
+        self.isPremiumUser = UserDefaults.standard.object(forKey: "isPremiumUser") as? Bool ?? false
+    }
+    
+    /// Called by StoreKitManager when entitlement status changes.
+    func updateFromStoreKit(hasSubscription: Bool) {
+        if isPremiumUser != hasSubscription {
+            isPremiumUser = hasSubscription
+        }
     }
     
     // MARK: - Premium Feature Checks
@@ -774,7 +836,7 @@ struct PremiumFeatureModifier: ViewModifier {
                 }
                 .padding()
                 .background(.ultraThinMaterial)
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         } else {
             content

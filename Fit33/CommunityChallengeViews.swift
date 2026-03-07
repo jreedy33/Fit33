@@ -216,7 +216,7 @@ struct ChallengeRulesCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "list.bullet.clipboard")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(themeColor)
                 Text("Challenge Rules")
                     .font(.subheadline)
@@ -228,7 +228,7 @@ struct ChallengeRulesCard: View {
                 ForEach(rules) { rule in
                     HStack(alignment: .top, spacing: 8) {
                         Text(rule.icon)
-                            .font(.system(size: 13))
+                            .font(.ds_bodySmall)
                             .frame(width: 20)
                         Text(rule.text)
                             .font(.caption)
@@ -301,7 +301,7 @@ struct CompactRulesLine: View {
                 dailyTarget: dailyTarget,
                 targetUnit: targetUnit
             ))
-                .font(.system(size: 11))
+                .font(.ds_labelSmall)
                 .foregroundColor(themeColor.opacity(0.6))
                 .lineLimit(1)
         }
@@ -344,7 +344,7 @@ struct CommunityChallengesHubView: View {
                         tabButton(title: "My Challenges", index: 0)
                         tabButton(title: "Discover", index: 1)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     
                     // Content
@@ -477,7 +477,7 @@ struct CommunityChallengesHubView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 16)
         .padding(.bottom, 40)
     }
@@ -503,18 +503,18 @@ struct CommunityChallengesHubView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
                     )
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
             }
         }
         .padding(32)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -595,7 +595,7 @@ struct CommunityChallengesHubView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 16)
         .padding(.bottom, 40)
         .task {
@@ -674,7 +674,7 @@ struct CommunityLeaderboardWidget: View {
                 targetUnit: challenge.targetUnit,
                 themeColor: themeColor
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.bottom, 8)
             
             // ── Friends in this community (avatar row) ──
@@ -803,7 +803,7 @@ struct CommunityLeaderboardWidget: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 14)
         .padding(.bottom, 10)
     }
@@ -837,7 +837,7 @@ struct CommunityLeaderboardWidget: View {
             
             Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.bottom, 8)
     }
     
@@ -922,8 +922,8 @@ struct CommunityLeaderboardWidget: View {
                 valueColor: .secondary
             )
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(themeColor.opacity(colorScheme == .dark ? 0.10 : 0.05))
@@ -932,7 +932,7 @@ struct CommunityLeaderboardWidget: View {
                         .stroke(themeColor.opacity(colorScheme == .dark ? 0.15 : 0.08), lineWidth: 0.5)
                 )
         )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .padding(.bottom, 8)
     }
     
@@ -941,7 +941,7 @@ struct CommunityLeaderboardWidget: View {
             HStack(spacing: 3) {
                 if let icon = icon {
                     Image(systemName: icon)
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(iconColor)
                 }
                 Text(value)
@@ -1003,7 +1003,7 @@ struct CommunityLeaderboardWidget: View {
                         .stroke(themeColor.opacity(colorScheme == .dark ? 0.10 : 0.06), lineWidth: 0.5)
                 )
         )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .padding(.bottom, 6)
     }
     
@@ -1151,7 +1151,7 @@ struct CommunityLeaderboardWidget: View {
                         .stroke(themeColor.opacity(colorScheme == .dark ? 0.10 : 0.06), lineWidth: 0.5)
                 )
         )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .padding(.bottom, 6)
     }
     
@@ -1191,7 +1191,7 @@ struct CommunityLeaderboardWidget: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(themeColor.opacity(0.5))
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
         .background(
             Rectangle()
@@ -1304,7 +1304,7 @@ struct FeaturedChallengeCard: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(tc)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
@@ -1316,7 +1316,7 @@ struct FeaturedChallengeCard: View {
                             .font(.caption)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                             .padding(.vertical, 6)
                             .background(
                                 LinearGradient(colors: tg, startPoint: .leading, endPoint: .trailing)
@@ -1327,10 +1327,10 @@ struct FeaturedChallengeCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1340,7 +1340,7 @@ struct FeaturedChallengeCard: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             stops: [
@@ -1356,7 +1356,7 @@ struct FeaturedChallengeCard: View {
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04), radius: 5, x: 0, y: 2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -1420,7 +1420,7 @@ struct CommunityLeaderboardView: View {
                         // Leave button
                         leaveButton
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     .padding(.bottom, 40)
                 }
@@ -1504,7 +1504,7 @@ struct CommunityLeaderboardView: View {
                     .font(.caption2)
                     .foregroundColor(.blue)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .background(
                 Capsule()
@@ -1593,7 +1593,7 @@ struct CommunityLeaderboardView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
@@ -1708,7 +1708,7 @@ struct CommunityLeaderboardView: View {
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                 )
             } else {
@@ -1718,7 +1718,7 @@ struct CommunityLeaderboardView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(20)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.cardBackground)
                     )
             }
@@ -1787,7 +1787,7 @@ struct CommunityLeaderboardView: View {
                             .font(.system(size: 9))
                             .foregroundColor(.orange)
                         Text("\(entry.currentStreak) day streak")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                         if let best = entry.bestStreak, best > entry.currentStreak {
                             Text("(best: \(best))")
@@ -1849,7 +1849,7 @@ struct CommunityLeaderboardView: View {
         Button(action: { showingLeave = true }) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.right.square")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 Text("Leave Challenge")
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -1858,10 +1858,10 @@ struct CommunityLeaderboardView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(Color.red.opacity(0.3), lineWidth: 1)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(Color.red.opacity(colorScheme == .dark ? 0.1 : 0.05))
                     )
             )
@@ -1940,12 +1940,12 @@ struct CommunityCreateChallengeView: View {
                                             Text(type.emoji)
                                                 .font(.system(size: 24))
                                             Text(type.rawValue)
-                                                .font(.system(size: 10))
+                                                .font(.ds_caption)
                                                 .fontWeight(.medium)
                                                 .foregroundColor(selectedType == type ? .white : .primary)
                                         }
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
+                                        .padding(.vertical, Spacing.xs)
                                         .background(
                                             RoundedRectangle(cornerRadius: 10)
                                                 .fill(selectedType == type
@@ -1993,9 +1993,9 @@ struct CommunityCreateChallengeView: View {
                                         .foregroundColor(.blue)
                                 }
                             }
-                            .padding(16)
+                            .padding(Spacing.md)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
                             )
                         }
@@ -2014,7 +2014,7 @@ struct CommunityCreateChallengeView: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
                             )
@@ -2215,7 +2215,7 @@ struct CommunityJoinSheet: View {
                                     .fontWeight(.semibold)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(Color.green.opacity(0.1))
                             .cornerRadius(14)
                             .padding(.horizontal, 20)
@@ -2233,7 +2233,7 @@ struct CommunityJoinSheet: View {
                                 }
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(
                                     LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
                                 )
@@ -2351,7 +2351,7 @@ struct PrivateChallengeJoinSheet: View {
                             // Private badge
                             HStack(spacing: 4) {
                                 Image(systemName: "lock.fill")
-                                    .font(.system(size: 10))
+                                    .font(.ds_caption)
                                 Text("Private Challenge")
                                     .font(.caption)
                                     .fontWeight(.semibold)
@@ -2425,7 +2425,7 @@ struct PrivateChallengeJoinSheet: View {
                                     .fontWeight(.semibold)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(Color.green.opacity(0.1))
                             .cornerRadius(14)
                             .padding(.horizontal, 20)
@@ -2443,7 +2443,7 @@ struct PrivateChallengeJoinSheet: View {
                                 }
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(
                                     LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
                                 )
@@ -2533,7 +2533,7 @@ struct FriendDiscoveryCard: View {
                         .fill(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 36, height: 36)
                     Text(challenge.displayEmoji)
-                        .font(.system(size: 17))
+                        .font(.ds_bodyLarge)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -2582,7 +2582,7 @@ struct FriendDiscoveryCard: View {
                                 .fill(tc.opacity(0.2))
                                 .frame(width: 28, height: 28)
                             Text("+\(friends.count - 5)")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                                 .foregroundColor(tc)
                         }
                         .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
@@ -2612,7 +2612,7 @@ struct FriendDiscoveryCard: View {
                         .font(.caption)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.vertical, 6)
                         .background(
                             LinearGradient(colors: tg, startPoint: .leading, endPoint: .trailing)
@@ -2624,7 +2624,7 @@ struct FriendDiscoveryCard: View {
         .padding(14)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -2634,7 +2634,7 @@ struct FriendDiscoveryCard: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             stops: [
@@ -2650,7 +2650,7 @@ struct FriendDiscoveryCard: View {
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.05), radius: 6, x: 0, y: 3)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -2797,7 +2797,7 @@ struct CommunityDetailView: View {
                             // Leave community
                             leaveCommunityButton(type: detail.resolvedType)
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.top, 12)
                         .padding(.bottom, 40)
                     }
@@ -2819,7 +2819,7 @@ struct CommunityDetailView: View {
                         if detail != nil {
                             Button(action: { showShareSheet = true }) {
                                 Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(.ds_bodyMedium)
                             }
                         }
                         Button("Done") { dismiss() }
@@ -2977,20 +2977,20 @@ struct CommunityDetailView: View {
             // Rank badge
             VStack(spacing: 2) {
                 Text("#\(d.myRank)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundStyle(
                         d.myRank <= 3
                             ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
                             : LinearGradient(colors: d.resolvedType.gradientColors, startPoint: .top, endPoint: .bottom)
                     )
                 Text("rank")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(16)
-        .background(themedCard(color: d.resolvedType.color, cornerRadius: 16))
-        .overlay(themedOutline(color: d.resolvedType.color, cornerRadius: 16))
+        .padding(Spacing.md)
+        .background(themedCard(color: d.resolvedType.color, cornerRadius: CornerRadius.lg))
+        .overlay(themedOutline(color: d.resolvedType.color, cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - My Stats Section
@@ -3109,7 +3109,7 @@ struct CommunityDetailView: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(type.color)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(type.color.opacity(0.12)))
             }
@@ -3276,11 +3276,11 @@ struct CommunityDetailView: View {
                         .foregroundColor(.primary)
                 }
                 .padding(.vertical, 4)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .background(
                     entry.isCurrentUser
-                        ? RoundedRectangle(cornerRadius: 8).fill(type.color.opacity(0.06))
-                        : RoundedRectangle(cornerRadius: 8).fill(Color.clear)
+                        ? RoundedRectangle(cornerRadius: CornerRadius.sm).fill(type.color.opacity(0.06))
+                        : RoundedRectangle(cornerRadius: CornerRadius.sm).fill(Color.clear)
                 )
             }
         }
@@ -3327,9 +3327,9 @@ struct CommunityDetailView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: CornerRadius.sm)
                 .fill(Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05))
         )
     }
@@ -3341,7 +3341,7 @@ struct CommunityDetailView: View {
                     .font(.caption2)
                     .foregroundColor(color)
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
             }
             
@@ -3418,7 +3418,7 @@ struct AllCommunityChallengesView: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.top, 12)
                         .padding(.bottom, 40)
                     }
@@ -3445,7 +3445,7 @@ struct AllCommunityChallengesView: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.green)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 3)
                         .background(Capsule().fill(Color.green.opacity(0.12)))
                 }

@@ -164,8 +164,8 @@ struct HealthKitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -247,8 +247,8 @@ struct HealthKitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -293,8 +293,8 @@ struct HealthKitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -340,8 +340,8 @@ struct HealthKitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -454,7 +454,7 @@ struct HealthKitSettingsView: View {
                 )
             )
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(healthKit.isLoading)
     }
@@ -470,7 +470,7 @@ struct HealthKitSettingsView: View {
             .padding(.vertical, 14)
             .background(Color.red.opacity(0.1))
             .foregroundColor(.red)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
     }
     
@@ -507,8 +507,8 @@ struct HealthKitSettingsView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -535,7 +535,7 @@ struct HealthKitSettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [Color.red, Color.pink],
@@ -544,7 +544,7 @@ struct HealthKitSettingsView: View {
                 )
             )
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .disabled(isConnecting)
     }

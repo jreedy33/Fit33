@@ -87,7 +87,7 @@ struct DevSessionLogsView: View {
                         .textSelection(.enabled)
                 }
                 .background(colorScheme == .dark ? Color(white: 0.1) : Color(white: 0.95))
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
                 .padding(.horizontal)
                 .padding(.bottom)
             }
@@ -101,7 +101,7 @@ struct DevSessionLogsView: View {
                         .fontWeight(.medium)
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                         .background(Color.green)
                         .cornerRadius(25)
                         .shadow(radius: 10)

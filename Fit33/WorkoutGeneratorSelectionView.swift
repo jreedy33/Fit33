@@ -317,7 +317,7 @@ struct WorkoutGeneratorSelectionView: View {
                         : AnyShapeStyle(LinearGradient(colors: mainButtonGradient, startPoint: .leading, endPoint: .trailing))
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(Color.darkBackground)
@@ -403,7 +403,7 @@ struct WorkoutGeneratorSelectionView: View {
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundColor(.blue)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -906,7 +906,7 @@ struct WelcomeStepView: View {
                 
                 VStack(spacing: 16) {
                     Text("Auto Workout")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.ds_displayMedium)
                         .foregroundColor(.primary)
                     
                     Text("Get a personalized workout in seconds")
@@ -1075,7 +1075,7 @@ struct DurationStepView: View {
                         .frame(height: 1)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 
                 // Custom duration tiles - 3x2 grid
                 LazyVGrid(columns: [
@@ -1159,7 +1159,7 @@ struct DurationStepView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             Capsule()
                             .fill(
@@ -1383,7 +1383,7 @@ struct PrimaryMuscleStepView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             Capsule()
                             .fill(
@@ -1461,7 +1461,7 @@ struct PrimaryMuscleCard: View {
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
@@ -1697,7 +1697,7 @@ struct SecondaryMuscleStepView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             Capsule()
                             .fill(
@@ -1769,7 +1769,7 @@ struct SecondaryMuscleCard: View {
                     .frame(height: 28)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
@@ -1836,7 +1836,7 @@ struct SmallSecondaryMuscleCard: View {
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
@@ -1990,7 +1990,7 @@ struct EquipmentStepView: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .foregroundColor(.blue)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -2018,7 +2018,7 @@ struct EquipmentStepView: View {
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: isAllSelected ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                         Text("Select All")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -2093,14 +2093,14 @@ struct EquipmentStepView: View {
                 Button(action: onGenerate) {
                     HStack(spacing: 10) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                         Text("Generate Workout")
                     }
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(selectedEquipment.isEmpty ? .gray : .white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         Group {
                             if selectedEquipment.isEmpty {
@@ -2191,7 +2191,7 @@ struct AutoWorkoutEquipmentCard: View {
                     .frame(height: 28)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
@@ -2273,7 +2273,7 @@ struct DurationStepContentView: View {
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 
                 // Custom duration tiles - 3x2 grid
                 LazyVGrid(columns: [
@@ -2572,7 +2572,7 @@ struct EquipmentContentView: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .foregroundColor(.blue)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -2598,7 +2598,7 @@ struct EquipmentContentView: View {
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: isAllSelected ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                         Text("Select All")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -2693,7 +2693,7 @@ struct DurationTilesView: View {
                     Text("or custom").font(.caption).foregroundColor(.secondary)
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 
                 // Custom duration tiles
                 LazyVGrid(columns: [
@@ -2769,7 +2769,7 @@ struct PrimaryMuscleTilesView: View {
                                 : AnyShapeStyle(Color.gray)
                         )
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             Capsule()
                                 .fill(Color.darkBackground)
@@ -3007,10 +3007,10 @@ struct EquipmentTilesView: View {
                                 .font(.system(size: 10, weight: .semibold))
                         }
                         .foregroundColor(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color.blue.opacity(0.12))
                         )
                     }

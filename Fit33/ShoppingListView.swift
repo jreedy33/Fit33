@@ -266,12 +266,12 @@ struct AisleSection: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
         .padding(.horizontal)
     }
@@ -395,7 +395,7 @@ struct RecipeSelectRow: View {
                     Color.gray.opacity(0.2)
                 }
                 .frame(width: 50, height: 50)
-                .cornerRadius(8)
+                .cornerRadius(CornerRadius.sm)
                 
                 // Info
                 VStack(alignment: .leading, spacing: 4) {
@@ -412,10 +412,10 @@ struct RecipeSelectRow: View {
                 
                 Spacer()
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
                             .stroke(isSelected ? Color.purple.opacity(0.5) : Color.clear, lineWidth: 2)
@@ -599,8 +599,8 @@ struct MyShoppingListView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
         .padding(.horizontal)
     }
@@ -730,13 +730,13 @@ struct ShoppingMealSection: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         )
         .padding(.horizontal)

@@ -336,7 +336,7 @@ struct PRCelebrationOverlay: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.green)
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
@@ -346,10 +346,10 @@ struct PRCelebrationOverlay: View {
                 }
                 .padding(30)
                 .background(
-                    RoundedRectangle(cornerRadius: 24)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl)
                         .fill(.ultraThinMaterial)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 24)
+                            RoundedRectangle(cornerRadius: CornerRadius.xl)
                                 .stroke(
                                     LinearGradient(
                                         colors: [pr.type.color.opacity(0.5), Color.clear],
@@ -383,7 +383,7 @@ struct PRIndicatorBadge: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()

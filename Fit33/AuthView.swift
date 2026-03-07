@@ -43,8 +43,8 @@ struct AuthView: View {
                                     .font(.system(size: 13, weight: .semibold))
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xs)
                             .background(
                                 LinearGradient(
                                     gradient: Gradient(colors: [Color.orange, Color.red]),
@@ -182,7 +182,7 @@ struct AuthView: View {
                                 )
                             )
                             .foregroundColor(.white)
-                            .cornerRadius(16)
+                            .cornerRadius(CornerRadius.lg)
                             .shadow(color: Color.blue.opacity(0.3), radius: 12, x: 0, y: 6)
                         }
                         .disabled(supabaseManager.isLoading || !isValid)
@@ -191,7 +191,7 @@ struct AuthView: View {
                         
                         // Social Login Divider
                         SocialLoginDivider()
-                            .padding(.vertical, 8)
+                            .padding(.vertical, Spacing.xs)
                         
                         // Google Sign-In Button
                         Button(action: handleGoogleSignIn) {
@@ -212,7 +212,7 @@ struct AuthView: View {
                                     .foregroundColor(.primary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 RoundedRectangle(cornerRadius: 14)
                                     .fill(.ultraThinMaterial)
@@ -231,10 +231,10 @@ struct AuthView: View {
                     }
                     .padding(28)
                     .background(
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
                             .fill(.ultraThinMaterial)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 24)
+                                RoundedRectangle(cornerRadius: CornerRadius.xl)
                                     .stroke(Color.white.opacity(0.3), lineWidth: 1.5)
                             )
                             .shadow(color: Color.black.opacity(0.08), radius: 30, x: 0, y: 15)
@@ -387,7 +387,7 @@ struct CustomTextField: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
         .cornerRadius(14)
         .overlay(

@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 // MARK: - Premium Feature Enum
 enum PremiumFeature: String, CaseIterable {
@@ -96,8 +97,8 @@ enum SubscriptionPlan: String, CaseIterable {
     
     var price: String {
         switch self {
-        case .monthly: return "$9.99"
-        case .yearly: return "$59.99"
+        case .monthly: return "$3.99"
+        case .yearly: return "$29.99"
         }
     }
     
@@ -110,15 +111,15 @@ enum SubscriptionPlan: String, CaseIterable {
     
     var monthlyEquivalent: String {
         switch self {
-        case .monthly: return "$9.99/mo"
-        case .yearly: return "$4.99/mo"
+        case .monthly: return "$3.99/mo"
+        case .yearly: return "$2.49/mo"
         }
     }
     
     var savings: String? {
         switch self {
         case .monthly: return nil
-        case .yearly: return "Save 50%"
+        case .yearly: return "Save 37%"
         }
     }
     
@@ -131,6 +132,7 @@ enum SubscriptionPlan: String, CaseIterable {
 struct PremiumUpgradeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var storeKit = StoreKitManager.shared
     
     let triggeringFeature: PremiumFeature
     var onUpgrade: ((SubscriptionPlan) -> Void)?
@@ -142,6 +144,8 @@ struct PremiumUpgradeView: View {
     @State private var contentOpacity: Double = 0
     @State private var tilesAppeared = false
     @State private var buttonPulse = false
+    @State private var showError = false
+    @State private var errorMessage = ""
     
     // Premium benefits with tiles - matching app icon style
     private let benefits: [(icon: String, title: String, subtitle: String, gradient: [Color])] = [
@@ -618,7 +622,7 @@ struct PremiumUpgradeView: View {
                 
                 Spacer()
                 
-                Text(plan.price)
+                Text(displayPrice(for: plan))
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
@@ -639,24 +643,38 @@ struct PremiumUpgradeView: View {
         .buttonStyle(PlainButtonStyle())
     }
     
+    private func displayPrice(for plan: SubscriptionPlan) -> String {
+        switch plan {
+        case .monthly:
+            return storeKit.monthlyProduct?.displayPrice ?? plan.price
+        case .yearly:
+            return storeKit.yearlyProduct?.displayPrice ?? plan.price
+        }
+    }
+    
     // MARK: - CTA Section
     private var ctaSection: some View {
         VStack(spacing: 10) {
             Button(action: {
                 HapticManager.tap()
-                onUpgrade?(selectedPlan)
+                Task { await purchaseSelectedPlan() }
             }) {
                 HStack(spacing: 8) {
-                    Text("Start 7-Day Free Trial")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    
-                    Image(systemName: "arrow.right")
-                        .font(.subheadline.weight(.bold))
+                    if storeKit.purchaseState == .purchasing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("Start 7-Day Free Trial")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        
+                        Image(systemName: "arrow.right")
+                            .font(.subheadline.weight(.bold))
+                    }
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(
@@ -672,6 +690,7 @@ struct PremiumUpgradeView: View {
                         .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
                 )
             }
+            .disabled(storeKit.purchaseState == .purchasing)
             .scaleEffect(buttonPulse ? 1.02 : 1.0)
             
             HStack(spacing: 4) {
@@ -684,12 +703,51 @@ struct PremiumUpgradeView: View {
             }
         }
         .opacity(contentOpacity)
+        .alert("Purchase Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    private func purchaseSelectedPlan() async {
+        let product: Product?
+        switch selectedPlan {
+        case .monthly: product = storeKit.monthlyProduct
+        case .yearly: product = storeKit.yearlyProduct
+        }
+        
+        guard let product else {
+            errorMessage = "Product not available. Please try again later."
+            showError = true
+            return
+        }
+        
+        let success = await storeKit.purchase(product)
+        if success {
+            HapticManager.notification(.success)
+            onUpgrade?(selectedPlan)
+            dismiss()
+        } else if case .failed(let msg) = storeKit.purchaseState {
+            errorMessage = msg
+            showError = true
+            HapticManager.notification(.error)
+        }
     }
     
     // MARK: - Footer
     private var footerSection: some View {
         VStack(spacing: 10) {
-            Button(action: { onRestore?() }) {
+            Button(action: {
+                Task {
+                    await storeKit.restorePurchases()
+                    onRestore?()
+                    if storeKit.hasActiveSubscription {
+                        HapticManager.notification(.success)
+                        dismiss()
+                    }
+                }
+            }) {
                 Text("Restore Purchases")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.4))
@@ -741,7 +799,7 @@ struct PremiumBadge: View {
                 .fontWeight(.bold)
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 4)
         .background(
             Capsule()

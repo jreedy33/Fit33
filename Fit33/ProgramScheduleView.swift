@@ -30,7 +30,7 @@ struct ProgramScheduleView: View {
                 // Days grid
                 daysGridSection
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 60)
         }
@@ -143,11 +143,11 @@ struct ProgramScheduleView: View {
             }
             .frame(height: 8)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -418,7 +418,7 @@ struct WorkoutPreviewView: View {
                             exerciseListSection(programDay: programDay)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     .padding(.bottom, 80) // Space for tab bar
                 }
@@ -734,8 +734,8 @@ struct CompactPillExerciseCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 25)
                 .fill(Color.white)
@@ -794,11 +794,11 @@ struct ExercisePreviewCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(programColor.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 2)

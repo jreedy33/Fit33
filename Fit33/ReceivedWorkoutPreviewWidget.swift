@@ -42,7 +42,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                 headerSection
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Workout preview section
                 workoutPreviewSection
@@ -50,14 +50,14 @@ struct ReceivedWorkoutPreviewWidget: View {
                 // Expandable exercises section
                 if isExpanded {
                     Divider()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     
                     exerciseListSection
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Action buttons
                 actionButtonsSection
@@ -170,7 +170,7 @@ struct ReceivedWorkoutPreviewWidget: View {
             .disabled(isDeleting)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Sender Avatar View
@@ -303,7 +303,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                                 Text(muscle)
                                     .font(.system(size: 10, weight: .medium))
                                     .foregroundColor(muscleAccentColor)
-                                    .padding(.horizontal, 8)
+                                    .padding(.horizontal, Spacing.xs)
                                     .padding(.vertical, 3)
                                     .background(
                                         Capsule()
@@ -346,7 +346,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
     }
     
@@ -383,7 +383,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                     .padding(.vertical, 4)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
         }
     }
     
@@ -452,7 +452,7 @@ struct ReceivedWorkoutPreviewWidget: View {
             .disabled(isSaving || isDeleting)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Actions

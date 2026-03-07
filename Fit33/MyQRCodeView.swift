@@ -97,7 +97,7 @@ struct MyQRCodeView: View {
         .frame(maxWidth: .infinity)
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(colorScheme == .dark ? Color(.systemGray6) : .white)
                 .shadow(color: .black.opacity(0.1), radius: 20, y: 10)
         )
@@ -138,9 +138,9 @@ struct MyQRCodeView: View {
                 foregroundColor: colorScheme == .dark ? .white : .black,
                 backgroundColor: colorScheme == .dark ? Color(.systemGray6) : .white
             )
-            .padding(8)
+            .padding(Spacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(.systemGray5) : Color(.systemGray6))
             )
             .onAppear {
@@ -157,7 +157,7 @@ struct MyQRCodeView: View {
             Text(qrData.qrCodeId)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
@@ -217,9 +217,9 @@ struct MyQRCodeView: View {
                 text: "Instant friend request sent!"
             )
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemGray6).opacity(0.5))
         )
     }
@@ -238,7 +238,7 @@ struct MyQRCodeView: View {
             .font(.headline)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [.blue, .cyan],

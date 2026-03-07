@@ -2,34 +2,106 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
+import { getAccessToken } from '@/lib/auth-cookies'
+
+// ═══════════════════════════════════════════════════
+// RATE LIMITING (per-IP, per-endpoint)
+// ═══════════════════════════════════════════════════
+
+const RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
+  read:  { max: 100, windowMs: 60_000 },
+  write: { max: 30,  windowMs: 60_000 },
+  bulk:  { max: 5,   windowMs: 60_000 },
+}
+
+const WRITE_ACTIONS = new Set([
+  'update_user', 'delete_user', 'update_bug_report', 'delete_bug_report',
+  'update_crash_report', 'delete_crash_report',
+])
+const BULK_ACTIONS = new Set([
+  'bulk_update_bug_reports', 'bulk_update_crash_reports',
+])
+
+function getActionTier(action: string): 'read' | 'write' | 'bulk' {
+  if (BULK_ACTIONS.has(action)) return 'bulk'
+  if (WRITE_ACTIONS.has(action)) return 'write'
+  return 'read'
+}
+
+const rateBuckets = new Map<string, { count: number; resetAt: number }>()
+
+function checkAdminRateLimit(ip: string, action: string): { allowed: boolean; retryAfter?: number } {
+  const tier = getActionTier(action)
+  const limit = RATE_LIMITS[tier]
+  const key = `${ip}:${tier}`
+  const now = Date.now()
+
+  const bucket = rateBuckets.get(key)
+  if (!bucket || now > bucket.resetAt) {
+    rateBuckets.set(key, { count: 1, resetAt: now + limit.windowMs })
+    return { allowed: true }
+  }
+
+  if (bucket.count >= limit.max) {
+    return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) }
+  }
+
+  bucket.count++
+  return { allowed: true }
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, bucket] of rateBuckets) {
+    if (now > bucket.resetAt) rateBuckets.delete(key)
+  }
+}, 5 * 60_000)
+
+// ═══════════════════════════════════════════════════
+// AUDIT LOGGING
+// ═══════════════════════════════════════════════════
+
+async function logAdminAction(
+  adminUserId: string,
+  action: string,
+  target: string | null,
+  ip: string,
+) {
+  try {
+    const admin = createAdminClient()
+    await admin.from('admin_audit_log').insert({
+      admin_user_id: adminUserId,
+      action,
+      target_id: target,
+      ip_address: ip,
+      created_at: new Date().toISOString(),
+    })
+  } catch {
+    console.error('[AUDIT] Failed to log admin action:', action)
+  }
+}
 
 // ═══════════════════════════════════════════════════
 // SECURITY HELPERS
 // ═══════════════════════════════════════════════════
 
-// Sanitize search input — escape SQL LIKE wildcards to prevent pattern injection
 function sanitizeSearch(input: string): string {
   return input
-    .replace(/\\/g, '\\\\')  // escape backslashes first
-    .replace(/%/g, '\\%')     // escape % wildcard
-    .replace(/_/g, '\\_')     // escape _ wildcard
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_')
     .trim()
-    .substring(0, 200)        // cap length
+    .substring(0, 200)
 }
 
-// Cap pagination limit to prevent data dumping
 function safeLimit(limit: number | undefined, max: number = 100): number {
   const n = Number(limit) || 50
   return Math.min(Math.max(1, n), max)
 }
 
-// Verify the request has a valid admin session
-async function verifyAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return false
-
-  const token = authHeader.split(' ')[1]
-  if (!token || token.length < 10) return false
+async function verifyAdmin(req: NextRequest): Promise<{ valid: boolean; userId?: string; email?: string }> {
+  const token = getAccessToken(req)
+  if (!token || token.length < 10) return { valid: false }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,20 +109,44 @@ async function verifyAdmin(req: NextRequest): Promise<boolean> {
   )
 
   const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user?.email) return false
+  if (error || !user?.email) return { valid: false }
 
-  return isAdminEmail(user.email)
+  if (!isAdminEmail(user.email)) return { valid: false }
+
+  return { valid: true, userId: user.id, email: user.email }
 }
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip')
+    || 'unknown'
+
   // Verify admin access
-  if (!(await verifyAdmin(req))) {
+  const adminAuth = await verifyAdmin(req)
+  if (!adminAuth.valid) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const body = await req.json()
     const { action, ...params } = body
+
+    // Rate limit check
+    const rateCheck = checkAdminRateLimit(ip, action)
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Retry in ${rateCheck.retryAfter}s.` },
+        { status: 429, headers: { 'Retry-After': String(rateCheck.retryAfter) } },
+      )
+    }
+
+    // Audit write/bulk actions
+    const tier = getActionTier(action)
+    if (tier !== 'read') {
+      const targetId = params.userId || params.id || params.reportId || null
+      await logAdminAction(adminAuth.userId!, action, targetId, ip)
+    }
+
     const admin = createAdminClient()
 
     switch (action) {

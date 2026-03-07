@@ -54,6 +54,10 @@ struct ActiveWorkoutView: View {
     // Shuffle ad tracking - show ad every 2nd shuffle
     @State private var shuffleCount: Int = 0
     
+    // Workout notes/journal
+    @State private var workoutNotes: String = ""
+    @State private var showingNotesField = false
+    
     // ⚡️ PERFORMANCE: Two-phase rendering for instant load
     // MARK: - Ad Logic
     
@@ -105,6 +109,50 @@ struct ActiveWorkoutView: View {
                         LazyVStack(spacing: 16) {
                             // Top spacing for glow effect visibility
                             Spacer().frame(height: 0)
+                            
+                            // Workout Notes - collapsible journal entry
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showingNotesField.toggle()
+                                }
+                                HapticManager.impact(.light)
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: showingNotesField ? "note.text.badge.plus" : "note.text")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text(workoutNotes.isEmpty ? "Add workout notes..." : workoutNotes)
+                                        .font(.subheadline)
+                                        .foregroundColor(workoutNotes.isEmpty ? .secondary : .primary)
+                                        .lineLimit(showingNotesField ? nil : 1)
+                                    Spacer()
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                        .rotationEffect(.degrees(showingNotesField ? 180 : 0))
+                                }
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.cardBackground.opacity(0.6))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            
+                            if showingNotesField {
+                                TextEditor(text: $workoutNotes)
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(minHeight: 60, maxHeight: 120)
+                                    .padding(Spacing.sm)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.cardBackground.opacity(0.6))
+                                    )
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                             
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
                                 let exerciseId = exercise.id?.uuidString ?? ""
@@ -226,7 +274,7 @@ struct ActiveWorkoutView: View {
                                 )
                             )
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(Color.clear)
                             .overlay(
                                 Capsule()
@@ -244,7 +292,7 @@ struct ActiveWorkoutView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     .background(Color.clear)
                 }
@@ -380,14 +428,14 @@ struct ActiveWorkoutView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
                 
                 // Banner ad - integrated into header for free users
                 if shouldShowInlineAds {
                     BannerAdView()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.bottom, 4)
                 }
             }
@@ -1320,6 +1368,11 @@ struct ActiveWorkoutView: View {
         // Generate custom workout name based on completed exercises
         workout.name = generateCustomWorkoutName()
         
+        // Save workout notes
+        if !workoutNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            workout.notes = workoutNotes
+        }
+        
         // ⚠️ IMPORTANT: Clear any existing WorkoutExercise entries to prevent duplicates
         // This can happen if finishWorkout() is somehow called multiple times
         if let existingExercises = workout.exercises as? Set<WorkoutExercise>, !existingExercises.isEmpty {
@@ -1951,7 +2004,7 @@ struct ActiveWorkoutView: View {
             // Day badge
             HStack(spacing: 4) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
                 
                 Text("Day \(dayNumber)")
@@ -1965,13 +2018,13 @@ struct ActiveWorkoutView: View {
             
             // Separator
             Text("•")
-                .font(.system(size: 11))
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary)
             
             // Focus badge
             HStack(spacing: 4) {
                 Image(systemName: "target")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
                 
                 Text(focus)
@@ -2390,7 +2443,7 @@ struct ExerciseCard: View {
             }
             .fixedSize() // Keep icons at their natural size
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
         .frame(height: 42) // Fixed height for header
     }
@@ -2448,8 +2501,8 @@ struct ExerciseCard: View {
                 Spacer()
                     .frame(width: 34)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
             
             // Sets
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, setItem in
@@ -2496,7 +2549,7 @@ struct ExerciseCard: View {
                 
                 if index < sets.count - 1 {
                     Divider()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                 }
             }
         }
@@ -2509,7 +2562,7 @@ struct ExerciseCard: View {
                 .fontWeight(.bold)
                 .foregroundColor(.blue)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
         }
         .background(
             LinearGradient(
@@ -2731,10 +2784,10 @@ struct SetRowView: View {
             )
             .frame(width: 70, height: 38)
             .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .cornerRadius(CornerRadius.sm)
             .overlay(
                 // Glow border when this field is focused
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
             )
             .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
@@ -2777,10 +2830,10 @@ struct SetRowView: View {
             )
             .frame(width: 70, height: 38)
             .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .cornerRadius(CornerRadius.sm)
             .overlay(
                 // Glow border when this field is focused
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .stroke(Color.blue, lineWidth: isRepsFocused ? 2 : 0)
             )
             .shadow(color: isRepsFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
@@ -2914,7 +2967,7 @@ struct SetRowView: View {
                 }
                 .frame(width: 40)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 6)
             .background(
                 // Subtle alternating row highlight
@@ -2933,16 +2986,16 @@ struct SetRowView: View {
                             .foregroundColor(.white)
                         Spacer()
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     .background(
                         // Background container with GeometryReader for responsive width
                         GeometryReader { geometry in
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color.gray.opacity(0.15))
                                 .overlay(
                                     // Animated progress bar - uses actual container width
                                     HStack {
-                                        RoundedRectangle(cornerRadius: 8)
+                                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                                             .fill(
                                                 LinearGradient(
                                                     gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.8)]),
@@ -3080,10 +3133,10 @@ struct RestTimerIndicator: View {
                 }
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
         .background(Color.blue.opacity(0.1))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
     
     private func formatTime(_ timeInterval: TimeInterval) -> String {
@@ -3578,7 +3631,7 @@ struct ExerciseReplacementRow: View {
                         if let category = exercise.category {
                             Text(category)
                                 .font(.caption)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 2)
                                 .background(Color.blue.opacity(0.2))
                                 .cornerRadius(4)
@@ -3587,7 +3640,7 @@ struct ExerciseReplacementRow: View {
                         if let equipment = exercise.equipment {
                             Text(equipment)
                                 .font(.caption)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 2)
                                 .background(Color.green.opacity(0.2))
                                 .cornerRadius(4)
@@ -3603,7 +3656,7 @@ struct ExerciseReplacementRow: View {
                         .font(.title2)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -4017,7 +4070,7 @@ struct AddExerciseDuringWorkoutView: View {
                                     isSearchFocused = false
                                 }
                         }
-                        .padding(12)
+                        .padding(Spacing.sm)
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
                         
@@ -4063,13 +4116,13 @@ struct AddExerciseDuringWorkoutView: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(.ultraThinMaterial)
                             .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
                     )
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     
                     // Exercise list
@@ -4137,14 +4190,14 @@ struct AddExerciseDuringWorkoutView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.sm)
                                 .background(Color.cardBackground)
-                                .cornerRadius(12)
+                                .cornerRadius(CornerRadius.md)
                                 .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.top, 12)
                         .padding(.bottom, 100)
                     }
@@ -4172,14 +4225,14 @@ struct AddExerciseDuringWorkoutView: View {
                         }
                         .foregroundColor(.blue)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(Color.cardBackground)
                         .cornerRadius(14)
                         .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
                     }
                     .disabled(selectedExercises.isEmpty)
                     .opacity(selectedExercises.isEmpty ? 0.6 : 1.0)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.bottom, 30)
                 }
             }
@@ -4236,7 +4289,7 @@ struct AddExerciseFilterChip: View {
                 .font(.caption)
                 .fontWeight(isSelected ? .semibold : .medium)
                 .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
@@ -4433,7 +4486,7 @@ struct RenameExerciseView: View {
                         .fontWeight(.semibold)
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(colorScheme == .dark ? Color.white.opacity(0.1) : Color(.systemGray6))
                         )
                         .focused($isTextFieldFocused)
@@ -4468,7 +4521,7 @@ struct RenameExerciseView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
                                 .fill(nickname.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray : Color.blue)

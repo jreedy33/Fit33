@@ -316,7 +316,7 @@ struct EdgeFadeMaskDemoView: View {
                 )
                 .seamlessVideoEmbed(feather: 0.15, softness: 0.45)
                 .frame(maxWidth: 520)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
 
                 VStack(spacing: 8) {
                     Text("Content-Aware Blend + Edge Fade")

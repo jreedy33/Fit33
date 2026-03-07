@@ -16,7 +16,7 @@ struct RecipeImportSheet: View {
     @State private var showRecipeContent = false // For animated reveal
     
     private var cardBg: Color {
-        colorScheme == .dark ? Color(white: 0.12) : Color.white
+        colorScheme == .dark ? Color.cardBackground : Color.white
     }
     
     var body: some View {
@@ -190,7 +190,7 @@ struct RecipeImportSheet: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: urlText.isEmpty ? [.gray.opacity(0.5)] : [.blue, .cyan],
@@ -198,7 +198,7 @@ struct RecipeImportSheet: View {
                     endPoint: .trailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .shadow(color: urlText.isEmpty ? .clear : .blue.opacity(0.4), radius: 10, x: 0, y: 5)
         }
         .disabled(urlText.isEmpty || isExtracting)
@@ -272,7 +272,7 @@ struct RecipeImportSheet: View {
             .padding(.vertical, 6)
             .background(Capsule().fill(Color.green.gradient))
             .shadow(color: .green.opacity(0.4), radius: 4, x: 0, y: 2)
-            .padding(12)
+            .padding(Spacing.sm)
         }
         .frame(height: 220)
         .frame(maxWidth: .infinity)
@@ -337,9 +337,9 @@ struct RecipeImportSheet: View {
             .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(cardBg)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
         )
@@ -363,7 +363,7 @@ struct RecipeImportSheet: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(cardBg)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
         )
@@ -388,7 +388,7 @@ struct RecipeImportSheet: View {
                         .font(.caption2)
                         .fontWeight(.bold)
                         .foregroundColor(.green)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.green.opacity(0.15)))
                 }
@@ -431,7 +431,7 @@ struct RecipeImportSheet: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         
                         if index < ingredients.count - 1 {
                             Divider()
@@ -444,12 +444,12 @@ struct RecipeImportSheet: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(cardBg)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
         )
@@ -501,9 +501,9 @@ struct RecipeImportSheet: View {
                 .padding(.vertical, 2)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(cardBg)
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
         )
@@ -559,7 +559,7 @@ struct RecipeImportSheet: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [.blue, .cyan],
@@ -567,7 +567,7 @@ struct RecipeImportSheet: View {
                     endPoint: .trailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .shadow(color: .blue.opacity(0.4), radius: 10, x: 0, y: 5)
         }
     }
@@ -621,7 +621,7 @@ struct NutritionPill: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(color.opacity(colorScheme == .dark ? 0.15 : 0.1))
@@ -694,10 +694,10 @@ struct RestaurantSearchSheet: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
         .padding()
     }
@@ -809,10 +809,10 @@ struct MenuItemRow: View {
                     .font(.title2)
                     .foregroundColor(.orange)
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -861,10 +861,10 @@ struct MenuItemAddSheet: View {
                                 NutritionPill(label: "Fat", value: "\(Int(menuItem.fat * Double(servings)))g", color: .purple)
                             }
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Servings
@@ -893,10 +893,10 @@ struct MenuItemAddSheet: View {
                             }
                             .frame(maxWidth: .infinity)
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Meal type
@@ -914,10 +914,10 @@ struct MenuItemAddSheet: View {
                                 }
                             }
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Add button
@@ -929,7 +929,7 @@ struct MenuItemAddSheet: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                             )

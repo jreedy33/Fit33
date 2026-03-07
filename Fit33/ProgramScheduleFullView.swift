@@ -47,7 +47,7 @@ struct ProgramScheduleFullView: View {
                 // Days grid
                 daysGridSection
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 100)
         }
@@ -151,11 +151,11 @@ struct ProgramScheduleFullView: View {
             }
             .frame(height: 8)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -505,7 +505,7 @@ struct ProgramDayPreviewView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             }
             .padding(.top, 8)
             .padding(.bottom, 120)
@@ -544,12 +544,12 @@ struct ProgramDayPreviewView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
+        .padding(.horizontal, Spacing.md)
     }
     
     // MARK: - Generate Exercises
@@ -673,13 +673,13 @@ struct ProgramExerciseCard: View {
                 Image(systemName: "arrow.triangle.swap")
                     .font(.system(size: 14))
                     .foregroundColor(programColor)
-                    .padding(8)
+                    .padding(Spacing.xs)
                     .background(programColor.opacity(0.1))
                     .clipShape(Circle())
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)

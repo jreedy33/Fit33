@@ -151,7 +151,7 @@ struct SmartMealPlannerView: View {
                                         .font(.caption)
                                         .fontWeight(selectedDiet == nil ? .bold : .medium)
                                         .foregroundColor(selectedDiet == nil ? .white : .primary)
-                                        .padding(.horizontal, 12)
+                                        .padding(.horizontal, Spacing.sm)
                                         .padding(.vertical, 7)
                                         .background(
                                             Capsule()
@@ -168,7 +168,7 @@ struct SmartMealPlannerView: View {
                                             .font(.caption)
                                             .fontWeight(selectedDiet == diet ? .bold : .medium)
                                             .foregroundColor(selectedDiet == diet ? .white : .primary)
-                                            .padding(.horizontal, 12)
+                                            .padding(.horizontal, Spacing.sm)
                                             .padding(.vertical, 7)
                                             .background(
                                                 Capsule()
@@ -198,9 +198,9 @@ struct SmartMealPlannerView: View {
                                         .fontWeight(planDays == days ? .bold : .medium)
                                         .foregroundColor(planDays == days ? .white : .primary)
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
+                                        .padding(.vertical, Spacing.xs)
                                         .background(
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(planDays == days
                                                     ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
                                                     : AnyShapeStyle(colorScheme == .dark ? Color(white: 0.2) : Color(white: 0.92)))
@@ -220,7 +220,7 @@ struct SmartMealPlannerView: View {
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                         }
                         
                         Text(isGenerating ? "Creating Your Plan..." : "Generate Meal Plan")
@@ -229,11 +229,11 @@ struct SmartMealPlannerView: View {
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(colors: [.mint, .green], startPoint: .leading, endPoint: .trailing)
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: .mint.opacity(0.4), radius: 12, x: 0, y: 6)
                 }
                 .disabled(isGenerating)
@@ -272,7 +272,7 @@ struct SmartMealPlannerView: View {
                         }) {
                             VStack(spacing: 4) {
                                 Text(day.dayLabel)
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(.ds_caption)
                                     .foregroundColor(selectedDayIndex == index ? .white.opacity(0.8) : .secondary)
                                 
                                 Text(day.dateLabel)
@@ -297,8 +297,8 @@ struct SmartMealPlannerView: View {
                         .id(index)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
             }
             .onChange(of: selectedDayIndex) { _, newIndex in
                 withAnimation { proxy.scrollTo(newIndex, anchor: .center) }
@@ -335,7 +335,7 @@ struct SmartMealPlannerView: View {
             .padding(.top, 4)
             .padding(.bottom, 32)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 16)
     }
     
@@ -351,7 +351,7 @@ struct SmartMealPlannerView: View {
             Spacer()
             macroRing(label: "Fat", value: day.totalFat, goal: Int(Double(targetCalories) * 0.3 / 9), color: .purple, unit: "g")
         }
-        .padding(16)
+        .padding(Spacing.md)
         .sleekCard(cornerRadius: 16, accentColor: .green)
     }
     
@@ -374,7 +374,7 @@ struct SmartMealPlannerView: View {
             }
             
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
     }
@@ -392,7 +392,7 @@ struct SmartMealPlannerView: View {
                     .foregroundColor(iconColor)
                     .frame(width: 32, height: 32)
                     .background(iconColor.opacity(0.15))
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
                 
                 Text(title)
                     .font(.subheadline)
@@ -438,12 +438,12 @@ struct SmartMealPlannerView: View {
             
             Spacer()
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(Color.purple.opacity(colorScheme == .dark ? 0.1 : 0.06))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.purple.opacity(0.2), lineWidth: 1)
                 )
         )
@@ -633,7 +633,7 @@ struct PlanMealCard: View {
                         }
                     }
                     .frame(width: 60, height: 60)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .clipped()
                 }
                 
@@ -737,7 +737,7 @@ struct PlanMealDetailSheet: View {
                             Text("Added to today's meals!")
                                 .fontWeight(.semibold)
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
                                 .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
@@ -840,10 +840,10 @@ struct PlanMealDetailSheet: View {
             Spacer()
             nutritionPill(value: "\(meal.fat)g", label: "fat", color: .purple)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
         )
     }
@@ -851,7 +851,7 @@ struct PlanMealDetailSheet: View {
     private func nutritionPill(value: String, label: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.ds_statSmall)
                 .foregroundColor(color)
             Text(label)
                 .font(.caption2)
@@ -900,7 +900,7 @@ struct PlanMealDetailSheet: View {
                 Text("\(ingredients.count) items")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.green.opacity(0.1)))
             }
@@ -934,7 +934,7 @@ struct PlanMealDetailSheet: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : .white)
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.gray.opacity(0.15), lineWidth: 1))
             )
         }
@@ -958,11 +958,11 @@ struct PlanMealDetailSheet: View {
                 .font(.body)
                 .foregroundColor(.secondary)
                 .lineSpacing(6)
-                .padding(16)
+                .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.98))
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.98))
                 )
         }
     }
@@ -1004,7 +1004,7 @@ struct PlanMealDetailSheet: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : .white)
             )
         }
     }

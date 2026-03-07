@@ -127,7 +127,7 @@ struct AppHealthDiagnosticsView: View {
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
     
     // MARK: - Score Card
@@ -168,7 +168,7 @@ struct AppHealthDiagnosticsView: View {
         .padding()
         .frame(maxWidth: .infinity)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - Summary Stats
@@ -196,7 +196,7 @@ struct AppHealthDiagnosticsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
         .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
     
     // MARK: - Filter Tabs
@@ -241,7 +241,7 @@ struct AppHealthDiagnosticsView: View {
                 
                 Text(result.category)
                     .font(.caption2)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 2)
                     .background(Color.blue.opacity(0.1))
                     .clipShape(Capsule())
@@ -274,10 +274,10 @@ struct AppHealthDiagnosticsView: View {
                 .foregroundColor(.orange)
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
     
     // MARK: - Helpers

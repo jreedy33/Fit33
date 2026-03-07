@@ -209,11 +209,11 @@ struct GroupChallengeDetailView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(colorScheme == .dark ? Color(white: 0.14) : Color.white)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(
                     LinearGradient(colors: accentGradient.map { $0.opacity(0.3) }, startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1
@@ -236,7 +236,7 @@ struct GroupChallengeDetailView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
+                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
         )
     }
     
@@ -263,7 +263,7 @@ struct GroupChallengeDetailView: View {
                     
                     if rank == 1 {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 11))
+                            .font(.ds_labelSmall)
                             .foregroundColor(.white)
                     } else {
                         Text("\(rank)")
@@ -306,7 +306,7 @@ struct GroupChallengeDetailView: View {
             // Progress
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(displayProgress)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(completedToday ? .green : .primary)
                 
                 Text("today")
@@ -362,7 +362,7 @@ struct GroupChallengeDetailView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
+                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
         )
     }
     
@@ -419,7 +419,7 @@ struct GroupChallengeDetailView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.97))
+                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
         )
     }
     

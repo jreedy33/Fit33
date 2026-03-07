@@ -45,13 +45,13 @@ struct ChallengePreviewWidget: View {
                 headerSection
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Challenge details
                 challengeDetailsSection
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Action buttons
                 actionButtonsSection
@@ -147,7 +147,7 @@ struct ChallengePreviewWidget: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Challenger Avatar View
@@ -227,7 +227,7 @@ struct ChallengePreviewWidget: View {
             
             Spacer()
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Action Buttons Section
@@ -255,9 +255,9 @@ struct ChallengePreviewWidget: View {
                 }
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, minHeight: 36)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(Color.secondary.opacity(0.15))
                 )
                 .contentShape(Rectangle())
@@ -282,9 +282,9 @@ struct ChallengePreviewWidget: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity, minHeight: 36)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(
                             LinearGradient(
                                 colors: gradientColors,
@@ -298,8 +298,8 @@ struct ChallengePreviewWidget: View {
             .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Actions
@@ -455,7 +455,7 @@ struct ActiveChallengeWidget: View {
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.yellow)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
@@ -466,7 +466,7 @@ struct ActiveChallengeWidget: View {
                             .font(.caption2)
                             .fontWeight(.medium)
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
@@ -548,7 +548,7 @@ struct ActiveChallengeWidget: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .sleekCard(cornerRadius: 16, accentColor: resolvedType.color)
         }
         .buttonStyle(PlainButtonStyle())
@@ -574,7 +574,7 @@ struct FriendChallengeRow: View {
     
     private var cardBackgroundGradient: [Color] {
         colorScheme == .dark 
-            ? [Color(white: 0.18), Color(white: 0.12)]
+            ? [Color(white: 0.18), Color.cardBackground]
             : [Color.white, Color.white.opacity(0.95)]
     }
     
@@ -625,7 +625,7 @@ struct FriendChallengeRow: View {
                         )
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
             .background(
                 ZStack {
@@ -754,9 +754,9 @@ struct GroupChallengeInviteWidget: View {
                 Text(challengeType.emoji)
                     .font(.system(size: 28))
             }
-            .padding(16)
+            .padding(Spacing.md)
             
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, Spacing.md)
             
             // Challenge details row
             HStack(spacing: 16) {
@@ -801,10 +801,10 @@ struct GroupChallengeInviteWidget: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, Spacing.md)
             
             // Accept / Decline buttons
             HStack(spacing: 12) {
@@ -856,7 +856,7 @@ struct GroupChallengeInviteWidget: View {
                 }
                 .disabled(isAccepting || isDeclining)
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
         .background(
             ZStack {
@@ -1027,9 +1027,9 @@ struct PrivateChallengeInviteWidget: View {
                 Text(invite.challengeEmoji ?? challengeType.emoji)
                     .font(.system(size: 28))
             }
-            .padding(16)
+            .padding(Spacing.md)
             
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, Spacing.md)
             
             // Challenge details row
             HStack(spacing: 16) {
@@ -1060,10 +1060,10 @@ struct PrivateChallengeInviteWidget: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, Spacing.md)
             
             // Accept / Decline buttons
             HStack(spacing: 12) {
@@ -1115,7 +1115,7 @@ struct PrivateChallengeInviteWidget: View {
                 }
                 .disabled(isAccepting || isDeclining)
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
         .background(
             ZStack {

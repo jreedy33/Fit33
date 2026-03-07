@@ -216,7 +216,7 @@ struct WorkoutHistoryDetailView: View {
                             // XP Badge
                             HStack(spacing: 4) {
                                 Image(systemName: "star.fill")
-                                    .font(.system(size: 11))
+                                    .font(.ds_labelSmall)
                                     .foregroundStyle(
                                         LinearGradient(colors: accentGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                                     )
@@ -250,14 +250,41 @@ struct WorkoutHistoryDetailView: View {
                                 )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 12)
                     
                     // Stats Grid
                     statsGrid
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                 }
                 .padding(.bottom, 8)
+                
+                // Workout Notes (if any)
+                if let notes = workout.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                            Text("Workout Notes")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Text(notes)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .padding(Spacing.sm)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.cardBackground)
+                            )
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, 8)
+                }
                 
                 // Content
                 VStack(spacing: 20) {
@@ -277,7 +304,7 @@ struct WorkoutHistoryDetailView: View {
                     // Actions
                     actionsCard
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 12)
                 .padding(.bottom, 100)
             }
@@ -395,16 +422,16 @@ struct WorkoutHistoryDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
         }
         .background(
             ZStack {
                 // Main card background
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color(white: 0.96), Color(white: 0.92)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -412,7 +439,7 @@ struct WorkoutHistoryDetailView: View {
                     )
                 
                 // Inner highlight
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -425,7 +452,7 @@ struct WorkoutHistoryDetailView: View {
                     )
                 
                 // Accent border
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [accentColor.opacity(0.3), accentColor.opacity(0.1)],
@@ -463,7 +490,7 @@ struct WorkoutHistoryDetailView: View {
                 Spacer()
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -499,7 +526,7 @@ struct WorkoutHistoryDetailView: View {
                                 .foregroundColor(.orange)
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     
                     if pr.exercise != personalRecords.last?.exercise {
                         Divider()
@@ -507,7 +534,7 @@ struct WorkoutHistoryDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -538,7 +565,7 @@ struct WorkoutHistoryDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -665,22 +692,22 @@ struct WorkoutHistoryDetailView: View {
     private var glassCard: some View {
         ZStack {
             // Bottom shadow layer - category colored
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
                 .offset(y: 8)
                 .blur(radius: 4)
             
             // Middle shadow layer
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                 .offset(y: 4)
             
             // Main card background
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
-                            ? [Color(white: 0.18), Color(white: 0.12)]
+                            ? [Color(white: 0.18), Color.cardBackground]
                             : [Color(white: 0.96), Color(white: 0.92)],
                         startPoint: .top,
                         endPoint: .bottom
@@ -688,7 +715,7 @@ struct WorkoutHistoryDetailView: View {
                 )
             
             // Inner highlight
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -701,7 +728,7 @@ struct WorkoutHistoryDetailView: View {
                 )
             
             // Accent border with category color
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: [accentColor.opacity(0.3), accentColor.opacity(0.1)],
@@ -930,7 +957,7 @@ struct PremiumExerciseRow: View {
                                 CoreIcon(size: 22, color: .white)
                             } else {
                                 Image(systemName: categoryIcon)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.ds_labelLarge)
                                     .foregroundColor(.white)
                             }
                         }
@@ -949,9 +976,9 @@ struct PremiumExerciseRow: View {
                             if isPR && bestSet != nil {
                                 HStack(spacing: 2) {
                                     Image(systemName: "trophy.fill")
-                                        .font(.system(size: 10))
+                                        .font(.ds_caption)
                                     Text("PR")
-                                        .font(.system(size: 10, weight: .bold))
+                                        .font(.ds_caption)
                                 }
                                 .foregroundColor(.orange)
                                 .padding(.horizontal, 6)
@@ -998,14 +1025,14 @@ struct PremiumExerciseRow: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
                 
                 // Expanded sets detail
                 if isExpanded {
                     VStack(spacing: 0) {
                         Divider()
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                         
                         VStack(spacing: 8) {
                             // Previous workout comparison
@@ -1019,7 +1046,7 @@ struct PremiumExerciseRow: View {
                                             .fontWeight(.semibold)
                                     }
                                     .foregroundColor(.secondary)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.top, 8)
                                     
                                     ScrollView(.horizontal, showsIndicators: false) {
@@ -1036,18 +1063,18 @@ struct PremiumExerciseRow: View {
                                                 .padding(.horizontal, 10)
                                                 .padding(.vertical, 6)
                                                 .background(
-                                                    RoundedRectangle(cornerRadius: 8)
+                                                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                         .fill(Color.secondary.opacity(0.1))
                                                 )
                                             }
                                         }
-                                        .padding(.horizontal, 16)
+                                        .padding(.horizontal, Spacing.md)
                                     }
                                 }
                                 .padding(.bottom, 8)
                                 
                                 Divider()
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                             }
                             
                             // Current sets
@@ -1060,7 +1087,7 @@ struct PremiumExerciseRow: View {
                                         .fontWeight(.semibold)
                                 }
                                 .foregroundColor(.secondary)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .padding(.top, 8)
                                 
                                 VStack(spacing: 4) {
@@ -1096,7 +1123,7 @@ struct PremiumExerciseRow: View {
                                             }
                                         }
                                         .foregroundColor(isBest ? accentColor : .primary)
-                                        .padding(.horizontal, 16)
+                                        .padding(.horizontal, Spacing.md)
                                         .padding(.vertical, 6)
                                         .background(
                                             isBest ? RoundedRectangle(cornerRadius: 6)
@@ -1130,7 +1157,7 @@ struct PremiumExerciseRow: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -1356,7 +1383,7 @@ struct RepeatWorkoutPreviewView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
                 .padding(.bottom, 120)
             }
@@ -1579,7 +1606,7 @@ struct RepeatExerciseCard: View {
                     CoreIcon(size: 22, color: .white)
                 } else {
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
             }
@@ -1621,8 +1648,8 @@ struct RepeatExerciseCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -1641,7 +1668,7 @@ struct RepeatExerciseCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom

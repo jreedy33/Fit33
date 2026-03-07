@@ -87,10 +87,21 @@ class ExerciseBundleEngine {
         ExerciseBundle(
             id: "lateral_raise_bundle",
             displayName: "Lateral Raise",
-            families: ["lateral_raise", "front_raise"],
+            families: ["lateral_raise"],
             movementPattern: "lateral_raise",
             maxPerWorkout: 1,
             maxPerWeek: 3,
+            cooldownDays: 3
+        ),
+        
+        // SHOULDERS — FRONT RAISE (separate from lateral to avoid bundling distinct movements)
+        ExerciseBundle(
+            id: "front_raise_bundle",
+            displayName: "Front Raise",
+            families: ["front_raise"],
+            movementPattern: "front_raise",
+            maxPerWorkout: 1,
+            maxPerWeek: 2,
             cooldownDays: 3
         ),
         
@@ -157,15 +168,26 @@ class ExerciseBundleEngine {
         ),
         
         // LEGS — HINGE PATTERN
-        // Deadlift, RDL, stiff-leg deadlift → same hinge
+        // Deadlift, RDL, stiff-leg deadlift → same hinge (back extension is spinal, not hinge)
         ExerciseBundle(
             id: "hinge_pattern",
             displayName: "Deadlift / RDL (Hinge)",
-            families: ["deadlift", "good_morning", "back_extension"],
+            families: ["deadlift", "good_morning"],
             movementPattern: "hinge",
             maxPerWorkout: 1,
             maxPerWeek: 3,
             cooldownDays: 4
+        ),
+        
+        // BACK — SPINAL EXTENSION (separate from hinge to preserve heavy compound slot)
+        ExerciseBundle(
+            id: "spinal_extension_pattern",
+            displayName: "Back Extension / Hyperextension",
+            families: ["back_extension"],
+            movementPattern: "spinal_extension",
+            maxPerWorkout: 1,
+            maxPerWeek: 3,
+            cooldownDays: 2
         ),
         
         // LEGS — LUNGE PATTERN

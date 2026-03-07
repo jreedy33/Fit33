@@ -320,7 +320,7 @@ struct PrivateChallengeDetailView: View {
                 statItem(value: "\(detail?.myCurrentStreak ?? challenge.myCurrentStreak ?? 0)", label: "streak", icon: "bolt.fill", color: .cyan)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color.white.opacity(0.06))
@@ -389,7 +389,7 @@ struct PrivateChallengeDetailView: View {
                         miniStat(value: "\(d.totalActiveToday)", label: "active")
                         miniStat(value: "\(Int(d.completionRateToday * 100))%", label: "done")
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Color.white.opacity(0.06))
@@ -505,7 +505,7 @@ struct PrivateChallengeDetailView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(isMe ? Color.purple.opacity(0.1) : Color.white.opacity(0.04))
@@ -675,7 +675,7 @@ struct PrivateChallengeDetailView: View {
                 TextField("Message...", text: $chatText)
                     .font(.body)
                     .foregroundColor(.white)
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(Color.white.opacity(0.1))
                     .cornerRadius(20)
                 
@@ -727,7 +727,7 @@ struct PrivateChallengeDetailView: View {
                     Text(message.content)
                         .font(.caption)
                         .foregroundColor(message.isMilestoneMessage ? .yellow : .white.opacity(0.5))
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             Capsule().fill(Color.white.opacity(0.06))
@@ -759,8 +759,8 @@ struct PrivateChallengeDetailView: View {
                         Text(message.content)
                             .font(.subheadline)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xs)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .fill(message.isCurrentUser
@@ -792,7 +792,7 @@ struct PrivateChallengeDetailView: View {
                 }
                 .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     Capsule().fill(.ultraThinMaterial)
                 )
@@ -815,7 +815,7 @@ struct PrivateChallengeDetailView: View {
                 }
                 .foregroundColor(.white.opacity(0.7))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     Capsule().fill(Color.white.opacity(0.08))
                 )

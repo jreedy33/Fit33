@@ -25,7 +25,7 @@ struct ProgramLibraryView: View {
                 // Programs Grid
                 programsGrid
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 80)
         }
@@ -150,8 +150,8 @@ struct FilterButton: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(isSelected ? .white : color)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected ? color : Color.white)
@@ -233,12 +233,12 @@ struct ProgramCardContent: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .frame(height: 220)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(programColor.opacity(0.2), lineWidth: 2)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -286,7 +286,7 @@ struct ProgramDetailView: View {
                 // Start Button
                 startButton
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 60)
         }
@@ -337,11 +337,11 @@ struct ProgramDetailView: View {
                 StatBox(icon: "clock", value: "\(program.estimatedTimePerWorkout)m", label: "Per Day")
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -358,11 +358,11 @@ struct ProgramDetailView: View {
                 .foregroundColor(.secondary)
                 .lineSpacing(2)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -390,7 +390,7 @@ struct ProgramDetailView: View {
         }
         .padding(20)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
     }
     
@@ -406,7 +406,7 @@ struct ProgramDetailView: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(programColor)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(programColor.opacity(0.1))
                         .clipShape(Capsule())
@@ -415,7 +415,7 @@ struct ProgramDetailView: View {
         }
         .padding(20)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
     }
     
@@ -466,7 +466,7 @@ struct ProgramDetailView: View {
         }
         .padding(20)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
     }
     
@@ -511,7 +511,7 @@ struct ProgramDetailView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                 .shadow(color: programColor.opacity(0.4), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(PlainButtonStyle())
@@ -555,7 +555,7 @@ struct StatBox: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(Color.white.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }

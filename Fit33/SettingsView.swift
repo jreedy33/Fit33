@@ -57,7 +57,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: TrainingHubView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.blue.opacity(0.15), Color.cyan.opacity(0.15)],
@@ -92,8 +92,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -103,7 +103,7 @@ struct SettingsView: View {
                                 Button(action: { showTutorialTest = true }) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.purple.opacity(0.15), Color.pink.opacity(0.15)],
@@ -138,8 +138,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -150,7 +150,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: DevSessionLogsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.orange.opacity(0.15), Color.red.opacity(0.15)],
@@ -185,8 +185,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -241,7 +241,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: CloudBackupView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.blue.opacity(0.15), Color.cyan.opacity(0.15)],
@@ -277,7 +277,7 @@ struct SettingsView: View {
                                             .fontWeight(.semibold)
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(16)
+                                    .padding(Spacing.md)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -288,7 +288,7 @@ struct SettingsView: View {
                                 Button(action: { syncProfileToCloud() }) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.orange.opacity(0.15), Color.yellow.opacity(0.15)],
@@ -324,7 +324,7 @@ struct SettingsView: View {
                                         
                                         Spacer()
                                     }
-                                    .padding(16)
+                                    .padding(Spacing.md)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -335,7 +335,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: DataDownloadView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.green.opacity(0.15), Color.mint.opacity(0.15)],
@@ -371,7 +371,7 @@ struct SettingsView: View {
                                             .fontWeight(.semibold)
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(16)
+                                    .padding(Spacing.md)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -385,7 +385,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: InBodySettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color(red: 0, green: 0.48, blue: 0.8).opacity(0.15), Color.cyan.opacity(0.15)],
@@ -426,8 +426,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -437,7 +437,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: StravaSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color(red: 252/255, green: 76/255, blue: 2/255).opacity(0.15), Color.orange.opacity(0.15)],
@@ -478,8 +478,8 @@ struct SettingsView: View {
                                                 .foregroundColor(.secondary)
                                         }
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -489,7 +489,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: FitbitSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color(red: 0, green: 0.73, blue: 0.77).opacity(0.15), Color(red: 0, green: 0.55, blue: 0.58).opacity(0.15)],
@@ -530,8 +530,8 @@ struct SettingsView: View {
                                                 .foregroundColor(.secondary)
                                         }
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -541,7 +541,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: HealthKitSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(
                                                     LinearGradient(
                                                         colors: [Color.red.opacity(0.15), Color.pink.opacity(0.15)],
@@ -582,8 +582,8 @@ struct SettingsView: View {
                                                 .foregroundColor(.secondary)
                                         }
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -626,7 +626,7 @@ struct SettingsView: View {
                                 }) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(Color.red.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "ant.fill")
@@ -650,7 +650,7 @@ struct SettingsView: View {
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, 10)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -712,7 +712,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: TermsConditionsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(Color.gray.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "doc.text.fill")
@@ -735,8 +735,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -745,7 +745,7 @@ struct SettingsView: View {
                                 NavigationLink(destination: PrivacyPolicyView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                                 .fill(Color.gray.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "hand.raised.fill")
@@ -768,8 +768,8 @@ struct SettingsView: View {
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -818,7 +818,7 @@ struct SettingsView: View {
             
             content()
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
                 )
@@ -853,7 +853,7 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -877,7 +877,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Ads Toggle Row
@@ -904,13 +904,13 @@ struct SettingsView: View {
             Toggle("", isOn: $adManager.adsEnabled)
                 .labelsHidden()
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     private func freeUserToggleRow() -> some View {
         HStack(spacing: 16) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .fill(
                         LinearGradient(
                             colors: premiumManager.isPremiumUser 
@@ -955,7 +955,7 @@ struct SettingsView: View {
             .labelsHidden()
             .tint(.orange)
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Reset App State Row
@@ -974,7 +974,7 @@ struct SettingsView: View {
         }) {
             HStack(spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(
                             LinearGradient(
                                 colors: [Color.purple.opacity(0.15), Color.pink.opacity(0.15)],
@@ -1014,8 +1014,8 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
+            .padding(.vertical, Spacing.sm)
+            .padding(.horizontal, Spacing.md)
         }
         .buttonStyle(.plain)
         .alert("Run Onboarding Test?", isPresented: $showOnboardingTest) {
@@ -1084,7 +1084,7 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
         .buttonStyle(.plain)
         .alert("Reset App State?", isPresented: $showingResetConfirmation) {
@@ -1181,15 +1181,15 @@ struct SettingsView: View {
                         .font(.caption2)
                 }
                 .foregroundColor(.indigo)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(Color.indigo.opacity(0.1))
                 )
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Video Gender Row
@@ -1241,15 +1241,15 @@ struct SettingsView: View {
                         .font(.caption2)
                 }
                 .foregroundColor(.cyan)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(Color.cyan.opacity(0.1))
                 )
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
     }
     
     // MARK: - Notifications Row
@@ -1296,7 +1296,7 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

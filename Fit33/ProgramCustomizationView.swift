@@ -41,7 +41,7 @@ struct ProgramCustomizationView: View {
                     generateButton
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .padding(.bottom, 40)
             }
             .background(
@@ -121,7 +121,7 @@ struct ProgramCustomizationView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Equipment Section
@@ -168,9 +168,9 @@ struct ProgramCustomizationView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - Schedule Section
@@ -239,9 +239,9 @@ struct ProgramCustomizationView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - Quick Options
@@ -271,9 +271,9 @@ struct ProgramCustomizationView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - Generate Button
@@ -297,7 +297,7 @@ struct ProgramCustomizationView: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [programColor, programColor.opacity(0.8)],
@@ -365,13 +365,13 @@ struct EquipmentChip: View {
             }
             .foregroundColor(isSelected ? .white : .primary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? accentColor : Color.gray.opacity(0.1))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(isSelected ? accentColor : Color.gray.opacity(0.2), lineWidth: 1)
             )
         }
@@ -445,8 +445,8 @@ struct QuickOptionChip: View {
                     .fontWeight(.medium)
             }
             .foregroundColor(isActive ? .white : .secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
                 Capsule()
                     .fill(isActive ? Color.orange : Color.gray.opacity(0.1))
@@ -498,7 +498,7 @@ struct CustomProgramPreviewView: View {
                     }
                     .padding()
                     .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                     
                     // Sample days preview
                     VStack(alignment: .leading, spacing: 12) {
@@ -519,7 +519,7 @@ struct CustomProgramPreviewView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .padding(.bottom, 100)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -541,12 +541,12 @@ struct CustomProgramPreviewView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(programColor)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(.ultraThinMaterial)
             }
         }
@@ -616,9 +616,9 @@ struct DayPreviewCard: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
 }
 

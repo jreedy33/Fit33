@@ -257,9 +257,13 @@ struct WorkoutCompletionView: View {
     let exerciseSets: [String: [WorkoutSetData]]
     let workoutDuration: TimeInterval
     
+    @State private var completionNotes: String = ""
     @State private var showingCelebration = false
     @State private var showingShareSheet = false
     @State private var showingShareOptions = false
+    @State private var showingReplay = false
+    @State private var replayInsights: [WorkoutInsightCard] = []
+    @State private var showingProgressPhotoCapture = false
     
     var totalSets: Int {
         exerciseSets.values.reduce(0) { total, sets in
@@ -363,6 +367,17 @@ struct WorkoutCompletionView: View {
                     // Exercise breakdown
                     exerciseBreakdownSection
                     
+                    // Workout notes section
+                    workoutNotesSection
+                    
+                    // AI Workout Replay button
+                    if !replayInsights.isEmpty {
+                        replayButton
+                    }
+                    
+                    // Progress photo prompt (show periodically)
+                    progressPhotoPrompt
+                    
                     // Done button
                     doneButton
                     
@@ -419,9 +434,24 @@ struct WorkoutCompletionView: View {
                 "exercise_count": exercises.count,
                 "total_sets": totalSets
             ])
+            if let existingNotes = workout.notes, !existingNotes.isEmpty {
+                completionNotes = existingNotes
+            }
+            replayInsights = WorkoutReplayEngine.shared.generateInsights(
+                workout: workout,
+                exercises: exercises,
+                exerciseSets: exerciseSets,
+                workoutDuration: workoutDuration
+            )
             DispatchQueue.main.async {
                 showingCelebration = true
             }
+        }
+        .sheet(isPresented: $showingReplay) {
+            WorkoutReplayView(insights: replayInsights)
+        }
+        .fullScreenCover(isPresented: $showingProgressPhotoCapture) {
+            ProgressPhotoCaptureView()
         }
     }
     
@@ -470,7 +500,7 @@ struct WorkoutCompletionView: View {
             }
             
             Divider()
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
             
             // Bottom section - Stats row (Duration, Exercises, Sets, XP)
             HStack(spacing: 0) {
@@ -559,7 +589,7 @@ struct WorkoutCompletionView: View {
                             .font(.caption2)
                             .fontWeight(.medium)
                             .foregroundColor(workoutGradient[0])
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
@@ -571,7 +601,7 @@ struct WorkoutCompletionView: View {
                 .padding(.top, 12)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
@@ -616,8 +646,8 @@ struct WorkoutCompletionView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
+                    .padding(.vertical, Spacing.xs)
+                    .padding(.horizontal, Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
                             .fill(colorScheme == .dark ? Color(white: 0.15) : Color.gray.opacity(0.08))
@@ -627,10 +657,123 @@ struct WorkoutCompletionView: View {
         }
     }
     
+    // MARK: - Workout Notes
+    private var workoutNotesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+                Text("Workout Notes")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+            }
+            
+            TextEditor(text: $completionNotes)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 60, maxHeight: 100)
+                .padding(Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(white: 0.15) : Color.gray.opacity(0.08))
+                )
+                .overlay(
+                    Group {
+                        if completionNotes.isEmpty {
+                            Text("How did your workout feel?")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .padding(.leading, Spacing.md)
+                                .padding(.top, Spacing.sm + 8)
+                                .allowsHitTesting(false)
+                        }
+                    },
+                    alignment: .topLeading
+                )
+        }
+    }
+    
+    // MARK: - Progress Photo Prompt
+    private var progressPhotoPrompt: some View {
+        Group {
+            let days = ProgressPhotoService.shared.daysSinceLastPhoto
+            if days == nil || (days ?? 0) >= 14 {
+                Button(action: {
+                    HapticManager.impact(.light)
+                    showingProgressPhotoCapture = true
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.purple)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Take a Progress Photo")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            Text(days == nil ? "Start tracking your transformation" : "It's been \(days!) days since your last photo")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(colorScheme == .dark ? Color(white: 0.15) : Color.gray.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    // MARK: - Replay Button
+    private var replayButton: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            showingReplay = true
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("See Your Workout Replay")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                LinearGradient(
+                    colors: [.blue, .purple],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            )
+        }
+    }
+    
     // MARK: - Done Button
     private var doneButton: some View {
         Button(action: {
             HapticManager.notification(.success)
+            if !completionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                workout.notes = completionNotes
+                try? workout.managedObjectContext?.save()
+            }
             workoutManager.finishWorkout()
             dismiss()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -642,7 +785,7 @@ struct WorkoutCompletionView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: workoutGradient,
@@ -715,11 +858,11 @@ struct CompletionStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 140)
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.05), radius: 3, x: 0, y: 1)
@@ -769,8 +912,8 @@ struct ExerciseSummaryCard: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(Color.cardBackground)
         .cornerRadius(10)
         .overlay(

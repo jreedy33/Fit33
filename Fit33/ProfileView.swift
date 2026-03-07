@@ -262,24 +262,24 @@ struct ProfileView: View {
                                             )
                                         }
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, Spacing.md)
+                                    .padding(.vertical, Spacing.sm)
                                 } else {
                                     // View Mode
                                     if selectedEquipment.isEmpty {
                                         Text("No equipment selected")
                                             .font(.subheadline)
                                             .foregroundColor(.secondary)
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 12)
+                                            .padding(.horizontal, Spacing.md)
+                                            .padding(.vertical, Spacing.sm)
                                     } else {
                                         FlowLayout(spacing: 8) {
                                             ForEach(Array(selectedEquipment).sorted(), id: \.self) { equipment in
                                                 EquipmentTag(name: equipment)
                                             }
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
+                                        .padding(.horizontal, Spacing.md)
+                                        .padding(.vertical, Spacing.sm)
                                     }
                                 }
                             }
@@ -314,7 +314,7 @@ struct ProfileView: View {
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundColor(.secondary.opacity(0.5))
                                 }
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .padding(.vertical, 14)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -356,7 +356,7 @@ struct ProfileView: View {
                                     
                                     if isPhoneVerified {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 16))
+                                            .font(.ds_bodyRegular)
                                             .foregroundColor(.blue)
                                     } else {
                                         Image(systemName: "chevron.right")
@@ -364,7 +364,7 @@ struct ProfileView: View {
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
                                 }
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .padding(.vertical, 14)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -404,7 +404,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -437,7 +437,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -470,8 +470,54 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
+                        // Progress Photos Section
+                        ProfileSection(
+                            title: "PROGRESS PHOTOS",
+                            icon: "camera.fill",
+                            iconColor: .purple
+                        ) {
+                            VStack(spacing: 0) {
+                                NavigationLink(destination: ProgressPhotoGalleryView()) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "photo.on.rectangle.angled")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.purple)
+                                            .frame(width: 32)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Photo Gallery")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            if let days = ProgressPhotoService.shared.daysSinceLastPhoto {
+                                                Text(days == 0 ? "Taken today" : "\(days) days since last photo")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            } else {
+                                                Text("No photos yet")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Text("\(ProgressPhotoService.shared.photos.count)")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, Spacing.md)
+                                    .padding(.vertical, Spacing.sm)
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             }
@@ -513,7 +559,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -550,7 +596,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -587,7 +633,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -624,7 +670,7 @@ struct ProfileView: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -652,7 +698,7 @@ struct ProfileView: View {
                                         
                                         Spacer()
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -678,7 +724,7 @@ struct ProfileView: View {
                                                 .scaleEffect(0.8)
                                         }
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -712,7 +758,7 @@ struct ProfileView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 17, weight: .semibold))
                         Text("Back")
-                            .font(.system(size: 17))
+                            .font(.ds_bodyLarge)
                     }
                     .foregroundColor(.blue)
                 }
@@ -986,7 +1032,7 @@ struct ProfileView: View {
             }) {
                 VStack(spacing: 6) {
                     Text("\(userManager.currentUser?.totalWorkouts ?? 0)")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.primary)
                     
                     Text("Workouts")
@@ -1013,7 +1059,7 @@ struct ProfileView: View {
                     if friendService.friends.count == 0 {
                         HStack(spacing: 2) {
                             Text("0")
-                                .font(.system(size: 22, weight: .bold))
+                                .font(.ds_heading2)
                                 .foregroundColor(.primary)
                             
                             Image(systemName: "plus.circle.fill")
@@ -1030,7 +1076,7 @@ struct ProfileView: View {
                     } else {
                         ZStack(alignment: .topTrailing) {
                             Text("\(friendService.friends.count)")
-                                .font(.system(size: 22, weight: .bold))
+                                .font(.ds_heading2)
                                 .foregroundColor(.primary)
                             
                             // Red dot for pending friend requests
@@ -1065,7 +1111,7 @@ struct ProfileView: View {
                 VStack(spacing: 6) {
                     ZStack(alignment: .topTrailing) {
                         Text("\(friendService.receivedWorkouts.count)")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.primary)
                         
                         // Red dot for unread workouts
@@ -1087,7 +1133,7 @@ struct ProfileView: View {
             .buttonStyle(PlainButtonStyle())
         }
         .padding(.vertical, 18)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(colorScheme == .dark ? Color(white: 0.1) : Color.white)
@@ -1619,12 +1665,12 @@ struct ProfileSection<Content: View>: View {
                 content
             }
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(Color(.systemGray5), lineWidth: 0.5)
             )
         }
@@ -1679,12 +1725,12 @@ struct ProfileEditableSection<Content: View>: View {
                 content
             }
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(isEditing ? iconColor.opacity(0.3) : Color(.systemGray5), lineWidth: isEditing ? 1.5 : 0.5)
             )
         }
@@ -1723,7 +1769,7 @@ struct ProfileInfoRow: View {
                 .foregroundColor(.primary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -1779,7 +1825,7 @@ struct UsernameProfileRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
         }
         .buttonStyle(.plain)
@@ -1834,7 +1880,7 @@ struct PhoneProfileRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
         }
         .buttonStyle(.plain)
@@ -1911,7 +1957,7 @@ struct UsernameSetupSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 0) {
                             Text("@")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.blue)
                                 .padding(.leading, 16)
                             
@@ -1919,7 +1965,7 @@ struct UsernameSetupSheet: View {
                                 .font(.system(size: 18))
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .padding(.trailing, 16)
                                 .onChange(of: username) { _, newValue in
                                     // Filter to only allow valid characters (allow uppercase and lowercase)
@@ -1933,11 +1979,11 @@ struct UsernameSetupSheet: View {
                                 }
                         }
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(
                                     isAvailable == true ? Color.green :
                                     isAvailable == false ? Color.red :
@@ -1978,9 +2024,9 @@ struct UsernameSetupSheet: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(username.count >= 3 ? Color.blue : Color.gray)
                         )
                     }
@@ -2001,9 +2047,9 @@ struct UsernameSetupSheet: View {
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(
                                         LinearGradient(
                                             colors: [.green, .mint],
@@ -2129,7 +2175,7 @@ struct EditableProfileRow: View {
                 .keyboardType(keyboardType)
                 .textInputAutocapitalization(keyboardType == .emailAddress ? .never : .words)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -2180,7 +2226,7 @@ struct PickerProfileRow: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -2244,7 +2290,7 @@ struct StepperProfileRow: View {
                 .disabled(value >= range.upperBound)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -2283,7 +2329,7 @@ struct HeightEditRow: View {
                     .frame(width: 40)
                     .padding(.vertical, 6)
                     .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
                 
                 Text("ft")
                     .font(.caption)
@@ -2297,14 +2343,14 @@ struct HeightEditRow: View {
                     .frame(width: 40)
                     .padding(.vertical, 6)
                     .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
                 
                 Text("in")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -2339,14 +2385,14 @@ struct StatSummaryCard: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemBackground))
                 .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(color.opacity(0.15), lineWidth: 1)
         )
     }
@@ -2360,14 +2406,14 @@ struct EquipmentTag: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .bold))
+                .font(.ds_caption)
             Text(name)
                 .font(.caption)
                 .fontWeight(.medium)
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
                 .stroke(
@@ -2394,15 +2440,15 @@ struct EquipmentSelectableTag: View {
             HStack(spacing: 6) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                 }
                 Text(name)
                     .font(.caption)
                     .fontWeight(.medium)
             }
             .foregroundColor(isSelected ? .white : .secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
                 Capsule()
                     .stroke(

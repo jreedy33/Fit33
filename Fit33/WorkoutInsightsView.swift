@@ -49,7 +49,7 @@ struct WorkoutInsightsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(24)
                             .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                             
                             // Your Selections card
@@ -69,16 +69,16 @@ struct WorkoutInsightsView: View {
                                             .font(.subheadline)
                                             .fontWeight(.medium)
                                             .foregroundColor(.blue)
-                                            .padding(.horizontal, 12)
+                                            .padding(.horizontal, Spacing.sm)
                                             .padding(.vertical, 6)
                                             .background(Color.blue.opacity(0.1))
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
                                     }
                                 }
                             }
                             .padding(20)
                             .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                             .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
                             
                             // Applied Strategy card
@@ -122,7 +122,7 @@ struct WorkoutInsightsView: View {
                             }
                             .padding(20)
                             .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                             .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
                             
                             // Why This Works card
@@ -170,7 +170,7 @@ struct WorkoutInsightsView: View {
                                 }
                                 .padding(20)
                                 .background(Color.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                                 .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
                             }
                         } else {
@@ -192,7 +192,7 @@ struct WorkoutInsightsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(40)
                             .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                         }
                     }

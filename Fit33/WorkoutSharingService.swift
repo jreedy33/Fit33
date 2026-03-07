@@ -400,7 +400,7 @@ struct WorkoutShareCard: View {
         .padding(32)
         .frame(width: 375)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(
                     LinearGradient(
                         colors: [Color(white: 0.98), Color(white: 0.95)],
@@ -410,7 +410,7 @@ struct WorkoutShareCard: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(Color.gray.opacity(0.2), lineWidth: 1)
         )
     }
@@ -483,9 +483,9 @@ struct ShareButton: View {
                 }
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(Color.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             }
         }
     }
@@ -548,9 +548,9 @@ struct InviteFriendsSection: View {
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                 }
                 .buttonStyle(PlainButtonStyle())
             }

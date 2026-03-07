@@ -750,11 +750,21 @@ class ChallengeService: ObservableObject {
             )
             
             print("📝 [CHALLENGES] Direct insert: challenge_participants...")
-            try await SupabaseManager.shared.supabaseClient
-                .from("challenge_participants")
-                .insert([creatorParticipant, opponentParticipant])
-                .execute()
-            print("✅ [CHALLENGES] Both participants created")
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("challenge_participants")
+                    .insert([creatorParticipant, opponentParticipant])
+                    .execute()
+                print("✅ [CHALLENGES] Both participants created")
+            } catch {
+                print("❌ [CHALLENGES] Participant insert failed — cleaning up orphaned challenge \(challengeId)")
+                try? await SupabaseManager.shared.supabaseClient
+                    .from("group_challenges")
+                    .delete()
+                    .eq("id", value: challengeId.uuidString)
+                    .execute()
+                throw error
+            }
             
             // Step 3: Queue push notification (non-critical)
             do {
@@ -988,10 +998,20 @@ class ChallengeService: ObservableObject {
                 ))
             }
             
-            try await SupabaseManager.shared.supabaseClient
-                .from("challenge_participants")
-                .insert(participants)
-                .execute()
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("challenge_participants")
+                    .insert(participants)
+                    .execute()
+            } catch {
+                print("❌ [CHALLENGES] Group participant insert failed — cleaning up orphaned challenge \(challengeId)")
+                try? await SupabaseManager.shared.supabaseClient
+                    .from("group_challenges")
+                    .delete()
+                    .eq("id", value: challengeId.uuidString)
+                    .execute()
+                throw error
+            }
             
             print("✅ [CHALLENGES] Group challenge created via direct insert: \(challengeId)")
             
@@ -3009,6 +3029,15 @@ struct ActiveChallenge: Codable, Identifiable, Hashable {
     let amWinningToday: Bool?         // NEW: Am I winning today specifically
     
     var id: UUID { challengeId }
+    
+    /// Safe display name for opponent (falls back to "Unknown User" when nil)
+    var opponentDisplayName: String { opponentName ?? "Unknown User" }
+    
+    /// Safe URL for opponent avatar (returns nil if string is nil or invalid)
+    var opponentAvatarURL: URL? {
+        guard let urlString = opponentPhotoUrl else { return nil }
+        return URL(string: urlString)
+    }
     
     var startDate: Date { parseFlexibleDate(startDateString) }
     var endDate: Date { parseFlexibleDate(endDateString) }

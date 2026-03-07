@@ -206,8 +206,8 @@ struct UnitsLocalizationSettingsSection: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.md)
     }
     
     private func settingsRowContent(title: String, value: String) -> some View {
@@ -222,8 +222,8 @@ struct UnitsLocalizationSettingsSection: View {
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.md)
     }
 }
 

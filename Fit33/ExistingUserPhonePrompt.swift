@@ -132,10 +132,10 @@ struct ExistingUserPhonePrompt: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 14)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
                     )
                 }
@@ -145,10 +145,10 @@ struct ExistingUserPhonePrompt: View {
                     .keyboardType(.phonePad)
                     .textContentType(.telephoneNumber)
                     .font(.system(size: 16, weight: .medium))
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
                     )
                     .focused($focusedField, equals: .phoneNumber)
@@ -166,7 +166,7 @@ struct ExistingUserPhonePrompt: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             
             // Send Code Button
             Button(action: sendVerificationCode) {
@@ -180,7 +180,7 @@ struct ExistingUserPhonePrompt: View {
                 .font(.headline)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(
@@ -221,12 +221,12 @@ struct ExistingUserPhonePrompt: View {
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .frame(width: 45, height: 55)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                                     .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .stroke(focusedField == .verificationCode && verificationCode.count == index ? Color.orange : Color.clear, lineWidth: 2)
                             )
                     }
@@ -324,7 +324,7 @@ struct ExistingUserPhonePrompt: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))

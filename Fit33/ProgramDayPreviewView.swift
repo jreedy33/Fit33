@@ -158,11 +158,11 @@ struct SmartProgramDayPreviewView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 40)
@@ -213,7 +213,7 @@ struct SmartProgramDayPreviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 120)
         }
@@ -466,8 +466,8 @@ struct SmartProgramExerciseCard: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - category colored (subtle)
@@ -486,7 +486,7 @@ struct SmartProgramExerciseCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
-                                    ? [Color(white: 0.15), Color(white: 0.12)]
+                                    ? [Color(white: 0.15), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.98)],
                                 startPoint: .top,
                                 endPoint: .bottom

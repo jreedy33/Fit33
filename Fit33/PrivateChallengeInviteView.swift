@@ -61,7 +61,7 @@ struct PrivateChallengeInviteView: View {
                             Text("\(invitedFriends.count) invite\(invitedFriends.count == 1 ? "" : "s") sent ✓")
                                 .font(.caption)
                                 .foregroundColor(.green)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 4)
                                 .background(Capsule().fill(Color.green.opacity(0.15)))
                         }
@@ -87,10 +87,10 @@ struct PrivateChallengeInviteView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
                     .background(Color.white.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .padding(.horizontal, 20)
                     
                     // Friends list
@@ -185,8 +185,8 @@ struct PrivateChallengeInviteView: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(isInvited ? .green : (hasError ? .orange : .white))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Group {
                         if isInvited {

@@ -219,11 +219,11 @@ enum WorkoutComboRules {
     
     static let legsQuadsGlutes = ComboRule(
         comboName: "Legs (Quads + Glutes)",
-        mustInclude: ["squat_pattern", "unilateral_leg", "glute_accessory"],
+        mustInclude: ["squat_pattern", "unilateral_leg", "glute_accessory", "leg_curl"],
         avoid: ["upper_body_press", "plyo_default"],
-        caps: ["press": 0],  // Block upper body presses
+        caps: ["press": 0],
         balanceSlot: "core_stability",
-        notes: "Kickbacks live in 12-20 reps"
+        notes: "Kickbacks live in 12-20 reps; leg curl ensures hamstring balance"
     )
     
     static let quadsHamstrings = ComboRule(
@@ -295,6 +295,44 @@ enum WorkoutComboRules {
         notes: "Core = stability, not combo push-up plank circus"
     )
     
+    // MARK: - Standalone Single-Group Rules (Bro Split)
+    
+    static let shouldersOnly = ComboRule(
+        comboName: "Shoulders",
+        mustInclude: ["shoulder_press", "lateral_raise", "rear_delt"],
+        avoid: ["front_raise"],
+        caps: ["overhead_press": 1],
+        balanceSlot: "rear_delt",
+        notes: "Front delts hit enough from pressing; ensure rear delt coverage"
+    )
+    
+    static let chestOnly = ComboRule(
+        comboName: "Chest",
+        mustInclude: ["horizontal_press", "incline_press", "chest_fly"],
+        avoid: ["decline_press_default"],
+        caps: ["flat_press": 2],
+        balanceSlot: "rear_delt",
+        notes: "Mix flat + incline presses with a fly for stretch"
+    )
+    
+    static let backOnly = ComboRule(
+        comboName: "Back",
+        mustInclude: ["horizontal_pull", "vertical_pull", "rear_delt"],
+        avoid: [],
+        caps: ["row": 2, "pulldown": 2],
+        balanceSlot: "rotator_cuff",
+        notes: "Horizontal and vertical pull with rear delt finisher"
+    )
+    
+    static let legsOnly = ComboRule(
+        comboName: "Legs",
+        mustInclude: ["squat_pattern", "leg_curl", "unilateral_leg", "calf_raise"],
+        avoid: ["upper_body_press"],
+        caps: ["press": 0],
+        balanceSlot: "core_stability",
+        notes: "Quad + hamstring + calf for full leg coverage"
+    )
+    
     static let fullBody = ComboRule(
         comboName: "Full Body",
         mustInclude: ["lower_squat_press", "hinge_or_ham_curl", "push", "pull", "core"],
@@ -358,6 +396,12 @@ enum WorkoutComboRules {
         let hasLower = hasQuads || hasHamstrings || hasGlutes
         if hasUpper && hasLower { return "full_body" }
         
+        // Standalone single-group rules (Bro Split days)
+        if hasChest { return "chest_only" }
+        if hasBack { return "back_only" }
+        if hasShoulders { return "shoulders_only" }
+        if hasLegs { return "legs_only" }
+        
         return nil
     }
     
@@ -384,6 +428,10 @@ enum WorkoutComboRules {
         case "arms_core": return armsCore
         case "core_abs": return coreAbs
         case "full_body": return fullBody
+        case "shoulders_only": return shouldersOnly
+        case "chest_only": return chestOnly
+        case "back_only": return backOnly
+        case "legs_only": return legsOnly
         default: return nil
         }
     }
@@ -494,7 +542,7 @@ enum WorkoutComboRules {
             return "tricep_overhead"
         }
         if name.contains("skull crusher") {
-            return "tricep_overhead"
+            return "tricep_extension"
         }
         
         // Leg patterns

@@ -89,7 +89,7 @@ struct SmartWorkoutPreviewView: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 6)
                     .background(programColor)
                     .clipShape(Capsule())
@@ -117,7 +117,7 @@ struct SmartWorkoutPreviewView: View {
                     Text(muscle)
                         .font(.caption)
                         .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(Color.secondary.opacity(0.1))
                         .clipShape(Capsule())
@@ -219,7 +219,7 @@ struct SmartWorkoutPreviewView: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [programColor, programColor.opacity(0.8)],
@@ -362,8 +362,8 @@ struct SmartExercisePreviewRow: View {
             }
             .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -382,7 +382,7 @@ struct SmartExercisePreviewRow: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom

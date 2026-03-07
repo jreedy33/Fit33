@@ -96,7 +96,7 @@ struct CloudProgramScheduleView: View {
                 // Days grid
                 daysGridSection(program: program, progress: progress)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 80)
         }
@@ -188,11 +188,11 @@ struct CloudProgramScheduleView: View {
             }
             .frame(height: 8)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
@@ -509,9 +509,9 @@ struct DaySwapView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(canSwap ? programColor : Color.gray)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
                 }
                 .disabled(!canSwap || isSwapping)
                 .padding(.horizontal)
@@ -620,7 +620,7 @@ struct DaySelectionBox: View {
         }
         .frame(width: 120, height: 80)
         .background(Color.gray.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
 }
 
@@ -796,7 +796,7 @@ struct CloudWorkoutPreviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             .padding(.bottom, 120)
         }
@@ -1061,8 +1061,8 @@ struct SwappableExerciseCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -1081,7 +1081,7 @@ struct SwappableExerciseCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -1250,7 +1250,7 @@ struct SwappableExerciseCardWithActions: View {
                 Image(systemName: "arrow.triangle.swap")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(categoryColor)
-                    .padding(8)
+                    .padding(Spacing.xs)
                     .background(
                         Circle()
                             .fill(categoryColor.opacity(0.1))
@@ -1258,8 +1258,8 @@ struct SwappableExerciseCardWithActions: View {
             }
             .buttonStyle(PlainButtonStyle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -1278,7 +1278,7 @@ struct SwappableExerciseCardWithActions: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -1364,7 +1364,7 @@ struct ExerciseDataDetailSheet: View {
                                         .font(.system(size: 13, weight: .semibold))
                                 }
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(
                                     LinearGradient(
@@ -1383,7 +1383,7 @@ struct ExerciseDataDetailSheet: View {
                                         .font(.system(size: 13, weight: .medium))
                                 }
                                 .foregroundColor(colorScheme == .dark ? .white : .black)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(Color(.systemGray5))
                                 .cornerRadius(20)
@@ -1509,7 +1509,7 @@ struct ExerciseDataDetailSheet: View {
             
             content()
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(colorScheme == .dark ? Color(.systemGray6).opacity(0.5) : Color(.systemGray6).opacity(0.5))
@@ -1523,7 +1523,7 @@ struct ExerciseDataDetailSheet: View {
             .font(.system(size: 14, weight: isPrimary ? .bold : .semibold))
             .foregroundColor(isPrimary ? .white : categoryColor)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isPrimary ? categoryColor : categoryColor.opacity(0.15))
@@ -1689,7 +1689,7 @@ struct ExerciseSwapView: View {
                 
                 // Current exercise card
                 currentExerciseCard
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 12)
                 
                 // Filter section
@@ -1707,7 +1707,7 @@ struct ExerciseSwapView: View {
                                     showingConfirmation = true
                                 }
                             )
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, Spacing.md)
                         }
                     }
                     .padding(.top, 8)
@@ -1746,8 +1746,8 @@ struct ExerciseSwapView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 .foregroundColor(.blue)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(colorScheme == .dark ? Color(white: 0.2) : Color.white.opacity(0.9))
                 .clipShape(Capsule())
             }
@@ -1764,8 +1764,8 @@ struct ExerciseSwapView: View {
             Color.clear
                 .frame(width: 60, height: 36)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Current Exercise Card
@@ -1833,11 +1833,11 @@ struct ExerciseSwapView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(colorScheme == .dark ? Color(white: 0.14) : Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 4, x: 0, y: 2)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             
             // Category filter
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1852,7 +1852,7 @@ struct ExerciseSwapView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             }
             
             // Equipment filter
@@ -1868,7 +1868,7 @@ struct ExerciseSwapView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             }
         }
     }
@@ -1905,7 +1905,7 @@ struct SwapFilterChip: View {
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(isSelected ? .white : color)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     isSelected ? color : color.opacity(0.1)
@@ -2031,8 +2031,8 @@ struct SwapExerciseCard: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - category colored (subtle)
@@ -2051,7 +2051,7 @@ struct SwapExerciseCard: View {
                         .fill(
                             LinearGradient(
                                 colors: colorScheme == .dark 
-                                    ? [Color(white: 0.15), Color(white: 0.12)]
+                                    ? [Color(white: 0.15), Color.cardBackground]
                                     : [Color.white, Color.white.opacity(0.98)],
                                 startPoint: .top,
                                 endPoint: .bottom

@@ -1,5 +1,6 @@
 import SwiftUI
 import GoogleMobileAds
+import AppTrackingTransparency
 
 /// Manages interstitial ads for the workout app
 /// Ads are shown between sets during the rest timer for FREE users only
@@ -44,6 +45,9 @@ class AdManager: NSObject, ObservableObject {
     private var onAdDismissed: (() -> Void)?
     private var onRewardEarned: (() -> Void)?
     private var isSDKInitialized = false
+    
+    /// Whether ATT authorization has been resolved (granted or denied)
+    private var attResolved = false
     
     /// Tracks whether the currently presenting ad is a rewarded video (vs interstitial)
     private var isShowingRewardedAd = false
@@ -134,16 +138,78 @@ class AdManager: NSObject, ObservableObject {
         }
     }
     
+    /// Request App Tracking Transparency authorization, then initialize AdMob.
+    /// Must be called when the app is in the foreground (UIApplication.shared.applicationState == .active).
+    /// Safe to call multiple times — no-ops once ATT is resolved.
+    func requestTrackingAndInitialize() {
+        guard !attResolved else {
+            if !isSDKInitialized { initializeSDK() }
+            return
+        }
+        
+        guard !PremiumManager.shared.isPremiumUser else {
+            print("📺 [ATT] Premium user, skipping ATT request")
+            attResolved = true
+            return
+        }
+        
+        guard adsEnabled else {
+            print("📺 [ATT] Ads disabled, skipping ATT request")
+            attResolved = true
+            return
+        }
+        
+        let status = ATTrackingManager.trackingAuthorizationStatus
+        
+        switch status {
+        case .notDetermined:
+            print("📺 [ATT] Requesting tracking authorization...")
+            ATTrackingManager.requestTrackingAuthorization { [weak self] authStatus in
+                DispatchQueue.main.async {
+                    self?.attResolved = true
+                    switch authStatus {
+                    case .authorized:
+                        print("📺 [ATT] Tracking authorized — initializing SDK with personalized ads")
+                    case .denied:
+                        print("📺 [ATT] Tracking denied — initializing SDK with limited ads")
+                    case .restricted:
+                        print("📺 [ATT] Tracking restricted — initializing SDK with limited ads")
+                    case .notDetermined:
+                        print("📺 [ATT] Status still not determined")
+                    @unknown default:
+                        print("📺 [ATT] Unknown status: \(authStatus.rawValue)")
+                    }
+                    self?.initializeSDK()
+                }
+            }
+        case .authorized:
+            print("📺 [ATT] Already authorized")
+            attResolved = true
+            initializeSDK()
+        case .denied, .restricted:
+            print("📺 [ATT] Already denied/restricted — will show limited ads")
+            attResolved = true
+            initializeSDK()
+        @unknown default:
+            print("📺 [ATT] Unknown ATT status: \(status.rawValue)")
+            attResolved = true
+            initializeSDK()
+        }
+    }
+    
     /// Prepare ads before they're needed (call when user is about to start a workout)
     /// This gives the SDK time to initialize and load an ad in the background
     func prepareForWorkout() {
-        // Premium users don't need ads
         guard !PremiumManager.shared.isPremiumUser else { return }
         guard adsEnabled else { return }
         
         if !isSDKInitialized {
             print("📺 Preparing ads for workout...")
-            initializeSDK()
+            if attResolved {
+                initializeSDK()
+            } else {
+                requestTrackingAndInitialize()
+            }
         } else if !isAdReady {
             loadInterstitialAd()
         }

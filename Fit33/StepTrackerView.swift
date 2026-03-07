@@ -55,12 +55,12 @@ struct StepTrackerCard: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
                 .padding(.bottom, 12)
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Main content
                 VStack(spacing: 12) {
@@ -91,7 +91,7 @@ struct StepTrackerCard: View {
                                     .fontWeight(.semibold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
+                                    .padding(.vertical, Spacing.sm)
                                     .background(
                                         LinearGradient(
                                             colors: [.green, .cyan],
@@ -138,7 +138,7 @@ struct StepTrackerCard: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         
                         // Goal info - floating stats
                         HStack(spacing: 16) {
@@ -180,10 +180,10 @@ struct StepTrackerCard: View {
                             }
                             .frame(maxWidth: .infinity)
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 
                 // Quick stats footer (only show if authorized)
                 if healthKitManager.isAuthorized {
@@ -219,8 +219,8 @@ struct StepTrackerCard: View {
                         }
                         .foregroundColor(.blue)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
                     .background(Color(.systemGray6))
                 }
             }
@@ -449,13 +449,13 @@ struct StepTrackerDetailView: View {
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(Color.blue.opacity(0.15))
             .cornerRadius(10)
         }
         .padding(24)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
     
@@ -485,7 +485,7 @@ struct StepTrackerDetailView: View {
             }
         }
         .padding(20)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
     
@@ -527,7 +527,7 @@ struct StepTrackerDetailView: View {
             }
         }
         .padding(20)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
 }
@@ -584,7 +584,7 @@ struct WeeklyStepChart: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     private func dayLabel(for date: Date) -> String {
@@ -680,13 +680,13 @@ struct StepGoalEditorView: View {
                                         .font(.caption)
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(selectedPreset == goal ? Color.blue.opacity(0.15) : Color(.systemGray6))
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .stroke(selectedPreset == goal ? Color.blue : Color.clear, lineWidth: 2)
                                 )
                             }

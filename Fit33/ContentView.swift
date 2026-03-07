@@ -118,6 +118,33 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showWelcomeTutorial) {
             WelcomeTutorialView(isPresented: $showWelcomeTutorial)
         }
+        .overlay(alignment: .top) {
+            if BadgeService.shared.showUnlockToast,
+               let achievement = BadgeService.shared.lastUnlockedAchievement {
+                AchievementUnlockToast(achievement: achievement)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(998)
+                    .padding(.top, 50)
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: BadgeService.shared.showUnlockToast)
+        .overlay {
+            if userManager.showLevelUpCelebration {
+                LevelUpCelebrationOverlay(
+                    level: userManager.newLevelReached,
+                    levelTitle: userManager.getLevelTitle(),
+                    levelIcon: userManager.getLevelIcon(),
+                    levelColor: userManager.getLevelColor()
+                ) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        userManager.showLevelUpCelebration = false
+                    }
+                }
+                .transition(.opacity.combined(with: .scale))
+                .zIndex(999)
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: userManager.showLevelUpCelebration)
         .onChange(of: userManager.hasCompletedOnboarding) { oldValue, newValue in
             print("🎓 [TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))")
             
@@ -440,7 +467,11 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
+            OfflineBanner()
+                .animation(.easeInOut(duration: 0.3), value: NetworkMonitor.shared.isConnected)
+            
+            ZStack(alignment: .bottom) {
             // ⚡️ INSTANT TAB SWITCHING: All tabs preloaded for zero-lag transitions
             TabView(selection: $selectedTab) {
                 // Tab 0: Dashboard (always loaded - primary tab)
@@ -452,6 +483,7 @@ struct MainTabView: View {
                         } icon: {
                             Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
                         }
+                        .accessibilityLabel("Home tab")
                     }
                     .tag(0)
                     .badge(badgeCounter.count)
@@ -467,6 +499,7 @@ struct MainTabView: View {
                     } icon: {
                         Image(systemName: selectedTab == 1 ? tabs[1].selectedIcon : tabs[1].icon)
                     }
+                    .accessibilityLabel("Exercises tab")
                 }
                 .tag(1)
                 
@@ -485,12 +518,14 @@ struct MainTabView: View {
                                 .withTintColor(.red, renderingMode: .alwaysOriginal))
                         }
                         .foregroundColor(.red)
+                        .accessibilityLabel("Workout tab")
                     } else {
                         Label {
                             Text(tabs[2].title)
                         } icon: {
                             Image(systemName: selectedTab == 2 ? tabs[2].selectedIcon : tabs[2].icon)
                         }
+                        .accessibilityLabel("Workout tab")
                     }
                 }
                 .tag(2)
@@ -506,6 +541,7 @@ struct MainTabView: View {
                     } icon: {
                         Image(systemName: selectedTab == 3 ? tabs[3].selectedIcon : tabs[3].icon)
                     }
+                    .accessibilityLabel("Nutrition tab")
                 }
                 .tag(3)
                 
@@ -522,6 +558,7 @@ struct MainTabView: View {
                     } icon: {
                         Image(systemName: selectedTab == 4 ? tabs[4].selectedIcon : tabs[4].icon)
                     }
+                    .accessibilityLabel("Friends tab")
                 }
                 .tag(4)
             }
@@ -723,6 +760,7 @@ struct MainTabView: View {
             // GO! Button overlay - isolated view that observes its own state
             GoButtonOverlay()
         }
+        } // end VStack (offline banner + tab content)
         // Shared Workout Sheet - shows when user opens a shared workout link
         .sheet(isPresented: $deepLinkManager.showSharedWorkoutSheet) {
             if let workoutId = deepLinkManager.pendingSharedWorkoutId {
@@ -1111,7 +1149,7 @@ struct SimpleMealPlanView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 8)
                     .padding(.bottom, 20)
                 }
@@ -1233,7 +1271,7 @@ struct SimpleMealPlanView: View {
     private var customNutritionHeaderView: some View {
         HStack {
             Text("Nutrition")
-                .font(.system(size: 42, weight: .bold))
+                .font(.ds_displayLarge)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.teal, Color.teal, Color.mint.opacity(0.8)],
@@ -1253,7 +1291,7 @@ struct SimpleMealPlanView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(.ultraThinMaterial)
                     )
             }
@@ -1370,7 +1408,7 @@ struct SimpleMealPlanView: View {
             .fontWeight(.bold)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     gradient: Gradient(colors: [Color.green, Color.mint]),
@@ -1378,11 +1416,11 @@ struct SimpleMealPlanView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .padding(32)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
@@ -1418,7 +1456,7 @@ struct SimpleMealPlanView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
@@ -1571,6 +1609,10 @@ struct SimpleMealPlanView: View {
     // MARK: - Main Comprehensive Nutrition View
     private var comprehensiveNutritionView: some View {
         VStack(spacing: 16) {
+            // 0. "What Should I Eat?" contextual card
+            WhatToEatDashboardCard()
+                .padding(.horizontal, Spacing.md)
+            
             // 1. Today's Macros + Weekly Progress (swipeable cards)
             nutritionSwipeableCards
             
@@ -1689,7 +1731,7 @@ struct SimpleMealPlanView: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
@@ -1744,7 +1786,7 @@ struct SimpleMealPlanView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
             ZStack {
                 if isCurrentMealTime {
@@ -1762,7 +1804,7 @@ struct SimpleMealPlanView: View {
                 
                 // Main card background
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 
                 if isCurrentMealTime {
                     // Inner highlight (top edge glow)
@@ -2138,7 +2180,7 @@ struct SimpleMealPlanView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .frame(maxHeight: .infinity)
     }
     
@@ -2320,7 +2362,7 @@ struct SimpleMealPlanView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -2387,8 +2429,8 @@ struct SimpleMealPlanView: View {
             WeeklyProgressRow(title: "Fat Goals Met", daysCompleted: weeklyFatDaysMet, totalDays: 7, color: .purple)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             ZStack {
@@ -2948,12 +2990,12 @@ struct SmartDailySummaryWidget: View {
                         .fill(scoreColor.opacity(0.15))
                 )
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 16)
             .padding(.bottom, 12)
             
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             // What's Going Well
             if !positiveInsights.isEmpty {
@@ -2972,14 +3014,14 @@ struct SmartDailySummaryWidget: View {
                         InsightRow(insight: insight)
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
             
             // Opportunities
             if !improvementSuggestions.isEmpty {
                 if !positiveInsights.isEmpty {
                     Divider()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                 }
                 
                 VStack(alignment: .leading, spacing: 10) {
@@ -2997,12 +3039,12 @@ struct SmartDailySummaryWidget: View {
                         InsightRow(insight: insight)
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
             
             // Quick Stats Row
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             HStack(spacing: 0) {
                 QuickInsightStat(
@@ -3049,14 +3091,14 @@ struct SmartDailySummaryWidget: View {
             
             // Daily Tip
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             Text(dailyTip)
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
         }
         .background(
             RoundedRectangle(cornerRadius: 20)
@@ -3115,14 +3157,14 @@ struct QuickInsightStat: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(color)
                 Text(value)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -3162,10 +3204,10 @@ struct SimpleNutritionCard: View {
                 .scaleEffect(x: 1, y: 0.5)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 8)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(color.opacity(0.05))
         )
     }
@@ -3200,10 +3242,10 @@ struct SimpleMealSection: View {
                     .font(.title3)
                     .foregroundColor(.blue)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -3280,7 +3322,7 @@ struct SwipeableMealCard: View {
                                 .font(.caption2)
                                 .fontWeight(.heavy)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 3)
                                 .background(
                                     Capsule()
@@ -3306,7 +3348,7 @@ struct SwipeableMealCard: View {
                 if !meals.isEmpty {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(totalCalories)")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .font(.ds_stat)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: gradientColors,
@@ -3320,7 +3362,7 @@ struct SwipeableMealCard: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 16)
             .padding(.bottom, 12)
             
@@ -3334,7 +3376,7 @@ struct SwipeableMealCard: View {
                     )
                 )
                 .frame(height: 1)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
             
             // Content area - either items summary or add prompt
             HStack(spacing: 16) {
@@ -3348,7 +3390,7 @@ struct SwipeableMealCard: View {
                         )
                     )
                     .frame(width: 4)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                 
                 if meals.isEmpty {
                     // Empty state - prompt to add
@@ -3374,7 +3416,7 @@ struct SwipeableMealCard: View {
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.vertical, 10)
                         .background(
                             Capsule()
@@ -3422,8 +3464,8 @@ struct SwipeableMealCard: View {
                     .buttonStyle(PlainButtonStyle())
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
         }
         .background(
             ZStack {
@@ -3439,7 +3481,7 @@ struct SwipeableMealCard: View {
                     .offset(y: 3)
                 
                 // Main card background
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -3451,7 +3493,7 @@ struct SwipeableMealCard: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -3464,7 +3506,7 @@ struct SwipeableMealCard: View {
                     )
                 
                 // Accent border
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -3499,7 +3541,7 @@ struct MacroPill: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 4)
         .background(
             Capsule()
@@ -3611,7 +3653,7 @@ struct MealRowCard: View {
                             .shadow(color: gradientColors[0].opacity(0.25), radius: 4, x: 0, y: 2)
                         
                         Image(systemName: mealIcon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white)
                     }
                     
@@ -3675,8 +3717,8 @@ struct MealRowCard: View {
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     ZStack {
                         // Bottom shadow layer (deepest) - meal colored (subtle)
@@ -3695,7 +3737,7 @@ struct MealRowCard: View {
                             .fill(
                                 LinearGradient(
                                     colors: colorScheme == .dark 
-                                        ? [Color(white: 0.15), Color(white: 0.12)]
+                                        ? [Color(white: 0.15), Color.cardBackground]
                                         : [Color.white, Color.white.opacity(0.98)],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -3785,7 +3827,7 @@ struct MealRowCard: View {
                     Rectangle()
                         .fill(mealColor.opacity(0.2))
                         .frame(height: 1)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     
                     // Food items list - NO TRUNCATION
                     VStack(spacing: 0) {
@@ -3799,11 +3841,11 @@ struct MealRowCard: View {
                                 Rectangle()
                                     .fill(Color.gray.opacity(0.1))
                                     .frame(height: 1)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                             }
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.xs)
                     
                     // Macros summary row
                     HStack(spacing: 12) {
@@ -3831,7 +3873,7 @@ struct MealRowCard: View {
                         }
                         .buttonStyle(BorderlessButtonStyle())
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(gradientColors[0].opacity(0.05))
                 }
@@ -3845,7 +3887,7 @@ struct MealRowCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -3967,7 +4009,7 @@ struct MacroBadge: View {
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 4)
         .background(color.opacity(0.1))
         .clipShape(Capsule())
@@ -4029,7 +4071,7 @@ struct SimpleProfileSetupView: View {
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     gradient: Gradient(colors: [Color.green, Color.mint]),
@@ -4037,7 +4079,7 @@ struct SimpleProfileSetupView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .cornerRadius(12)
+                            .cornerRadius(CornerRadius.md)
                     }
                     .padding(.horizontal)
                     .disabled(!isFormValid)
@@ -4120,7 +4162,7 @@ struct WorkoutTimerIndicator: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(.ultraThinMaterial)
                 )
         }
@@ -4218,10 +4260,10 @@ struct USDAFoodSearchView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color(.systemGray6))
             )
             .padding(.horizontal)
@@ -4305,10 +4347,10 @@ struct USDAFoodSearchView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color(.systemGray6))
                         )
                     }
@@ -4459,10 +4501,10 @@ struct USDAFoodResultRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
@@ -4569,11 +4611,11 @@ struct NutritionMetricCard: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 120)
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -4631,7 +4673,7 @@ struct NutritionInsightCard: View {
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(insight.color)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 2)
                         .background(insight.color.opacity(0.1))
                         .cornerRadius(4)
@@ -4658,11 +4700,11 @@ struct NutritionInsightCard: View {
             Spacer()
         }
         .frame(height: 100)
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -4886,11 +4928,11 @@ struct SummaryMetricCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: 100)
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(Color.white.opacity(0.01), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
@@ -5022,7 +5064,7 @@ struct MiniInsightTile: View {
             
             // Title
             Text(title)
-                .font(.system(size: 10, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -5126,7 +5168,7 @@ struct WorkingNutritionInsightCard: View {
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(insight.color)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 2)
                         .background(insight.color.opacity(0.1))
                         .cornerRadius(4)
@@ -5154,9 +5196,9 @@ struct WorkingNutritionInsightCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 100)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(Color.white)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )
@@ -5200,9 +5242,9 @@ struct WorkingSummaryMetricCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 100)
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(Color.white)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )
@@ -5389,7 +5431,7 @@ struct MacroExplainerCard: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
 }
 

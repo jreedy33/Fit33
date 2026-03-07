@@ -145,7 +145,7 @@ struct SmartExerciseSwapView: View {
             HStack(spacing: 16) {
                 // Icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(categoryColor.opacity(0.2))
                         .frame(width: 60, height: 60)
                     
@@ -169,7 +169,7 @@ struct SmartExerciseSwapView: View {
                             Text(family.replacingOccurrences(of: "_", with: " ").capitalized)
                                 .font(.caption2)
                                 .foregroundColor(categoryColor)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(categoryColor.opacity(0.15)))
                         }
@@ -184,13 +184,13 @@ struct SmartExerciseSwapView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             
             // Arrow
@@ -249,17 +249,17 @@ struct SmartExerciseSwapView: View {
                         }
                         .font(.subheadline)
                         .foregroundColor(.blue)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                         .frame(maxWidth: .infinity)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 }
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .padding(.bottom, 80)
         }
     }
@@ -288,11 +288,11 @@ struct SmartExerciseSwapView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.secondary.opacity(0.1)))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             
             // Suggestions
             VStack(spacing: 10) {
@@ -300,7 +300,7 @@ struct SmartExerciseSwapView: View {
                     swapSuggestionCard(suggestion)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
         }
     }
     
@@ -382,7 +382,7 @@ struct SmartExerciseSwapView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(Color.cardBackground)

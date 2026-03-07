@@ -35,6 +35,12 @@ extension Font {
     static let ds_labelMedium = Font.system(size: 13, weight: .semibold)
     static let ds_labelSmall  = Font.system(size: 11, weight: .medium)
     
+    // Body extended
+    static let ds_bodyRegular = Font.system(size: 16, weight: .regular)
+    
+    // Caption
+    static let ds_caption = Font.system(size: 10, weight: .medium)
+    
     // Mono / Stats
     static let ds_stat = Font.system(size: 24, weight: .bold, design: .rounded)
     static let ds_statSmall = Font.system(size: 18, weight: .bold, design: .rounded)
@@ -156,5 +162,112 @@ struct DSPillButton: View {
             .padding(.vertical, Spacing.xs)
             .background(Capsule().fill(gradient))
         }
+    }
+}
+
+// MARK: - Primary CTA Button
+
+/// Full-width gradient CTA button for primary actions.
+struct DSPrimaryButton: View {
+    let title: String
+    var icon: String? = nil
+    var gradient: LinearGradient = .ds_primaryAccent
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            action()
+        }) {
+            HStack(spacing: Spacing.xs) {
+                Text(title)
+                    .font(.ds_labelLarge)
+                    .fontWeight(.bold)
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.ds_labelMedium)
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(gradient)
+            )
+        }
+        .scaleButtonStyle(.standard, withHaptic: false)
+    }
+}
+
+// MARK: - Secondary / Outline Button
+
+/// Bordered outline button for secondary actions.
+struct DSSecondaryButton: View {
+    let title: String
+    var icon: String? = nil
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            action()
+        }) {
+            HStack(spacing: Spacing.xs) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.ds_labelMedium)
+                }
+                Text(title)
+                    .font(.ds_labelMedium)
+            }
+            .foregroundColor(.primary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .scaleButtonStyle(.standard, withHaptic: false)
+    }
+}
+
+// MARK: - Empty State
+
+/// Reusable empty state view with optional CTA.
+struct DSEmptyState: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    var actionTitle: String? = nil
+    var actionIcon: String? = nil
+    var action: (() -> Void)? = nil
+    
+    var body: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: icon)
+                .font(.ds_heading1)
+                .foregroundColor(.secondary)
+            
+            Text(title)
+                .font(.ds_heading3)
+                .foregroundColor(.primary)
+            
+            Text(subtitle)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            if let actionTitle, let action {
+                DSPillButton(
+                    title: actionTitle,
+                    icon: actionIcon ?? "arrow.right",
+                    gradient: .ds_primaryAccent,
+                    action: action
+                )
+            }
+        }
+        .padding(Spacing.lg)
     }
 }

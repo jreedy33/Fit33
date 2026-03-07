@@ -80,7 +80,7 @@ struct ProgramAuditView: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
             )
             
@@ -100,7 +100,7 @@ struct ProgramAuditView: View {
                 .background(
                     LinearGradient(colors: [.green, .teal], startPoint: .leading, endPoint: .trailing)
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
         .padding()
@@ -137,7 +137,7 @@ struct ProgramAuditView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
         )
     }
@@ -212,13 +212,13 @@ struct ProgramAuditView: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .fill(colorScheme == .dark ? Color(white: 0.1) : Color(.systemGray6))
             )
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
         )
     }
@@ -239,7 +239,7 @@ struct ProgramAuditView: View {
         .frame(maxWidth: .infinity)
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: CornerRadius.sm)
                 .fill(colorScheme == .dark ? Color(white: 0.1) : Color(.systemGray6))
         )
     }
@@ -281,7 +281,7 @@ struct ProgramAuditView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
         )
     }
@@ -312,7 +312,7 @@ struct ProgramAuditView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
         )
     }
@@ -382,7 +382,7 @@ struct ProgramAuditView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
         )
     }

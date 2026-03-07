@@ -100,7 +100,7 @@ struct SharedWorkoutPreviewView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
     }
     
     // MARK: - Workout Card
@@ -213,8 +213,8 @@ struct SharedWorkoutPreviewView: View {
                         
                         Spacer()
                     }
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 16)
+                    .padding(.vertical, Spacing.sm)
+                    .padding(.horizontal, Spacing.md)
                     
                     if index < exercises.count - 1 {
                         Divider().padding(.leading, 60)
@@ -222,7 +222,7 @@ struct SharedWorkoutPreviewView: View {
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
@@ -248,9 +248,9 @@ struct SharedWorkoutPreviewView: View {
                     .font(.subheadline)
                     .foregroundColor(.primary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
@@ -275,7 +275,7 @@ struct SharedWorkoutPreviewView: View {
             .font(.headline)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: isSending ? [Color.gray] : [Color.blue, Color.purple.opacity(0.8)],
@@ -283,7 +283,7 @@ struct SharedWorkoutPreviewView: View {
                     endPoint: .trailing
                 )
             )
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
             .shadow(color: isSending ? .clear : .blue.opacity(0.3), radius: 10, x: 0, y: 5)
         }
         .disabled(isSending)

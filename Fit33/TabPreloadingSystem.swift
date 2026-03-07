@@ -903,7 +903,7 @@ struct PreloadProgressIndicator: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial)
             .cornerRadius(20)

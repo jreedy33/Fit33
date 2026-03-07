@@ -71,7 +71,7 @@ struct FavoriteRoutinesView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.top, 16)
                     .padding(.bottom, 100)
                 }
@@ -391,7 +391,7 @@ struct FavoriteWorkoutCard: View {
                     }
                     
                     Divider()
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                     
                     // Bottom section - Stats
                     HStack(spacing: 0) {
@@ -480,7 +480,7 @@ struct FavoriteWorkoutCard: View {
                                     .font(.caption2)
                                     .fontWeight(.medium)
                                     .foregroundColor(workoutGradient[0])
-                                    .padding(.horizontal, 8)
+                                    .padding(.horizontal, Spacing.xs)
                                     .padding(.vertical, 4)
                                     .background(
                                         Capsule()
@@ -492,7 +492,7 @@ struct FavoriteWorkoutCard: View {
                         .padding(.top, 12)
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -500,7 +500,7 @@ struct FavoriteWorkoutCard: View {
             if isExpanded && !workoutExercises.isEmpty {
                 VStack(spacing: 0) {
                     Divider()
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                     
                     // Exercise list - matching ExerciseLibrary card style
                     VStack(spacing: 10) {
@@ -528,8 +528,8 @@ struct FavoriteWorkoutCard: View {
                                 .padding(.top, 4)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.sm)
                     
                     // Start Routine button
                     Button(action: {
@@ -559,7 +559,7 @@ struct FavoriteWorkoutCard: View {
                         .shadow(color: workoutGradient[0].opacity(0.4), radius: 8, x: 0, y: 4)
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.bottom, 16)
                 }
             }
@@ -582,7 +582,7 @@ struct FavoriteWorkoutCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.95)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -735,7 +735,7 @@ struct FavoriteExerciseCard: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(categoryColor)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
@@ -743,8 +743,8 @@ struct FavoriteExerciseCard: View {
                     )
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - category colored (subtle)
@@ -763,7 +763,7 @@ struct FavoriteExerciseCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom
@@ -922,7 +922,7 @@ struct FavoriteExerciseFallbackCard: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(categoryColor)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
@@ -930,8 +930,8 @@ struct FavoriteExerciseFallbackCard: View {
                     )
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
             ZStack {
                 // Bottom shadow layer
@@ -950,7 +950,7 @@ struct FavoriteExerciseFallbackCard: View {
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.12)]
+                                ? [Color(white: 0.15), Color.cardBackground]
                                 : [Color.white, Color.white.opacity(0.98)],
                             startPoint: .top,
                             endPoint: .bottom

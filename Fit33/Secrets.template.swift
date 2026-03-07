@@ -16,16 +16,25 @@ import Foundation
 
 enum Secrets {
     
+    // MARK: - Supabase
+    static let supabaseURL = "<SUPABASE_PROJECT_URL>"       // e.g. https://xxxxx.supabase.co
+    static let supabaseAnonKey = "<SUPABASE_ANON_KEY>"       // JWT anon key from Supabase dashboard
+    
     // MARK: - Recipe / Nutrition API
     static let spoonacularApiKey = "<SPOONACULAR_API_KEY>"
     
     // MARK: - Strava OAuth
+    static let stravaClientId = "<STRAVA_CLIENT_ID>"
     static let stravaClientSecret = "<STRAVA_CLIENT_SECRET>"
     
     // MARK: - Fitbit OAuth
+    static let fitbitClientId = "<FITBIT_CLIENT_ID>"
     static let fitbitClientSecret = "<FITBIT_CLIENT_SECRET>"
     
     // MARK: - InBody OAuth
     static let inbodyClientId = "<INBODY_CLIENT_ID>"
     static let inbodyClientSecret = "<INBODY_CLIENT_SECRET>"
+    
+    // MARK: - Dev Menu (Debug Only)
+    static let devMenuPassword = "<DEV_MENU_PASSWORD>"
 }

@@ -77,6 +77,7 @@ struct Fit33App: App {
     
     let persistenceController = PersistenceController.shared
     let premiumManager = PremiumManager.shared
+    @StateObject private var storeKitManager = StoreKitManager.shared
     @StateObject private var supabaseManager = SupabaseManager.shared
     @StateObject private var appearanceManager = AppearanceManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
@@ -254,14 +255,19 @@ struct Fit33App: App {
             print("⚠️ Memory warning - cleared video prefetch cache")
         }
         
-        // 📺 Pre-warm AdMob SDK after a short delay (doesn't block UI)
-        // This gives ads more time to load before user starts a workout
+        // 📺 ATT + AdMob: Request tracking authorization then init SDK.
+        // ATT dialog requires the app to be active, so we delay slightly
+        // and check applicationState before presenting.
         #if DEBUG
         if !FAST_STARTUP_MODE {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                guard UIApplication.shared.applicationState == .active else {
+                    print("📺 App not active yet, deferring ATT request")
+                    return
+                }
                 if AdManager.shared.adsEnabled {
-                    print("📺 Pre-warming AdMob SDK...")
-                    AdManager.shared.prepareForWorkout()
+                    print("📺 Requesting ATT and pre-warming AdMob SDK...")
+                    AdManager.shared.requestTrackingAndInitialize()
                 }
             }
         } else {
@@ -269,9 +275,13 @@ struct Fit33App: App {
         }
         #else
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            guard UIApplication.shared.applicationState == .active else {
+                print("📺 App not active yet, deferring ATT request")
+                return
+            }
             if AdManager.shared.adsEnabled {
-                print("📺 Pre-warming AdMob SDK...")
-                AdManager.shared.prepareForWorkout()
+                print("📺 Requesting ATT and pre-warming AdMob SDK...")
+                AdManager.shared.requestTrackingAndInitialize()
             }
         }
         #endif

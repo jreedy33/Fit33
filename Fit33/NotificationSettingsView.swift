@@ -163,7 +163,7 @@ struct NotificationSettingsView: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
                         colors: [Color.orange, Color.red],
@@ -171,15 +171,15 @@ struct NotificationSettingsView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(12)
+                .cornerRadius(CornerRadius.md)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(Color.red.opacity(0.3), lineWidth: 1)
                 )
         )
@@ -226,7 +226,7 @@ struct NotificationSettingsView: View {
                         .labelsHidden()
                         .tint(.green)
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
         }
     }
@@ -263,7 +263,7 @@ struct NotificationSettingsView: View {
                     .labelsHidden()
                     .tint(.blue)
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 // Time Picker (only show if daily reminder is enabled)
                 if notificationManager.isNotificationEnabled(.dailyWorkoutReminder) {
@@ -291,7 +291,7 @@ struct NotificationSettingsView: View {
                         .labelsHidden()
                         .tint(.orange)
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                 }
             }
         }
@@ -344,7 +344,7 @@ struct NotificationSettingsView: View {
                             .foregroundColor(.secondary)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -394,8 +394,8 @@ struct NotificationSettingsView: View {
             .labelsHidden()
             .tint(type.color)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Quiet Hours
@@ -427,7 +427,7 @@ struct NotificationSettingsView: View {
                         .labelsHidden()
                         .tint(.purple)
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 
                 if notificationManager.quietHoursEnabled {
                     Divider()
@@ -453,7 +453,7 @@ struct NotificationSettingsView: View {
                         )
                         .labelsHidden()
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     
                     Divider()
                         .padding(.leading, 52)
@@ -478,7 +478,7 @@ struct NotificationSettingsView: View {
                         )
                         .labelsHidden()
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                 }
             }
         }
@@ -534,7 +534,7 @@ struct NotificationSettingsView: View {
                     notificationManager.sendStepsGoalAchieved(steps: 10000)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
     }
     
@@ -557,7 +557,7 @@ struct NotificationSettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 10)
@@ -580,7 +580,7 @@ struct NotificationSettingsView: View {
             
             content()
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.cardBackground)
                         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 10, x: 0, y: 4)
                 )
@@ -598,7 +598,7 @@ struct NotificationPreviewCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(type.color.opacity(0.15))
                         .frame(width: 36, height: 36)
                     
@@ -633,9 +633,9 @@ struct NotificationPreviewCard: View {
                 .foregroundColor(.secondary)
                 .lineLimit(2)
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
         )

@@ -75,7 +75,7 @@ struct ProgramExplorerView: View {
                 // Program grid
                 programGrid
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.bottom, 100)
         }
         .background(
@@ -134,7 +134,7 @@ struct ProgramExplorerView: View {
                     Image(systemName: "slider.horizontal.3")
                         .font(.title2)
                         .foregroundColor(.primary)
-                        .padding(12)
+                        .padding(Spacing.sm)
                         .background(
                             Circle()
                                 .fill(.ultraThinMaterial)
@@ -168,10 +168,10 @@ struct ProgramExplorerView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         )
@@ -340,7 +340,7 @@ struct ProgramFilterPill: View {
                     .fontWeight(.medium)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
             .background(
                 Capsule()
                     .fill(isSelected ? color : Color(.systemGray5))
@@ -384,7 +384,7 @@ struct ProgramRecommendedCard: View {
                             .font(.caption2)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(Capsule().fill(.orange))
                     }
@@ -411,7 +411,7 @@ struct ProgramRecommendedCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .frame(width: 200)
             .background(Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -432,7 +432,7 @@ struct ProgramTile: View {
             VStack(alignment: .leading, spacing: 10) {
                 // Gradient header with icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(
                             LinearGradient(
                                 colors: program.gradientSwiftUIColors,
@@ -469,7 +469,7 @@ struct ProgramTile: View {
                         }
                         Spacer()
                     }
-                    .padding(8)
+                    .padding(Spacing.xs)
                 }
                 
                 // Content
@@ -671,9 +671,9 @@ struct ProgramDetailFullView: View {
             Divider().frame(height: 40)
             StatItem(icon: program.location.icon, value: program.location.rawValue, label: "Location", isSmall: true)
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
     
@@ -730,7 +730,7 @@ struct ProgramDetailFullView: View {
                     Text(item)
                         .font(.caption)
                         .fontWeight(.medium)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, 6)
                         .background(Color(.systemGray5))
                         .clipShape(Capsule())
@@ -751,10 +751,10 @@ struct ProgramDetailFullView: View {
             Text(program.preview)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-                .padding(16)
+                .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(program.gradientSwiftUIColors.first?.opacity(0.1) ?? Color.blue.opacity(0.1))
                 )
         }
@@ -820,7 +820,7 @@ struct ProgramDetailFullView: View {
                 .font(.headline)
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(Color(.systemGray5))
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             }
@@ -835,7 +835,7 @@ struct ProgramDetailFullView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: program.gradientSwiftUIColors,
@@ -847,7 +847,7 @@ struct ProgramDetailFullView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
     }
     
@@ -1030,10 +1030,10 @@ struct CustomizeProgramView: View {
                                     .font(.caption)
                             }
                             .foregroundColor(selectedDuration == duration ? .white : .primary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(selectedDuration == duration ? Color.green : Color(.systemGray5))
                             )
                         }
@@ -1085,9 +1085,9 @@ struct CustomizeProgramView: View {
                         }
                         .foregroundColor(selectedLocation == location ? .white : .primary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(selectedLocation == location ? Color.green : Color(.systemGray5))
                         )
                     }
@@ -1136,8 +1136,8 @@ struct CustomizeProgramView: View {
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(selectedEquipment.contains(equipment) ? .white : .primary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xs)
                             .background(
                                 Capsule()
                                     .fill(selectedEquipment.contains(equipment) ? Color.green : Color(.systemGray5))
@@ -1157,9 +1157,9 @@ struct CustomizeProgramView: View {
             Toggle("Include Deload Weeks", isOn: $includeDeloadWeeks)
                 .tint(.green)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
     }
     
     private var createProgramButton: some View {
@@ -1174,7 +1174,7 @@ struct CustomizeProgramView: View {
             .fontWeight(.bold)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [.green, .mint],
@@ -1185,7 +1185,7 @@ struct CustomizeProgramView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
         .background(
             NavigationLink(
@@ -1395,7 +1395,7 @@ struct AdvancedProgramFiltersView: View {
             .fontWeight(.bold)
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 LinearGradient(
                     colors: [.green, .mint],
@@ -1406,7 +1406,7 @@ struct AdvancedProgramFiltersView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
     }
     
@@ -1462,7 +1462,7 @@ struct FilterChip: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? color : Color(.systemGray5))
             )
             .foregroundColor(isSelected ? .white : .primary)

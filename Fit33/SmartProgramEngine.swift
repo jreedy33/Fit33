@@ -642,9 +642,11 @@ class SmartProgramEngine: ObservableObject {
             // Calculate match score based on user's goal alignment
             var matchScore = 0.5
             
-            // Goal alignment
-            if (newTemplate.goalTrack == .gain && (userGoal.contains("muscle") || userGoal.contains("strong") || userGoal.contains("mass") || userGoal.contains("size"))) ||
-               (newTemplate.goalTrack == .lean && (userGoal.contains("lose") || userGoal.contains("lean") || userGoal.contains("cut") || userGoal.contains("fat") || userGoal.contains("tone"))) {
+            // Goal alignment with expanded keyword matching
+            let gainKeywords = ["muscle", "strong", "strength", "mass", "size", "bulk", "gain", "build", "power", "hypertrophy"]
+            let leanKeywords = ["lose", "lean", "cut", "fat", "tone", "slim", "shred", "weight loss", "deficit", "burn"]
+            if (newTemplate.goalTrack == .gain && gainKeywords.contains(where: { userGoal.contains($0) })) ||
+               (newTemplate.goalTrack == .lean && leanKeywords.contains(where: { userGoal.contains($0) })) {
                 matchScore += 0.35
             }
             
@@ -753,7 +755,7 @@ class SmartProgramEngine: ObservableObject {
             restDayPattern: template.weeklySchedule.enumerated().compactMap { $0.element.isRestDay ? $0.offset + 1 : nil },
             dayTemplates: dayTemplates,
             goalAlignment: goalAlignment,
-            equipmentRequirements: [],  // Determined at generation time from user profile
+            equipmentRequirements: inferEquipmentRequirements(from: template),
             minExperienceLevel: template.difficulty
         )
     }
@@ -1497,7 +1499,7 @@ class SmartProgramEngine: ObservableObject {
         // Get user stats
         let userWeight = Double(user.weight)
         let userLevel = user.experienceLevel?.lowercased() ?? "intermediate"
-        let userGender = user.gender?.lowercased() ?? "male"
+        let userGender = user.gender?.lowercased() ?? "neutral"
         let userStrength = user.strengthLevel?.lowercased() ?? "moderate"
         let userGoal = user.fitnessGoal?.lowercased() ?? ""
         
@@ -2125,14 +2127,31 @@ class SmartProgramEngine: ObservableObject {
     
     // MARK: - Helpers
     
+    private func inferEquipmentRequirements(from template: MasterProgramTemplate) -> [String] {
+        let tags = Set(template.tags.map { $0.lowercased() })
+        var equipment: [String] = ["Dumbbells"]
+        
+        if tags.contains("strength") || tags.contains("hypertrophy") || tags.contains("bodybuilding") {
+            equipment.append(contentsOf: ["Barbell", "Bench"])
+        }
+        if tags.contains("supersets") || template.daysPerWeek >= 4 {
+            equipment.append("Cables")
+        }
+        if tags.contains("periodized") || tags.contains("premium") {
+            equipment.append(contentsOf: ["Machines", "Barbell", "Bench"])
+        }
+        
+        return Array(Set(equipment))
+    }
+    
     private func parseEquipment(_ equipment: NSObject?) -> [String] {
-        if let array = equipment as? [String] {
+        if let array = equipment as? [String], !array.isEmpty {
             return array
         }
-        if let string = equipment as? String {
+        if let string = equipment as? String, !string.isEmpty {
             return string.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         }
-        return ["Bodyweight"]
+        return []
     }
 }
 

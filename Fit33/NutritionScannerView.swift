@@ -107,8 +107,8 @@ struct NutritionScannerView: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(white: 0.12))
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(Color.cardBackground)
             )
             
             Spacer()
@@ -126,7 +126,7 @@ struct NutritionScannerView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color.blue)
                 )
             }
@@ -142,7 +142,7 @@ struct NutritionScannerView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(maxHeight: 300)
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
             
             VStack(spacing: 16) {
@@ -690,10 +690,10 @@ struct NutritionEditorView: View {
                                 .foregroundColor(.white)
                             
                             TextField("Enter food name", text: $nutrition.foodName)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .padding(.vertical, 14)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(Color(white: 0.15))
                                 )
                                 .foregroundColor(.white)
@@ -706,10 +706,10 @@ struct NutritionEditorView: View {
                                 .foregroundColor(.white)
                             
                             TextField("e.g., 1 cup, 100g", text: $nutrition.servingSize)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .padding(.vertical, 14)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(Color(white: 0.15))
                                 )
                                 .foregroundColor(.white)
@@ -756,7 +756,7 @@ struct NutritionEditorView: View {
                             }
                             .padding()
                             .background(
-                                RoundedRectangle(cornerRadius: 16)
+                                RoundedRectangle(cornerRadius: CornerRadius.lg)
                                     .fill(Color(white: 0.15))
                             )
                             
@@ -788,7 +788,7 @@ struct NutritionEditorView: View {
                         }
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .fill(Color.blue.opacity(0.1))
                         )
                         
@@ -801,10 +801,10 @@ struct NutritionEditorView: View {
                                 
                                 TextField("e.g., 2", text: $nutrition.servingsPerContainer)
                                     .keyboardType(.decimalPad)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Spacing.md)
                                     .padding(.vertical, 14)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 12)
+                                        RoundedRectangle(cornerRadius: CornerRadius.md)
                                             .fill(Color(white: 0.15))
                                     )
                                     .foregroundColor(.white)
@@ -858,7 +858,7 @@ struct NutritionEditorView: View {
                             }
                             .padding()
                             .background(
-                                RoundedRectangle(cornerRadius: 16)
+                                RoundedRectangle(cornerRadius: CornerRadius.lg)
                                     .fill(Color.green.opacity(0.15))
                             )
                         }
@@ -1023,8 +1023,8 @@ struct NutritionEditorView: View {
                     }
                     .padding()
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(white: 0.12))
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
+                            .fill(Color.cardBackground)
                     )
                     
                     // Save Button
@@ -1042,7 +1042,7 @@ struct NutritionEditorView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 18)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .fill(nutrition.foodName.isEmpty ? Color.gray : Color.green)
                         )
                     }
@@ -1057,7 +1057,7 @@ struct NutritionEditorView: View {
                             .font(.headline)
                             .foregroundColor(.red)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                     }
                 }
                 .padding()
@@ -1098,7 +1098,7 @@ struct NutritionField: View {
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(color.opacity(0.2))
             )
         }
@@ -1142,10 +1142,10 @@ struct CalculatedNutritionDisplay: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(color.opacity(0.2))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .strokeBorder(color.opacity(0.4), lineWidth: 2)
                     )
             )

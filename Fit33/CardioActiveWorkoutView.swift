@@ -312,9 +312,9 @@ struct CardioActiveWorkoutView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.white.opacity(0.05))
         )
     }
@@ -342,7 +342,7 @@ struct CardioActiveWorkoutView: View {
                 RouteOverlayView(coordinates: locationManager.routeCoordinates, color: activityType.color)
             )
             .frame(height: 200)
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
         }
     }
     
@@ -596,9 +596,9 @@ struct CardioStatCard: View {
                     .foregroundColor(.white.opacity(0.5))
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.white.opacity(0.08))
         )
     }
@@ -627,9 +627,9 @@ struct MiniStatCard: View {
                 .foregroundColor(.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(color.opacity(0.1))
         )
     }
@@ -783,7 +783,7 @@ struct CardioCompletionView: View {
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(activityType.color)
                                 .cornerRadius(14)
                         }
@@ -852,15 +852,15 @@ struct CardioCompletionView: View {
                         .fontWeight(.medium)
                         .foregroundColor(.white)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(Color.yellow.opacity(0.2))
                 )
             }
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
     }
     
     private var statsSummary: some View {
@@ -1084,7 +1084,7 @@ struct SummaryStatBubble: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.white.opacity(0.1))
         )
     }

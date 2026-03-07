@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Middleware runs on every request to protect routes
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public routes
   if (
     pathname === '/login' ||
     pathname.startsWith('/api/auth') ||
@@ -16,14 +14,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // API routes check their own auth via Bearer token
+  // API routes validate the httpOnly cookie in their own handler
   if (pathname.startsWith('/api/')) {
     return NextResponse.next()
   }
 
-  // For page routes, we rely on client-side auth check (sessionStorage)
-  // since middleware can't access sessionStorage.
-  // The AdminShell component handles the redirect if no token.
+  // For page routes, check that the auth cookie exists.
+  // The actual token validation happens in AdminShell via /api/auth/session,
+  // but this prevents unauthenticated users from even loading the page shell.
+  const hasToken = request.cookies.get('admin_access_token')?.value
+  if (!hasToken) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
   return NextResponse.next()
 }
 

@@ -158,7 +158,7 @@ struct ExerciseSubstitutionView: View {
             HStack(spacing: 16) {
                 // Video thumbnail
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(categoryColor.opacity(0.2))
                         .frame(width: 80, height: 80)
                     
@@ -189,7 +189,7 @@ struct ExerciseSubstitutionView: View {
                                     .font(.caption2)
                             }
                             .foregroundColor(categoryColor)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
@@ -206,7 +206,7 @@ struct ExerciseSubstitutionView: View {
                                     .font(.caption2)
                             }
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
@@ -218,12 +218,12 @@ struct ExerciseSubstitutionView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .stroke(
                                 LinearGradient(
                                     colors: [categoryColor.opacity(0.3), Color.clear],
@@ -234,7 +234,7 @@ struct ExerciseSubstitutionView: View {
                             )
                     )
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             
             // Arrow indicator
@@ -267,8 +267,8 @@ struct ExerciseSubstitutionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
         }
     }
     
@@ -289,12 +289,12 @@ struct ExerciseSubstitutionView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(.systemGray6))
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.bottom, 8)
     }
     
@@ -355,7 +355,7 @@ struct ExerciseSubstitutionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.bottom, 100)
         }
     }
@@ -534,7 +534,7 @@ struct FilterPill: View {
             }
             .foregroundColor(isSelected ? .white : .primary)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
             .background(
                 Capsule()
                     .fill(
@@ -570,7 +570,7 @@ struct SubstituteExerciseCard: View {
             HStack(spacing: 14) {
                 // Exercise icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(
                             isSelected
                                 ? LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -600,7 +600,7 @@ struct SubstituteExerciseCard: View {
                                 .font(.caption2)
                         }
                         .foregroundColor(substitute.matchReason.color)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
@@ -612,7 +612,7 @@ struct SubstituteExerciseCard: View {
                             Text(equipment)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
@@ -649,10 +649,10 @@ struct SubstituteExerciseCard: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .stroke(
                                 isSelected
                                     ? LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)

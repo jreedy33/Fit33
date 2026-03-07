@@ -318,7 +318,7 @@ struct StretchModeView: View {
                             .fontWeight(.semibold)
                             .foregroundColor(totalSeconds == seconds ? .black : .white.opacity(0.7))
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, Spacing.xs)
                             .background(
                                 Capsule()
                                     .fill(totalSeconds == seconds ? Color.mint : Color.white.opacity(0.1))
@@ -688,7 +688,7 @@ struct StretchSplashView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: selectedArea != nil ? .teal.opacity(0.3) : .clear, radius: 12, x: 0, y: 6)
             }
             .disabled(selectedArea == nil || isLoading)
@@ -739,11 +739,11 @@ struct StretchAreaCard: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.white.opacity(0.05))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(isSelected ? color.opacity(0.6) : Color.white.opacity(0.1), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: isSelected ? color.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)

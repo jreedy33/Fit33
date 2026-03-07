@@ -308,7 +308,7 @@ struct HydrationWidget: View {
                             .foregroundColor(.white)
                     }
                 }
-                .buttonStyle(ScaleButtonStyle())
+                .scaleButtonStyle(.standard, withHaptic: true)
             }
             
             // Quick add presets - compact row
@@ -324,11 +324,11 @@ struct HydrationWidget: View {
                         }
                     } label: {
                         Text("\(preset.amountMl)ml")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, Spacing.xs)
                             .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
+                            .cornerRadius(CornerRadius.sm)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
@@ -400,9 +400,9 @@ struct HydrationWidget: View {
                         .fill(hydrationStatusColor)
                         .frame(width: 6, height: 6)
                     Text(hydrationStatus)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, 4)
                 .background(hydrationStatusColor.opacity(0.15))
                 .cornerRadius(10)
@@ -446,10 +446,10 @@ struct HydrationWidget: View {
                     
                     HStack(spacing: 4) {
                         Image(systemName: progress >= expectedProgress ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
-                            .font(.system(size: 11))
+                            .font(.ds_labelSmall)
                             .foregroundColor(paceColor)
                         Text(paceStatus)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(paceColor)
                     }
                     
@@ -545,7 +545,7 @@ struct HydrationWidget: View {
                 Text(motivationalEmoji)
                     .font(.system(size: 12))
                 Text(motivationalText)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -796,10 +796,10 @@ struct WaterPresetButton: View {
             }
             .frame(width: 60, height: 60)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color.blue.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                     )
             )
@@ -846,7 +846,7 @@ struct AddWaterSheet: View {
                                 .background(
                                     usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
                                 )
-                                .cornerRadius(8)
+                                .cornerRadius(CornerRadius.sm)
                         }
                         
                         Button(action: {
@@ -863,7 +863,7 @@ struct AddWaterSheet: View {
                                 .background(
                                     !usesOz ? LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
                                 )
-                                .cornerRadius(8)
+                                .cornerRadius(CornerRadius.sm)
                         }
                     }
                     .padding(4)
@@ -887,7 +887,7 @@ struct AddWaterSheet: View {
                                 .multilineTextAlignment(.center)
                                 .frame(height: 60)
                                 .background(Color(.systemGray6))
-                                .cornerRadius(12)
+                                .cornerRadius(CornerRadius.md)
                             
                             Text(usesOz ? "oz" : "ml")
                                 .font(.title2)
@@ -931,7 +931,7 @@ struct AddWaterSheet: View {
                                                     endPoint: .trailing
                                                 )
                                             )
-                                            .cornerRadius(12)
+                                            .cornerRadius(CornerRadius.md)
                                     }
                                 }
                             } else {
@@ -956,7 +956,7 @@ struct AddWaterSheet: View {
                                                     endPoint: .trailing
                                                 )
                                             )
-                                            .cornerRadius(12)
+                                            .cornerRadius(CornerRadius.md)
                                     }
                                 }
                             }
@@ -1096,13 +1096,13 @@ struct WaterIntakeDetailView: View {
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(Color.blue.opacity(0.15))
             .cornerRadius(10)
         }
         .padding(24)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
     
@@ -1181,7 +1181,7 @@ struct WaterIntakeDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(20)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
     
@@ -1233,7 +1233,7 @@ struct WaterIntakeDetailView: View {
             }
         }
         .padding(20)
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(20)
     }
     
@@ -1318,7 +1318,7 @@ struct DetailStatBox: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(Color(white: 0.12))
+        .background(Color.cardBackground)
         .cornerRadius(14)
     }
 }
@@ -1351,7 +1351,7 @@ struct GoalCelebrationOverlay: View {
             }
             .padding(40)
             .background(Color(.systemBackground))
-            .cornerRadius(24)
+            .cornerRadius(CornerRadius.xl)
             .scaleEffect(scale)
             .opacity(opacity)
         }
@@ -1414,7 +1414,7 @@ struct WaterRing: View {
                         .foregroundColor(.green)
                 } else {
                     Text("\(Int(progress * 100))%")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.ds_statSmall)
                         .foregroundColor(.primary)
                 }
             }
@@ -1456,7 +1456,7 @@ struct WeekStatItem: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(Color(.tertiarySystemBackground).opacity(0.5))
         .cornerRadius(10)
     }
@@ -1480,19 +1480,10 @@ struct HydrationBadge: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
             
             Text(title)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Scale Button Style
-struct ScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 
@@ -1583,7 +1574,7 @@ struct WaterGoalInfoSheet: View {
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         
                         // Total
                         HStack {
@@ -1599,7 +1590,7 @@ struct WaterGoalInfoSheet: View {
                         .background(
                             LinearGradient(colors: [.blue.opacity(0.15), .blue.opacity(0.1)], startPoint: .leading, endPoint: .trailing)
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         
                     } else {
                         Text("Your daily water goal is set to help you stay properly hydrated throughout the day.")
@@ -1623,7 +1614,7 @@ struct WaterGoalInfoSheet: View {
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                 }
                 .padding()
             }

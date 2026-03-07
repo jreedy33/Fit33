@@ -124,10 +124,10 @@ struct HealthInsightsView: View {
                 .font(.caption2)
                 .fontWeight(.medium)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 4)
         .background(color.opacity(0.15))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
     
     // MARK: - Time Range Picker
@@ -139,7 +139,7 @@ struct HealthInsightsView: View {
                     Text(range.rawValue)
                         .font(.subheadline)
                         .fontWeight(.medium)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         .frame(maxWidth: .infinity)
                         .background(selectedTimeRange == range ? Color.accentColor : Color.clear)
                         .foregroundColor(selectedTimeRange == range ? .white : .secondary)
@@ -377,10 +377,10 @@ struct HealthInsightsView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 6)
         .background(color.opacity(0.15))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
     }
     
     private func getHRZone(_ hr: Int) -> (String, Color) {

@@ -236,19 +236,61 @@ class FriendService: ObservableObject {
     }
     
     func removeFriend(friendshipId: UUID) async -> Bool {
+        guard let friendToRemove = friends.first(where: { $0.friendshipId == friendshipId }) else {
+            print("❌ Friend not found in local state")
+            return false
+        }
+        
         do {
+            struct UnfriendParams: Encodable {
+                let p_friend_user_id: String
+            }
             try await SupabaseManager.shared.supabaseClient
-                .from("friendships")
-                .delete()
-                .eq("id", value: friendshipId.uuidString)
+                .rpc("unfriend", params: UnfriendParams(p_friend_user_id: friendToRemove.friendId.uuidString))
                 .execute()
             
-            // Update local state
             friends.removeAll { $0.friendshipId == friendshipId }
             print("✅ Friend removed")
             return true
         } catch {
             print("❌ Error removing friend: \(error)")
+            return false
+        }
+    }
+    
+    // MARK: - Blocking
+    
+    func blockUser(userId: UUID) async -> Bool {
+        do {
+            struct BlockParams: Encodable {
+                let p_target_user_id: String
+            }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("block_user", params: BlockParams(p_target_user_id: userId.uuidString))
+                .execute()
+            
+            friends.removeAll { $0.friendId == userId }
+            print("✅ User blocked")
+            return true
+        } catch {
+            print("❌ Error blocking user: \(error)")
+            return false
+        }
+    }
+    
+    func unblockUser(userId: UUID) async -> Bool {
+        do {
+            struct UnblockParams: Encodable {
+                let p_target_user_id: String
+            }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("unblock_user", params: UnblockParams(p_target_user_id: userId.uuidString))
+                .execute()
+            
+            print("✅ User unblocked")
+            return true
+        } catch {
+            print("❌ Error unblocking user: \(error)")
             return false
         }
     }

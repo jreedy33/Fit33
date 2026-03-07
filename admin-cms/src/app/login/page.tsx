@@ -30,13 +30,7 @@ export default function LoginPage() {
         return
       }
 
-      // Store session securely
-      sessionStorage.setItem('admin_token', data.session.access_token)
-      sessionStorage.setItem('admin_refresh', data.session.refresh_token)
-      sessionStorage.setItem('admin_expires_at', String(data.session.expires_at || ''))
-      sessionStorage.setItem('admin_email', data.session.user.email)
-      sessionStorage.setItem('admin_id', data.session.user.id)
-
+      // Tokens are now in httpOnly cookies (set by the server)
       router.push('/dashboard')
     } catch {
       setError('Network error. Please try again.')

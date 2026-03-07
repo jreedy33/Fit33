@@ -372,9 +372,9 @@ async function computeBadgeCount(
   try {
     // 1. Pending friend requests received by this user
     const { count: friendRequests } = await supabase
-      .from('friend_requests')
+      .from('friendships')
       .select('*', { count: 'exact', head: true })
-      .eq('to_user_id', userId)
+      .eq('addressee_id', userId)
       .eq('status', 'pending')
 
     // 2. Pending challenge invites (1v1 + group — both use challenge_participants)
@@ -390,7 +390,7 @@ async function computeBadgeCount(
     const { count: unreadWorkouts } = await supabase
       .from('shared_workouts')
       .select('*', { count: 'exact', head: true })
-      .eq('to_user_id', userId)
+      .eq('recipient_id', userId)
       .is('viewed_at', null)
       .eq('status', 'pending')
 

@@ -505,7 +505,7 @@ struct NewOnboardingView: View {
                                     // onChange handler will manage focus to keep keyboard up
                                 }) {
                                     Image(systemName: "chevron.left")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.ds_labelLarge)
                                         .foregroundColor(.gray)
                                         .frame(width: 52, height: 52)
                                         .background(Circle().fill(Color(.systemGray6)))
@@ -520,7 +520,7 @@ struct NewOnboardingView: View {
                                     }
                                 }) {
                                     Image(systemName: "chevron.left")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.ds_labelLarge)
                                         .foregroundColor(.gray)
                                         .frame(width: 52, height: 52)
                                         .background(Circle().fill(Color(.systemGray6)))
@@ -553,7 +553,7 @@ struct NewOnboardingView: View {
                                         : AnyShapeStyle(Color.gray)
                                 )
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, Spacing.md)
                                 .background(Capsule().fill(Color(.systemGray6)))
                                 .overlay(
                                     Capsule()
@@ -656,9 +656,9 @@ struct NewOnboardingView: View {
                                         : AnyShapeStyle(Color.secondary)
                                 )
                                 .padding(.vertical, 14)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, Spacing.md)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(selectedLimitations.isEmpty 
                                             ? AnyShapeStyle(Color.green.opacity(0.1))
                                             : AnyShapeStyle(LinearGradient(
@@ -671,7 +671,7 @@ struct NewOnboardingView: View {
                                         )
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .stroke(selectedLimitations.isEmpty ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1.5)
                                 )
                             }
@@ -738,8 +738,8 @@ struct NewOnboardingView: View {
                                                 .font(.caption)
                                                 .fontWeight(.semibold)
                                                 .foregroundColor(.white)
-                                                .padding(.horizontal, 16)
-                                                .padding(.vertical, 8)
+                                                .padding(.horizontal, Spacing.md)
+                                                .padding(.vertical, Spacing.xs)
                                                 .background(Capsule().fill(Color.blue))
                                         }
                                         .padding(.top, 4)
@@ -1088,7 +1088,7 @@ struct NewOnboardingView: View {
                 goToPreviousStep()
             }) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
                     .frame(width: 52, height: 52)
                     .background(Circle().fill(Color(.systemGray6)))
@@ -1132,7 +1132,7 @@ struct NewOnboardingView: View {
                         : AnyShapeStyle(Color.gray)
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(Capsule().fill(Color(.systemGray6)))
                     .overlay(
                         Capsule()
@@ -1338,10 +1338,10 @@ struct NewOnboardingView: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
             )
         }
@@ -1371,16 +1371,16 @@ struct NewOnboardingView: View {
                     .foregroundColor(.blue)
             }
         }
-        .font(.system(size: 16, weight: .medium))
-        .padding(.horizontal, 16)
+        .font(.ds_bodyRegular)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                 .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(isPhoneNumberValid ? Color.blue.opacity(0.4) : Color.clear, lineWidth: 1.5)
         )
         .id("phoneTextField-\(selectedCountryCode.rawValue)")
@@ -1410,7 +1410,7 @@ struct NewOnboardingView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
@@ -1431,7 +1431,7 @@ struct NewOnboardingView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundColor(.primary)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
@@ -1447,10 +1447,10 @@ struct NewOnboardingView: View {
                                 .font(.caption)
                         }
                         .foregroundColor(.orange)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
                                 .fill(Color.orange.opacity(0.1))
                         )
                     }
@@ -1477,17 +1477,17 @@ struct NewOnboardingView: View {
                         HStack(spacing: 10) {
                             ForEach(0..<6, id: \.self) { index in
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
                                     
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .stroke(
                                             index == verificationCode.count ? Color.blue : Color.clear,
                                             lineWidth: 2
                                         )
                                     
                                     Text(getDigit(at: index))
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .font(.ds_stat)
                                         .foregroundColor(.primary)
                                 }
                                 .frame(width: 50, height: 60)
@@ -1575,7 +1575,7 @@ struct NewOnboardingView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
@@ -1899,12 +1899,12 @@ struct NewOnboardingView: View {
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .name)
                 }
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 18)
                 .background(
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(
                                 LinearGradient(
                                     colors: colorScheme == .dark 
@@ -1915,7 +1915,7 @@ struct NewOnboardingView: View {
                                 )
                             )
                         
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.clear)
                             .shadow(
                                 color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -1984,12 +1984,12 @@ struct NewOnboardingView: View {
                             usernameError = ""
                         }
                 }
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 18)
                 .background(
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(
                                 LinearGradient(
                                     colors: colorScheme == .dark 
@@ -2000,7 +2000,7 @@ struct NewOnboardingView: View {
                                 )
                             )
                         
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.clear)
                             .shadow(
                                 color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -2305,20 +2305,20 @@ struct NewOnboardingView: View {
             // Checkmark when valid
             if isValid {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .font(.system(size: 16, weight: .medium))
+        .font(.ds_bodyRegular)
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(white: 0.12))
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(Color.cardBackground)
                 
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         isFocused || isValid
                             ? LinearGradient(colors: [Color.blue, Color.cyan.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -2422,9 +2422,9 @@ struct NewOnboardingView: View {
                                 .foregroundColor(.secondary)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .fill(selectedGoals.contains(goal.0) 
                                     ? AnyShapeStyle(goal.3.opacity(0.2))
                                     : AnyShapeStyle(LinearGradient(
@@ -2437,7 +2437,7 @@ struct NewOnboardingView: View {
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .stroke(selectedGoals.contains(goal.0) ? goal.3 : Color.clear, lineWidth: 2)
                         )
                     }
@@ -2478,7 +2478,7 @@ struct NewOnboardingView: View {
                         }
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(selectedExperience == level.0 
                                     ? AnyShapeStyle(Color.blue.opacity(0.1))
                                     : AnyShapeStyle(LinearGradient(
@@ -2491,7 +2491,7 @@ struct NewOnboardingView: View {
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(selectedExperience == level.0 ? Color.blue : Color.clear, lineWidth: 2)
                         )
                     }
@@ -2526,7 +2526,7 @@ struct NewOnboardingView: View {
                         }
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(selectedStrengthLevel == level 
                                     ? AnyShapeStyle(Color.orange.opacity(0.15))
                                     : AnyShapeStyle(LinearGradient(
@@ -2539,7 +2539,7 @@ struct NewOnboardingView: View {
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .stroke(selectedStrengthLevel == level ? Color.orange : Color.clear, lineWidth: 2)
                         )
                     }
@@ -2576,7 +2576,7 @@ struct NewOnboardingView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .fill(selectedWorkoutLocation == loc.0 
                                     ? AnyShapeStyle(loc.3.opacity(0.2))
                                     : AnyShapeStyle(LinearGradient(
@@ -2589,7 +2589,7 @@ struct NewOnboardingView: View {
                                 )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
                                 .stroke(selectedWorkoutLocation == loc.0 ? loc.3 : Color.clear, lineWidth: 2)
                         )
                     }
@@ -2648,7 +2648,7 @@ struct NewOnboardingView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(isSelected 
                             ? AnyShapeStyle(needsSelection ? Color.orange.opacity(0.08) : Color.blue.opacity(0.1))
                             : AnyShapeStyle(LinearGradient(
@@ -2661,7 +2661,7 @@ struct NewOnboardingView: View {
                         )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(isSelected ? (needsSelection ? Color.orange : Color.blue) : Color.clear, lineWidth: 1.5)
                 )
             }
@@ -2693,7 +2693,7 @@ struct NewOnboardingView: View {
                         }) {
                             HStack(spacing: 10) {
                                 Image(systemName: level.icon)
-                                    .font(.system(size: 15))
+                                    .font(.ds_bodyMedium)
                                     .foregroundColor(level.color)
                                     .frame(width: 22)
                                 
@@ -2715,7 +2715,7 @@ struct NewOnboardingView: View {
                                         .foregroundColor(level.color)
                                 }
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 9)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
@@ -2842,7 +2842,7 @@ struct NewOnboardingView: View {
                             .frame(width: 44, height: 44)
                             .overlay(
                                 Image(systemName: "pencil")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.ds_heading3)
                                     .foregroundColor(.white)
                             )
                             .offset(x: 60, y: 60)
@@ -2985,7 +2985,7 @@ struct NewOnboardingView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
             }
             
             // Benefits list - compact
@@ -3075,14 +3075,14 @@ struct NewOnboardingView: View {
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: contactsService.permissionDenied ? "gear" : "person.crop.circle.badge.plus")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.ds_labelLarge)
                             Text(contactsService.permissionDenied ? "Open Settings" : "Allow Contacts Access")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                         .background(
                             LinearGradient(
                                 colors: [.blue, .blue.opacity(0.8), .purple.opacity(0.7)],
@@ -3090,7 +3090,7 @@ struct NewOnboardingView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                     }
                     .padding(.horizontal, 20)
                     
@@ -3100,13 +3100,13 @@ struct NewOnboardingView: View {
                             .font(.system(size: 9))
                             .foregroundColor(.green.opacity(0.8))
                         Text("Your contacts are never shared or stored on our servers")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 8)
         .onAppear {
             // Refresh and check current status on appear
@@ -3124,7 +3124,7 @@ struct NewOnboardingView: View {
                     .frame(width: 32, height: 32)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(color)
             }
             
@@ -3154,7 +3154,7 @@ struct NewOnboardingView: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 
                 TextField("Search by name", text: $friendSearchText)
                     .font(.body)
@@ -3168,10 +3168,10 @@ struct NewOnboardingView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(Color(.systemGray6))
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             .padding(.horizontal, 24)
             .padding(.top, 16)
             .padding(.bottom, 16)
@@ -3349,8 +3349,8 @@ struct NewOnboardingView: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(isRequestSent ? .green : (hasFailed ? .orange : .white))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Group {
                         if isRequestSent {
@@ -3366,8 +3366,8 @@ struct NewOnboardingView: View {
             }
             .disabled(isRequestSent || isLoading)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.md)
         .background(Color(.systemGray6).opacity(0.5))
         .cornerRadius(14)
     }
@@ -3384,7 +3384,7 @@ struct NewOnboardingView: View {
             .frame(width: 50, height: 50)
             .overlay(
                 Text(friend.initials)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.white)
             )
     }
@@ -3559,7 +3559,7 @@ struct NewOnboardingView: View {
                                 }
                             }) {
                                 Image(systemName: "chevron.left")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.ds_labelLarge)
                                     .foregroundColor(.gray)
                                     .frame(width: 52, height: 52)
                                     .background(Circle().fill(Color(.systemGray6)))
@@ -3582,14 +3582,14 @@ struct NewOnboardingView: View {
                                     .scaleEffect(0.8)
                             } else {
                                 Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Continue" : "Sign In"))
-                                    .font(.system(size: 16, weight: .bold))
+                                    .font(.ds_heading2)
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 14, weight: .bold))
                             }
                         }
                         .foregroundColor(isAuthFormValid && !supabaseManager.isLoading ? .white : .gray)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                     .background(
                         Group {
                             if isAuthFormValid && !supabaseManager.isLoading {
@@ -3869,10 +3869,10 @@ struct NewOnboardingView: View {
                                         .font(.caption)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.white)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, Spacing.md)
+                                        .padding(.vertical, Spacing.xs)
                                         .background(Color.blue)
-                                        .cornerRadius(8)
+                                        .cornerRadius(CornerRadius.sm)
                                 }
                                 
             Button(action: {
@@ -3882,19 +3882,19 @@ struct NewOnboardingView: View {
                                         .font(.caption)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.blue)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, Spacing.md)
+                                        .padding(.vertical, Spacing.xs)
                                         .background(Color.blue.opacity(0.1))
-                                        .cornerRadius(8)
+                                        .cornerRadius(CornerRadius.sm)
                                 }
                             }
                         }
                         .padding(hasStartedAuth ? 10 : 12)
                 .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(Color.orange.opacity(0.1))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                                 )
                         )
@@ -3911,7 +3911,7 @@ struct NewOnboardingView: View {
                         }
                         .padding(hasStartedAuth ? 10 : 12)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(Color.green.opacity(0.1))
                         )
                     }
@@ -3928,7 +3928,7 @@ struct NewOnboardingView: View {
                         VStack(spacing: 12) {
                             HStack(spacing: 8) {
                                 Image(systemName: detectedAuthProvider.contains("apple") ? "apple.logo" : "person.badge.key.fill")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.ds_heading3)
                                     .foregroundColor(.blue)
                                 
                                 Text(authProviderHintMessage)
@@ -3939,10 +3939,10 @@ struct NewOnboardingView: View {
                             .padding(hasStartedAuth ? 12 : 16)
                             .frame(maxWidth: .infinity)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(Color.blue.opacity(0.1))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
+                                        RoundedRectangle(cornerRadius: CornerRadius.md)
                                             .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                                     )
                             )
@@ -3957,10 +3957,10 @@ struct NewOnboardingView: View {
                                         Image(systemName: "apple.logo")
                                         Text("Continue with Apple")
                                     }
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.ds_labelLarge)
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
+                                    .padding(.vertical, Spacing.md)
                                     .background(
                                         Capsule()
                                             .fill(Color.black)
@@ -4007,14 +4007,14 @@ struct NewOnboardingView: View {
                                         .scaleEffect(0.8)
                                 } else {
                                     Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Create Account" : "Sign In"))
-                                        .font(.system(size: 16, weight: .bold))
+                                        .font(.ds_heading2)
                                     Image(systemName: "arrow.right")
                                         .font(.system(size: 14, weight: .bold))
                                 }
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 Group {
                                     if isAuthFormValid && !supabaseManager.isLoading {
@@ -4386,7 +4386,7 @@ struct NewOnboardingView: View {
                                 
                                 Text("cm")
                                     .foregroundColor(.secondary)
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(.ds_bodyMedium)
                             }
                         }
                         
@@ -4417,7 +4417,7 @@ struct NewOnboardingView: View {
                             }
                         )
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color(.systemBackground))
@@ -4482,7 +4482,7 @@ struct NewOnboardingView: View {
                             
                             Text(weightUnit == .lbs ? "lbs" : "kg")
                                 .foregroundColor(.secondary)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.ds_bodyMedium)
                         }
                         
                         Spacer()
@@ -4510,7 +4510,7 @@ struct NewOnboardingView: View {
                             }
                         )
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color(.systemBackground))
@@ -4976,7 +4976,7 @@ struct NewOnboardingView: View {
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: allPrimarySelected ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 16))
+                                .font(.ds_bodyRegular)
                             Text(allPrimarySelected ? "Deselect All" : "Select All")
                                 .font(.subheadline.weight(.semibold))
                         }
@@ -5024,7 +5024,7 @@ struct NewOnboardingView: View {
                         }
                         .foregroundColor(.blue)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.sm)
                     }
                     
                     // Secondary Equipment (collapsed by default)
@@ -5057,9 +5057,9 @@ struct NewOnboardingView: View {
                                 }
                             }
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(Color(.systemGray6))
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                         .padding(.horizontal, 20)
                     }
                     
@@ -5133,10 +5133,10 @@ struct NewOnboardingView: View {
                         ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
                         : AnyShapeStyle(Color.secondary)
                 )
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 .padding(.horizontal, 20)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(selectedLimitations.isEmpty ? Color.green.opacity(0.1) : Color.clear)
                 )
             }
@@ -5222,14 +5222,14 @@ struct NewOnboardingView: View {
                         .accessibilityHint(selectedDays == day ? "Currently selected" : "Double tap to select")
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 
                 // Recommendation badge
                 Text(recommendationText)
                     .font(.caption.weight(.semibold))
                     .foregroundColor(.blue)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(Capsule().fill(Color.blue.opacity(0.1)))
                 
                 // Help text
@@ -5394,7 +5394,7 @@ struct NewOnboardingView: View {
             HStack(spacing: 16) {
                 Button(action: { navigateTo(.profilePhoto) }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 52, height: 52)
                         .background(Circle().fill(Color(.systemBackground)).shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4))
@@ -5412,7 +5412,7 @@ struct NewOnboardingView: View {
                         }
                     }
                     .foregroundColor(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .frame(maxWidth: .infinity).padding(.vertical, Spacing.md)
                     .background(
                         Capsule()
                             .fill(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
@@ -5640,7 +5640,7 @@ struct NewOnboardingView: View {
                         .foregroundColor(.primary)
                     
                     Text("Let's start building a stronger you")
-                        .font(.system(size: 15))
+                        .font(.ds_bodyMedium)
                         .foregroundColor(.secondary)
                 }
                 
@@ -5654,14 +5654,14 @@ struct NewOnboardingView: View {
                     SummaryRow(icon: "hand.raised.fill", label: "Strength", value: selectedStrengthLevel.displayName)
                     SummaryRow(icon: "calendar", label: "Schedule", value: "\(selectedDays) days/week")
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .fill(Color(.systemBackground))
                         .shadow(color: Color.blue.opacity(0.08), radius: 8, x: 0, y: 4)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.15)],
@@ -5684,7 +5684,7 @@ struct NewOnboardingView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [Color.green, Color.mint],
@@ -5692,7 +5692,7 @@ struct NewOnboardingView: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: Color.green.opacity(0.4), radius: 10, x: 0, y: 5)
             }
             .padding(.horizontal, 24)
@@ -6524,19 +6524,19 @@ struct OnboardingTextField<F: Hashable>: View {
             // Checkmark when valid
             if isValid {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .font(.system(size: 16, weight: .medium))
+        .font(.ds_bodyRegular)
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
-        .contentShape(RoundedRectangle(cornerRadius: 16)) // Rounded rectangle hit area
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.lg)) // Rounded rectangle hit area
         .background(
             // Modern floating card effect with gradient
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -6548,7 +6548,7 @@ struct OnboardingTextField<F: Hashable>: View {
                     )
                 
                 // Enhanced shadow for floating effect
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.clear)
                     .shadow(
                         color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -6565,7 +6565,7 @@ struct OnboardingTextField<F: Hashable>: View {
             }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: isValid 
@@ -6639,7 +6639,7 @@ struct PasswordTextField<F: Hashable>: View {
             // Eye button (show/hide password)
             Button(action: { isVisible.toggle() }) {
                 Image(systemName: isVisible ? "eye.slash.fill" : "eye.fill")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain) // Prevent keyboard dismissal
@@ -6647,19 +6647,19 @@ struct PasswordTextField<F: Hashable>: View {
             // Match indicator (for confirm password) - only show when valid
             if showMatchIndicator && !text.isEmpty && passwordsMatch {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(.blue)
                     .allowsHitTesting(false)
                     .transition(.scale.combined(with: .opacity))
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .contentShape(RoundedRectangle(cornerRadius: 16)) // Match OnboardingTextField shape
+        .padding(.vertical, Spacing.md)
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.lg)) // Match OnboardingTextField shape
         .background(
             // Modern floating card effect with gradient - matching OnboardingTextField
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -6670,7 +6670,7 @@ struct PasswordTextField<F: Hashable>: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.clear)
                     .shadow(
                         color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -6681,7 +6681,7 @@ struct PasswordTextField<F: Hashable>: View {
             }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: isValid 
@@ -6705,7 +6705,7 @@ struct VerificationCodeBox: View {
     
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark 
@@ -6722,7 +6722,7 @@ struct VerificationCodeBox: View {
                     y: isFocused ? 4 : 2
                 )
             
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(
                     isFocused
                         ? LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -6813,7 +6813,7 @@ struct RequirementPill: View {
             .font(.caption2)
             .fontWeight(.medium)
             .foregroundColor(met ? .green : .secondary.opacity(0.6))
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 4)
             .background(
                 Capsule()
@@ -6901,7 +6901,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                     .disabled(!canContinue)
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.sm)
                 
                 // Progress Bar
                 OnboardingProgressBar(
@@ -6964,13 +6964,13 @@ struct GenderButton: View {
             action()
         }) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.ds_labelLarge)
                 .foregroundColor(isSelected ? .white : .primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(isSelected 
                                 ? LinearGradient(
                                     colors: [color, color.opacity(0.8)],
@@ -6987,7 +6987,7 @@ struct GenderButton: View {
                             )
                         
                         // Enhanced shadow for floating effect
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(Color.clear)
                             .shadow(
                                 color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -7004,7 +7004,7 @@ struct GenderButton: View {
                     }
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(
                             LinearGradient(
                                 colors: isSelected 
@@ -7034,7 +7034,7 @@ struct DaySelectorButton: View {
     var body: some View {
         Button(action: action) {
             Text("\(day)")
-                .font(.system(size: 16, weight: .bold))
+                .font(.ds_heading2)
                 .foregroundColor(isSelected ? .white : .primary)
                 .frame(width: 40, height: 40)
                 .background(
@@ -7090,12 +7090,12 @@ struct GoalCardLarge: View {
                 }
                 
                 Text(title)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                 
                 Text(subtitle)
-                    .font(.system(size: 13))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -7175,7 +7175,7 @@ struct ExperienceCardLarge: View {
                         .foregroundColor(.blue)
                 }
             }
-            .padding(16)
+            .padding(Spacing.md)
             .frame(height: 90)
             .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: isSelected, cornerRadius: 24)
         }
@@ -7221,7 +7221,7 @@ struct EquipmentCardLarge: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
                             .foregroundColor(.blue)
-                            .padding(8)
+                            .padding(Spacing.xs)
                     }
                 },
                 alignment: .topTrailing
@@ -7266,7 +7266,7 @@ struct EquipmentCardWithIcon: View {
                     .lineLimit(1)
                 
                 Text(subtitle)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -7279,7 +7279,7 @@ struct EquipmentCardWithIcon: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 18))
                             .foregroundColor(.blue)
-                            .padding(8)
+                            .padding(Spacing.xs)
                     }
                 },
                 alignment: .topTrailing
@@ -7330,7 +7330,7 @@ struct WorkoutLocationCard: View {
                         .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
-                        .font(.system(size: 13))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                 }
                 
@@ -7343,7 +7343,7 @@ struct WorkoutLocationCard: View {
                         .foregroundColor(.blue)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 14)
             .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: isSelected, cornerRadius: 22)
         }
@@ -7393,7 +7393,7 @@ struct StrengthLevelCard: View {
                         .foregroundColor(isSelected ? .orange : .primary)
                     
                     Text(subtitle)
-                        .font(.system(size: 13))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                 }
                 
@@ -7415,8 +7415,8 @@ struct StrengthLevelCard: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .onboardingCardStyle(accentColor: .orange, secondaryColor: .red, isSelected: isSelected, cornerRadius: 20)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
@@ -7520,7 +7520,7 @@ struct OnboardingGoalCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 18)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
@@ -7570,7 +7570,7 @@ struct OnboardingExperienceCard: View {
                         .foregroundColor(.blue)
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 18)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
@@ -7607,10 +7607,10 @@ struct OnboardingEquipmentChip: View {
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: 16)
+            .padding(.vertical, Spacing.sm)
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: isSelected, cornerRadius: CornerRadius.lg)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(
                         LinearGradient(
                             colors: isSelected ? [Color.clear, Color.clear] : [Color.blue.opacity(0.2), Color.purple.opacity(0.15)],
@@ -7708,19 +7708,19 @@ struct ConfirmationListRow: View {
                     .frame(width: 22)
                 
                 Text(label)
-                    .font(.system(size: 15))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(.primary)
                 
                 Spacer()
                 
                 Text(value)
-                    .font(.system(size: 15))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary.opacity(0.5))
             }
             .padding(.horizontal, 14)
@@ -7774,9 +7774,9 @@ struct CompactConfirmationCard: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: false, cornerRadius: 16)
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .purple, isSelected: false, cornerRadius: CornerRadius.lg)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -7830,7 +7830,7 @@ struct ConfirmationRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.purple.opacity(0.8)],
@@ -7852,7 +7852,7 @@ struct ConfirmationRow: View {
                 .foregroundColor(.primary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
     }
 }
@@ -7918,21 +7918,21 @@ struct HeightInputField: View {
             // Checkmark when valid - same as OnboardingTextField
             if isValid {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .font(.system(size: 16, weight: .medium))
+        .font(.ds_bodyRegular)
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                 
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                     .shadow(
                         color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08),
@@ -7949,7 +7949,7 @@ struct HeightInputField: View {
             }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: isValid 
@@ -8100,7 +8100,7 @@ struct LimitationCardOnboardingWide: View {
                             if needsSelection {
                                 HStack(spacing: 4) {
                                     Image(systemName: "checkmark.circle")
-                                        .font(.system(size: 11))
+                                        .font(.ds_labelSmall)
                                     Text("Choose accommodation level")
                                         .font(.caption)
                                         .fontWeight(.medium)
@@ -8109,7 +8109,7 @@ struct LimitationCardOnboardingWide: View {
                             } else {
                                 HStack(spacing: 4) {
                                     Image(systemName: accommodation.icon)
-                                        .font(.system(size: 11))
+                                        .font(.ds_labelSmall)
                                     Text(accommodation.displayName)
                                         .font(.caption)
                                         .fontWeight(.medium)
@@ -8144,7 +8144,7 @@ struct LimitationCardOnboardingWide: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 .onboardingCardStyle(accentColor: area.color, secondaryColor: area.color.opacity(0.7), isSelected: isSelected, cornerRadius: 20)
             }
             .buttonStyle(.plain)
@@ -8173,7 +8173,7 @@ struct LimitationCardOnboardingWide: View {
                         }) {
                             HStack(spacing: 10) {
                                 Image(systemName: level.icon)
-                                    .font(.system(size: 15))
+                                    .font(.ds_bodyMedium)
                                     .foregroundColor(level.color)
                                     .frame(width: 22)
                                 
@@ -8197,7 +8197,7 @@ struct LimitationCardOnboardingWide: View {
                                         .foregroundColor(level.color)
                                 }
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 9)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
@@ -8372,12 +8372,12 @@ struct AccommodationOptionRow: View {
                 // Checkmark
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(level.color)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.xs)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? level.color.opacity(0.1) : Color(.systemGray6).opacity(0.5))

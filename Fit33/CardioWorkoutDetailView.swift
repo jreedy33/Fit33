@@ -99,7 +99,7 @@ struct CardioWorkoutDetailView: View {
                 VStack(spacing: 20) {
                     headerSection
                     statsGrid
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                 }
                 .padding(.bottom, 8)
                 
@@ -122,7 +122,7 @@ struct CardioWorkoutDetailView: View {
                     // Actions
                     actionsCard
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 12)
                 .padding(.bottom, 100)
             }
@@ -211,7 +211,7 @@ struct CardioWorkoutDetailView: View {
                     )
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.top, 12)
     }
     
@@ -296,22 +296,22 @@ struct CardioWorkoutDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
         }
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color(white: 0.12)]
+                                ? [Color(white: 0.18), Color.cardBackground]
                                 : [Color(white: 0.96), Color(white: 0.92)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -323,7 +323,7 @@ struct CardioWorkoutDetailView: View {
                         lineWidth: 1.5
                     )
                 
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [accentColor.opacity(0.3), accentColor.opacity(0.1)],
@@ -395,7 +395,7 @@ struct CardioWorkoutDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -466,7 +466,7 @@ struct CardioWorkoutDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -489,7 +489,7 @@ struct CardioWorkoutDetailView: View {
                     .foregroundColor(color)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Detailed Stats Card
@@ -523,7 +523,7 @@ struct CardioWorkoutDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -543,9 +543,9 @@ struct CardioWorkoutDetailView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(color.opacity(0.08))
         )
     }
@@ -589,7 +589,7 @@ struct CardioWorkoutDetailView: View {
                     )
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(glassCard)
     }
     
@@ -635,7 +635,7 @@ struct CardioWorkoutDetailView: View {
     
     private var glassCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(
                     LinearGradient(
                         colors: colorScheme == .dark
@@ -646,7 +646,7 @@ struct CardioWorkoutDetailView: View {
                     )
                 )
             
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(
                     LinearGradient(
                         colors: colorScheme == .dark

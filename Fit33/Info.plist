@@ -47,6 +47,8 @@
 	<string>Fit33 uses your contacts to help you find friends who are already using the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Fit33 needs access to your photo library to set a profile picture.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Fit33 uses this to show you relevant ads and support free features. Your data is never sold.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Fit33 tracks your daily steps to help you reach your fitness goals.</string>
 	<key>NSHealthUpdateUsageDescription</key>

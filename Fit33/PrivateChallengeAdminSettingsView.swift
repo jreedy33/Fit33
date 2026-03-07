@@ -77,7 +77,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                     TextField("Challenge name", text: $title)
                                         .font(.body)
                                         .foregroundColor(.white)
-                                        .padding(12)
+                                        .padding(Spacing.sm)
                                         .background(Color.white.opacity(0.1))
                                         .cornerRadius(10)
                                 }
@@ -93,7 +93,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                         .font(.body)
                                         .foregroundColor(.white)
                                         .lineLimit(2...4)
-                                        .padding(12)
+                                        .padding(Spacing.sm)
                                         .background(Color.white.opacity(0.1))
                                         .cornerRadius(10)
                                 }
@@ -257,7 +257,7 @@ struct PrivateChallengeAdminSettingsView: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
                             )

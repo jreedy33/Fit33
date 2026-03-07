@@ -272,7 +272,7 @@ struct OnboardingLargeCard: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 130)
-            .onboardingCardStyle(accentColor: color, secondaryColor: color.opacity(0.7), isSelected: isSelected, cornerRadius: 24)
+            .onboardingCardStyle(accentColor: color, secondaryColor: color.opacity(0.7), isSelected: isSelected, cornerRadius: CornerRadius.xl)
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -405,7 +405,7 @@ struct OnboardingNavBar: View {
             .disabled(!continueEnabled)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
     }
 }
 

@@ -18,6 +18,7 @@ final class ExerciseIntelligenceEngine {
         "Triceps": ["Chest", "Shoulders"],
         "Front Delts": ["Chest", "Triceps", "Side Delts"],
         "Side Delts": ["Front Delts", "Rear Delts", "Traps"],
+        "Shoulders": ["Chest", "Triceps", "Traps", "Core"],
         
         // Pull muscles (work together)
         "Back": ["Biceps", "Rear Delts", "Forearms"],
@@ -25,12 +26,16 @@ final class ExerciseIntelligenceEngine {
         "Upper Back": ["Biceps", "Rear Delts", "Traps"],
         "Biceps": ["Back", "Lats", "Forearms"],
         "Rear Delts": ["Back", "Upper Back", "Traps"],
+        "Traps": ["Shoulders", "Back", "Rear Delts", "Upper Back"],
+        "Forearms": ["Biceps", "Back"],
         
         // Leg muscles (work together)
         "Quads": ["Glutes", "Calves", "Core"],
+        "Quadriceps": ["Glutes", "Calves", "Core"],
         "Hamstrings": ["Glutes", "Lower Back", "Calves"],
         "Glutes": ["Quads", "Hamstrings", "Core"],
         "Calves": ["Quads", "Hamstrings"],
+        "Hip Flexors": ["Core", "Quads", "Abs"],
         
         // Core muscles
         "Abs": ["Obliques", "Lower Back", "Hip Flexors"],
@@ -180,11 +185,11 @@ final class ExerciseIntelligenceEngine {
                 )
             case .loseFat:
                 return GoalConfig(
-                    repRange: 12...20,
+                    repRange: 8...15,
                     sets: 3...4,
-                    restSeconds: 30...45,
+                    restSeconds: 30...60,
                     volumePriority: .medium,
-                    intensityPriority: .low,
+                    intensityPriority: .medium,
                     preferCompound: true,
                     supersetFriendly: true
                 )

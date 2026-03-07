@@ -7,8 +7,7 @@ export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
-    const token = sessionStorage.getItem('admin_token')
-    if (token) {
+    if (document.cookie.includes('admin_logged_in')) {
       router.replace('/dashboard')
     } else {
       router.replace('/login')

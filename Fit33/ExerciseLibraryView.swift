@@ -887,7 +887,7 @@ struct ExerciseLibraryView: View {
                             .padding(.top, 8)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
                 
@@ -914,7 +914,7 @@ struct ExerciseLibraryView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Spacing.md)
                         .padding(.top, 4)
                         .padding(.bottom, 20)
                     }
@@ -947,10 +947,13 @@ struct ExerciseLibraryView: View {
             .onAppear {
                 let startTime = Date()
                 
-                // ⚡️ PERFORMANCE: Restore state from ViewStateCache for instant tab switch
+                // Restore state from ViewStateCache for instant tab switch
                 let cachedState = ViewStateCache.shared.exerciseLibraryState
-                if !cachedState.searchText.isEmpty || cachedState.selectedCategory != "All" {
-                    // Restore previous state (convert single to set for backwards compatibility)
+                let hasState = !cachedState.searchText.isEmpty
+                    || cachedState.selectedCategory != "All"
+                    || cachedState.selectedEquipment != "All"
+                    || cachedState.selectedMuscleGroup != "All"
+                if hasState {
                     searchText = cachedState.searchText
                     if cachedState.selectedCategory != "All" {
                         selectedCategories = [cachedState.selectedCategory]
@@ -1003,18 +1006,21 @@ struct ExerciseLibraryView: View {
                 updateFilteredExercises()
                 ViewStateCache.shared.exerciseLibraryState.searchText = newValue
             }
-            .onChange(of: selectedCategories) { _, _ in 
-                lastFilterKey = "" // Force filter rebuild
-                selectedMuscleGroups = [] // Reset muscles when categories change
+            .onChange(of: selectedCategories) { _, newValue in 
+                lastFilterKey = ""
+                selectedMuscleGroups = []
                 updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedCategory = newValue.first ?? "All"
             }
-            .onChange(of: selectedEquipmentItems) { _, _ in 
-                lastFilterKey = "" // Force filter rebuild
+            .onChange(of: selectedEquipmentItems) { _, newValue in 
+                lastFilterKey = ""
                 updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedEquipment = newValue.first ?? "All"
             }
-            .onChange(of: selectedMuscleGroups) { _, _ in 
-                lastFilterKey = "" // Force filter rebuild
+            .onChange(of: selectedMuscleGroups) { _, newValue in 
+                lastFilterKey = ""
                 updateFilteredExercises()
+                ViewStateCache.shared.exerciseLibraryState.selectedMuscleGroup = newValue.first ?? "All"
             }
             .onChange(of: exerciseFilter) { _, _ in 
                 lastFilterKey = "" // Force filter rebuild
@@ -1093,7 +1099,7 @@ struct ExerciseLibraryView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .fill(.ultraThinMaterial)
                     )
             }
@@ -1189,11 +1195,11 @@ struct ExerciseLibraryView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(.systemGray6).opacity(0.8))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.03), lineWidth: 1)
                 )
             }
@@ -1278,8 +1284,8 @@ struct ExerciseLibraryView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .background(
             ZStack {
@@ -1434,24 +1440,9 @@ struct CompactExerciseRowContent: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        // ⚡️ PERF: Simplified background — was 5 stacked shapes + 2 shadows = 7 compositing layers per row.
-        // Now just 1 fill + 1 stroke + 1 shadow = 3 layers. ~3x less GPU work per row.
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(white: 0.13) : Color.white)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(
-                    colorScheme == .dark
-                        ? Color.white.opacity(0.06)
-                        : Color.black.opacity(0.06),
-                    lineWidth: 0.5
-                )
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 4, x: 0, y: 2)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 16)
     }
     
     private var categoryColor: Color {
@@ -1647,7 +1638,7 @@ struct CompactFilterChip: View {
             Text(text)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
@@ -1697,7 +1688,7 @@ struct ExerciseTypeChip: View {
                     .font(.caption)
                     .fontWeight(.semibold)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .background(
                 Capsule()
@@ -1765,7 +1756,7 @@ struct MultiSelectFilterChip: View {
             Text(text)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
@@ -1819,14 +1810,14 @@ struct MultiSelectDropdownContent: View {
                                 .foregroundColor(accentColor)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
                     .background(selectedItems.isEmpty ? accentColor.opacity(0.1) : Color.clear)
                 }
                 .buttonStyle(PlainButtonStyle())
                 
                 Divider()
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Spacing.sm)
                 
                 // All other options
                 ForEach(allOptions.filter { $0 != "All" }, id: \.self) { option in
@@ -1851,8 +1842,8 @@ struct MultiSelectDropdownContent: View {
                                     .foregroundColor(accentColor)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
                         .background(selectedItems.contains(option) ? accentColor.opacity(0.1) : Color.clear)
                     }
                     .buttonStyle(PlainButtonStyle())

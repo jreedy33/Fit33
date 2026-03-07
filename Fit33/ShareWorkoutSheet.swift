@@ -125,7 +125,7 @@ struct ShareWorkoutSheet: View {
                                     .frame(width: 44, height: 44)
                                 
                                 Image(systemName: "person.fill")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.ds_heading3)
                                     .foregroundColor(.white)
                             }
                             
@@ -146,9 +146,9 @@ struct ShareWorkoutSheet: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(friendService.friends.isEmpty)
@@ -172,7 +172,7 @@ struct ShareWorkoutSheet: View {
                                     .frame(width: 44, height: 44)
                                 
                                 Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.ds_heading3)
                                     .foregroundColor(.white)
                             }
                             
@@ -193,13 +193,13 @@ struct ShareWorkoutSheet: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 
                 // No friends hint
                 if friendService.friends.isEmpty {
@@ -273,9 +273,9 @@ struct ShareWorkoutSheet: View {
                                     .foregroundColor(.blue)
                             }
                         }
-                        .padding(16)
+                        .padding(Spacing.md)
                         .background(cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                         
                         // Workout preview
                         workoutPreviewCard
@@ -291,7 +291,7 @@ struct ShareWorkoutSheet: View {
                                 .textFieldStyle(.plain)
                                 .padding(14)
                                 .background(cardBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
                                 .lineLimit(3...5)
                         }
                         
@@ -311,7 +311,7 @@ struct ShareWorkoutSheet: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [accentColor, accentColor.opacity(0.8)],
@@ -324,7 +324,7 @@ struct ShareWorkoutSheet: View {
                         .disabled(isSending)
                         .padding(.top, 8)
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                 }
             } else {
                 // Friend list
@@ -451,7 +451,7 @@ struct ShareWorkoutSheet: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [accentColor, accentColor.opacity(0.8)],
@@ -548,16 +548,16 @@ struct ShareWorkoutSheet: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal, 16)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
+        .padding(.horizontal, Spacing.md)
     }
     
     // MARK: - Helpers
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 16)
-            .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+        RoundedRectangle(cornerRadius: CornerRadius.lg)
+            .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
     }
     
     private func cleanWorkoutName(_ name: String) -> String {
@@ -817,7 +817,7 @@ private struct ShareStatItem: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.ds_labelSmall)
                     .foregroundColor(color)
                 Text(value)
                     .font(.system(size: 15, weight: .bold, design: .rounded))

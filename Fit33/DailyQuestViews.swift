@@ -37,34 +37,24 @@ struct DailyQuestsWidget: View {
     // MARK: - Header
     
     private var headerRow: some View {
-        HStack {
-            Image(systemName: "star.circle.fill")
+        HStack(spacing: 10) {
+            Image(systemName: "trophy.fill")
                 .foregroundStyle(
                     LinearGradient(
-                        colors: accentGradient,
+                        colors: [.yellow, .orange],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .font(.title3)
-            Text("Daily Quests")
+            Text("Daily Goals")
                 .font(.title3)
                 .fontWeight(.bold)
             
             Spacer()
             
-            // Difficulty profile badge
-            if !questService.difficultyProfileLabel.isEmpty {
-                Text(questService.difficultyProfileLabel)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(difficultyProfileColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(difficultyProfileColor.opacity(0.12))
-                    )
-            }
+            // Bonus progress dots
+            bonusIndicator
             
             // Streak badge
             if questService.questStreak > 0 {
@@ -87,6 +77,59 @@ struct DailyQuestsWidget: View {
         }
     }
     
+    // MARK: - Bonus Indicator (3 dots in header)
+    
+    private var bonusIndicator: some View {
+        let quests = questService.quests
+        let allDone = questService.allComplete
+        
+        return HStack(spacing: 5) {
+            if allDone {
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
+                        )
+                    Text("+50 XP")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                        )
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.yellow.opacity(0.15))
+                )
+            } else {
+                ForEach(0..<3, id: \.self) { index in
+                    let isComplete = index < quests.count && quests[index].isCompleted
+                    let questColor = index < quests.count ? quests[index].categoryColor : Color.gray
+                    
+                    Circle()
+                        .fill(isComplete ? questColor : Color.clear)
+                        .frame(width: 10, height: 10)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isComplete ? questColor : Color.gray.opacity(0.3),
+                                    lineWidth: 1.5
+                                )
+                        )
+                        .animation(.spring(response: 0.4), value: isComplete)
+                }
+                
+                if questService.completedCount > 0 {
+                    Text("\(questService.completedCount)/3")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
     private var difficultyProfileColor: Color {
         switch questService.difficultyProfile {
         case "easy_day": return .green
@@ -99,223 +142,332 @@ struct DailyQuestsWidget: View {
     // MARK: - Quests Card
     
     private var questsCard: some View {
-        VStack(spacing: 0) {
-            // Overall progress bar
-            overallProgressBar
-                .padding(.bottom, 16)
-            
-            // Quest rows — each is a standalone mini-card
-            ForEach(Array(questService.quests.enumerated()), id: \.element.id) { index, quest in
-                questCard(quest: quest)
-                
-                if index < questService.quests.count - 1 {
-                    Spacer().frame(height: 10)
-                }
+        VStack(spacing: 8) {
+            ForEach(Array(questService.quests.enumerated()), id: \.element.id) { _, quest in
+                compactQuestRow(quest: quest)
             }
-            
-            // Bonus row
-            if questService.quests.count > 0 {
-                Spacer().frame(height: 12)
-                bonusRow
-            }
-        }
-        .padding(16)
-        .sleekCard(cornerRadius: 24, accentColor: questService.allComplete ? .green : Color(red: 1.0, green: 0.5, blue: 0.3))
-    }
-    
-    // MARK: - Overall Progress Bar
-    
-    private var overallProgressBar: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text("\(questService.completedCount)/\(questService.totalCount) Complete")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if !questService.allComplete {
-                    Text(timeRemainingToday)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary.opacity(0.7))
-                }
-            }
-            
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.gray.opacity(0.15))
-                        .frame(height: 6)
-                    
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            questService.allComplete
-                                ? LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
-                                : LinearGradient(colors: accentGradient, startPoint: .leading, endPoint: .trailing)
-                        )
-                        .frame(width: geo.size.width * questService.overallProgress, height: 6)
-                        .animation(.spring(response: 0.5), value: questService.overallProgress)
-                }
-            }
-            .frame(height: 6)
         }
     }
     
-    // MARK: - Quest Card (Redesigned — full info)
+    // Overall progress is now shown via individual quest rings + bonus row
     
-    private func questCard(quest: DailyQuest) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Top row: Icon + Title + Difficulty badge + XP reward
-            HStack(spacing: 10) {
-                // Icon circle
-                ZStack {
+    // MARK: - Compact Quest Row (exercise-library-card style with emoji progress ring)
+    
+    private func compactQuestRow(quest: DailyQuest) -> some View {
+        Button {
+            if !quest.isCompleted {
+                navigateToQuest(quest)
+            }
+        } label: {
+        HStack(spacing: 12) {
+            ZStack {
+                if quest.isCompleted {
                     Circle()
-                        .fill(
-                            quest.isCompleted
-                                ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                : LinearGradient(colors: [quest.categoryColor.opacity(0.25), quest.categoryColor.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .stroke(
+                            LinearGradient(
+                                colors: [.green, .mint],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 3
                         )
-                        .frame(width: 36, height: 36)
+                        .frame(width: 40, height: 40)
                     
-                    if quest.isCompleted {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
-                    } else {
-                        Image(systemName: quest.icon)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(quest.categoryColor)
-                    }
-                }
-                
-                // Title
-                Text(quest.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(quest.isCompleted ? .secondary : .primary)
-                    .strikethrough(quest.isCompleted, color: .secondary.opacity(0.5))
-                    .lineLimit(1)
-                
-                Spacer()
-                
-                // Difficulty badge
-                Text(quest.difficultyLabel)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(quest.difficultyColor)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(quest.difficultyColor.opacity(0.12))
-                    )
-                
-                // XP reward
-                HStack(spacing: 2) {
-                    Text("+\(quest.xpReward)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                    Text("XP")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .foregroundColor(quest.isCompleted ? .green : .secondary.opacity(0.6))
-            }
-            
-            // Description + verification badge
-            if !quest.isCompleted {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(quest.description)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                    
-                    // Show verification badge for app-tracked / social quests
-                    if let badge = quest.verificationBadge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(quest.isAppTracked ? .cyan : .purple)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill((quest.isAppTracked ? Color.cyan : Color.purple).opacity(0.1))
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.green, .mint],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
-                    }
+                        )
+                } else {
+                    Circle()
+                        .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                        .frame(width: 40, height: 40)
+                    
+                    Circle()
+                        .trim(from: 0, to: quest.progress)
+                        .stroke(
+                            quest.categoryColor,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .frame(width: 40, height: 40)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.spring(response: 0.5), value: quest.progress)
+                    
+                    Text(quest.categoryEmoji)
+                        .font(.system(size: 18))
                 }
-                .padding(.top, 6)
-                .padding(.leading, 46) // align with title (36 icon + 10 spacing)
             }
             
-            // Progress bar + label (not completed)
-            if !quest.isCompleted {
-                if quest.questKey == QuestKey.watchAds.rawValue {
-                    // Special "Watch Video" button for ad quest
-                    adQuestActionRow(quest: quest)
-                        .padding(.top, 7)
-                        .padding(.leading, 46)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(quest.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(quest.isCompleted ? .secondary : .primary)
+                        .strikethrough(quest.isCompleted, color: .secondary.opacity(0.5))
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 2) {
+                        Text("+\(quest.xpReward)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text("XP")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(quest.isCompleted ? .green : .secondary.opacity(0.5))
+                }
+                
+                if quest.isCompleted {
+                    Text(completionSummary(for: quest))
+                        .font(.system(size: 11))
+                        .foregroundColor(.green.opacity(0.8))
+                        .lineLimit(1)
+                } else if quest.questKey == QuestKey.watchAds.rawValue {
+                    compactAdRow(quest: quest)
                 } else {
                     HStack(spacing: 8) {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 3)
+                                RoundedRectangle(cornerRadius: 2.5)
                                     .fill(Color.gray.opacity(0.12))
-                                    .frame(height: 5)
+                                    .frame(height: 4)
                                 
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [quest.categoryColor, quest.categoryColor.opacity(0.7)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: max(0, geo.size.width * quest.progress), height: 5)
+                                RoundedRectangle(cornerRadius: 2.5)
+                                    .fill(quest.categoryColor)
+                                    .frame(width: max(0, geo.size.width * quest.progress), height: 4)
                                     .animation(.spring(response: 0.4), value: quest.progress)
                             }
                         }
-                        .frame(height: 5)
+                        .frame(height: 4)
                         
-                        // Progress label with units
                         Text(progressLabel(quest: quest))
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(quest.categoryColor)
-                            .frame(minWidth: 55, alignment: .trailing)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .frame(minWidth: 50, alignment: .trailing)
                     }
-                    .padding(.top, 7)
-                    .padding(.leading, 46)
                 }
-            }
-            
-            // Completed state — show reward earned
-            if quest.isCompleted {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(.green)
-                    Text("Completed — \(quest.xpReward) XP earned")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.green.opacity(0.8))
-                }
-                .padding(.top, 5)
-                .padding(.leading, 46)
             }
         }
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
-        .padding(.horizontal, 10)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    quest.isCompleted
-                        ? Color.green.opacity(colorScheme == .dark ? 0.06 : 0.04)
-                        : Color.gray.opacity(colorScheme == .dark ? 0.08 : 0.04)
-                )
+            quest.isCompleted
+                ? RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.green.opacity(colorScheme == .dark ? 0.06 : 0.04))
+                : nil
         )
+        .sleekCardSubtle(cornerRadius: 16)
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     quest.isCompleted
-                        ? Color.green.opacity(0.15)
-                        : Color.clear,
+                        ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(colors: [quest.categoryColor.opacity(0.35), quest.categoryColor.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1
                 )
         )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Quest Deep Link Navigation
+    
+    private func navigateToQuest(_ quest: DailyQuest) {
+        guard let key = QuestKey(rawValue: quest.questKey) else { return }
+        let dl = DeepLinkManager.shared
+        
+        switch key {
+        // Workout quests → auto-gen workout flow
+        case .completeWorkout, .completeProgramDay, .complete2Workouts,
+             .workout30Min, .exerciseSets15, .exerciseSets25,
+             .upperBodyWorkout, .lowerBodyWorkout, .earlyBirdWorkout:
+            dl.pendingDestination = .workout
+            
+        // Nutrition quests → meals tab
+        case .logBreakfast, .logLunch, .logDinner, .log3Meals,
+             .logSnack, .hitProteinGoal, .logHighProteinMeal:
+            dl.pendingDestination = .mealsTab
+            
+        // Water quests → hydration widget
+        case .logWater3, .logWater8:
+            dl.pendingDestination = .hydration
+            
+        // Steps quests → step tracker
+        case .walk3kSteps, .walk5kSteps, .walk7500Steps,
+             .hitStepGoal, .walk10kSteps:
+            dl.pendingDestination = .stepTracker
+            
+        // Social / challenge quests → friends tab
+        case .sendChallenge, .start1v1Challenge, .startFirstChallenge:
+            dl.pendingDestination = .challenges
+            
+        case .reactToWorkout, .addFriend, .inviteFriend:
+            dl.pendingDestination = .friends
+            
+        // Tracking quests → weight / stats
+        case .logWeight:
+            dl.pendingDestination = .weightTracker
+            
+        case .checkProgress, .beatPersonalRecord:
+            dl.pendingDestination = .personalRecord
+            
+        case .logCardio:
+            dl.pendingDestination = .workout
+            
+        // Exercise discovery → exercises tab
+        case .tryNewExercise:
+            dl.pendingDestination = .dashboard
+            
+        // Wildcard
+        case .shareWorkout, .favoriteAWorkout:
+            dl.pendingDestination = .workoutHistory
+            
+        case .perfectDay:
+            break
+            
+        // Ad quest handled by its own button
+        case .watchAds:
+            break
+            
+        // Legacy keys
+        case .logMeal:
+            dl.pendingDestination = .mealsTab
+        case .logWater:
+            dl.pendingDestination = .hydration
+        case .exerciseSets10, .exerciseSets20:
+            dl.pendingDestination = .workout
+        }
+    }
+    
+    // MARK: - Completion Summary (contextual detail for completed quests)
+    
+    private func completionSummary(for quest: DailyQuest) -> String {
+        guard let key = QuestKey(rawValue: quest.questKey) else {
+            return "Done ✓"
+        }
+        
+        switch key {
+        case .completeWorkout, .completeProgramDay, .complete2Workouts,
+             .workout30Min, .exerciseSets15, .exerciseSets25,
+             .exerciseSets10, .exerciseSets20,
+             .upperBodyWorkout, .lowerBodyWorkout, .earlyBirdWorkout:
+            return "Workout completed ✓"
+            
+        case .logBreakfast:
+            return mealSummary(for: .breakfast)
+        case .logLunch:
+            return mealSummary(for: .lunch)
+        case .logDinner:
+            return mealSummary(for: .dinner)
+        case .logSnack:
+            return mealSummary(for: .snacks)
+        case .log3Meals, .logMeal:
+            let count = MealService.shared.todaysMeals.count
+            return "\(count) meals logged ✓"
+        case .hitProteinGoal, .logHighProteinMeal:
+            return "Protein goal hit ✓"
+            
+        case .logWater3:
+            return "3+ glasses logged 💧"
+        case .logWater8, .logWater:
+            return "8 glasses logged 💧"
+            
+        case .walk3kSteps, .walk5kSteps, .walk7500Steps:
+            return "\(formattedSteps) steps walked"
+        case .walk10kSteps, .hitStepGoal:
+            return "\(formattedSteps) steps — goal hit!"
+            
+        case .sendChallenge, .start1v1Challenge, .startFirstChallenge:
+            if let recent = ChallengeService.shared.activeChallenges.last {
+                let opponent = recent.opponentName ?? "a friend"
+                return "\(recent.title ?? "Challenge") with \(opponent)"
+            }
+            return "Challenge started ✓"
+            
+        case .reactToWorkout:
+            return "Reacted to a friend's workout ✓"
+        case .addFriend, .inviteFriend:
+            return "Friend added ✓"
+            
+        case .logWeight:
+            return "Weight logged ✓"
+        case .logCardio:
+            return "Cardio session logged ✓"
+        case .checkProgress:
+            return "Progress checked ✓"
+        case .beatPersonalRecord:
+            return "New personal record! 🏆"
+            
+        case .tryNewExercise:
+            return "New exercise tried ✓"
+        case .shareWorkout:
+            return "Workout shared ✓"
+        case .favoriteAWorkout:
+            return "Workout favorited ⭐"
+        case .perfectDay:
+            return "Perfect day achieved 🌟"
+            
+        case .watchAds:
+            return "Videos watched — thank you!"
+        }
+    }
+    
+    private func mealSummary(for mealType: MealType) -> String {
+        let meals = MealService.shared.todaysMeals.filter { $0.mealType == mealType }
+        if !meals.isEmpty {
+            let names = meals.prefix(3).map { $0.foodName }
+            return "Logged — \(names.joined(separator: ", "))"
+        }
+        return "\(mealType.displayName) logged ✓"
+    }
+    
+    private var formattedSteps: String {
+        let steps = HealthKitService.shared.todaySteps
+        if steps >= 1000 {
+            return String(format: "%.1fk", Double(steps) / 1000.0)
+        }
+        return "\(steps)"
+    }
+    
+    private func compactAdRow(quest: DailyQuest) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                guard let vc = RootViewControllerFinder.find() else { return }
+                adManager.showRewardedAd(from: vc) {
+                    Task { @MainActor in
+                        await DailyQuestService.shared.onAdWatched()
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Watch \(quest.currentValue + 1)/\(quest.targetValue)")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(
+                        adManager.isRewardedAdReady
+                            ? LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                            : LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
+                    )
+                )
+            }
+            .disabled(!adManager.isRewardedAdReady)
+            
+            Spacer()
+            
+            Text("\(quest.currentValue)/\(quest.targetValue) videos")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.secondary)
+        }
     }
     
     /// Formats progress label with smart units — always shows what you're counting
@@ -379,7 +531,7 @@ struct DailyQuestsWidget: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(
@@ -396,7 +548,7 @@ struct DailyQuestsWidget: View {
                     ProgressView()
                         .scaleEffect(0.6)
                     Text("Loading...")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -410,69 +562,56 @@ struct DailyQuestsWidget: View {
         }
     }
     
-    // MARK: - Bonus Row
+    // MARK: - Compact Bonus Row
     
-    private var bonusRow: some View {
-        HStack(spacing: 10) {
+    private var compactBonusRow: some View {
+        HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(
-                        questService.allComplete
-                            ? LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            : LinearGradient(colors: [Color.yellow.opacity(0.15), Color.orange.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                    .frame(width: 40, height: 40)
+                
+                Circle()
+                    .trim(from: 0, to: questService.overallProgress)
+                    .stroke(
+                        questService.allComplete ? Color.orange : Color.orange.opacity(0.4),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
                     )
-                    .frame(width: 36, height: 36)
+                    .frame(width: 40, height: 40)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 0.5), value: questService.overallProgress)
                 
-                if questService.allComplete {
-                    Image(systemName: "gift.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                } else {
-                    Image(systemName: "gift")
+                Text(questService.allComplete ? "🎁" : "🎯")
+                    .font(.system(size: 18))
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Daily Bonus")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.orange.opacity(0.5))
+                        .foregroundColor(questService.allComplete ? .primary : .secondary)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 2) {
+                        Text("+50")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text("XP")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(questService.allComplete ? .orange : .secondary.opacity(0.35))
                 }
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Daily Bonus")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(questService.allComplete ? .primary : .secondary)
                 
-                Text(questService.allComplete ? "All quests completed! 🎉" : "Complete all 3 quests to unlock")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(questService.allComplete ? .green : .secondary.opacity(0.6))
+                Text(questService.allComplete
+                    ? "All quests done! 🎉"
+                    : "\(questService.completedCount)/\(questService.totalCount) complete")
+                    .font(.system(size: 11))
+                    .foregroundColor(questService.allComplete ? .green.opacity(0.8) : .secondary.opacity(0.6))
             }
-            
-            Spacer()
-            
-            HStack(spacing: 2) {
-                Text("+50")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                Text("XP")
-                    .font(.system(size: 9, weight: .semibold))
-            }
-            .foregroundColor(questService.allComplete ? .orange : .secondary.opacity(0.35))
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    questService.allComplete
-                        ? Color.orange.opacity(colorScheme == .dark ? 0.08 : 0.05)
-                        : Color.clear
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(
-                    questService.allComplete
-                        ? Color.orange.opacity(0.2)
-                        : Color.gray.opacity(0.08),
-                    lineWidth: 1
-                )
-        )
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 10)
+        .sleekCardSubtle(cornerRadius: 16)
     }
     
     // MARK: - Loading / Empty States
@@ -629,7 +768,7 @@ struct QuestBonusCelebration: View {
                     
                     Spacer()
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color(.systemBackground))
@@ -778,7 +917,7 @@ private struct AdQuestPreviewCard: View {
                 Spacer()
                 
                 Text(quest.difficulty.capitalized)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(quest.difficultyColor)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
@@ -824,7 +963,7 @@ private struct AdQuestPreviewCard: View {
                                     .font(.system(size: 12, weight: .bold))
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .padding(.horizontal, 14).padding(.vertical, Spacing.xs)
                             .background(
                                 Capsule().fill(
                                     LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
@@ -860,9 +999,9 @@ private struct AdQuestPreviewCard: View {
             // Completed
             if quest.isCompleted {
                 HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 11)).foregroundColor(.green)
+                    Image(systemName: "checkmark.circle.fill").font(.ds_labelSmall).foregroundColor(.green)
                     Text("Completed — \(quest.xpReward) XP earned")
-                        .font(.system(size: 11, weight: .medium)).foregroundColor(.green.opacity(0.8))
+                        .font(.ds_labelSmall).foregroundColor(.green.opacity(0.8))
                 }
                 .padding(.top, 5).padding(.leading, 46)
             }

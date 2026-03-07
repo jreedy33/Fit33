@@ -221,7 +221,7 @@ struct RecipeDetailView: View {
                     color: detail.difficulty.color
                 )
             }
-            .padding(16)
+            .padding(Spacing.md)
         }
     }
     
@@ -488,11 +488,11 @@ struct RecipeDetailView: View {
                         ForEach(cuisines, id: \.self) { cuisine in
                             Text(cuisine)
                                 .font(.caption)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(Color.orange.opacity(0.1))
                                 .foregroundColor(.orange)
-                                .cornerRadius(8)
+                                .cornerRadius(CornerRadius.sm)
                         }
                     }
                 }
@@ -509,18 +509,18 @@ struct RecipeDetailView: View {
                         ForEach(Array(dishTypes.enumerated()), id: \.offset) { index, type in
                             Text(type.capitalized)
                                 .font(.caption)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, Spacing.sm)
                                 .padding(.vertical, 6)
                                 .background(Color.blue.opacity(0.1))
                                 .foregroundColor(.blue)
-                                .cornerRadius(8)
+                                .cornerRadius(CornerRadius.sm)
                         }
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Ingredients Section
@@ -549,16 +549,16 @@ struct RecipeDetailView: View {
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Instructions Section
@@ -589,7 +589,7 @@ struct RecipeDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Loading View
@@ -629,9 +629,9 @@ struct RecipeDetailView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.sm)
                     .background(Color.orange)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
             }
         }
         .padding()
@@ -699,7 +699,7 @@ struct RecipeDetailView: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [Color.orange, Color.red.opacity(0.8)],
@@ -707,7 +707,7 @@ struct RecipeDetailView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .orange.opacity(0.4), radius: 8, x: 0, y: 4)
             }
             .buttonStyle(PlainButtonStyle())
@@ -739,7 +739,7 @@ struct RecipeDetailView: View {
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [Color.purple, Color.pink],
@@ -747,7 +747,7 @@ struct RecipeDetailView: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -780,9 +780,9 @@ struct RecipeDetailView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
             )
@@ -933,11 +933,11 @@ struct RecipeMacroTile: View {
         VStack(spacing: 4) {
             HStack(alignment: .lastTextBaseline, spacing: 1) {
                 Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(color)
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(color.opacity(0.7))
                 }
             }
@@ -1075,8 +1075,8 @@ struct IngredientRow: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(Color.clear)
         
         if !isLast {
@@ -1148,10 +1148,10 @@ struct InstructionStepRow: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.98))
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.98))
         )
     }
 }
@@ -1321,12 +1321,12 @@ struct SmartServingSelectorSheet: View {
                                 
                                 Spacer()
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, Spacing.sm)
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Nutrition preview
@@ -1365,8 +1365,8 @@ struct SmartServingSelectorSheet: View {
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Meal type selector
@@ -1406,8 +1406,8 @@ struct SmartServingSelectorSheet: View {
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Add button
@@ -1424,7 +1424,7 @@ struct SmartServingSelectorSheet: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [.orange, .red.opacity(0.8)],
@@ -1472,9 +1472,9 @@ struct NutritionBadge: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(color.opacity(colorScheme == .dark ? 0.15 : 0.1))
         )
     }
@@ -1534,15 +1534,15 @@ struct MealTypeButton: View {
                     .foregroundColor(isSelected ? .primary : .secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected 
                           ? gradient[0].opacity(colorScheme == .dark ? 0.2 : 0.15)
                           : Color.clear
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(
                                 isSelected ? gradient[0] : Color.gray.opacity(0.3),
                                 lineWidth: isSelected ? 2 : 1

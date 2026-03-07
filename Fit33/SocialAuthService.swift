@@ -78,7 +78,7 @@ class SocialAuthService: NSObject, ObservableObject {
     /// This opens a web view for Google authentication
     func getGoogleSignInURL() -> URL? {
         // Supabase OAuth URL for Google
-        let supabaseURL = "https://ehooeghabzefgoqzugrc.supabase.co"
+        let supabaseURL = AppConfig.Supabase.url
         let redirectURL = "fit33://login-callback"
         
         // Construct the OAuth URL
@@ -229,7 +229,7 @@ struct SignInWithAppleButton: View {
             }
             .foregroundColor(colorScheme == .dark ? .black : .white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 Capsule()
                     .fill(colorScheme == .dark ? Color.white : Color.black)
@@ -257,7 +257,7 @@ struct SignInWithGoogleButton: View {
             }
             .foregroundColor(.black)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 Capsule()
                     .fill(Color.white)

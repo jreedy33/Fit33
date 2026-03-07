@@ -37,7 +37,7 @@ struct ActivityRingsCard: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
                 
                 // Main content - Two ring sets side by side
@@ -78,10 +78,10 @@ struct ActivityRingsCard: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // Ring legends
                 HStack(spacing: 0) {
@@ -131,13 +131,13 @@ struct ActivityRingsCard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 16)
             }
         }
         .buttonStyle(PlainButtonStyle())
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         .sheet(isPresented: $showingDetailView) {
             ActivityRingsDetailView()
@@ -713,16 +713,16 @@ struct ActivityRingsDetailView: View {
                                 .foregroundColor(item.progress >= 1.0 ? .green : .secondary)
                         }
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .background(Color.white)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(Color.white.opacity(0.8))
-        .cornerRadius(16)
+        .cornerRadius(CornerRadius.lg)
     }
     
     // MARK: - Computed Properties (same as card)

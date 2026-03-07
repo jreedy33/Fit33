@@ -222,7 +222,7 @@ struct PrivateChallengeCreationFlow: View {
                         : AnyShapeStyle(Color.gray)
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(Capsule().fill(.ultraThinMaterial))
                 .overlay(
                     Capsule().stroke(
@@ -328,11 +328,11 @@ struct PrivateChallengeCreationFlow: View {
                 TextField("e.g. Office Step Challenge", text: $challengeTitle)
                     .font(.body)
                     .foregroundColor(.white)
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(Color.white.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
                     .autocorrectionDisabled()
@@ -349,11 +349,11 @@ struct PrivateChallengeCreationFlow: View {
                     .font(.body)
                     .foregroundColor(.white)
                     .lineLimit(3...5)
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(Color.white.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
             }
@@ -500,7 +500,7 @@ struct PrivateChallengeCreationFlow: View {
                                 .fill(Color.green.opacity(0.2))
                                 .frame(width: 40, height: 40)
                             Image(systemName: "person.3.fill")
-                                .font(.system(size: 16))
+                                .font(.ds_bodyRegular)
                                 .foregroundColor(.green)
                         }
                         
@@ -528,7 +528,7 @@ struct PrivateChallengeCreationFlow: View {
                             }
                             
                             Text("\(maxMembers)")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.ds_statSmall)
                                 .foregroundColor(.white)
                                 .frame(width: 40)
                             
@@ -542,7 +542,7 @@ struct PrivateChallengeCreationFlow: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color.white.opacity(0.08))
@@ -574,7 +574,7 @@ struct PrivateChallengeCreationFlow: View {
                     .fill(iconColor.opacity(0.2))
                     .frame(width: 40, height: 40)
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(iconColor)
             }
             
@@ -595,7 +595,7 @@ struct PrivateChallengeCreationFlow: View {
                 .labelsHidden()
                 .tint(.purple)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.white.opacity(0.08))
@@ -666,7 +666,7 @@ struct PrivateChallengeCreationFlow: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.white.opacity(0.5))
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 
                 TextField("Search friends", text: $searchText)
                     .font(.body)
@@ -681,10 +681,10 @@ struct PrivateChallengeCreationFlow: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(Color.white.opacity(0.1))
-            .cornerRadius(12)
+            .cornerRadius(CornerRadius.md)
             
             // Friends list
             if friendService.friends.isEmpty {
@@ -862,7 +862,7 @@ struct PrivateChallengeCreationFlow: View {
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Text("+\(selectedFriends.count - 5)")
-                                            .font(.system(size: 10, weight: .bold))
+                                            .font(.ds_caption)
                                             .foregroundColor(.white)
                                     )
                                     .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
@@ -881,7 +881,7 @@ struct PrivateChallengeCreationFlow: View {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [Color(white: 0.18), Color(white: 0.12)],
+                                    colors: [Color(white: 0.18), Color.cardBackground],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )

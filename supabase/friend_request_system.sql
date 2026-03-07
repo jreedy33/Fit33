@@ -187,6 +187,7 @@ AS $$
 DECLARE
     current_user_uuid UUID;
     request_record RECORD;
+    accepter_name TEXT;
 BEGIN
     current_user_uuid := auth.uid();
     
@@ -213,7 +214,31 @@ BEGIN
     SET status = 'accepted', updated_at = NOW()
     WHERE id = request_id;
     
-    -- TODO: Queue push notification to requester
+    -- Get accepter's display name for the notification
+    SELECT COALESCE(name, username, 'Someone') INTO accepter_name
+    FROM user_profiles
+    WHERE id = current_user_uuid;
+    
+    -- Queue push notification to the original requester
+    BEGIN
+        INSERT INTO push_notification_queue (
+            recipient_user_id, notification_type, title, body, data, status, created_at
+        ) VALUES (
+            request_record.requester_id,
+            'friend_accepted',
+            'Friend Request Accepted 🎉',
+            accepter_name || ' accepted your friend request!',
+            jsonb_build_object(
+                'type', 'friend_accepted',
+                'friendship_id', request_id::TEXT,
+                'friend_id', current_user_uuid::TEXT
+            ),
+            'pending',
+            NOW()
+        );
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Failed to queue accept notification: %', SQLERRM;
+    END;
     
     RETURN TRUE;
 END;

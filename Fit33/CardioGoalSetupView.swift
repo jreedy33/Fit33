@@ -309,9 +309,9 @@ struct CardioGoalSetupView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color(.systemGray6))
         )
     }
@@ -409,7 +409,7 @@ struct CardioGoalSetupView: View {
                     endPoint: .trailing
                 )
             )
-            .cornerRadius(16)
+            .cornerRadius(CornerRadius.lg)
             .shadow(color: activityType.color.opacity(0.4), radius: 12, y: 6)
         }
         .padding(.horizontal, 20)
@@ -438,7 +438,7 @@ struct GoalTypeButton: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? color : Color(.systemGray5))
             )
         }
@@ -495,9 +495,9 @@ struct TimeGoalPicker: View {
             ), in: 5...120, step: 5)
             .tint(color)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemGray6).opacity(0.5))
         )
     }
@@ -549,9 +549,9 @@ struct DistanceGoalPicker: View {
             Slider(value: $distance, in: 0.5...50, step: 0.5)
                 .tint(color)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemGray6).opacity(0.5))
         )
     }
@@ -606,9 +606,9 @@ struct CalorieGoalPicker: View {
             ), in: 50...1500, step: 50)
             .tint(color)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color(.systemGray6).opacity(0.5))
         )
     }
@@ -642,9 +642,9 @@ struct RecommendationBubble: View {
                 .foregroundColor(.primary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(color.opacity(0.1))
             )
         }

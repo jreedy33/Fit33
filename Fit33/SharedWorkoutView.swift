@@ -121,7 +121,7 @@ struct SharedWorkoutView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
             }
             .padding(.horizontal, 32)
         }
@@ -164,7 +164,7 @@ struct SharedWorkoutView: View {
                     .fontWeight(.semibold)
             }
             .foregroundColor(accentGradient[0])
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .background(
                 Capsule()
@@ -261,7 +261,7 @@ struct SharedWorkoutView: View {
         }
         .padding(20)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
     }
     
     // MARK: - Action Buttons
@@ -289,7 +289,7 @@ struct SharedWorkoutView: View {
                         endPoint: .trailing
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                 .shadow(color: accentGradient[0].opacity(0.4), radius: 8, x: 0, y: 4)
             }
             
@@ -308,9 +308,9 @@ struct SharedWorkoutView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
                 .background(Color.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
                         .stroke(savedForLater ? Color.orange : Color.gray.opacity(0.3), lineWidth: 1.5)
                 )
             }
@@ -439,7 +439,7 @@ struct SharedWorkoutStatCard: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }

@@ -859,8 +859,8 @@ struct FoodDetailsView: View {
                                 .fontWeight(.medium)
                         }
                         .foregroundColor(.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             Capsule()
                                 .fill(Color(.systemGray6))
@@ -879,7 +879,7 @@ struct FoodDetailsView: View {
                     // Balance spacer
                     Color.clear.frame(width: 70, height: 32)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 12)
                 .padding(.bottom, 16)
                 
@@ -998,7 +998,7 @@ struct FoodDetailsView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .frame(width: 60)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(Color(.systemGray6))
@@ -1030,7 +1030,7 @@ struct FoodDetailsView: View {
                         }
                         .foregroundColor(.primary)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.xs)
                         .frame(minWidth: 80)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
@@ -1100,13 +1100,13 @@ struct FoodDetailsView: View {
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(showDetailedNutrition ? 90 : 0))
                 }
-                .padding(16)
+                .padding(Spacing.md)
             }
             .buttonStyle(PlainButtonStyle())
             
             if showDetailedNutrition {
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 // 2-column grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -1119,12 +1119,12 @@ struct FoodDetailsView: View {
                     NutrientRow(name: "Iron", value: currentNutrition.iron, unit: "mg")
                     NutrientRow(name: "Vitamin C", value: currentNutrition.vitaminC, unit: "mg")
                 }
-                .padding(16)
+                .padding(Spacing.md)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 3)
         )
@@ -1142,7 +1142,7 @@ struct FoodDetailsView: View {
             }
             .foregroundColor(.white)
             .padding(.horizontal, 32)
-            .padding(.vertical, 16)
+            .padding(.vertical, Spacing.md)
             .background(
                 Capsule()
                     .fill(
@@ -1668,8 +1668,8 @@ struct PortionChip: View {
                 .font(.caption)
                 .fontWeight(isSelected ? .semibold : .medium)
                 .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected ? Color.green : Color(.systemGray6))
@@ -1737,13 +1737,13 @@ struct ServingOptionRow: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(isSelected ? .green : .secondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
                     .fill(isSelected ? Color.green.opacity(0.1) : Color(.systemGray6))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
                             .stroke(isSelected ? Color.green : Color.clear, lineWidth: 1)
                     )
             )

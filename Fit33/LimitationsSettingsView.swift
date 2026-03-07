@@ -42,7 +42,7 @@ struct LimitationsSettingsView: View {
                     
                     Spacer(minLength: 50)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
             }
         }
@@ -109,10 +109,10 @@ struct LimitationsSettingsView: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
         )
@@ -140,13 +140,13 @@ struct LimitationsSettingsView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? Color.orange.opacity(0.08) : Color.orange.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
         )
     }
@@ -212,9 +212,9 @@ struct LimitationsSettingsView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.secondary)
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
@@ -285,7 +285,7 @@ struct LimitationRowCard: View {
                                 .fontWeight(.medium)
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
@@ -315,12 +315,12 @@ struct LimitationRowCard: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(limitation.affectedArea.color.opacity(0.3), lineWidth: 1)
             )
         }
@@ -413,9 +413,9 @@ struct AddLimitationSheet: View {
                             
                             TextField("Any additional details...", text: $notes, axis: .vertical)
                                 .lineLimit(3...6)
-                                .padding(12)
+                                .padding(Spacing.sm)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(Color.cardBackground)
                                 )
                         }
@@ -508,9 +508,9 @@ struct EditLimitationSheet: View {
                                 
                                 Spacer()
                             }
-                            .padding(16)
+                            .padding(Spacing.md)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(Color.cardBackground)
                             )
                         }
@@ -560,9 +560,9 @@ struct EditLimitationSheet: View {
                             
                             TextField("Any additional details...", text: $notes, axis: .vertical)
                                 .lineLimit(3...6)
-                                .padding(12)
+                                .padding(Spacing.sm)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
                                         .fill(Color.cardBackground)
                                 )
                         }
@@ -582,7 +582,7 @@ struct EditLimitationSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
                                     .fill(Color.green.opacity(0.1))
                             )
                         }
@@ -657,11 +657,11 @@ struct AreaSelectionCard: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(Color(.systemBackground))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(isSelected ? area.color : Color(.systemGray4), lineWidth: isSelected ? 2 : 1)
             )
         }
@@ -709,14 +709,14 @@ struct AccommodationButton: View {
                         .foregroundColor(level.color)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(isSelected ? level.color.opacity(0.1) : Color(.systemGray6))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: CornerRadius.md)
                     .stroke(isSelected ? level.color.opacity(0.5) : Color.clear, lineWidth: 1.5)
             )
         }
@@ -751,7 +751,7 @@ struct TypeButton: View {
                         .foregroundColor(.blue)
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(.systemBackground))

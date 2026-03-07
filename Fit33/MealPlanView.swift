@@ -141,7 +141,7 @@ struct MealPlanView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 20)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - teal colored
@@ -156,7 +156,7 @@ struct MealPlanView: View {
                     .offset(y: 4)
                 
                 // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -168,7 +168,7 @@ struct MealPlanView: View {
                     )
                 
                 // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark 
@@ -181,7 +181,7 @@ struct MealPlanView: View {
                     )
                 
                 // Colored accent border - teal/cyan gradient (matches Daily Steps)
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -232,7 +232,7 @@ struct MealPlanView: View {
                     .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
                             .fill(colorScheme == .dark ? Color(white: 0.18) : Color(.systemGray6))
                     )
             } else {
@@ -245,10 +245,10 @@ struct MealPlanView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -260,7 +260,7 @@ struct MealPlanView: View {
                     )
                 
                 // Inner highlight
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -295,7 +295,7 @@ struct MealPlanView: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
@@ -314,10 +314,10 @@ struct MealPlanView: View {
                 .padding(.vertical, 4)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -329,7 +329,7 @@ struct MealPlanView: View {
                     )
                 
                 // Inner highlight
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -342,7 +342,7 @@ struct MealPlanView: View {
                     )
                 
                 // Orange accent
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .stroke(Color.orange.opacity(0.3), lineWidth: 1)
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
@@ -394,7 +394,7 @@ struct MealPlanView: View {
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                 )
             }
             .buttonStyle(PlainButtonStyle())
@@ -553,7 +553,7 @@ struct ProfileSetupView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(
                             LinearGradient(
                                 gradient: Gradient(colors: [Color.green, Color.mint]),
@@ -561,7 +561,7 @@ struct ProfileSetupView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(CornerRadius.md)
                 }
                 .padding(.horizontal)
                 .disabled(!isFormValid)
@@ -662,10 +662,10 @@ struct NutritionProgressCard: View {
                 .scaleEffect(x: 1, y: 0.5)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 8)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .fill(colorScheme == .dark ? color.opacity(0.15) : color.opacity(0.08))
         )
     }
@@ -707,7 +707,7 @@ struct MealEntryRow: View {
             if entry.fdcId > 0 {
                 Button(action: toggleFavorite) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(isFavorite ? .yellow : .gray)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -718,10 +718,10 @@ struct MealEntryRow: View {
                     .foregroundColor(.red)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         .background(colorScheme == .dark ? Color(white: 0.18) : Color(.systemBackground))
-        .cornerRadius(8)
+        .cornerRadius(CornerRadius.sm)
         .onAppear {
             // Check if this food is already favorited
             if entry.fdcId > 0 {
@@ -1075,10 +1075,10 @@ struct SavedMealDetailView: View {
             }
             .frame(height: 8)
         }
-        .padding(16)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
         )
     }
     
@@ -1158,8 +1158,8 @@ struct SavedMealDetailView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
         )
     }
@@ -1187,7 +1187,7 @@ struct SavedMealDetailView: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
                         colors: [Color.green, Color.mint],
@@ -1195,7 +1195,7 @@ struct SavedMealDetailView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(16)
+                .cornerRadius(CornerRadius.lg)
                 .shadow(color: .green.opacity(0.4), radius: 8, x: 0, y: 4)
             }
             .buttonStyle(PlainButtonStyle())
@@ -1218,14 +1218,14 @@ struct SavedMealDetailView: View {
                         Text("\(meal.ingredients.count)")
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, 4)
                             .background(Color.white.opacity(0.2))
-                            .cornerRadius(8)
+                            .cornerRadius(CornerRadius.sm)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [Color.purple, Color.pink],
@@ -1233,7 +1233,7 @@ struct SavedMealDetailView: View {
                             endPoint: .trailing
                         )
                     )
-                    .cornerRadius(16)
+                    .cornerRadius(CornerRadius.lg)
                     .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -1293,8 +1293,8 @@ struct SavedMealDetailView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
                         
                         if index < meal.ingredients.count - 1 {
                             Divider()
@@ -1304,7 +1304,7 @@ struct SavedMealDetailView: View {
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                        .fill(colorScheme == .dark ? Color.cardBackground : .white)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
@@ -1343,11 +1343,11 @@ struct SavedMealDetailView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
                 .lineSpacing(6)
-                .padding(16)
+                .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color(white: 0.12) : Color(white: 0.98))
+                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.98))
                 )
         }
     }
@@ -1367,9 +1367,9 @@ struct SavedMealDetailView: View {
                 
                 Spacer()
             }
-            .padding(16)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
             )
@@ -1521,12 +1521,12 @@ struct SavedMealPickerSheet: View {
                                 
                                 Spacer()
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, Spacing.sm)
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Meal type selector
@@ -1550,8 +1550,8 @@ struct SavedMealPickerSheet: View {
                         }
                         .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
                         )
                         
                         // Add button
@@ -1568,7 +1568,7 @@ struct SavedMealPickerSheet: View {
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [.green, .mint],

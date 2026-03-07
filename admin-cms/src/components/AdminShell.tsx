@@ -16,15 +16,25 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const pathname = usePathname()
   const [adminEmail, setAdminEmail] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
-    const token = sessionStorage.getItem('admin_token')
-    if (!token) {
+    // Quick client-side check before the server roundtrip
+    if (!document.cookie.includes('admin_logged_in')) {
       router.replace('/login')
       return
     }
-    setAdminEmail(sessionStorage.getItem('admin_email') || '')
+
+    fetch('/api/auth/session')
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then(data => {
+        setAdminEmail(data.user?.email || '')
+        setAuthChecked(true)
+      })
+      .catch(() => router.replace('/login'))
   }, [router])
+
+  if (!authChecked) return null
 
   return (
     <div className="flex min-h-screen">

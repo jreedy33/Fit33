@@ -11,19 +11,10 @@ class SupabaseManager: ObservableObject {
     static let shared = SupabaseManager()
     
     // MARK: - Supabase Credentials
-    //
-    // ⚠️ SECURITY NOTE:
-    // The anon key below is intentionally included in the client app — this is standard
-    // for Supabase projects. It is safe because Supabase Row Level Security (RLS) policies
-    // protect all user data. The anon key only grants access that RLS explicitly allows.
-    //
-    // If RLS is ever disabled on ANY table, this key would allow unauthorized public access
-    // to that table's data. Always ensure RLS is enabled and policies are correct.
-    //
-    // See SECURITY_CHECKLIST.md for the full RLS audit checklist and instructions.
-    //
-    private let supabaseURL = "https://ehooeghabzefgoqzugrc.supabase.co"  
-    private let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVob29lZ2hhYnplZmdvcXp1Z3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM4NDc4NjQsImV4cCI6MjA3OTQyMzg2NH0.6-QWDr5B279hybtu9MbPVhmBKlyzFq1GK9P7zlDXuY0"     
+    // Credentials are loaded from Secrets.swift (gitignored) via AppConfig.
+    // See Secrets.template.swift for the schema and SECURITY_CHECKLIST.md for the RLS audit.
+    private let supabaseURL = AppConfig.Supabase.url
+    private let supabaseKey = AppConfig.Supabase.anonKey
     
     internal var client: SupabaseClient!
     
@@ -2774,7 +2765,7 @@ class SupabaseManager: ObservableObject {
         guard let current = response.first else { return }
         
         let newTotalXp = current.totalXp + xpEarned
-        let newLevel = (newTotalXp / 1000) + 1  // Level up every 1000 XP
+        let newLevel = (newTotalXp / 100) + 1  // Level up every 100 XP (matches UserManager.getLevel())
         
         struct ProgressUpdate: Encodable {
             let total_xp: Int

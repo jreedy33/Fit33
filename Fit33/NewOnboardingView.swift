@@ -1074,9 +1074,14 @@ struct NewOnboardingView: View {
                     .padding(.horizontal, 20)
             }
         }
-        .padding(.top, UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.top.map { max($0 + 10, 50) } ?? 70) // Dynamic safe area clearance
+        .padding(.top, {
+            let scenes = UIApplication.shared.connectedScenes
+            if let windowScene = scenes.first(where: { $0 is UIWindowScene }) as? UIWindowScene,
+               let topInset = windowScene.windows.first?.safeAreaInsets.top, topInset > 0 {
+                return max(topInset + 10, 50)
+            }
+            return 70
+        }())
         .padding(.bottom, currentStep == .auth ? 12 : 24)
     }
 

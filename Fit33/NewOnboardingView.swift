@@ -1320,7 +1320,7 @@ struct NewOnboardingView: View {
         if !selectedGoals.isEmpty { data["goals"] = selectedGoals.joined(separator: ",") }
         if !selectedExperience.isEmpty { data["experience"] = selectedExperience }
         data["strength"] = selectedStrengthLevel.rawValue
-        if !selectedWorkoutLocation.isEmpty { data["location"] = selectedWorkoutLocation }
+        data["location"] = "\(selectedWorkoutLocation)"
         if !selectedEquipment.isEmpty { data["equipment"] = selectedEquipment.joined(separator: ",") }
         return data
     }
@@ -1343,7 +1343,15 @@ struct NewOnboardingView: View {
         if let g = data["goals"] { selectedGoals = Set(g.split(separator: ",").map(String.init)) }
         if let exp = data["experience"] { selectedExperience = exp }
         if let s = data["strength"], let level = StrengthProfileRecommendationEngine.StrengthLevel(rawValue: s) { selectedStrengthLevel = level }
-        if let loc = data["location"] { selectedWorkoutLocation = loc }
+        if let loc = data["location"] {
+            switch loc {
+            case "gym": selectedWorkoutLocation = .gym
+            case "home": selectedWorkoutLocation = .home
+            case "outdoor": selectedWorkoutLocation = .outdoor
+            case "hybrid": selectedWorkoutLocation = .hybrid
+            default: break
+            }
+        }
         if let eq = data["equipment"] { selectedEquipment = Set(eq.split(separator: ",").map(String.init)) }
         
         if let step = OnboardingStep(rawValue: checkpoint.step) {

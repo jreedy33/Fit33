@@ -92,7 +92,7 @@ struct ReceivedWorkoutPreviewWidget: View {
         } message: {
             Text("This will permanently remove the workout from your inbox.")
         }
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .savedWorkouts)
         }
     }

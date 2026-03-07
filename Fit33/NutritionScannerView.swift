@@ -512,16 +512,13 @@ struct NutritionScannerView: View {
         if let regex = try? NSRegularExpression(pattern: pattern) {
             let range = NSRange(withoutPercents.startIndex..., in: withoutPercents)
             let matches = regex.matches(in: withoutPercents, range: range)
-
             var numbers: [String] = []
             for match in matches {
                 if let range = Range(match.range, in: withoutPercents) {
                     numbers.append(String(withoutPercents[range]))
                 }
             }
-
             if !numbers.isEmpty {
-                // Return the first number (which is typically the nutrient value)
                 // Allow zero values — nutrients like Trans Fat can legitimately be 0
                 return numbers.first
             }

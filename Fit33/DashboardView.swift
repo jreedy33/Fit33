@@ -9,7 +9,6 @@ enum DashboardRoute: Hashable {
     case mealPlan
     case workoutHistory
     case programDetailsPlaceholder
-    case challengeFlowStart
     case generatedProgramsList
     case personalizedPrograms
     case smartWorkoutPreview  // uses GeneratedProgramService.shared
@@ -167,7 +166,7 @@ struct DashboardView: View {
     @State private var showFriendsListForChallenge = false
     
     // Challenge creation flow states
-    @State private var navigateToChallengeFlow = false
+    @State private var showingChallengeCreation = false
     @State private var showCommunityHub = false
     
     // Widget settings
@@ -376,8 +375,11 @@ struct DashboardView: View {
                 StreakInfoSheet()
                     .environmentObject(userManager)
             }
-            .navigationDestination(isPresented: $navigateToChallengeFlow) {
-                ChallengeFlowStartView()
+            .fullScreenCover(isPresented: $showingChallengeCreation) {
+                NavigationStack {
+                    ChallengeFlowStartView()
+                        .environmentObject(userManager)
+                }
             }
             .fullScreenCover(isPresented: $showingWidgetSettings) {
                 WidgetSettingsSheet(
@@ -440,14 +442,14 @@ struct DashboardView: View {
                 // Check if we're actually deep in navigation before doing the expensive .id() reset
                 let hasDeepNavigation = navigateToAutoWorkout || navigateToCustomWorkout ||
                                         navigateToGeneratedPrograms || navigateToTodaysWorkout ||
-                                        navigateToChallengeFlow || !dashboardNavPath.isEmpty
+                                        !dashboardNavPath.isEmpty
                 
                 // Reset all navigation states (pops NavigationLinks back to root)
                 navigateToAutoWorkout = false
                 navigateToCustomWorkout = false
                 navigateToGeneratedPrograms = false
                 navigateToTodaysWorkout = false
-                navigateToChallengeFlow = false
+                showingChallengeCreation = false
                 dashboardNavPath = NavigationPath()
                 
                 // ⚡️ PERFORMANCE FIX: Only destroy/recreate the view if we were actually
@@ -4350,7 +4352,7 @@ struct DashboardView: View {
     private var getStartedChallengeWidget: some View {
         let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)  // Electric teal
         
-        return NavigationLink(value: DashboardRoute.challengeFlowStart) {
+        return Button { showingChallengeCreation = true } label: {
             VStack(spacing: 0) {
                 // Top row: Trophy + Title + Chevron
                 HStack(alignment: .center, spacing: 12) {
@@ -5949,8 +5951,6 @@ private struct DashboardNavigationDestinations: ViewModifier {
             WorkoutHistoryFullView()
         case .programDetailsPlaceholder:
             Text("Program Details - Coming Soon")
-        case .challengeFlowStart:
-            ChallengeFlowStartView()
         case .generatedProgramsList:
             GeneratedProgramsListView()
         case .personalizedPrograms:
@@ -7432,7 +7432,7 @@ struct StreakInfoSheet: View {
                     .presentationDetents([.height(320)])
                     .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showingPremiumUpgrade) {
+            .fullScreenCover(isPresented: $showingPremiumUpgrade) {
                 PremiumUpgradeView(triggeringFeature: .streakEdit)
             }
         }
@@ -7935,7 +7935,7 @@ struct DashboardWeightWidget: View {
                 .presentationBackgroundInteraction(.enabled)
                 .interactiveDismissDisabled(false)
         }
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .weightTracking)
         }
         .onAppear {
@@ -8889,7 +8889,7 @@ struct WidgetSettingsSheet: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .homescreenWidgets)
         }
     }

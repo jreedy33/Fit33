@@ -352,7 +352,7 @@ struct ReceivedWorkoutCard: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .savedWorkouts)
         }
     }
@@ -576,7 +576,7 @@ struct ReceivedWorkoutDetailView: View {
         } message: {
             Text("This workout has been saved. You can find it in your received workouts anytime.")
         }
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .savedWorkouts)
         }
     }

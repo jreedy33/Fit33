@@ -26,7 +26,7 @@ struct WeightTrackerWidget: View {
                 lockedWidget
             }
         }
-        .sheet(isPresented: $showingPremiumUpgrade) {
+        .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .weightTracking)
         }
         .sheet(isPresented: $showingAddSheet) {

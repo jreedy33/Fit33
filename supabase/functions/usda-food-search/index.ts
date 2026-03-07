@@ -614,9 +614,21 @@ function calculateFoodScore(food: any, normalizedQuery: string, originalQuery: s
   const wordCount = name.split(/[\s,]+/).length;
   score += wordCount * 50;
   
-  // Prefer "raw" versions for whole foods (most accurate base nutrition)
-  if (name.includes(", raw") && isGeneric) {
-    score -= 5000;
+  // Prefer cooked/prepared versions for proteins & grains (what people actually eat & track)
+  // Raw versions rank lower since users typically log what they consume
+  const cookedTerms = ["cooked", "grilled", "baked", "roasted", "steamed", "boiled", "poached", "sauteed"];
+  const rawTerms = [", raw", "uncooked", "unprepared"];
+  const isProteinOrGrain = ["chicken", "turkey", "beef", "pork", "salmon", "fish", "rice", "pasta", "oat", "egg"].some(t => name.includes(t));
+
+  if (isProteinOrGrain) {
+    if (cookedTerms.some(t => name.includes(t))) {
+      score -= 8000; // Cooked forms rank higher for proteins/grains
+    } else if (rawTerms.some(t => name.includes(t))) {
+      score += 3000; // Raw forms rank lower
+    }
+  } else if (name.includes(", raw") && isGeneric) {
+    // For fruits/veggies, raw is the common form — slight boost
+    score -= 2000;
   }
   
   // Category relevance boost
@@ -625,12 +637,24 @@ function calculateFoodScore(food: any, normalizedQuery: string, originalQuery: s
   }
   
   // =========================================================================
-  // TIER 5: Usage/popularity signals
+  // TIER 5: Usage/popularity signals (ALL users combined)
   // =========================================================================
-  if (isGeneric) {
-    score -= (food.log_count || 0) * 0.5;
-    score -= (food.search_count || 0) * 0.2;
+  // log_count tracks how many times ALL users have logged this food
+  // search_count tracks how many times this food appeared in searches
+  // This ensures globally popular foods (chicken breast, rice, eggs) rank highest
+  const logCount = food.log_count || 0;
+  const searchCount = food.search_count || 0;
+
+  if (logCount > 50) {
+    score -= 15000; // Very popular food across all users
+  } else if (logCount > 10) {
+    score -= 8000;  // Moderately popular
+  } else if (logCount > 0) {
+    score -= 3000;  // Has been logged before
   }
+
+  // Search frequency is a weaker signal but still useful
+  score -= Math.min(searchCount * 0.5, 5000);
   
   return score;
 }

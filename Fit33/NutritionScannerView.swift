@@ -246,16 +246,38 @@ struct NutritionScannerView: View {
             
             // Extract serving size
             if (lowercased.contains("serving size") || lowercased.contains("servingsize")) && servingSize.isEmpty {
-                // Try to get the value part after "serving size"
+                // Try to get the value part after "serving size" or "Serving Size"
+                let servingSizePrefixes = ["serving size", "servingsize"]
+                var extracted = false
+
+                // Try after colon first: "Serving Size: 2/3 cup (55g)"
                 if let colonIndex = line.firstIndex(of: ":") {
-                    servingSize = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-                } else {
-                    // Check next line for serving size value
-                    if index + 1 < lines.count {
-                        let nextLine = lines[index + 1]
-                        if !nextLine.lowercased().contains("serving") {
-                            servingSize = nextLine.trimmingCharacters(in: .whitespaces)
+                    let afterColon = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                    if !afterColon.isEmpty {
+                        servingSize = afterColon
+                        extracted = true
+                    }
+                }
+
+                // Try after the "Serving Size" text: "Serving Size 2/3 cup (55g)"
+                if !extracted {
+                    for prefix in servingSizePrefixes {
+                        if let range = lowercased.range(of: prefix) {
+                            let afterPrefix = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                            if !afterPrefix.isEmpty {
+                                servingSize = afterPrefix
+                                extracted = true
+                                break
+                            }
                         }
+                    }
+                }
+
+                // Check next line for serving size value if still empty
+                if !extracted && index + 1 < lines.count {
+                    let nextLine = lines[index + 1]
+                    if !nextLine.lowercased().contains("serving") && !nextLine.lowercased().contains("amount") {
+                        servingSize = nextLine.trimmingCharacters(in: .whitespaces)
                     }
                 }
             }
@@ -268,9 +290,14 @@ struct NutritionScannerView: View {
             }
             
             // Extract calories (main calories line, not "Calories from Fat")
-            if (lowercased.contains("calories") && !lowercased.contains("from")) && calories.isEmpty {
+            if (lowercased.contains("calories") && !lowercased.contains("from") && !lowercased.contains("fat")) && calories.isEmpty {
                 if let number = extractNumber(from: line) {
                     calories = number
+                } else if index + 1 < lines.count {
+                    // Modern FDA labels may have "Calories" on one line and the number on the next
+                    if let number = extractNumber(from: lines[index + 1]) {
+                        calories = number
+                    }
                 }
             }
             
@@ -337,8 +364,8 @@ struct NutritionScannerView: View {
                 }
             }
             
-            // Extract added sugars
-            if (lowercased.contains("added sugar") || lowercased.contains("includes") && lowercased.contains("added")) && addedSugars.isEmpty {
+            // Extract added sugars (handles "Added Sugars 12g" and "Includes 12g Added Sugars")
+            if ((lowercased.contains("added sugar")) || (lowercased.contains("includes") && lowercased.contains("added"))) && addedSugars.isEmpty {
                 if let number = extractNumber(from: line) {
                     addedSugars = number
                 }
@@ -462,30 +489,41 @@ struct NutritionScannerView: View {
     }
     
     private func extractNumber(from text: String) -> String? {
-        // Look for numbers with optional decimal points
-        // Pattern matches: 123, 12.5, 0.5, etc.
-        let pattern = "\\d+(?:\\.\\d+)?"
-        if let regex = try? NSRegularExpression(pattern: pattern) {
+        // Strategy: Extract the nutrient VALUE (e.g., "8" from "Total Fat 8g 10%")
+        // We need to ignore the daily value percentage and pick the actual amount.
+
+        // First, try to find a number immediately followed by a unit (g, mg, mcg, kcal, cal)
+        // This is the most reliable way to get the nutrient value
+        let unitPattern = "(\\d+\\.?\\d*)\\s*(?:g|mg|mcg|kcal|cal)\\b"
+        if let regex = try? NSRegularExpression(pattern: unitPattern, options: .caseInsensitive) {
             let range = NSRange(text.startIndex..., in: text)
-            let matches = regex.matches(in: text, range: range)
-            
-            // Get all numbers from the line
-            var numbers: [String] = []
-            for match in matches {
-                if let range = Range(match.range, in: text) {
-                    let number = String(text[range])
-                    numbers.append(number)
+            if let match = regex.firstMatch(in: text, range: range) {
+                if match.numberOfRanges > 1, let numRange = Range(match.range(at: 1), in: text) {
+                    return String(text[numRange])
                 }
             }
-            
-            // If we have multiple numbers, try to identify which is the value
-            // Usually the first larger number is the actual value
+        }
+
+        // Fallback: For lines like "Calories 230" (no unit suffix)
+        // Remove any percentage values first (e.g., "10%", "25%")
+        let withoutPercents = text.replacingOccurrences(of: "\\d+\\s*%", with: "", options: .regularExpression)
+
+        let pattern = "\\d+(?:\\.\\d+)?"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(withoutPercents.startIndex..., in: withoutPercents)
+            let matches = regex.matches(in: withoutPercents, range: range)
+
+            var numbers: [String] = []
+            for match in matches {
+                if let range = Range(match.range, in: withoutPercents) {
+                    numbers.append(String(withoutPercents[range]))
+                }
+            }
+
             if !numbers.isEmpty {
-                // Filter out very small numbers that might be from "2g" markers
-                let significantNumbers = numbers.filter { Double($0) ?? 0 > 0 }
-                
-                // Return the first significant number
-                return significantNumbers.first ?? numbers.first
+                // Return the first number (which is typically the nutrient value)
+                // Allow zero values — nutrients like Trans Fat can legitimately be 0
+                return numbers.first
             }
         }
         return nil
@@ -507,7 +545,7 @@ struct NutritionScannerView: View {
         
         let foodEntry = FoodEntry(
             name: nutrition.foodName,
-            quantity: Int(nutrition.servingQuantity),
+            quantity: max(1, Int(ceil(nutrition.servingQuantity))),
             unit: nutrition.servingUnit,
             calories: adjustedCalories,
             protein: adjustedProtein,

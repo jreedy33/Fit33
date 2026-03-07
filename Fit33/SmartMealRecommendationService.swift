@@ -31,8 +31,8 @@ class SmartMealRecommendationService: ObservableObject {
     private let cacheDuration: TimeInterval = 30 * 60 // 30 minutes
     
     // Health score thresholds
-    private let minimumHealthScore: Int = 40 // Minimum health score (out of 100)
-    private let preferredHealthScore: Int = 60 // Preferred health score
+    private let minimumHealthScore: Int = 50 // Minimum health score (out of 100)
+    private let preferredHealthScore: Int = 65 // Preferred health score
     
     private init() {}
     
@@ -48,8 +48,11 @@ class SmartMealRecommendationService: ObservableObject {
         
         isLoading = true
         defer { isLoading = false }
-        
-        // Get user preferences
+
+        // Re-learn from food history so recommendations reflect what user actually eats
+        await preferenceService.learnFromFoodHistory()
+
+        // Get user preferences (includes auto-detected from food logs)
         let likedIngredients = preferenceService.getLikedIngredients()
         let dislikedIngredients = preferenceService.getDislikedIngredients()
         
@@ -163,6 +166,7 @@ class SmartMealRecommendationService: ObservableObject {
             URLQueryItem(name: "sort", value: "healthiness"),
             URLQueryItem(name: "sortDirection", value: "desc"),
             URLQueryItem(name: "minHealthScore", value: String(minimumHealthScore)),
+            URLQueryItem(name: "maxSugar", value: "20"),
             URLQueryItem(name: "instructionsRequired", value: "true"),
             URLQueryItem(name: "fillIngredients", value: "true"),
             URLQueryItem(name: "query", value: query)
@@ -182,8 +186,8 @@ class SmartMealRecommendationService: ObservableObject {
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: exclude))
         }
         
-        // Random offset for variety
-        let randomOffset = Int.random(in: 0...50)
+        // Small random offset to keep results in common healthy range
+        let randomOffset = Int.random(in: 0...10)
         queryItems.append(URLQueryItem(name: "offset", value: String(randomOffset)))
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }

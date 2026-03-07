@@ -1000,23 +1000,26 @@ class USDAFoodService: ObservableObject {
     }
     
     /// Simplify food name for duplicate detection
-    /// Removes common suffixes and normalizes for comparison
+    /// Only removes minor descriptive suffixes — preserves cooking method
+    /// so "Chicken Breast, cooked" and "Chicken Breast, raw" both appear
     private func simplifyFoodName(_ name: String) -> String {
         var simplified = name.lowercased()
-        
-        // Remove common descriptive suffixes
+
+        // Only remove trivial presentation suffixes, NOT cooking methods
+        // Keep: raw, cooked, grilled, baked, etc. — these are meaningfully different
         let suffixesToRemove = [
-            ", raw", ", cooked", ", grilled", ", baked", ", fried",
-            ", boiled", ", roasted", ", steamed", ", fresh",
-            ", whole", ", sliced", ", chopped", ", diced"
+            ", fresh", ", whole", ", sliced", ", chopped", ", diced",
+            ", shredded", ", minced"
         ]
-        
+
         for suffix in suffixesToRemove {
             if simplified.hasSuffix(suffix) {
                 simplified = String(simplified.dropLast(suffix.count))
             }
         }
-        
+
+        // Remove brand names for generic deduplication
+        // e.g., "Tyson Chicken Breast" and "Perdue Chicken Breast" are duplicates
         return simplified.trimmingCharacters(in: .whitespaces)
     }
     

@@ -1,9 +1,111 @@
 import SwiftUI
 import StoreKit
 
+// MARK: - Tutorial Demo Data
+
+enum TutorialDemoData {
+    
+    static var userName: String {
+        UserManager.shared.currentUser?.name ?? "You"
+    }
+    
+    static var userInitials: String {
+        let name = userName
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+    
+    static var demoActiveChallenge: ActiveChallenge {
+        ActiveChallenge(
+            challengeId: UUID(),
+            challengeType: "active_minutes",
+            title: "30 Min Movement",
+            description: "Be active for at least 30 minutes every day",
+            dailyTarget: 30,
+            totalTarget: nil,
+            targetUnit: "minutes",
+            startDate: Calendar.current.date(byAdding: .day, value: -4, to: Date()) ?? Date(),
+            endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date(),
+            durationDays: 7,
+            daysElapsed: 4,
+            daysRemaining: 3,
+            status: "active",
+            myTotalProgress: 135,
+            myTodayProgress: 25,
+            myDaysCompleted: 4,
+            myCurrentStreak: 4,
+            opponentId: UUID(),
+            opponentName: "Alex M.",
+            opponentUsername: "alexm",
+            opponentPhotoUrl: nil,
+            opponentTotalProgress: 110,
+            opponentTodayProgress: 18,
+            opponentDaysCompleted: 3,
+            amWinning: true,
+            amWinningToday: true
+        )
+    }
+    
+    static var demoCommunityChallenge: FeaturedCommunityChallenge {
+        FeaturedCommunityChallenge(
+            challengeId: UUID(),
+            title: "5K Morning Walk",
+            description: "Start every morning with 5,000 steps before noon.",
+            emoji: "🚶",
+            challengeType: "steps",
+            dailyTarget: 5000,
+            targetUnit: "steps",
+            participantCount: 234,
+            totalCompletions: 1820,
+            joinCode: "WALK5K",
+            inviteSlug: "walk-5k",
+            isFeatured: true,
+            isOfficial: true,
+            isRecurring: true,
+            category: "walking",
+            createdBy: nil,
+            creatorName: nil,
+            creatorUsername: nil,
+            alreadyJoined: false
+        )
+    }
+    
+    static var demoBreakfastMeals: [MealEntryData] {
+        [
+            MealEntryData(
+                id: UUID(),
+                foodName: "Protein Smoothie",
+                quantity: 1,
+                unit: "serving",
+                calories: 320,
+                protein: 28,
+                carbs: 35,
+                fat: 8,
+                mealType: .breakfast,
+                date: Date(),
+                fdcId: 0
+            ),
+            MealEntryData(
+                id: UUID(),
+                foodName: "Overnight Oats",
+                quantity: 1,
+                unit: "bowl",
+                calories: 280,
+                protein: 12,
+                carbs: 42,
+                fat: 9,
+                mealType: .breakfast,
+                date: Date(),
+                fdcId: 0
+            )
+        ]
+    }
+}
+
 // MARK: - Welcome Tutorial View
-// Professional onboarding tutorial shown to new users after account creation
-// Designed with Apple/Meta-quality UX patterns
 
 struct WelcomeTutorialView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -11,7 +113,6 @@ struct WelcomeTutorialView: View {
     @StateObject private var storeKit = StoreKitManager.shared
 
     @State private var currentPage = 0
-    @State private var showingGetStarted = false
     @State private var animateContent = false
     @State private var iconBounce = false
     @State private var backgroundPulse = false
@@ -19,8 +120,7 @@ struct WelcomeTutorialView: View {
     private let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let selectionFeedback = UISelectionFeedbackGenerator()
 
-    // Tutorial pages - each represents a key feature
-    // 10 screens: Welcome → Auto-Gen → Custom → Programs → Challenges → Connect → Streaks → Nutrition → Hydration → Free Trial
+    // 9 screens: Welcome -> Create Workouts -> Programs -> Challenges & Friends -> Streaks -> Nutrition -> Hydration -> Health Apps -> Free Trial
     private let tutorialPages: [TutorialPage] = [
         TutorialPage(
             title: "Welcome to",
@@ -33,28 +133,14 @@ struct WelcomeTutorialView: View {
             useLogoImage: true
         ),
         TutorialPage(
-            title: "Auto-Generate",
-            subtitle: "Smart workouts in seconds",
-            description: "Pick your time, muscles, and equipment.\nOur AI builds your perfect session.",
+            title: "Create Workouts",
+            subtitle: "AI-powered or fully custom",
+            description: "Pick your time, muscles, and equipment for an AI workout\n— or build from scratch with 5,000+ exercises.",
             icon: "sparkles",
             iconColor: .purple,
             gradient: [Color.purple, Color.pink],
             animationType: .sparkle,
-            useAppButton: true,
-            buttonTitle: "Auto Workout",
-            buttonSubtitle: "AI-powered routine"
-        ),
-        TutorialPage(
-            title: "Build Custom",
-            subtitle: "Complete creative control",
-            description: "5,000+ exercises with video demos.\nCreate your perfect routine from scratch.",
-            icon: "plus.circle.fill",
-            iconColor: .blue,
-            gradient: [Color.blue, Color.cyan],
-            animationType: .bounce,
-            useAppButton: true,
-            buttonTitle: "Custom Workout",
-            buttonSubtitle: "Build your own"
+            useWorkoutCards: true
         ),
         TutorialPage(
             title: "Programs",
@@ -67,24 +153,14 @@ struct WelcomeTutorialView: View {
             useProgramWidget: true
         ),
         TutorialPage(
-            title: "Challenges",
+            title: "Challenges & Friends",
             subtitle: "Compete & stay accountable",
-            description: "Create private challenges with friends or join\ncommunity-wide competitions with leaderboards.",
+            description: "Challenge friends 1v1, join community competitions,\nand see what your crew is training.",
             icon: "trophy.fill",
             iconColor: .orange,
             gradient: [Color.orange, Color.red],
             animationType: .bounce,
-            useChallengeWidget: true
-        ),
-        TutorialPage(
-            title: "Connect",
-            subtitle: "Train with your crew",
-            description: "Add friends, share workouts, and see what\nyour crew is training. QR codes make it instant.",
-            icon: "person.2.fill",
-            iconColor: .indigo,
-            gradient: [Color.indigo, Color.purple],
-            animationType: .float,
-            useFriendsWidget: true
+            useLiveChallengeWidget: true
         ),
         TutorialPage(
             title: "Streaks",
@@ -104,7 +180,7 @@ struct WelcomeTutorialView: View {
             iconColor: .pink,
             gradient: [Color.pink, Color.purple],
             animationType: .float,
-            useMealTracking: true
+            useRealMealCard: true
         ),
         TutorialPage(
             title: "Hydration",
@@ -115,6 +191,16 @@ struct WelcomeTutorialView: View {
             gradient: [Color.cyan, Color.blue],
             animationType: .wave,
             useWaterWidget: true
+        ),
+        TutorialPage(
+            title: "Connect Your Health",
+            subtitle: "Sync everything automatically",
+            description: "Link your favorite health apps to auto-track\nsteps, calories, and workouts.",
+            icon: "heart.fill",
+            iconColor: .red,
+            gradient: [Color.red, Color.pink],
+            animationType: .float,
+            useHealthAppsWidget: true
         ),
         TutorialPage(
             title: "Unlock Everything",
@@ -130,12 +216,10 @@ struct WelcomeTutorialView: View {
     
     var body: some View {
         ZStack {
-            // Animated background - fills entire screen
             animatedBackground
                 .ignoresSafeArea(.all)
             
             VStack(spacing: 0) {
-                // Skip button (top right) - refined styling
                 HStack {
                     Spacer()
                     
@@ -156,7 +240,6 @@ struct WelcomeTutorialView: View {
                 .padding(.horizontal, Spacing.md)
                 .padding(.top, 12)
                 
-                // Main content
                 TabView(selection: $currentPage) {
                     ForEach(Array(tutorialPages.enumerated()), id: \.offset) { index, page in
                         TutorialPageView(
@@ -172,9 +255,7 @@ struct WelcomeTutorialView: View {
                 .background(.clear)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8), value: currentPage)
                 
-                // Page indicator + Navigation - transparent background
                 VStack(spacing: 28) {
-                    // Custom page indicator - refined dots
                     HStack(spacing: 10) {
                         ForEach(0..<tutorialPages.count, id: \.self) { index in
                             Capsule()
@@ -188,18 +269,13 @@ struct WelcomeTutorialView: View {
                         }
                     }
                     
-                    // Navigation button - premium styling
-                    // Trial CTA page has its own embedded buttons, so hide the default nav button
                     if currentPage == tutorialPages.count - 1 && tutorialPages[currentPage].useTrialCTA {
-                        // No button — trial CTA widget provides its own buttons
                         EmptyView()
                     } else if currentPage == tutorialPages.count - 1 {
-                        // Fallback: Get Started button (final page) - FILLED gradient style
                         Button(action: completeTutorial) {
                             HStack(spacing: 10) {
                                 Text("Get Started")
                                     .font(.system(size: 17, weight: .bold))
-
                                 Image(systemName: "arrow.right")
                                     .font(.system(size: 15, weight: .bold))
                             }
@@ -221,12 +297,10 @@ struct WelcomeTutorialView: View {
                         .scaleButtonStyle(.standard, withHaptic: true)
                         .padding(.horizontal, 36)
                     } else {
-                        // Continue button - hollow style with gradient border
                         Button(action: nextPage) {
                             HStack(spacing: 10) {
                                 Text("Continue")
                                     .font(.system(size: 17, weight: .bold))
-                                
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 14, weight: .bold))
                             }
@@ -267,8 +341,6 @@ struct WelcomeTutorialView: View {
             withAnimation(.easeOut(duration: 0.6).delay(0.2)) {
                 animateContent = true
             }
-            
-            // Start background animation
             withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
                 backgroundPulse = true
             }
@@ -282,7 +354,6 @@ struct WelcomeTutorialView: View {
     
     private var animatedBackground: some View {
         ZStack {
-            // Base gradient - fills entire screen
             LinearGradient(
                 gradient: Gradient(colors: colorScheme == .dark
                     ? [
@@ -300,10 +371,8 @@ struct WelcomeTutorialView: View {
             )
             .ignoresSafeArea(.all)
             
-            // Animated gradient orbs - must also ignore safe area
             GeometryReader { geometry in
                 ZStack {
-                    // Center orb (main glow)
                     Circle()
                         .fill(
                             RadialGradient(
@@ -322,7 +391,6 @@ struct WelcomeTutorialView: View {
                         .scaleEffect(backgroundPulse ? 1.1 : 0.95)
                         .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: backgroundPulse)
                     
-                    // Top-left orb
                     Circle()
                         .fill(
                             RadialGradient(
@@ -339,7 +407,6 @@ struct WelcomeTutorialView: View {
                         .position(x: backgroundPulse ? 50 : 0, y: backgroundPulse ? 100 : 50)
                         .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: backgroundPulse)
                     
-                    // Bottom-right orb
                     Circle()
                         .fill(
                             RadialGradient(
@@ -381,8 +448,6 @@ struct WelcomeTutorialView: View {
     
     private func completeTutorial() {
         impactFeedback.impactOccurred()
-        
-        // Dismiss with animation
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             isPresented = false
         }
@@ -400,16 +465,14 @@ struct TutorialPage {
     let gradient: [Color]
     let animationType: AnimationType
     var useLogoImage: Bool = false
-    var useAppButton: Bool = false
+    var useWorkoutCards: Bool = false
     var useProgramWidget: Bool = false
+    var useLiveChallengeWidget: Bool = false
     var useStreakFlame: Bool = false
-    var useMealTracking: Bool = false
+    var useRealMealCard: Bool = false
     var useWaterWidget: Bool = false
-    var useChallengeWidget: Bool = false
-    var useFriendsWidget: Bool = false
+    var useHealthAppsWidget: Bool = false
     var useTrialCTA: Bool = false
-    var buttonTitle: String = "Auto Workout"
-    var buttonSubtitle: String = "Auto-generated routine"
 
     enum AnimationType {
         case pulse, sparkle, bounce, wave, float, celebrate
@@ -429,102 +492,69 @@ struct TutorialPageView: View {
     @State private var sparkleOffset: CGFloat = 0
     @State private var particles: [ParticleData] = []
     
-    // Screen height for adaptive spacing
     private var screenHeight: CGFloat {
         UIScreen.main.bounds.height
     }
     
-    // Adaptive spacing based on screen size and content type
     private var topPadding: CGFloat {
-        if page.useTrialCTA {
-            return screenHeight * 0.04
-        } else if page.useLogoImage {
-            return screenHeight * 0.08
-        } else if page.useMealTracking || page.useWaterWidget {
-            return screenHeight * 0.08
-        } else if page.useProgramWidget || page.useStreakFlame || page.useChallengeWidget || page.useFriendsWidget {
-            return screenHeight * 0.06
-        } else {
-            return screenHeight * 0.06
-        }
+        if page.useTrialCTA { return screenHeight * 0.04 }
+        if page.useLogoImage { return screenHeight * 0.08 }
+        if page.useRealMealCard || page.useWaterWidget { return screenHeight * 0.06 }
+        if page.useLiveChallengeWidget { return screenHeight * 0.03 }
+        return screenHeight * 0.06
     }
     
     private var contentSpacing: CGFloat {
-        if page.useLogoImage {
-            return 0
-        } else if page.useTrialCTA {
-            return 16
-        } else if page.useMealTracking || page.useWaterWidget || page.useProgramWidget || page.useChallengeWidget || page.useFriendsWidget {
-            return 20
-        } else {
-            return 28
-        }
+        if page.useLogoImage { return 0 }
+        if page.useTrialCTA { return 16 }
+        if page.useLiveChallengeWidget { return 14 }
+        if page.useRealMealCard || page.useWaterWidget || page.useProgramWidget { return 20 }
+        return 28
     }
     
-    private var bottomTextSpacing: CGFloat {
-        page.useLogoImage ? 24 : 36
-    }
-    
-    // Max height for the visual element based on content type
     private var visualMaxHeight: CGFloat {
-        if page.useTrialCTA {
-            return 0.52  // Trial CTA takes more space with feature list + buttons
-        } else if page.useLogoImage {
-            return 0.42  // Logo page
-        } else if page.useMealTracking {
-            return 0.38  // Meal tracking needs less vertical space
-        } else if page.useChallengeWidget || page.useFriendsWidget {
-            return 0.38
-        } else if page.useWaterWidget || page.useProgramWidget {
-            return 0.36
-        } else if page.useStreakFlame {
-            return 0.32
-        } else if page.useAppButton {
-            return 0.30  // Buttons are compact
-        } else {
-            return 0.28  // Default icons
-        }
+        if page.useTrialCTA { return 0.52 }
+        if page.useLogoImage { return 0.42 }
+        if page.useLiveChallengeWidget { return 0.48 }
+        if page.useRealMealCard { return 0.38 }
+        if page.useWaterWidget || page.useProgramWidget { return 0.36 }
+        if page.useHealthAppsWidget { return 0.38 }
+        if page.useStreakFlame { return 0.32 }
+        if page.useWorkoutCards { return 0.34 }
+        return 0.28
     }
     
     var body: some View {
         GeometryReader { geometry in
-            // UNIFIED LAYOUT for all pages (including welcome)
             VStack(spacing: 0) {
-                // Top spacer - slightly more for welcome page
                 Spacer()
                     .frame(height: page.useLogoImage ? 30 : topPadding)
                 
-                // Flexible space before visual element
                 Spacer()
                     .frame(minHeight: 10, maxHeight: page.useLogoImage ? 60 : 40)
                 
                 // === CENTER SECTION: Visual Element ===
                 ZStack {
                     if page.useLogoImage {
-                        // Welcome page: Logo as the visual element
                         welcomeLogoView
-                    } else if page.useAppButton {
-                        featureButtonView
+                    } else if page.useWorkoutCards {
+                        workoutCardsView
                     } else if page.useProgramWidget {
                         TutorialProgramWidget(gradient: page.gradient, isAnimating: iconAnimation)
                             .scaleEffect(0.9)
                             .offset(y: iconAnimation ? -3 : 3)
-                    } else if page.useChallengeWidget {
-                        TutorialChallengeWidget(gradient: page.gradient, isAnimating: iconAnimation)
-                            .scaleEffect(0.88)
-                            .offset(y: iconAnimation ? -3 : 3)
-                    } else if page.useFriendsWidget {
-                        TutorialFriendsWidget(gradient: page.gradient, isAnimating: iconAnimation)
-                            .scaleEffect(0.88)
-                            .offset(y: iconAnimation ? -3 : 3)
+                    } else if page.useLiveChallengeWidget {
+                        liveChallengeView
                     } else if page.useStreakFlame {
                         TutorialStreakFlame(gradient: page.gradient, isAnimating: iconAnimation)
-                    } else if page.useMealTracking {
-                        TutorialMealTracking(gradient: page.gradient, isAnimating: iconAnimation)
-                            .scaleEffect(0.85)
+                    } else if page.useRealMealCard {
+                        realMealCardView
+                            .scaleEffect(0.88)
                     } else if page.useWaterWidget {
                         TutorialWaterTracking(gradient: page.gradient, isAnimating: iconAnimation)
                             .scaleEffect(0.88)
+                    } else if page.useHealthAppsWidget {
+                        TutorialHealthAppsWidget(gradient: page.gradient, isAnimating: iconAnimation)
                     } else if page.useTrialCTA {
                         TutorialTrialCTA(gradient: page.gradient, isAnimating: iconAnimation, isPresented: $isPresented)
                             .scaleEffect(0.92)
@@ -534,15 +564,14 @@ struct TutorialPageView: View {
                 }
                 .scaleEffect(animateContent ? 1 : 0.8)
                 .opacity(animateContent ? 1 : 0)
+                .frame(maxWidth: .infinity)
                 .frame(maxHeight: geometry.size.height * (page.useLogoImage ? 0.35 : visualMaxHeight))
                 
-                // Flexible space after visual element
                 Spacer()
                     .frame(minHeight: page.useLogoImage ? 30 : contentSpacing, maxHeight: page.useLogoImage ? 50 : contentSpacing + 20)
                 
                 // === BOTTOM SECTION: Text Content ===
                 VStack(spacing: 0) {
-                    // Title - welcome page shows "Welcome to" above logo, so skip it here
                     if !page.useLogoImage {
                         Text(page.title)
                             .font(.system(size: 32, weight: .bold, design: .rounded))
@@ -583,7 +612,6 @@ struct TutorialPageView: View {
                 .animation(.easeOut(duration: 0.5).delay(0.15), value: animateContent)
                 .padding(.horizontal, Spacing.md)
                 
-                // Bottom spacer
                 Spacer(minLength: 30)
             }
         }
@@ -594,65 +622,43 @@ struct TutorialPageView: View {
             }
         }
         .onChange(of: isActive) { _, active in
-            if active {
-                startIconAnimation()
-            }
+            if active { startIconAnimation() }
         }
     }
     
-    // MARK: - Welcome Logo View (Grand & Dominant)
+    // MARK: - Welcome Logo View
     private var welcomeLogoView: some View {
         VStack(spacing: 20) {
-            // "Welcome to" title - part of the centered unit
             Text(page.title)
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundStyle(
-                    LinearGradient(
-                        colors: page.gradient,
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
+                    LinearGradient(colors: page.gradient, startPoint: .leading, endPoint: .trailing)
                 )
                 .tracking(-0.5)
                 .multilineTextAlignment(.center)
             
-            // Logo with glow effects
             ZStack {
-                // Massive outer glow - creates depth and grandeur
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [
-                                page.gradient[0].opacity(0.35),
-                                page.gradient[1].opacity(0.2),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 40,
-                            endRadius: 280
+                            colors: [page.gradient[0].opacity(0.35), page.gradient[1].opacity(0.2), Color.clear],
+                            center: .center, startRadius: 40, endRadius: 280
                         )
                     )
                     .frame(width: 500, height: 500)
                     .blur(radius: 40)
                     .scaleEffect(iconAnimation ? 1.08 : 1.0)
                 
-                // Secondary glow ring
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [
-                                page.gradient[0].opacity(0.25),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 100,
-                            endRadius: 180
+                            colors: [page.gradient[0].opacity(0.25), Color.clear],
+                            center: .center, startRadius: 100, endRadius: 180
                         )
                     )
                     .frame(width: 360, height: 360)
                     .scaleEffect(iconAnimation ? 1.05 : 0.98)
                 
-                // The grand logo
                 Image("fit33-logo")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -666,101 +672,64 @@ struct TutorialPageView: View {
         }
     }
     
-    // MARK: - Feature Button View
-    private var featureButtonView: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                // Glow behind icon
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                page.gradient[0].opacity(0.4),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 50
-                        )
-                    )
-                    .frame(width: 100, height: 100)
-                    .scaleEffect(iconAnimation ? 1.1 : 0.95)
-                
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: page.gradient),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 56, height: 56)
-                    .shadow(color: page.gradient.first?.opacity(0.5) ?? .clear, radius: 12, x: 0, y: 6)
-                
-                Image(systemName: page.icon)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.white)
-            }
+    // MARK: - Workout Cards (Auto + Custom side by side)
+    private var workoutCardsView: some View {
+        HStack(spacing: 14) {
+            DepthQuickActionCard(
+                title: "Auto Workout",
+                subtitle: "AI-powered routine",
+                icon: "sparkles",
+                gradient: [.purple, .pink],
+                action: {}
+            )
             
-            VStack(spacing: 6) {
-                Text(page.buttonTitle)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                
-                Text(page.buttonSubtitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            DepthQuickActionCard(
+                title: "Custom Workout",
+                subtitle: "Build your own",
+                icon: "dumbbell.fill",
+                gradient: [.blue, .cyan],
+                action: {}
+            )
         }
-        .frame(width: 180, height: 160)
-        .background(
-            ZStack {
-                // Deep shadow for depth
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill((page.gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.1))
-                    .offset(y: 10)
-                    .blur(radius: 6)
-                
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.05))
-                    .offset(y: 5)
-                
-                // Main card
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        colorScheme == .dark
-                            ? Color(red: 0.13, green: 0.13, blue: 0.16)
-                            : Color.white
-                    )
-                
-                // Subtle gradient overlay
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                page.gradient[0].opacity(colorScheme == .dark ? 0.5 : 0.35),
-                                page.gradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            }
+        .scaleEffect(0.92)
+        .offset(y: iconAnimation ? -3 : 3)
+    }
+    
+    // MARK: - Live Challenge View (1v1 + Community)
+    private var liveChallengeView: some View {
+        VStack(spacing: 12) {
+            ActiveChallengeWidget(
+                challenge: TutorialDemoData.demoActiveChallenge,
+                onTap: {}
+            )
+            .frame(maxWidth: 340)
+            
+            FeaturedChallengeCard(
+                challenge: TutorialDemoData.demoCommunityChallenge,
+                onJoin: {}
+            )
+            .frame(maxWidth: 340)
+        }
+        .scaleEffect(0.82)
+        .offset(y: iconAnimation ? -2 : 2)
+    }
+    
+    // MARK: - Real Meal Card
+    private var realMealCardView: some View {
+        SwipeableMealCard(
+            mealType: .breakfast,
+            meals: TutorialDemoData.demoBreakfastMeals,
+            isCurrentMealTime: true,
+            onAddFood: {},
+            onDelete: { _ in }
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
-        .shadow(color: (page.gradient.first ?? .gray).opacity(0.2), radius: 24, x: 0, y: 12)
-        .scaleEffect(iconAnimation ? 1.03 : 0.98)
-        .offset(y: iconAnimation ? -4 : 4)
+        .frame(maxWidth: 340)
+        .allowsHitTesting(false)
     }
     
     // MARK: - Default Icon View
     private var defaultIconView: some View {
         ZStack {
-            // Glow effect
             Circle()
                 .fill(
                     RadialGradient(
@@ -775,25 +744,18 @@ struct TutorialPageView: View {
                 )
                 .frame(width: 220, height: 220)
             
-            // Background circle
             Circle()
                 .fill(
-                    LinearGradient(
-                        colors: page.gradient,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    LinearGradient(colors: page.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .frame(width: 140, height: 140)
                 .shadow(color: page.gradient[0].opacity(0.6), radius: 25, x: 0, y: 12)
             
-            // Icon
             Image(systemName: page.icon)
                 .font(.system(size: 58, weight: .semibold))
                 .foregroundColor(.white)
                 .offset(y: iconAnimation ? -4 : 4)
             
-            // Sparkle particles
             if page.animationType == .sparkle || page.animationType == .celebrate {
                 ForEach(particles) { particle in
                     Image(systemName: "sparkle")
@@ -820,7 +782,6 @@ struct TutorialPageView: View {
                 opacity: Double.random(in: 0.4...0.9)
             )
         }
-        
         withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
             particles = particles.map { particle in
                 ParticleData(
@@ -851,25 +812,20 @@ struct TutorialProgramWidget: View {
     let gradient: [Color]
     let isAnimating: Bool
     
-    // Sample program data
-    private let completionPercentage: Double = 0.81 // 17/21 days
-    private let currentDay = 17
+    private let completionPercentage: Double = 0.68
+    private let currentDay = 9
     private let totalDays = 21
     private let programName = "Foundation Builder"
-    private let weekLabel = "Week 3/3"
+    private let weekLabel = "Week 2/3"
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top Section - Program Info & Progress Ring
             HStack(alignment: .top, spacing: 14) {
-                // Progress Ring
                 ZStack {
-                    // Track
                     Circle()
                         .stroke(Color.gray.opacity(0.15), lineWidth: 5)
                         .frame(width: 68, height: 68)
                     
-                    // Progress
                     Circle()
                         .trim(from: 0, to: completionPercentage)
                         .stroke(
@@ -879,7 +835,6 @@ struct TutorialProgramWidget: View {
                         .frame(width: 68, height: 68)
                         .rotationEffect(.degrees(-90))
                     
-                    // Center percentage
                     VStack(spacing: -2) {
                         Text("\(Int(completionPercentage * 100))")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -891,22 +846,18 @@ struct TutorialProgramWidget: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 6) {
-                    // Program name
                     Text(programName)
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     
-                    // Week and day progress
                     HStack(spacing: 4) {
                         Text(weekLabel)
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
                         Text("•")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
                         Text("\(currentDay)/\(totalDays) days")
                             .font(.caption)
                             .fontWeight(.semibold)
@@ -916,7 +867,6 @@ struct TutorialProgramWidget: View {
                 
                 Spacer()
                 
-                // Chevron
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
@@ -926,18 +876,10 @@ struct TutorialProgramWidget: View {
             Divider()
                 .padding(.horizontal, Spacing.md)
             
-            // Today's workout card
             HStack(spacing: 12) {
-                // Day badge
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: gradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
                     
                     Text("Day \(currentDay)")
@@ -947,7 +889,6 @@ struct TutorialProgramWidget: View {
                         .lineLimit(2)
                 }
                 
-                // Workout info
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Full Body A")
                         .font(.subheadline)
@@ -962,7 +903,6 @@ struct TutorialProgramWidget: View {
                 
                 Spacer()
                 
-                // Start button
                 HStack(spacing: 6) {
                     Image(systemName: "play.fill")
                         .font(.ds_caption)
@@ -973,65 +913,13 @@ struct TutorialProgramWidget: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.xs)
-                .background(
-                    LinearGradient(
-                        colors: gradient,
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .background(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
                 .clipShape(Capsule())
             }
             .padding(Spacing.md)
         }
         .frame(maxWidth: 340)
-        .background(
-            ZStack {
-                // Depth shadows
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill((gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        colorScheme == .dark
-                            ? Color(red: 0.11, green: 0.11, blue: 0.12)
-                            : Color.white
-                    )
-                
-                // Inner highlight
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                (gradient.last ?? .gray).opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
+        .background(TutorialCardBackground(gradient: gradient))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
@@ -1043,49 +931,31 @@ struct TutorialStreakFlame: View {
     let gradient: [Color]
     let isAnimating: Bool
     
-    private let streakNumber = 10
+    private let streakNumber = 7
     
     var body: some View {
         ZStack {
-            // Glow effect
             Circle()
                 .fill(
                     RadialGradient(
                         colors: [Color.orange.opacity(0.3), Color.clear],
-                        center: .center,
-                        startRadius: 50,
-                        endRadius: 120
+                        center: .center, startRadius: 50, endRadius: 120
                     )
                 )
                 .frame(width: 240, height: 240)
                 .scaleEffect(isAnimating ? 1.1 : 1.0)
             
-            // Solid fill behind the flame to fill the hole
             Circle()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(colors: gradient),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(LinearGradient(gradient: Gradient(colors: gradient), startPoint: .top, endPoint: .bottom))
                 .frame(width: 80, height: 80)
                 .offset(y: 12)
             
-            // Flame icon
             Image(systemName: "flame.fill")
                 .font(.system(size: 120, weight: .regular))
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(colors: gradient),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .foregroundStyle(LinearGradient(gradient: Gradient(colors: gradient), startPoint: .top, endPoint: .bottom))
                 .shadow(color: .orange.opacity(0.5), radius: 20, x: 0, y: 4)
                 .offset(y: isAnimating ? -4 : 4)
             
-            // Streak number centered in flame
             Text("\(streakNumber)")
                 .font(.system(size: 56, weight: .black, design: .rounded))
                 .foregroundColor(.white)
@@ -1096,234 +966,6 @@ struct TutorialStreakFlame: View {
     }
 }
 
-// MARK: - Tutorial Meal Tracking
-
-struct TutorialMealTracking: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let gradient: [Color]
-    let isAnimating: Bool
-    
-    // Sample meal data
-    private struct MealData {
-        let name: String
-        let icon: String
-        let calories: Int
-        let items: Int
-        let gradientColors: [Color]
-    }
-    
-    private let meals: [MealData] = [
-        MealData(name: "Breakfast", icon: "sunrise.fill", calories: 71, items: 1, gradientColors: [.orange, .yellow]),
-        MealData(name: "Lunch", icon: "sun.max.fill", calories: 287, items: 1, gradientColors: [.green, .teal]),
-        MealData(name: "Dinner", icon: "moon.stars.fill", calories: 130, items: 1, gradientColors: [.blue, .cyan]),
-        MealData(name: "Snacks", icon: "leaf.fill", calories: 532, items: 1, gradientColors: [.purple, .pink])
-    ]
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            // Header
-            HStack {
-                Image(systemName: "fork.knife")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: gradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                Text("Track Your Meals")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            
-            // Meal cards
-            VStack(spacing: 10) {
-                ForEach(Array(meals.enumerated()), id: \.offset) { index, meal in
-                    mealCard(meal: meal)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-        }
-        .frame(maxWidth: 340)
-        .background(
-            ZStack {
-                // Depth shadows
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill((gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(
-                        colorScheme == .dark
-                            ? Color(red: 0.11, green: 0.11, blue: 0.12)
-                            : Color.white
-                    )
-                
-                // Inner highlight
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                (gradient.last ?? .gray).opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-    }
-    
-    private func mealCard(meal: MealData) -> some View {
-        HStack(spacing: 12) {
-            // Circular gradient icon
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: meal.gradientColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 40, height: 40)
-                    .shadow(color: meal.gradientColors[0].opacity(0.25), radius: 4, x: 0, y: 2)
-                
-                Image(systemName: meal.icon)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            
-            // Meal info
-            VStack(alignment: .leading, spacing: 2) {
-                Text(meal.name)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
-                HStack(spacing: 8) {
-                    Text("\(meal.items) item")
-                        .font(.caption)
-                        .foregroundColor(meal.gradientColors[0])
-                        .fontWeight(.medium)
-                    
-                    Text("•")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(meal.calories) cal")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            // Calories display
-            HStack(spacing: 6) {
-                Text("\(meal.calories)")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundColor(meal.gradientColors[0])
-                Text("cal")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Chevron
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .background(
-            ZStack {
-                // Subtle shadow layers
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(meal.gradientColors[0].opacity(colorScheme == .dark ? 0.06 : 0.03))
-                    .offset(y: 4)
-                    .blur(radius: 2)
-                
-                RoundedRectangle(cornerRadius: 26)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
-                    .offset(y: 2)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color.cardBackground]
-                                : [Color.white, Color.white.opacity(0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Inner highlight
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.white.opacity(0.3), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-                
-                // Subtle accent border
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                meal.gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
-                                meal.gradientColors[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.15 : 0.04), radius: 6, x: 0, y: 3)
-    }
-}
-
 // MARK: - Tutorial Water Tracking
 
 struct TutorialWaterTracking: View {
@@ -1331,26 +973,18 @@ struct TutorialWaterTracking: View {
     let gradient: [Color]
     let isAnimating: Bool
     
-    // Sample water data (75% of 2500ml goal)
-    private let progress: Double = 0.75
-    private let currentMl: Int = 1875
+    private let progress: Double = 0.72
+    private let currentMl: Int = 1800
     private let goalMl: Int = 2500
-    private let remainingMl: Int = 625
+    private let remainingMl: Int = 700
     
     var body: some View {
         VStack(spacing: 20) {
-            // Header
             HStack {
                 Image(systemName: "drop.fill")
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: gradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .foregroundStyle(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                 
                 Text("Hydration")
                     .font(.headline)
@@ -1362,36 +996,22 @@ struct TutorialWaterTracking: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             
-            // Main content - Water drop and stats
             HStack(spacing: 20) {
-                // Water drop visual (75% filled)
                 ZStack {
-                    // Background drop
                     Image(systemName: "drop.fill")
                         .font(.system(size: 90))
                         .foregroundColor(.blue.opacity(0.15))
                     
-                    // Filled level (75%)
                     Image(systemName: "drop.fill")
                         .font(.system(size: 90))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: gradient,
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                        )
+                        .foregroundStyle(LinearGradient(colors: gradient, startPoint: .bottom, endPoint: .top))
                         .mask(
                             VStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 90 * (1 - progress))
-                                Rectangle()
-                                    .fill(Color.white)
+                                Rectangle().fill(Color.clear).frame(height: 90 * (1 - progress))
+                                Rectangle().fill(Color.white)
                             }
                         )
                     
-                    // Percentage text
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
@@ -1401,10 +1021,9 @@ struct TutorialWaterTracking: View {
                 .frame(width: 100, height: 110)
                 .scaleEffect(isAnimating ? 1.05 : 1.0)
                 
-                // Stats
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(formatMl(currentMl))")
+                        Text(formatMl(currentMl))
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
@@ -1417,11 +1036,8 @@ struct TutorialWaterTracking: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    // Status badge
                     HStack(spacing: 6) {
-                        Circle()
-                            .fill(gradient[0])
-                            .frame(width: 8, height: 8)
+                        Circle().fill(gradient[0]).frame(width: 8, height: 8)
                         Text("Great progress!")
                             .font(.caption)
                             .fontWeight(.semibold)
@@ -1434,7 +1050,6 @@ struct TutorialWaterTracking: View {
             }
             .padding(.horizontal, 20)
             
-            // Quick add buttons
             HStack(spacing: 10) {
                 quickAddButton(amount: 250, label: "Cup")
                 quickAddButton(amount: 500, label: "Bottle")
@@ -1444,53 +1059,7 @@ struct TutorialWaterTracking: View {
             .padding(.bottom, 20)
         }
         .frame(maxWidth: 340)
-        .background(
-            ZStack {
-                // Depth shadows
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill((gradient.first ?? .cyan).opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(
-                        colorScheme == .dark
-                            ? Color(red: 0.11, green: 0.11, blue: 0.12)
-                            : Color.white
-                    )
-                
-                // Inner highlight
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                (gradient.first ?? .cyan).opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                (gradient.last ?? .blue).opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
+        .background(TutorialCardBackground(gradient: gradient))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: (gradient.first ?? .cyan).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
@@ -1517,8 +1086,7 @@ struct TutorialWaterTracking: View {
                         colors: colorScheme == .dark
                             ? [Color(white: 0.15), Color.cardBackground]
                             : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .top,
-                        endPoint: .bottom
+                        startPoint: .top, endPoint: .bottom
                     )
                 )
         )
@@ -1531,246 +1099,83 @@ struct TutorialWaterTracking: View {
     
     private func formatMl(_ ml: Int) -> String {
         if ml >= 1000 {
-            let liters = Double(ml) / 1000.0
-            return String(format: "%.1fL", liters)
-        } else {
-            return "\(ml)ml"
+            return String(format: "%.1fL", Double(ml) / 1000.0)
         }
+        return "\(ml)ml"
     }
 }
 
-// MARK: - Tutorial Challenge Widget
+// MARK: - Tutorial Health Apps Widget
 
-struct TutorialChallengeWidget: View {
+struct TutorialHealthAppsWidget: View {
     @Environment(\.colorScheme) private var colorScheme
     let gradient: [Color]
     let isAnimating: Bool
-
-    private struct LeaderboardEntry {
-        let rank: Int
+    
+    private struct HealthApp {
         let name: String
-        let initials: String
-        let progress: Double
-        let color: Color
+        let icon: String
+        let colors: [Color]
+        let description: String
     }
-
-    private let challengeTitle = "Weekly Step Challenge"
-    private let challengeEmoji = "🏃"
-    private let dailyTarget = "10,000 steps"
-    private let daysRemaining = 4
-
-    private let leaderboard: [LeaderboardEntry] = [
-        LeaderboardEntry(rank: 1, name: "Alex M.", initials: "AM", progress: 0.92, color: .orange),
-        LeaderboardEntry(rank: 2, name: "You", initials: "ME", progress: 0.78, color: .blue),
-        LeaderboardEntry(rank: 3, name: "Jordan K.", initials: "JK", progress: 0.65, color: .green)
+    
+    private let apps: [HealthApp] = [
+        HealthApp(name: "Apple Health", icon: "heart.fill", colors: [.red, .pink], description: "Steps, calories, workouts"),
+        HealthApp(name: "Strava", icon: "figure.run", colors: [.orange, Color(red: 0.95, green: 0.4, blue: 0.1)], description: "Runs, rides, activities"),
+        HealthApp(name: "Fitbit", icon: "waveform.path.ecg", colors: [.teal, .cyan], description: "Steps, sleep, heart rate")
     ]
-
+    
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 10) {
-                Text(challengeEmoji)
-                    .font(.title2)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(challengeTitle)
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-
-                    HStack(spacing: 4) {
-                        Text(dailyTarget)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("•")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(daysRemaining) days left")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(gradient.first ?? .orange)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+        VStack(spacing: 12) {
+            ForEach(Array(apps.enumerated()), id: \.offset) { index, app in
+                healthAppRow(app: app, delay: Double(index) * 0.1)
+            }
+        }
+        .frame(maxWidth: 340)
+    }
+    
+    private func healthAppRow(app: HealthApp, delay: Double) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: app.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 48, height: 48)
+                    .shadow(color: app.colors[0].opacity(0.4), radius: 8, x: 0, y: 4)
+                
+                Image(systemName: app.icon)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(app.name)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text(app.description)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(Spacing.md)
-
-            Divider()
-                .padding(.horizontal, Spacing.md)
-
-            // Mini leaderboard
-            VStack(spacing: 8) {
-                ForEach(Array(leaderboard.enumerated()), id: \.offset) { _, entry in
-                    HStack(spacing: 10) {
-                        // Rank badge
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    entry.rank == 1
-                                        ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
-                                        : LinearGradient(colors: [Color.gray.opacity(0.2)], startPoint: .top, endPoint: .bottom)
-                                )
-                                .frame(width: 26, height: 26)
-
-                            Text("\(entry.rank)")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(entry.rank == 1 ? .white : .primary)
-                        }
-
-                        // Avatar
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(colors: [entry.color, entry.color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .frame(width: 32, height: 32)
-
-                            Text(entry.initials)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-
-                        Text(entry.name)
-                            .font(.subheadline)
-                            .fontWeight(entry.name == "You" ? .bold : .medium)
-                            .foregroundColor(entry.name == "You" ? gradient.first ?? .orange : .primary)
-
-                        Spacer()
-
-                        // Progress bar
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.gray.opacity(0.15))
-                                .frame(width: 60, height: 6)
-
-                            Capsule()
-                                .fill(
-                                    LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing)
-                                )
-                                .frame(width: 60 * entry.progress, height: 6)
-                        }
-
-                        Text("\(Int(entry.progress * 100))%")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .frame(width: 32, alignment: .trailing)
-                    }
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 12)
-        }
-        .frame(maxWidth: 340)
-        .background(TutorialCardBackground(gradient: gradient))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-    }
-}
-
-// MARK: - Tutorial Friends Widget
-
-struct TutorialFriendsWidget: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let gradient: [Color]
-    let isAnimating: Bool
-
-    private struct FriendData {
-        let initials: String
-        let color: Color
-    }
-
-    private let friends: [FriendData] = [
-        FriendData(initials: "SM", color: .blue),
-        FriendData(initials: "AJ", color: .purple),
-        FriendData(initials: "KR", color: .green),
-        FriendData(initials: "TW", color: .orange),
-        FriendData(initials: "+5", color: .gray)
-    ]
-
-    var body: some View {
-        VStack(spacing: 14) {
-            // Friends header with overlapping avatars
-            HStack(spacing: 12) {
-                // Overlapping avatar stack
-                ZStack {
-                    ForEach(Array(friends.enumerated()), id: \.offset) { index, friend in
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(colors: [friend.color, friend.color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .frame(width: 36, height: 36)
-
-                            Circle()
-                                .stroke(colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : Color.white, lineWidth: 2)
-                                .frame(width: 36, height: 36)
-
-                            Text(friend.initials)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .offset(x: CGFloat(index) * 22)
-                    }
-                }
-                .frame(width: CGFloat(friends.count - 1) * 22 + 36, alignment: .leading)
-
-                Spacer()
-
-                // QR code badge
-                VStack(spacing: 2) {
-                    Image(systemName: "qrcode")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(
-                            LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                    Text("Add")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-
-            Divider()
-                .padding(.horizontal, 20)
-
-            // Activity feed preview
-            VStack(spacing: 10) {
-                activityRow(name: "Sarah M.", action: "completed", workout: "Push Day", icon: "checkmark.circle.fill", color: .green)
-                activityRow(name: "Alex J.", action: "shared", workout: "Leg Blaster", icon: "paperplane.fill", color: .blue)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-        }
-        .frame(maxWidth: 340)
-        .background(TutorialCardBackground(gradient: gradient))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-    }
-
-    private func activityRow(name: String, action: String, workout: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(color)
-
-            (Text(name).fontWeight(.semibold) + Text(" \(action) ") + Text(workout).fontWeight(.semibold).foregroundColor(gradient.first ?? .indigo))
-                .font(.caption)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-
+            
             Spacer()
-
-            Text("2m ago")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            
+            Text("Connect")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 8)
+                .background(
+                    LinearGradient(colors: app.colors, startPoint: .leading, endPoint: .trailing)
+                )
+                .clipShape(Capsule())
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(TutorialCardBackground(gradient: app.colors))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: app.colors[0].opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 12, x: 0, y: 6)
     }
 }
 
@@ -1786,36 +1191,25 @@ struct TutorialTrialCTA: View {
     private struct TrialFeature {
         let icon: String
         let text: String
-        let color: Color
     }
 
     private let features: [TrialFeature] = [
-        TrialFeature(icon: "sparkles", text: "Unlimited AI Workout Generation", color: .purple),
-        TrialFeature(icon: "chart.xyaxis.line", text: "Advanced Analytics & Insights", color: .blue),
-        TrialFeature(icon: "fork.knife", text: "Custom Meal Plans & Recipes", color: .orange),
-        TrialFeature(icon: "flame.fill", text: "Streak Shields & Premium Features", color: .red)
+        TrialFeature(icon: "sparkles", text: "Unlimited AI Workout Generation"),
+        TrialFeature(icon: "chart.xyaxis.line", text: "Advanced Analytics & Insights"),
+        TrialFeature(icon: "fork.knife", text: "Custom Meal Plans & Recipes"),
+        TrialFeature(icon: "flame.fill", text: "Streak Shields & Premium Features")
     ]
 
     var body: some View {
         VStack(spacing: 16) {
-            // Crown icon with glow
             ZStack {
                 Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [gradient[0].opacity(0.3), Color.clear],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 60
-                        )
-                    )
+                    .fill(RadialGradient(colors: [gradient[0].opacity(0.3), Color.clear], center: .center, startRadius: 10, endRadius: 60))
                     .frame(width: 100, height: 100)
                     .scaleEffect(isAnimating ? 1.1 : 0.95)
 
                 Circle()
-                    .fill(
-                        LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
+                    .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 56, height: 56)
                     .shadow(color: gradient[0].opacity(0.5), radius: 12, x: 0, y: 6)
 
@@ -1824,41 +1218,33 @@ struct TutorialTrialCTA: View {
                     .foregroundColor(.white)
             }
 
-            // Feature checklist
             VStack(spacing: 10) {
                 ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-
+                            .foregroundStyle(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         Text(feature.text)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
-
                         Spacer()
                     }
                 }
             }
             .padding(.horizontal, 8)
 
-            // Primary CTA: Start Free Trial
             Button(action: {
                 HapticManager.tap()
                 Task { await startTrial() }
             }) {
                 HStack(spacing: 8) {
                     if storeKit.purchaseState == .purchasing {
-                        ProgressView()
-                            .tint(.white)
+                        ProgressView().tint(.white)
                     } else {
                         Text("Start Free 3-Day Trial")
                             .font(.headline)
                             .fontWeight(.bold)
-
                         Image(systemName: "arrow.right")
                             .font(.subheadline.weight(.bold))
                     }
@@ -1870,12 +1256,8 @@ struct TutorialTrialCTA: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color(red: 0.4, green: 0.5, blue: 1.0),
-                                    Color(red: 0.6, green: 0.4, blue: 1.0)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                                colors: [Color(red: 0.4, green: 0.5, blue: 1.0), Color(red: 0.6, green: 0.4, blue: 1.0)],
+                                startPoint: .leading, endPoint: .trailing
                             )
                         )
                         .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
@@ -1883,7 +1265,6 @@ struct TutorialTrialCTA: View {
             }
             .disabled(storeKit.purchaseState == .purchasing)
 
-            // Trust badge
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.caption2)
@@ -1893,7 +1274,6 @@ struct TutorialTrialCTA: View {
                     .foregroundColor(.secondary)
             }
 
-            // Secondary: Maybe Later
             Button(action: {
                 HapticManager.tap()
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -1911,17 +1291,12 @@ struct TutorialTrialCTA: View {
 
     private func startTrial() async {
         guard let product = storeKit.yearlyProduct ?? storeKit.monthlyProduct else {
-            // No product available, just dismiss
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                isPresented = false
-            }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isPresented = false }
             return
         }
         let success = await storeKit.purchase(product)
         if success {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                isPresented = false
-            }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isPresented = false }
         }
     }
 }
@@ -1944,11 +1319,7 @@ struct TutorialCardBackground: View {
                 .offset(y: 4)
 
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(
-                    colorScheme == .dark
-                        ? Color(red: 0.11, green: 0.11, blue: 0.12)
-                        : Color.white
-                )
+                .fill(colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : Color.white)
 
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
@@ -1956,8 +1327,7 @@ struct TutorialCardBackground: View {
                         colors: colorScheme == .dark
                             ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
                             : [Color.white, Color.white.opacity(0.5), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
+                        startPoint: .top, endPoint: .bottom
                     ),
                     lineWidth: 1.5
                 )
@@ -1969,8 +1339,7 @@ struct TutorialCardBackground: View {
                             (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.4 : 0.3),
                             (gradient.last ?? .gray).opacity(colorScheme == .dark ? 0.3 : 0.2)
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        startPoint: .topLeading, endPoint: .bottomTrailing
                     ),
                     lineWidth: 1
                 )

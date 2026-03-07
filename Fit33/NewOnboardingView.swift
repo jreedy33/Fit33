@@ -1319,7 +1319,7 @@ struct NewOnboardingView: View {
         data["weightUnit"] = weightUnit == .lbs ? "lbs" : "kg"
         if !selectedGoals.isEmpty { data["goals"] = selectedGoals.joined(separator: ",") }
         if !selectedExperience.isEmpty { data["experience"] = selectedExperience }
-        if !selectedStrength.isEmpty { data["strength"] = selectedStrength }
+        data["strength"] = selectedStrengthLevel.rawValue
         if !selectedWorkoutLocation.isEmpty { data["location"] = selectedWorkoutLocation }
         if !selectedEquipment.isEmpty { data["equipment"] = selectedEquipment.joined(separator: ",") }
         return data
@@ -1342,7 +1342,7 @@ struct NewOnboardingView: View {
         if data["weightUnit"] == "kg" { weightUnit = .kg }
         if let g = data["goals"] { selectedGoals = Set(g.split(separator: ",").map(String.init)) }
         if let exp = data["experience"] { selectedExperience = exp }
-        if let s = data["strength"] { selectedStrength = s }
+        if let s = data["strength"], let level = StrengthProfileRecommendationEngine.StrengthLevel(rawValue: s) { selectedStrengthLevel = level }
         if let loc = data["location"] { selectedWorkoutLocation = loc }
         if let eq = data["equipment"] { selectedEquipment = Set(eq.split(separator: ",").map(String.init)) }
         
@@ -4499,6 +4499,104 @@ struct NewOnboardingView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
+    }
+    
+    // MARK: - Height/Weight Validation (restored from audit cleanup)
+    
+    private var parsedHeightFeetInches: (feet: Int, inches: Int)? {
+        let digits = heightDigits
+        guard !digits.isEmpty else { return nil }
+        let feet = Int(String(digits.prefix(1))) ?? 0
+        let inchDigits = String(digits.dropFirst())
+        let inches: Int
+        if inchDigits.isEmpty {
+            inches = 0
+        } else if inchDigits.count == 1 {
+            inches = Int(inchDigits) ?? 0
+        } else {
+            inches = Int(inchDigits.prefix(2)) ?? 0
+        }
+        if feet >= 3 && feet <= 8 && inches >= 0 && inches <= 11 {
+            return (feet, inches)
+        }
+        return nil
+    }
+    
+    private var isHeightValid: Bool {
+        if heightUnit == .cm {
+            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return false }
+            let cm: Int?
+            if let intValue = Int(trimmed) {
+                cm = intValue
+            } else if let doubleValue = Double(trimmed) {
+                cm = Int(doubleValue)
+            } else {
+                cm = nil
+            }
+            guard let validCm = cm else { return false }
+            return validCm >= 90 && validCm <= 270
+        } else {
+            return parsedHeightFeetInches != nil
+        }
+    }
+    
+    private var isWeightValid: Bool {
+        let trimmed = weight.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+        guard let w = Double(normalized), w > 0 else { return false }
+        if weightUnit == .lbs {
+            return w >= 50 && w <= 700
+        } else {
+            return w >= 23 && w <= 320
+        }
+    }
+    
+    private var heightInCm: Int {
+        if heightUnit == .cm {
+            let trimmed = heightCm.trimmingCharacters(in: .whitespaces)
+            if let intValue = Int(trimmed) { return intValue }
+            if let doubleValue = Double(trimmed) { return Int(doubleValue) }
+            return 0
+        } else if let parsed = parsedHeightFeetInches {
+            let totalInches = (parsed.feet * 12) + parsed.inches
+            return Int(Double(totalInches) * 2.54)
+        }
+        return 0
+    }
+    
+    private var formattedHeight: String {
+        if heightUnit == .cm {
+            return "\(heightCm) cm"
+        } else if let parsed = parsedHeightFeetInches {
+            return "\(parsed.feet)'\(parsed.inches)\""
+        }
+        return heightFeetInchesDigits
+    }
+    
+    private var formattedWeight: String {
+        if weightUnit == .lbs {
+            return "\(weight) lbs"
+        } else {
+            return "\(weight) kg"
+        }
+    }
+    
+    // MARK: - Equipment/Location Helpers
+    
+    private func mapWorkoutLocationToEquipmentLocation(_ location: WorkoutEnvironmentService.WorkoutEnvironment) -> EquipmentLocation {
+        switch location {
+        case .gym: return .gym
+        case .home: return .home
+        case .outdoor: return .outdoor
+        case .hybrid: return .hybrid
+        }
+    }
+    
+    private func returnToConfirmation() {
+        currentStep = .confirmation
+        isEditingFromConfirmation = false
     }
     
     // Create account (for signup) and complete onboarding

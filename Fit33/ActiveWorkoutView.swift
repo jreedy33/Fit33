@@ -78,6 +78,15 @@ struct ActiveWorkoutView: View {
         let seconds = Int(elapsedTime) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
+
+    /// Dynamic placeholder for notes field: "Chest & Triceps - 3/17/26"
+    private var notesPlaceholder: String {
+        let workoutName = workout.name ?? "Workout"
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d/yy"
+        let dateStr = formatter.string(from: Date())
+        return "\(workoutName) - \(dateStr)"
+    }
     
     var body: some View {
         // 📱 GeometryReader ensures proper layout calculations on orientation change
@@ -121,7 +130,7 @@ struct ActiveWorkoutView: View {
                                     Image(systemName: showingNotesField ? "note.text.badge.plus" : "note.text")
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.secondary)
-                                    Text(workoutNotes.isEmpty ? "Add workout notes..." : workoutNotes)
+                                    Text(workoutNotes.isEmpty ? notesPlaceholder : workoutNotes)
                                         .font(.subheadline)
                                         .foregroundColor(workoutNotes.isEmpty ? .secondary : .primary)
                                         .lineLimit(showingNotesField ? nil : 1)
@@ -141,17 +150,27 @@ struct ActiveWorkoutView: View {
                             .buttonStyle(.plain)
                             
                             if showingNotesField {
-                                TextEditor(text: $workoutNotes)
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary)
-                                    .scrollContentBackground(.hidden)
-                                    .frame(minHeight: 60, maxHeight: 120)
-                                    .padding(Spacing.sm)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .fill(Color.cardBackground.opacity(0.6))
-                                    )
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                ZStack(alignment: .topLeading) {
+                                    if workoutNotes.isEmpty {
+                                        Text(notesPlaceholder)
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                            .padding(.horizontal, Spacing.sm + 5)
+                                            .padding(.vertical, Spacing.sm + 8)
+                                            .allowsHitTesting(false)
+                                    }
+                                    TextEditor(text: $workoutNotes)
+                                        .font(.subheadline)
+                                        .foregroundColor(.primary)
+                                        .scrollContentBackground(.hidden)
+                                        .frame(minHeight: 60, maxHeight: 120)
+                                        .padding(Spacing.sm)
+                                }
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.cardBackground.opacity(0.6))
+                                )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                             
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in

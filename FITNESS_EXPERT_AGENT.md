@@ -242,3 +242,28 @@ When the Fitness Expert needs to make a judgment call:
 - Schoenfeld, B.J. & Grgic, J. (2020). "Evidence-Based Guidelines for Resistance Training Volume"
 - Krieger, J.W. (2010). "Single vs. Multiple Sets of Resistance Exercise for Muscle Hypertrophy"
 - Helms, E.R., Cronin, J., Storey, A., & Zourdos, M.C. (2016). "Application of the Repetitions in Reserve-Based Rating of Perceived Exertion Scale"
+
+---
+
+## Knowledge Updates Log
+
+> **Rule**: When agents learn new patterns, fix logic bugs, or discover new exercise science requirements, append them here so knowledge persists across sessions.
+
+### 2026-03-17: Active Workout Progressive Overload Review
+
+**Exercise Swap Tiering** (validated & enforced):
+- **Tier 1 (swaps 1-2)**: Equipment variants — same movement pattern, different equipment. Example: Dumbbell Bench Press → Barbell Bench Press. Uses `ExerciseSwapService.getQuickSwap()` with `swapCount < 3`.
+- **Tier 2 (swap 3+)**: Complementary exercises — implies user doesn't want this movement, suggest a complementary one. Example: Bench Press → Chest Fly. Uses `complementaryFamilies` field on exercise.
+- **Fallback**: `AlternativeExerciseEngine` — algorithmic scoring by muscle overlap, movement pattern, equipment compatibility, difficulty.
+
+**Progressive Overload Rules** (validated in `ProgressiveWorkoutIntelligence`):
+- Weight increment: +5lbs if current weight ≥ 30lbs, +2.5lbs if < 30lbs
+- Progression trigger: Consistent reps across ≥ 3 sets, 6+ reps per set, low variance
+- Split strategy: First half of sets at progression weight, second half at maintenance
+- Deload trigger: Last set reps drop by 3+ from average → reduce all weights by 10%, add +2 reps
+- Warmup sets in history should be filtered by `SetType.warmup` (future improvement)
+
+**Set Pre-Population** (new standard):
+- When a user starts a workout, all sets should be PRE-FILLED with previous workout values (weight + reps), not just shown as placeholders
+- This applies to: warmup cache, ExerciseHistoryService cache, cloud fetch, and smart recommendations
+- The user can immediately tap the checkmark to accept previous values without retyping

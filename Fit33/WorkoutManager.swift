@@ -110,18 +110,31 @@ class WorkoutManager: ObservableObject {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
             // Check previous workout set count from cache
             var setCount = 3 // Default
+            var prefilledSets: [WorkoutSetData]? = nil
 
             if !exerciseName.isEmpty {
                 if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: id, exerciseName: exerciseName),
                    !preWarmed.isEmpty {
                     setCount = preWarmed.count
+                    prefilledSets = preWarmed.map { prev in
+                        let setData = WorkoutSetData()
+                        setData.weight = prev.weight
+                        setData.reps = prev.reps
+                        return setData
+                    }
                 } else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
                           !cached.isEmpty {
                     setCount = cached.count
+                    prefilledSets = cached.map { cloudSet in
+                        let setData = WorkoutSetData()
+                        setData.weight = cloudSet.weight
+                        setData.reps = cloudSet.reps
+                        return setData
+                    }
                 }
             }
 
-            let sets = (0..<setCount).map { _ in WorkoutSetData() }
+            let sets = prefilledSets ?? (0..<setCount).map { _ in WorkoutSetData() }
             exerciseSetsData[id] = sets
             #if DEBUG
             print("📦 Initialized \(setCount) sets for exercise \(id.prefix(8))")
@@ -178,18 +191,34 @@ class WorkoutManager: ObservableObject {
                     var setCount = 3 // Default
 
                     // Check PreviewWarmupService for pre-warmed previous sets
+                    var prefilledSets: [WorkoutSetData]? = nil
+
                     if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: exerciseId, exerciseName: exerciseName),
                        !preWarmed.isEmpty {
                         setCount = preWarmed.count
+                        // Pre-fill weight/reps from previous workout data
+                        prefilledSets = preWarmed.map { prev in
+                            let setData = WorkoutSetData()
+                            setData.weight = prev.weight
+                            setData.reps = prev.reps
+                            return setData
+                        }
                     }
                     // Check ExerciseHistoryService cache for previous set count
                     else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
                             !cached.isEmpty {
                         setCount = cached.count
+                        // Pre-fill weight/reps from cached history
+                        prefilledSets = cached.map { cloudSet in
+                            let setData = WorkoutSetData()
+                            setData.weight = cloudSet.weight
+                            setData.reps = cloudSet.reps
+                            return setData
+                        }
                     }
 
-                    // Create the matching number of empty sets
-                    let sets = (0..<setCount).map { _ in WorkoutSetData() }
+                    // Use pre-filled sets if available, otherwise create empty sets
+                    let sets = prefilledSets ?? (0..<setCount).map { _ in WorkoutSetData() }
                     updates[exerciseId] = sets
                     totalSets += setCount
                     #if DEBUG

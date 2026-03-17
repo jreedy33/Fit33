@@ -372,3 +372,35 @@ If a design decision conflicts with an engineering constraint:
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 3 (flow detail), 13 (components), 17 (validation checklist)
+
+---
+
+## Knowledge Updates Log
+
+> **Rule**: When agents learn new patterns, fix bugs, or discover new UX requirements, append them here so knowledge persists across sessions.
+
+### 2026-03-17: Active Workout Flow Fixes
+
+**Set Initialization Contract**:
+- `WorkoutManager.initializeSetsForExercise()` now PRE-FILLS `WorkoutSetData.weight` and `.reps` from cached history
+- Previously: correct set count but empty values (weight=0, reps=0) — user had to retype
+- Now: sets load with previous workout values ready to accept or edit
+
+**Exercise Shuffle Contract**:
+- Shuffle button uses `ExerciseSwapService.getQuickSwap()` for tiered swap logic
+- Each `ExerciseCard` tracks its own `perExerciseSwapCount` for correct tier selection
+- `shuffleExercise()` now calls `loadHistoricalDataForExercise()` to populate placeholders
+- Minimum 3 sets created on shuffle (was 1)
+
+**Historical Data Loading on Swap**:
+- `loadHistoricalDataForExercise()` now also calls `syncSetsWithPreviousData()` to adjust set count and pre-fill values
+- Will NOT overwrite sets where user has already entered data (`isCompleted` or non-zero weight/reps)
+
+**UX Performance (verified working)**:
+- `.scrollDismissesKeyboard(.immediately)` on the workout ScrollView
+- Notes placeholder: `"Workout Name - M/d/yy"` format
+- LazyVStack + debounced inputs (150ms) + pre-fetched Core Data properties
+
+**Test Coverage**:
+- `ActiveWorkoutTests.swift` added with 16 tests covering set init, progressive overload, swap tiers, historical data, and UX
+- Run from DevMenuView test runner

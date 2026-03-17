@@ -106,15 +106,25 @@ class WorkoutManager: ObservableObject {
     
     // Initialize sets for an exercise if not already present (call this BEFORE rendering)
     // UPDATED: Now creates 3 sets by default instead of 1
-    func initializeSetsForExercise(id: String) {
+    func initializeSetsForExercise(id: String, exerciseName: String = "") {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
-            // Create 3 empty sets ready to go
-            let set1 = WorkoutSetData()
-            let set2 = WorkoutSetData()
-            let set3 = WorkoutSetData()
-            exerciseSetsData[id] = [set1, set2, set3]
+            // Check previous workout set count from cache
+            var setCount = 3 // Default
+
+            if !exerciseName.isEmpty {
+                if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: id, exerciseName: exerciseName),
+                   !preWarmed.isEmpty {
+                    setCount = preWarmed.count
+                } else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
+                          !cached.isEmpty {
+                    setCount = cached.count
+                }
+            }
+
+            let sets = (0..<setCount).map { _ in WorkoutSetData() }
+            exerciseSetsData[id] = sets
             #if DEBUG
-            print("📦 Initialized 3 sets for exercise \(id.prefix(8))")
+            print("📦 Initialized \(setCount) sets for exercise \(id.prefix(8))")
             #endif
         }
     }
@@ -150,45 +160,60 @@ class WorkoutManager: ObservableObject {
     
     // Ensure all exercises have initialized sets (call on workout start)
     // OPTIMIZED: Batch all updates to trigger only ONE SwiftUI re-render
-    // UPDATED: Now creates 3 sets by default instead of 1
+    // SMART: Creates sets matching previous workout count (or 3 by default)
     func initializeSetsForExercises(_ exercises: [Exercise]) {
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
         #endif
-        
+
         // Build updates locally first (no @Published triggers)
         var updates: [String: [WorkoutSetData]] = [:]
-        
+        var totalSets = 0
+
         for exercise in exercises {
             if let exerciseId = exercise.id?.uuidString {
                 if exerciseSetsData[exerciseId] == nil || exerciseSetsData[exerciseId]?.isEmpty == true {
-                    // Create 3 empty sets ready to go
-                    let set1 = WorkoutSetData()
-                    let set2 = WorkoutSetData()
-                    let set3 = WorkoutSetData()
-                    updates[exerciseId] = [set1, set2, set3]
+                    // Check previous workout set count from cache or warmup
+                    let exerciseName = exercise.name ?? ""
+                    var setCount = 3 // Default
+
+                    // Check PreviewWarmupService for pre-warmed previous sets
+                    if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: exerciseId, exerciseName: exerciseName),
+                       !preWarmed.isEmpty {
+                        setCount = preWarmed.count
+                    }
+                    // Check ExerciseHistoryService cache for previous set count
+                    else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
+                            !cached.isEmpty {
+                        setCount = cached.count
+                    }
+
+                    // Create the matching number of empty sets
+                    let sets = (0..<setCount).map { _ in WorkoutSetData() }
+                    updates[exerciseId] = sets
+                    totalSets += setCount
                     #if DEBUG
-                    print("📦 Initialized 3 sets for exercise \(exerciseId.prefix(8))")
+                    print("📦 Initialized \(setCount) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))")
                     #endif
                 }
             }
         }
-        
+
         #if DEBUG
         let buildTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("📦 Built \(updates.count * 3) sets (3 per exercise) in \(String(format: "%.2f", buildTime))ms")
+        print("📦 Built \(totalSets) sets in \(String(format: "%.2f", buildTime))ms")
         let mergeStart = CFAbsoluteTimeGetCurrent()
         #endif
-        
+
         // Apply all updates at once (single @Published trigger)
         if !updates.isEmpty {
             exerciseSetsData.merge(updates) { _, new in new }
         }
-        
+
         #if DEBUG
         let mergeTime = (CFAbsoluteTimeGetCurrent() - mergeStart) * 1000
         print("📦 Merge completed in \(String(format: "%.2f", mergeTime))ms")
-        print("📦 Initialized 3 sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)")
+        print("📦 Initialized sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)")
         #endif
     }
     

@@ -712,7 +712,13 @@ struct ActiveWorkoutView: View {
                     
                     var smartSets: [WorkoutSetData]? = nil
                     if !recs.isEmpty {
-                        smartSets = recs.map { _ in WorkoutSetData() }
+                        // Pre-populate sets with recommended weight/reps so fields aren't empty
+                        smartSets = recs.map { rec in
+                            let setData = WorkoutSetData()
+                            setData.weight = rec.weight
+                            setData.reps = rec.reps
+                            return setData
+                        }
                     }
                     
                     recommendations.append((exerciseId: exerciseId, data: smartPreviousData, sets: smartSets))
@@ -832,22 +838,24 @@ struct ActiveWorkoutView: View {
         initTasks.append(historyTask)
     }
     
-    /// Load historical data for a newly replaced exercise
+    /// Load historical data for a newly replaced/shuffled exercise
+    /// Also adjusts set count to match previous workout and pre-populates weight/reps
     private func loadHistoricalDataForExercise(_ exercise: Exercise) {
         guard let exerciseId = exercise.id?.uuidString,
               let exerciseName = exercise.name else { return }
-        
+
         #if DEBUG
         print("🔄 Loading historical data for replaced exercise: \(exerciseName)")
         #endif
-        
+
         let currentUser = UserManager.shared.currentUser
         let ctx = viewContext
-        
+        let wm = workoutManager
+
         Task.detached(priority: .userInitiated) {
             // First check if we have cached data
             let cache = ExerciseHistoryService.shared.previousSetsCache
-            
+
             if let cachedSets = cache[exerciseName], !cachedSets.isEmpty {
                 // Use cached data
                 let previousData = cachedSets.map { cloudSet in
@@ -857,19 +865,21 @@ struct ActiveWorkoutView: View {
                         reps: cloudSet.reps
                     )
                 }
-                
+
                 await MainActor.run {
                     previousExerciseSets[exerciseId] = previousData
+                    // Adjust set count to match previous workout and pre-fill weight/reps
+                    self.syncSetsWithPreviousData(exerciseId: exerciseId, previousData: previousData, wm: wm)
                     #if DEBUG
                     print("✅ Loaded cached historical data for '\(exerciseName)': \(previousData.count) sets")
                     #endif
                 }
                 return
             }
-            
+
             // Fetch from cloud
             let allPreviousSets = await ExerciseHistoryService.shared.fetchPreviousSetsForExercises([exerciseName])
-            
+
             if let cloudSets = allPreviousSets[exerciseName], !cloudSets.isEmpty {
                 let previousData = cloudSets.map { cloudSet in
                     PreviousSetData(
@@ -878,9 +888,10 @@ struct ActiveWorkoutView: View {
                         reps: cloudSet.reps
                     )
                 }
-                
+
                 await MainActor.run {
                     previousExerciseSets[exerciseId] = previousData
+                    self.syncSetsWithPreviousData(exerciseId: exerciseId, previousData: previousData, wm: wm)
                     #if DEBUG
                     print("✅ Loaded cloud historical data for '\(exerciseName)': \(previousData.count) sets")
                     #endif
@@ -895,18 +906,49 @@ struct ActiveWorkoutView: View {
                         context: ctx
                     )
                 }
-                
+
                 let smartPreviousData = recommendations.enumerated().map { index, rec in
                     PreviousSetData(setNumber: index + 1, recommendation: rec)
                 }
-                
+
                 await MainActor.run {
                     previousExerciseSets[exerciseId] = smartPreviousData
+                    // Pre-populate sets with smart recommendation values
+                    let currentSets = wm.getSetsForExercise(id: exerciseId)
+                    if currentSets.allSatisfy({ $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }) {
+                        let smartSets = recommendations.map { rec in
+                            let setData = WorkoutSetData()
+                            setData.weight = rec.weight
+                            setData.reps = rec.reps
+                            return setData
+                        }
+                        wm.updateSetsForExercise(id: exerciseId, sets: smartSets)
+                    }
                     #if DEBUG
                     print("💡 Generated smart recommendations for '\(exerciseName)'")
                     #endif
                 }
             }
+        }
+    }
+
+    /// Sync the exercise's set count and pre-fill values from previous workout data
+    private func syncSetsWithPreviousData(exerciseId: String, previousData: [PreviousSetData], wm: WorkoutManager) {
+        let currentSets = wm.getSetsForExercise(id: exerciseId)
+        let allEmpty = currentSets.allSatisfy { $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }
+
+        guard allEmpty else { return } // Don't overwrite user's in-progress data
+
+        // Create sets matching the previous workout's count with pre-filled weight/reps
+        let newSets = previousData.map { prev in
+            let setData = WorkoutSetData()
+            setData.weight = prev.weight
+            setData.reps = prev.reps
+            return setData
+        }
+
+        if !newSets.isEmpty {
+            wm.updateSetsForExercise(id: exerciseId, sets: newSets)
         }
     }
     
@@ -1255,23 +1297,28 @@ struct ActiveWorkoutView: View {
         // Transfer any sets data to the new exercise (or initialize fresh)
         let existingSets = workoutManager.exerciseSetsData[oldExerciseId] ?? []
         if existingSets.isEmpty || existingSets.allSatisfy({ !$0.isCompleted && $0.weight == 0 && $0.reps == 0 }) {
-            // No meaningful data - start fresh with one empty set
-            workoutManager.exerciseSetsData[newExerciseId] = [WorkoutSetData()]
+            // No meaningful data - initialize with proper set count (match old exercise or default 3)
+            let setCount = max(existingSets.count, 3)
+            workoutManager.exerciseSetsData[newExerciseId] = (0..<setCount).map { _ in WorkoutSetData() }
         } else {
             // Transfer existing sets to new exercise
             workoutManager.exerciseSetsData[newExerciseId] = existingSets
         }
-        
+
         // Clean up old exercise data
         workoutManager.exerciseSetsData.removeValue(forKey: oldExerciseId)
+        previousExerciseSets.removeValue(forKey: oldExerciseId) // Clear old previous data
         exerciseRestTimers.removeValue(forKey: oldExerciseId)
-        
+
         // Transfer rest timer preference if set
         if let customRest = exerciseRestTimers[oldExerciseId] {
             exerciseRestTimers[newExerciseId] = customRest
         }
-        
+
         print("🔀 Shuffled '\(oldExerciseName)' → '\(newExerciseName)'")
+
+        // Load historical data for the new exercise (populates placeholders)
+        loadHistoricalDataForExercise(newExercise)
         
         // 🧠 ADVANCED INTELLIGENCE: Track exercise swap for learning user preferences
         // This helps understand which exercises users prefer over others
@@ -2226,76 +2273,61 @@ struct ExerciseCard: View {
         exercise.name ?? "Exercise"
     }
     
-    // MARK: - Shuffle to Similar Exercise (Smart Alternative Matching)
+    // MARK: - Shuffle to Similar Exercise (Smart Tiered Swap)
+    // Tier 1 (swaps 1-2): Equipment variants (Dumbbell Bench → Barbell Bench)
+    // Tier 2 (swap 3+): Complementary exercises (Bench Press → Chest Fly)
+    // Fallback: Algorithmic match via AlternativeExerciseEngine
+    @State private var perExerciseSwapCount: Int = 0
+
     private func shuffleToSimilarExercise() {
-        // ⚡️ PERF: Lazy fetch - only get alternatives when user actually shuffles
-        if prefetchedExercises.isEmpty {
-            // First shuffle tap - fetch alternatives now
-            let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
-            var excludeIds = shuffledExerciseIds
-            if let currentId = exercise.id {
-                excludeIds.insert(currentId)
+        let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
+        let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
+        let userLocation = UserManager.shared.currentUser?.workoutLocation ?? "gym"
+        var excludeIds = shuffledExerciseIds
+        if let currentId = exercise.id {
+            excludeIds.insert(currentId)
+        }
+
+        // Use ExerciseSwapService tiered logic:
+        // swapCount < 3 → equipment variants first (same movement, different equipment)
+        // swapCount >= 3 → complementary exercises (different movement that complements workout)
+        if let newExercise = ExerciseSwapService.shared.getQuickSwap(
+            for: exercise,
+            swapCount: perExerciseSwapCount,
+            userGoal: userGoal,
+            userLocation: userLocation,
+            userEquipment: userEquipment,
+            previousSwapIds: excludeIds
+        ) {
+            HapticManager.impact(.medium)
+            perExerciseSwapCount += 1
+
+            if let newId = newExercise.id {
+                shuffledExerciseIds.insert(newId)
             }
-            
-            // Use the smart alternative engine synchronously for immediate response
+
+            let tier = perExerciseSwapCount <= 2 ? "equipment variant" : "complementary"
+            print("🔄 Shuffle #\(perExerciseSwapCount) (\(tier)): \(exercise.name ?? "") → \(newExercise.name ?? "")")
+            onShuffleExercise(newExercise)
+        } else {
+            // Fallback to AlternativeExerciseEngine if swap service has no results
             if let newExercise = AlternativeExerciseEngine.shared.getBestAlternative(
                 for: exercise,
                 userEquipment: userEquipment,
                 excludeIds: excludeIds
             ) {
                 HapticManager.impact(.medium)
-                
+                perExerciseSwapCount += 1
+
                 if let newId = newExercise.id {
                     shuffledExerciseIds.insert(newId)
                 }
-                
-                print("🔄 Shuffled to smart alternative: \(newExercise.name ?? "")")
+
+                print("🔄 Shuffle #\(perExerciseSwapCount) (fallback): \(exercise.name ?? "") → \(newExercise.name ?? "")")
                 onShuffleExercise(newExercise)
-                
-                // Pre-fetch more alternatives in background for next shuffle
-                prefetchMoreAlternatives()
             } else {
                 HapticManager.notification(.warning)
                 print("⚠️ No alternatives found for: \(exercise.name ?? "")")
-            }
-            return
-        }
-        
-        // Use prefetched exercises
-        if let newExercise = prefetchedExercises.first {
-            HapticManager.impact(.medium)
-            
-            if let newId = newExercise.id {
-                shuffledExerciseIds.insert(newId)
-            }
-            
-            prefetchedExercises.removeFirst()
-            print("🔄 Shuffled to prefetched alternative: \(newExercise.name ?? "")")
-            onShuffleExercise(newExercise)
-            
-            // Pre-fetch more if running low
-            if prefetchedExercises.count < 2 {
-                prefetchMoreAlternatives()
-            }
-        }
-    }
-    
-    // Fetch more alternatives in background
-    private func prefetchMoreAlternatives() {
-        Task.detached(priority: .background) {
-            let userEquipment = await MainActor.run { UserManager.shared.currentUser?.getEquipment() ?? [] }
-            let currentExercise = exercise
-            let alreadyShuffled = shuffledExerciseIds
-            
-            let alternatives = await AlternativeExerciseEngine.shared.getAlternatives(
-                for: currentExercise,
-                userEquipment: userEquipment,
-                excludeIds: alreadyShuffled,
-                maxResults: 5
-            )
-            
-            await MainActor.run {
-                prefetchedExercises = alternatives.map { $0.exercise }
             }
         }
     }

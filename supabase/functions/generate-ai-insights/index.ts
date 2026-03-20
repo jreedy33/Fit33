@@ -53,13 +53,13 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
     new_30d: newUsers30d.count ?? 0,
   };
 
-  // 2. Workout Activity
+  // 2. Workout Activity (table is "workouts", timestamp is "created_at")
   const [totalWorkouts, workouts7d, workouts30d] = await Promise.all([
-    supabase.from("workout_history").select("id", { count: "exact", head: true }),
-    supabase.from("workout_history").select("id", { count: "exact", head: true })
-      .gte("completed_at", sevenDaysAgo),
-    supabase.from("workout_history").select("id", { count: "exact", head: true })
-      .gte("completed_at", thirtyDaysAgo),
+    supabase.from("workouts").select("id", { count: "exact", head: true }),
+    supabase.from("workouts").select("id", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo),
+    supabase.from("workouts").select("id", { count: "exact", head: true })
+      .gte("created_at", thirtyDaysAgo),
   ]);
 
   results.workouts = {
@@ -68,24 +68,71 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
     last_30d: workouts30d.count ?? 0,
   };
 
-  // 3. Popular Exercises (from exercise_usage_logs if it exists)
+  // 2b. User engagement from profiles (streaks, avg workouts)
   try {
-    const { data: popularExercises } = await supabase
-      .from("exercise_usage_logs")
+    const { data: profileStats } = await supabase
+      .from("user_profiles")
+      .select("total_workouts, current_streak, longest_streak, xp, last_workout_date")
+      .gt("total_workouts", 0);
+
+    if (profileStats && profileStats.length > 0) {
+      const totalUserWorkouts = profileStats.reduce((a: number, b: { total_workouts: number }) => a + (b.total_workouts || 0), 0);
+      const avgWorkouts = totalUserWorkouts / profileStats.length;
+      const avgStreak = profileStats.reduce((a: number, b: { current_streak: number }) => a + (b.current_streak || 0), 0) / profileStats.length;
+      const maxStreak = Math.max(...profileStats.map((p: { longest_streak: number }) => p.longest_streak || 0));
+
+      results.user_engagement = {
+        users_with_workouts: profileStats.length,
+        total_workouts_all_users: totalUserWorkouts,
+        avg_workouts_per_active_user: Math.round(avgWorkouts * 10) / 10,
+        avg_current_streak: Math.round(avgStreak * 10) / 10,
+        best_streak_ever: maxStreak,
+      };
+    }
+  } catch {
+    results.user_engagement = null;
+  }
+
+  // 3. Popular Exercises (from workout_exercises table)
+  try {
+    const { data: recentExercises } = await supabase
+      .from("workout_exercises")
       .select("exercise_name")
       .order("created_at", { ascending: false })
       .limit(500);
 
-    if (popularExercises && popularExercises.length > 0) {
+    if (recentExercises && recentExercises.length > 0) {
       const counts: Record<string, number> = {};
-      for (const row of popularExercises) {
-        counts[row.exercise_name] = (counts[row.exercise_name] || 0) + 1;
+      for (const row of recentExercises) {
+        if (row.exercise_name) {
+          counts[row.exercise_name] = (counts[row.exercise_name] || 0) + 1;
+        }
       }
       const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20);
       results.popular_exercises = sorted.map(([name, count]) => ({ name, count }));
+    } else {
+      results.popular_exercises = [];
     }
   } catch {
-    results.popular_exercises = [];
+    // Fallback: try exercise_usage_logs
+    try {
+      const { data: usageLogs } = await supabase
+        .from("exercise_usage_logs")
+        .select("exercise_name")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (usageLogs && usageLogs.length > 0) {
+        const counts: Record<string, number> = {};
+        for (const row of usageLogs) {
+          counts[row.exercise_name] = (counts[row.exercise_name] || 0) + 1;
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20);
+        results.popular_exercises = sorted.map(([name, count]) => ({ name, count }));
+      }
+    } catch {
+      results.popular_exercises = [];
+    }
   }
 
   // 4. Onboarding Analytics
@@ -131,13 +178,13 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
   try {
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const [activeWeek1, activeWeek2] = await Promise.all([
-      supabase.from("workout_history")
+      supabase.from("workouts")
         .select("user_id")
-        .gte("completed_at", sevenDaysAgo),
-      supabase.from("workout_history")
+        .gte("created_at", sevenDaysAgo),
+      supabase.from("workouts")
         .select("user_id")
-        .gte("completed_at", fourteenDaysAgo)
-        .lt("completed_at", sevenDaysAgo),
+        .gte("created_at", fourteenDaysAgo)
+        .lt("created_at", sevenDaysAgo),
     ]);
 
     const week1Users = new Set((activeWeek1.data || []).map((r: { user_id: string }) => r.user_id));

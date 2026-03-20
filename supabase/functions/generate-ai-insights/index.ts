@@ -71,7 +71,7 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
   // 1. USER PROFILES (all columns)
   // ══════════════════════════════════════════════════════════
   const profiles = (await safeQuery(() => supabase.from("user_profiles")
-    .select("id, name, username, email, gender, age, fitness_goal, experience_level, strength_level, workout_environment, equipment, available_days, current_streak, longest_streak, total_workouts, xp, has_completed_onboarding, created_at, last_workout_date, weight_unit, height_unit, daily_calorie_goal, daily_protein_goal")) || []) as R[];
+    .select("*")) || []) as R[];
 
   const active = profiles.filter(p => (p.total_workouts || 0) > 0);
   r.users = {

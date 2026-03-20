@@ -2091,7 +2091,6 @@ struct ExerciseCard: View {
     @State private var showingExerciseDetail = false
     @State private var shuffledExerciseIds: Set<UUID> = [] // Track which exercises we've already shuffled to
     @State private var prefetchedExercises: [Exercise] = [] // Prefetched similar exercises ready to shuffle
-    @State private var showingActionSheet = false
     @State private var showingRestTimerSheet = false
     @State private var showingReplaceExercise = false
     @State private var showingRenameExercise = false
@@ -2193,36 +2192,21 @@ struct ExerciseCard: View {
                     }
             }
         }
-        .confirmationDialog("Exercise Options", isPresented: $showingActionSheet, titleVisibility: .visible) {
-            Button("Remove Exercise", role: .destructive) {
-                onRemoveExercise()
-            }
-            Button("Replace Exercise") {
-                showingReplaceExercise = true
-            }
-            Button("Rename Exercise") {
-                showingRenameExercise = true
-            }
-            Button("Add Rest Timer") {
-                showingRestTimerSheet = true
-            }
-            Button("Cancel", role: .cancel) { }
-        }
         .sheet(isPresented: $showingRestTimerSheet) {
             RestTimerSetupView(onSetTimer: onSetRestTimer)
         }
         .sheet(isPresented: $showingReplaceExercise) {
-            CustomWorkoutBuilderView(
-                replacing: exercise,
-                onSelect: { newExercise in
-                    // Replace this exercise with the selected one
-                    WorkoutManager.shared.replaceExercise(exercise, with: newExercise)
-                    // Pass the new exercise so historical data can be loaded
-                    onReplaceExercise(newExercise)
-                }
-            )
-            .environmentObject(WorkoutManager.shared)
-            .environmentObject(UserManager.shared)
+            NavigationStack {
+                CustomWorkoutBuilderView(
+                    replacing: exercise,
+                    onSelect: { newExercise in
+                        WorkoutManager.shared.replaceExercise(exercise, with: newExercise)
+                        onReplaceExercise(newExercise)
+                    }
+                )
+                .environmentObject(WorkoutManager.shared)
+                .environmentObject(UserManager.shared)
+            }
         }
         .sheet(isPresented: $showingRenameExercise) {
             RenameExerciseView(exercise: exercise)
@@ -2475,11 +2459,29 @@ struct ExerciseCard: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 
-                // Single menu button for all actions
-                Button(action: {
-                    HapticManager.impact(.light)
-                    showingActionSheet = true
-                }) {
+                // Contextual menu for exercise actions
+                Menu {
+                    Button(role: .destructive) {
+                        onRemoveExercise()
+                    } label: {
+                        Label("Remove Exercise", systemImage: "trash")
+                    }
+                    Button {
+                        showingReplaceExercise = true
+                    } label: {
+                        Label("Replace Exercise", systemImage: "arrow.triangle.swap")
+                    }
+                    Button {
+                        showingRenameExercise = true
+                    } label: {
+                        Label("Rename Exercise", systemImage: "pencil")
+                    }
+                    Button {
+                        showingRestTimerSheet = true
+                    } label: {
+                        Label("Add Rest Timer", systemImage: "timer")
+                    }
+                } label: {
                     Image(systemName: "ellipsis")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -2489,7 +2491,6 @@ struct ExerciseCard: View {
                                 .fill(Color(.systemGray6))
                         )
                 }
-                .buttonStyle(PlainButtonStyle())
             }
             .fixedSize() // Keep icons at their natural size
         }
@@ -2535,7 +2536,7 @@ struct ExerciseCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            Text("LB")
+            Text(useKg ? "KG" : "LB")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.secondary)
                 .frame(width: 70, alignment: .center)
@@ -2787,28 +2788,35 @@ struct SetRowView: View {
                         }
                     }
                 } label: {
-                    // Display letter for special types, or number for normal
-                    Text(setData.setType.displayLetter ?? "\(setNumber)")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(setData.setType.color)
-                        .frame(width: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                    HStack(alignment: .center, spacing: 2) {
+                        Text(setData.setType.displayLetter ?? "\(setNumber)")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(setData.setType == .normal ? .primary : setData.setType.color)
+                        
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .semibold))
+                            .foregroundColor(setData.setType == .normal ? .secondary.opacity(0.4) : setData.setType.color.opacity(0.5))
+                            .offset(x: 2, y: 1.5)
+                    }
+                    .frame(width: 44, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 
                 // Previous set info - show last workout's data or smart recommendation
                 HStack(spacing: 4) {
                     if let prev = previousSet {
+                        let displayWeight = useKg
+                            ? (prev.weight * WorkoutSetData.lbsToKg * 10).rounded() / 10
+                            : prev.weight
                         if prev.isSmartRecommendation {
-                            // Smart recommendation with special styling
                             Image(systemName: "sparkles")
                                 .font(.system(size: 12))
                                 .foregroundColor(.orange)
-                            Text("\(formatWeightPlaceholder(prev.weight))×\(prev.reps)")
+                            Text("\(formatWeightPlaceholder(displayWeight))×\(prev.reps)")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.orange)
                         } else {
-                            // Historical data
-                            Text(prev.displayString)
+                            Text("\(formatWeightPlaceholder(displayWeight))×\(prev.reps)")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
@@ -3775,7 +3783,6 @@ struct RoundedCorner: Shape {
 }
 
 // MARK: - Marquee Text Component
-// Continuous scroll like a rotating gear - always scrolls left, pauses, repeats
 
 struct MarqueeText: View {
     let text: String
@@ -3783,9 +3790,9 @@ struct MarqueeText: View {
     let weight: Font.Weight
     let shouldAnimate: Bool
 
-    private let scrollSpeed: CGFloat = 25
-    private let gap: CGFloat = 80
-    private let pauseSeconds: Double = 3.0
+    private let scrollSpeed: CGFloat = 40
+    private let gap: CGFloat = 60
+    private let pauseSeconds: Double = 1.8
 
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
@@ -3803,20 +3810,21 @@ struct MarqueeText: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let cw = geometry.size.width
             HStack(spacing: gap) {
                 tickerLabel
                     .background(
                         GeometryReader { textGeo in
                             Color.clear.onAppear {
                                 textWidth = textGeo.size.width
-                                containerWidth = geometry.size.width
+                                containerWidth = cw
                             }
                         }
                     )
                 if needsScrolling { tickerLabel }
             }
             .offset(x: ticker.offset)
-            .frame(width: geometry.size.width, alignment: .leading)
+            .frame(width: cw, alignment: .leading)
             .clipped()
         }
         .frame(height: 22)
@@ -3848,54 +3856,101 @@ struct MarqueeText: View {
 
 private class MarqueeTicker: ObservableObject {
     @Published var offset: CGFloat = 0
-    
+
     private var displayLink: CADisplayLink?
     private var cycleWidth: CGFloat = 0
-    private var speed: CGFloat = 25
-    private var pauseDuration: Double = 3.0
-    private var pauseRemaining: Double = 3.0
-    private var isScrolling = false
-    private var rawOffset: CGFloat = 0
-    
+    private var speed: CGFloat = 40
+    private var pauseDuration: Double = 1.8
+    private var pauseRemaining: Double = 0
+    private var phase: Phase = .paused
+    private var scrollDistance: CGFloat = 0
+    private var lastTimestamp: CFTimeInterval = 0
+    private var easeElapsed: Double = 0
+
+    private let easeDuration: Double = 0.25
+    private enum Phase { case paused, easeIn, cruise, easeOut }
+
     func start(cycleWidth: CGFloat, speed: CGFloat, pause: Double) {
         stop()
         self.cycleWidth = cycleWidth
         self.speed = speed
         self.pauseDuration = pause
         self.pauseRemaining = pause
-        self.isScrolling = false
-        self.rawOffset = 0
+        self.phase = .paused
+        self.scrollDistance = 0
+        self.easeElapsed = 0
         self.offset = 0
-        
-        displayLink = CADisplayLink(target: self, selector: #selector(tick))
-        displayLink?.add(to: .main, forMode: .common)
+        self.lastTimestamp = 0
+
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
     }
-    
+
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
-        isScrolling = false
-        rawOffset = 0
+        phase = .paused
+        scrollDistance = 0
+        easeElapsed = 0
         offset = 0
+        lastTimestamp = 0
     }
-    
+
     @objc private func tick(_ link: CADisplayLink) {
-        let dt = link.targetTimestamp - link.timestamp
-        guard dt > 0, dt < 0.5 else { return }
-        
-        if !isScrolling {
+        let now = link.timestamp
+        let dt: Double
+        if lastTimestamp > 0 {
+            dt = min(now - lastTimestamp, 0.05)
+        } else {
+            dt = link.duration
+        }
+        lastTimestamp = now
+        guard dt > 0 else { return }
+
+        switch phase {
+        case .paused:
             pauseRemaining -= dt
             if pauseRemaining <= 0 {
-                isScrolling = true
+                phase = .easeIn
+                easeElapsed = 0
+                scrollDistance = 0
             }
-        } else {
-            rawOffset -= CGFloat(dt) * speed
-            if rawOffset <= -cycleWidth {
-                rawOffset += cycleWidth
-                isScrolling = false
+
+        case .easeIn:
+            easeElapsed += dt
+            let t = min(easeElapsed / easeDuration, 1.0)
+            let currentSpeed = speed * CGFloat(t * t)
+            let delta = CGFloat(dt) * currentSpeed
+            scrollDistance += delta
+            offset = -scrollDistance
+            if t >= 1.0 { phase = .cruise }
+
+        case .cruise:
+            let easeOutThreshold = cycleWidth - speed * CGFloat(easeDuration)
+            let delta = CGFloat(dt) * speed
+            scrollDistance += delta
+            offset = -scrollDistance
+            if scrollDistance >= easeOutThreshold {
+                phase = .easeOut
+                easeElapsed = 0
+            }
+
+        case .easeOut:
+            easeElapsed += dt
+            let t = min(easeElapsed / easeDuration, 1.0)
+            let currentSpeed = max(speed * CGFloat(1.0 - t * t), speed * 0.08)
+            let delta = CGFloat(dt) * currentSpeed
+            scrollDistance += delta
+
+            if scrollDistance >= cycleWidth {
+                scrollDistance = 0
+                offset = 0
+                phase = .paused
                 pauseRemaining = pauseDuration
+            } else {
+                offset = -scrollDistance
             }
-            offset = rawOffset
         }
     }
 }

@@ -291,12 +291,22 @@ struct FavoriteWorkoutCard: View {
     
     private var topMuscles: [String] {
         var muscleCount: [String: Int] = [:]
+        var firstSeen: [String: Int] = [:]
+        var order = 0
         for workoutExercise in workoutExercises {
             for muscle in workoutExercise.safeMuscleGroups {
-                muscleCount[muscle.lowercased(), default: 0] += 1
+                let key = muscle.lowercased()
+                muscleCount[key, default: 0] += 1
+                if firstSeen[key] == nil {
+                    firstSeen[key] = order
+                    order += 1
+                }
             }
         }
-        return muscleCount.sorted { $0.value > $1.value }.prefix(2).map { $0.key }
+        return muscleCount.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return (firstSeen[$0.key] ?? 0) < (firstSeen[$1.key] ?? 0)
+        }.prefix(2).map { $0.key }
     }
     
     private func cleanWorkoutName(_ name: String) -> String {

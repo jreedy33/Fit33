@@ -627,3 +627,35 @@ User Types → onChange(of: searchText)
 ### 2026-03-19: Premium Default Change
 
 **PremiumManager.isPremiumUser** now defaults to `true` (was `false`). This means all features are available by default. StoreKit still updates the status when subscription info is confirmed. The music player (`NowPlayingBar`) and other premium-gated features are now visible by default.
+
+### 2026-03-19: Workout Completion & Share Redesign
+
+**Completion Screen Restructure** (`WorkoutCompletionView.swift`):
+- New layout order: Celebration header → Inline Replay Insights → Expandable Workout Card → Notes → Progress Photo → Reopen
+- Replay insights are now shown inline (staggered animation), no longer behind a button/sheet
+- `WorkoutReplayView.swift` kept for potential standalone use but not presented from completion screen
+- Removed: `showingReplay` state, `.sheet(isPresented: $showingReplay)`, `replayButton`
+
+**Expandable Sleek Workout Card Pattern**:
+- `@State private var isCardExpanded = false` controls collapsed/expanded state
+- Collapsed: gradient ring + checkmark, workout name, date, stats row, muscle tags, chevron.down
+- Expanded: reveals `CompletionExerciseRow` cards for each exercise below the stats
+- Uses `.sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])` — replaces old hardcoded `Color(white: 0.18)` background
+- Same expandable card pattern reused in `ShareWorkoutSheet`
+
+**Notes Section**:
+- Placeholder updated to "Anything you'd like to add?"
+- Notes carry over from active session via `workout.notes` on appear
+- Notes persist back to Core Data on "Done" tap
+
+**Share Sheet Redesign** (`ShareWorkoutSheet.swift`):
+- Background: `AnimatedOrbBackground.workout()` replaces flat `Color(white: 0.08)`
+- Card: Same expandable sleek card as completion screen
+- Friend picker: Horizontal `ScrollView` with search icon + up to 5 `CachedFriendPhoto` circles (56pt)
+- Layout: Card → "Send to Friend" header + horizontal picker → "Share Via" header + system share button
+- Removed: Old `friendPickerView` list, old `showingFriendPicker` toggle, old `cardBackground` local property
+- Compose view still shows when a friend is tapped from the horizontal picker
+
+**Token Compliance**:
+- All `Color(white: 0.18)`, `Color(white: 0.08)`, `Color(white: 0.15)` replaced with `Color.cardBackground` or `.sleekCard()`
+- All font/spacing/cornerRadius use `ds_` / `Spacing.*` / `CornerRadius.*` tokens

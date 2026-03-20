@@ -353,3 +353,20 @@ The countdown glow overlay on `ExerciseCard` uses:
 
 ### Electric Blue Color
 The countdown glow uses a custom electric blue `Color(red: 0.0, green: 0.7, blue: 1.0)`. This is NOT a design system token yet. If this color is reused elsewhere, it should be extracted to a named color (e.g., `Color.timerGlow` or `Color.electricBlue`). Currently used in two places: the border stroke and the timer badge.
+
+---
+
+## 2026-03-19: Completion & Share Token Migration
+
+### Files Migrated
+| File | Before | After | Violations Fixed |
+|------|--------|-------|-----------------|
+| `WorkoutCompletionView.swift` | `Color(white: 0.18)`, `Color(white: 0.15)`, hardcoded cornerRadius | `.sleekCard()`, `Color.cardBackground`, `CornerRadius.*` tokens | 4 |
+| `ShareWorkoutSheet.swift` | `Color(white: 0.08)`, local `cardBackground`, `.system(size:)` | `AnimatedOrbBackground`, `.sleekCard()`, `.sleekCardSubtle()`, `ds_` tokens | 5 |
+
+### Patterns Adopted
+- Both files now use `.sleekCard(cornerRadius: CornerRadius.xl, accentColor:)` for primary content cards
+- `ShareWorkoutSheet` background upgraded from flat color to `AnimatedOrbBackground.workout()`
+- Notes section background uses `Color.cardBackground` instead of `Color(white: 0.15)`
+- Exercise row backgrounds use `Color.cardBackground` instead of conditional `Color(white: 0.15)` / `Color.gray.opacity(0.08)`
+- All typography migrated to `ds_` tokens: `ds_heading2`, `ds_heading3`, `ds_labelMedium`, `ds_bodyMedium`, `ds_bodySmall`

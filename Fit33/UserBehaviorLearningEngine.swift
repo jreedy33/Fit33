@@ -1368,7 +1368,10 @@ struct UserBehaviorProfile: Codable {
     /// Top 5 most trained muscle groups
     var topMuscleGroups: [String] {
         muscleGroupPreferences
-            .sorted { $0.value > $1.value }
+            .sorted {
+                if $0.value != $1.value { return $0.value > $1.value }
+                return $0.key < $1.key
+            }
             .prefix(5)
             .map { $0.key }
     }

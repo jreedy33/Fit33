@@ -2038,33 +2038,28 @@ struct DashboardView: View {
     }
     
     private var recentWorkoutsSection: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            // Header with stats
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recent Activity")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Text("\(totalCombinedWorkouts) workouts completed")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Image(systemName: "clock.fill")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.blue)
+                Text("Recent Activity")
+                    .font(.ds_heading3)
                 
                 Spacer()
                 
                 NavigationLink(value: DashboardRoute.workoutHistory) {
                     Text("View All")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.ds_labelSmall)
                         .foregroundColor(.blue)
                 }
             }
             
-            // Combined workout cards - mix strength and cardio workouts, sorted by date
-            // Show at most 3 recent workouts
-            VStack(spacing: 12) {
+            Text("\(totalCombinedWorkouts) workouts completed")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+            
+            VStack(spacing: Spacing.sm) {
                 ForEach(combinedRecentWorkouts.prefix(3), id: \.id) { item in
                     switch item {
                     case .strength(let workout, let isMostRecent):
@@ -2075,36 +2070,6 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
-        .background(
-            ZStack {
-                // Clean gradient background matching WorkoutTabView exactly
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Subtle top highlight
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 4)
     }
     
     // Get the glow color based on the most recent workout's muscle group (kept for card content)
@@ -5660,8 +5625,10 @@ struct DashboardView: View {
             }
         }
         
-        // Sort by count and take top 2-3
-        let sorted = muscleGroups.sorted { $0.value > $1.value }
+        let sorted = muscleGroups.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return $0.key < $1.key
+        }
         let topMuscles = sorted.prefix(3).map { $0.key }
         
         return topMuscles.joined(separator: ", ")
@@ -6204,13 +6171,22 @@ struct RecentWorkoutCard: View {
     // Top muscles worked (for preview)
     private var topMuscles: [String] {
         var muscleCount: [String: Int] = [:]
+        var firstSeen: [String: Int] = [:]
+        var order = 0
         for workoutExercise in workoutExercises {
-            // Use safeMuscleGroups for nil-safety
             for muscle in workoutExercise.safeMuscleGroups {
-                muscleCount[muscle.capitalized, default: 0] += 1
+                let key = muscle.capitalized
+                muscleCount[key, default: 0] += 1
+                if firstSeen[key] == nil {
+                    firstSeen[key] = order
+                    order += 1
+                }
             }
         }
-        return muscleCount.sorted { $0.value > $1.value }.prefix(2).map { $0.key }
+        return muscleCount.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return (firstSeen[$0.key] ?? 0) < (firstSeen[$1.key] ?? 0)
+        }.prefix(2).map { $0.key }
     }
     
     // Toggle favorite status with debounce protection
@@ -6269,11 +6245,8 @@ struct RecentWorkoutCard: View {
     var body: some View {
         NavigationLink(value: workout) {
             VStack(alignment: .leading, spacing: 0) {
-                // Top section - Title and Date
-                HStack(alignment: .top, spacing: 12) {
-                    // Hollow transparent icon with gradient ring and checkmark
+                HStack(alignment: .top, spacing: Spacing.sm) {
                     ZStack {
-                        // Hollow circle with gradient stroke - fully transparent inside
                         Circle()
                             .stroke(
                                 LinearGradient(
@@ -6283,11 +6256,10 @@ struct RecentWorkoutCard: View {
                                 ),
                                 lineWidth: 2.5
                             )
-                            .frame(width: 52, height: 52)
+                            .frame(width: 48, height: 48)
                         
-                        // Gradient checkmark floating inside
                         Image(systemName: "checkmark")
-                            .font(.ds_heading2)
+                            .font(.ds_heading3)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: workoutGradient,
@@ -6297,150 +6269,79 @@ struct RecentWorkoutCard: View {
                             )
                     }
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Smart workout name
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text(smartWorkoutName)
                             .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         
-                        // Date with relative time
                         Text(formatSmartDate(workout.date ?? Date()))
-                            .font(.subheadline)
+                            .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
                     }
                     
                     Spacer()
                     
-                    // Favorite star button - uses local state for instant feedback
-                    Button(action: {
-                        toggleFavorite()
-                    }) {
+                    Button(action: { toggleFavorite() }) {
                         Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundColor(isFavorite ? .yellow : .gray.opacity(0.4))
                             .animation(.easeInOut(duration: 0.15), value: isFavorite)
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(isProcessing)
-                    .padding(.trailing, 8)
                     
                     Image(systemName: "chevron.right")
-                        .font(.ds_labelMedium)
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
                 
                 Divider()
                     .padding(.vertical, Spacing.sm)
                 
-                // Bottom section - Stats
                 HStack(spacing: 0) {
                     strengthStatColumn(icon: "clock.fill", iconColor: workoutGradient[0], value: formatDuration(workout.duration), label: "Duration")
-                    
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                    
                     strengthStatColumn(icon: "figure.strengthtraining.traditional", iconColor: workoutGradient[0], value: "\(exerciseCount)", label: "Exercises")
-                    
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                    
                     strengthStatColumn(icon: "repeat", iconColor: workoutGradient[0], value: "\(totalSets)", label: "Sets")
-                    
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                    
                     strengthStatColumn(icon: "star.fill", iconColor: .orange, value: "+\(Int(workout.xpEarned))", label: "XP")
                 }
                 
-                // Muscle tags (if available)
                 if !topMuscles.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(topMuscles, id: \.self) { muscle in
-                            Text(muscle)
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .foregroundColor(workoutGradient[0])
-                                .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, Spacing.xxs)
-                                .background(
-                                    Capsule()
-                                        .fill(workoutGradient[0].opacity(0.12))
-                                )
+                    HStack {
+                        HStack(spacing: Spacing.xxs) {
+                            ForEach(topMuscles, id: \.self) { muscle in
+                                Text(muscle)
+                                    .font(.ds_caption)
+                                    .foregroundColor(workoutGradient[0])
+                                    .padding(.horizontal, Spacing.xs)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(workoutGradient[0].opacity(0.12))
+                                    )
+                            }
                         }
                         Spacer()
                     }
-                    .padding(.top, 12)
+                    .padding(.top, Spacing.xs)
                 }
             }
-            .padding(Spacing.md)
-            .background(
-                // Premium layered background for workout cards
-                ZStack {
-                    // Bottom shadow layer (deepest) - color glow ONLY for most recent
-                    if isMostRecent {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
-                            .offset(y: 6)
-                            .blur(radius: 4)
-                    }
-                    
-                    // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                        .offset(y: 3)
-                    
-                    // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.18), Color.cardBackground]
-                                    : [Color.white, Color.white.opacity(0.95)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1.5
-                        )
-                    
-                    // Colored accent border - stronger for most recent, subtle for others
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: isMostRecent
-                                    ? [workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)]
-                                    : [Color.gray.opacity(colorScheme == .dark ? 0.2 : 0.1), Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            // Shadow effects - color glow only for most recent
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-            .shadow(color: isMostRecent ? workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12) : Color.clear, radius: 20, x: 0, y: 10)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
         }
         .buttonStyle(PlainButtonStyle())
         .overlay(alignment: .topTrailing) {
             reactionStickerOverlay
         }
         .onAppear {
-            // Initialize local state from Core Data
             isFavorite = workout.isFavorite
         }
         .onChange(of: workout.isFavorite) { _, newValue in
-            // Sync if changed externally (e.g., from detail view)
             if isFavorite != newValue {
                 isFavorite = newValue
             }

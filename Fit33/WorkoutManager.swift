@@ -1179,16 +1179,11 @@ class WorkoutManager: ObservableObject {
         // Replace the exercise in the array
         currentExercises[index] = newExercise
         
-        // Transfer sets data from old exercise to new one
-        if let existingSets = exerciseSetsData[oldExerciseId] {
-            // Copy the sets to the new exercise (preserving any progress)
-            exerciseSetsData[newExerciseId] = existingSets
-            // Remove old exercise sets
-            exerciseSetsData.removeValue(forKey: oldExerciseId)
-        } else {
-            // Initialize with default 3 sets if no existing data
-            initializeSetsForExercise(id: newExerciseId)
-        }
+        // Remove old exercise sets and initialize fresh empty sets for the new exercise.
+        // Fresh sets allow loadHistoricalDataForExercise to populate from the new
+        // exercise's history via syncSetsWithPreviousData (which skips non-empty sets).
+        exerciseSetsData.removeValue(forKey: oldExerciseId)
+        initializeSetsForExercise(id: newExerciseId)
         
         // Save updated state
         saveActiveWorkoutToStorage()

@@ -437,3 +437,36 @@ When the timer is active, a small countdown badge appears in the exercise header
 
 ### Fallback
 When no timer is active and the card is focused (`isActiveCard`), the existing blue-purple gradient stroke (lineWidth 2.5) is shown.
+
+---
+
+## 2026-03-19: Expandable Sleek Card Pattern
+
+### Behavior
+Cards that contain dense content (workout summary, exercise lists) use an expandable pattern:
+- **Collapsed**: Shows summary info (title, date, stats row, muscle tags) with a `chevron.down` indicator
+- **Expanded**: Tapping the card reveals detailed content below (exercise rows, set breakdowns)
+- **Animation**: `.spring(response: 0.35, dampingFraction: 0.8)` with `.transition(.opacity.combined(with: .move(edge: .top)))`
+- **Card style**: Always uses `.sleekCard(cornerRadius: CornerRadius.xl, accentColor: gradient[0])`
+
+### Used In
+- `WorkoutCompletionView` — workout summary card (replaces old static card + separate exercise breakdown)
+- `ShareWorkoutSheet` — workout preview card (replaces old flat preview card)
+
+### Chevron Placement
+Top-right of the card header row, aligned with the title. Uses `chevron.up` / `chevron.down` toggling, `.ds_labelMedium` font, `.secondary` color.
+
+---
+
+## 2026-03-19: Horizontal Friend Picker
+
+### Layout Spec
+Used in `ShareWorkoutSheet` below the "Send to Friend" section header:
+- Container: `ScrollView(.horizontal, showsIndicators: false)` with `.padding(.horizontal, Spacing.md)`
+- Item width: 64pt per item
+- Photo size: 56pt circles using `CachedFriendPhoto`
+- Name label: `.ds_bodySmall`, single line, below photo
+- Spacing between items: `Spacing.md` (16pt)
+- First item: Search button — 56pt circle with `Color.cardBackground` fill, gray border, magnifyingglass icon
+- Friend items: Up to 5 friends, ordered by ranking (top friends first)
+- Tapping a friend transitions to compose message view

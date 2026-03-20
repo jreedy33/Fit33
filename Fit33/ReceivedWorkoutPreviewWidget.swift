@@ -199,20 +199,27 @@ struct ReceivedWorkoutPreviewWidget: View {
     /// Calculate top muscle groups from exercises (max 3)
     private var topMuscleGroups: [String] {
         var muscleCount: [String: Int] = [:]
-        
-        // Look up each exercise in the local database to get muscle groups
+        var firstSeen: [String: Int] = [:]
+        var order = 0
+
         for exerciseName in workout.exerciseNames {
             if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
                let muscles = exercise.muscleGroups as? [String] {
                 for muscle in muscles {
-                    let normalizedMuscle = normalizeMuscleGroup(muscle)
-                    muscleCount[normalizedMuscle, default: 0] += 1
+                    let key = normalizeMuscleGroup(muscle)
+                    muscleCount[key, default: 0] += 1
+                    if firstSeen[key] == nil {
+                        firstSeen[key] = order
+                        order += 1
+                    }
                 }
             }
         }
-        
-        // Sort by count and take top 3
-        let sorted = muscleCount.sorted { $0.value > $1.value }
+
+        let sorted = muscleCount.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return (firstSeen[$0.key] ?? 0) < (firstSeen[$1.key] ?? 0)
+        }
         return Array(sorted.prefix(3).map { $0.key })
     }
     

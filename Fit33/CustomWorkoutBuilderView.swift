@@ -60,6 +60,12 @@ struct CustomWorkoutBuilderView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var showingAddExercise = false
     @State private var isLoadingExercises = false
+    @State private var suggestedSwaps: [SwapSuggestion] = []
+    
+    private var replacingExercise: Exercise? {
+        if case .replace(let exercise, _) = mode { return exercise }
+        return nil
+    }
     
     // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
     @FocusState private var isSearchFocused: Bool
@@ -493,6 +499,11 @@ struct CustomWorkoutBuilderView: View {
                     .ignoresSafeArea(.all, edges: .all)
                 
                     VStack(spacing: 0) {
+                    // Replace mode header with current exercise info
+                    if let replacing = replacingExercise {
+                        replaceHeaderView(exercise: replacing)
+                    }
+                    
                     compactFiltersView
                     
                     // Scrollable exercise list
@@ -502,8 +513,12 @@ struct CustomWorkoutBuilderView: View {
                         }
                         .frame(height: 0)
                         
+                        // Suggested replacements (replace mode only)
+                        if !suggestedSwaps.isEmpty {
+                            suggestedReplacementsSection
+                        }
+                        
                         if isLoadingExercises || !exerciseLibrary.isExercisesReady {
-                            // Loading state - exercises are syncing from cloud
                             VStack(spacing: 20) {
                                 ProgressView()
                                     .scaleEffect(1.5)
@@ -525,7 +540,6 @@ struct CustomWorkoutBuilderView: View {
                                         }
                                     )
                                     .padding(.horizontal, Spacing.md)
-                                    // 🚀 Prefetch when exercise appears in viewport
                                     .onAppear {
                                         prefetchVisibleExercise(exercise: exercise, index: index)
                                     }
@@ -568,6 +582,11 @@ struct CustomWorkoutBuilderView: View {
                     updateFilteredExercises()
                     forceRenderID = UUID()
                     workoutManager.isOnCustomWorkoutBuilder = true
+                    
+                    // Load suggested swaps for replace mode
+                    if let replacing = replacingExercise {
+                        loadSuggestedSwaps(for: replacing)
+                    }
                     
                     // Check for pre-selected exercise (from "Add to workout" button on ExerciseDetailView)
                     if let exerciseToAdd = workoutManager.exerciseToAddToCustomWorkout {
@@ -918,6 +937,146 @@ struct CustomWorkoutBuilderView: View {
         .padding(.horizontal, Spacing.md)
         .padding(.bottom, 4)
         .zIndex(10)
+    }
+    
+    // MARK: - Replace Mode Views
+    
+    private func replaceHeaderView(exercise: Exercise) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.swap")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.blue)
+                Text("Replacing:")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                Text(exercise.name ?? "Exercise")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer()
+            }
+        }
+        .padding(.horizontal, Spacing.md + Spacing.md)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+    
+    private var suggestedReplacementsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text("Suggested Replacements")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, Spacing.md)
+            
+            ForEach(suggestedSwaps) { suggestion in
+                Button {
+                    HapticManager.impact(.medium)
+                    toggleExerciseSelection(suggestion.exercise)
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(swapTypeColor(suggestion.swapType).opacity(0.15))
+                                .frame(width: 36, height: 36)
+                            Image(systemName: suggestion.swapType.icon)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(swapTypeColor(suggestion.swapType))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.exercise.displayName)
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text(suggestion.swapType.rawValue)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(swapTypeColor(suggestion.swapType))
+                                if !suggestion.reason.isEmpty {
+                                    Text("·")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(suggestion.reason)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(Color.cardBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .stroke(swapTypeColor(suggestion.swapType).opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.horizontal, Spacing.md)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+    
+    private func swapTypeColor(_ type: SwapSuggestion.SwapType) -> Color {
+        switch type {
+        case .equipmentVariant: return .blue
+        case .complementary: return .purple
+        case .similar: return .gray
+        }
+    }
+    
+    private func loadSuggestedSwaps(for exercise: Exercise) {
+        let sections = ExerciseSwapService.shared.getSwapSuggestions(for: exercise)
+        var swaps: [SwapSuggestion] = []
+        
+        // Collect up to 2 equipment variants
+        if let variants = sections.first(where: { $0.suggestions.first?.swapType == .equipmentVariant }) {
+            swaps.append(contentsOf: variants.suggestions.prefix(2))
+        }
+        
+        // Collect 1 complementary or alternative
+        if let complementary = sections.first(where: { $0.suggestions.first?.swapType == .complementary }) {
+            swaps.append(contentsOf: complementary.suggestions.prefix(1))
+        } else if let fallback = sections.first(where: { $0.suggestions.first?.swapType == .similar }) {
+            swaps.append(contentsOf: fallback.suggestions.prefix(1))
+        }
+        
+        // If we still need more to reach 3, fill from any section
+        if swaps.count < 3 {
+            let existing = Set(swaps.map { $0.id })
+            for section in sections {
+                for suggestion in section.suggestions {
+                    if !existing.contains(suggestion.id) && swaps.count < 3 {
+                        swaps.append(suggestion)
+                    }
+                }
+            }
+        }
+        
+        suggestedSwaps = swaps
     }
     
     // MARK: - Helper Functions

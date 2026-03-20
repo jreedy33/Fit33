@@ -659,3 +659,22 @@ User Types → onChange(of: searchText)
 **Token Compliance**:
 - All `Color(white: 0.18)`, `Color(white: 0.08)`, `Color(white: 0.15)` replaced with `Color.cardBackground` or `.sleekCard()`
 - All font/spacing/cornerRadius use `ds_` / `Spacing.*` / `CornerRadius.*` tokens
+
+### 2026-03-19: AI Insights Hub — CMS UI
+
+**New page**: `admin-cms/src/app/insights/page.tsx` — AI Insights Hub with two tabs:
+1. **Chat with Claude** (default tab): Streaming chat interface with live platform data context. Features: SSE streaming, conversation persistence, quick-ask buttons, conversation history sidebar.
+2. **Saved Insights**: Card list of AI-generated insights with category/priority badges, expandable detail view, filter tabs (all/high priority/by category), "Generate New Insights" button.
+
+**New API route**: `admin-cms/src/app/api/ai-chat/route.ts` — Streaming SSE endpoint that:
+- Validates admin auth (same pattern as `/api/admin`)
+- Fetches live platform data via the Edge Function's `get_data_context` action
+- Streams Claude responses via `@anthropic-ai/sdk` `messages.stream()`
+- Auto-saves conversations to `ai_chat_history` after streaming completes
+
+**Nav**: Added "AI Insights" (brain icon) to `AdminShell.tsx` sidebar between Metrics and Crashes.
+
+**CMS Patterns Established**:
+- SSE streaming in Next.js: `ReadableStream` + `text/event-stream` content type
+- Chat UI: message bubbles with `pre-wrap`, auto-scroll via `messagesEndRef`, Shift+Enter for newlines
+- Quick-ask buttons: array of pre-built prompts that call `sendMessage(text)` directly

@@ -1157,6 +1157,137 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
+      // ═══════════════════════════════════════════════════
+      // AI INSIGHTS
+      // ═══════════════════════════════════════════════════
+      case 'get_ai_insights': {
+        const limit = safeLimit(params.limit, 50)
+        const category = params.category as string | undefined
+        const status = params.status as string | undefined
+
+        let query = admin.from('ai_insights')
+          .select('*')
+          .order('generated_at', { ascending: false })
+          .limit(limit)
+
+        if (category) query = query.eq('category', category)
+        if (status) query = query.eq('status', status)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ insights: data })
+      }
+
+      case 'update_insight_status': {
+        const { id, newStatus } = params as { id: string; newStatus: string }
+        if (!id || !newStatus) {
+          return NextResponse.json({ error: 'Missing id or newStatus' }, { status: 400 })
+        }
+        const validStatuses = ['new', 'read', 'archived']
+        if (!validStatuses.includes(newStatus)) {
+          return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+        }
+
+        const { error } = await admin.from('ai_insights')
+          .update({ status: newStatus })
+          .eq('id', id)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'trigger_insights_generation': {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+        const res = await fetch(`${supabaseUrl}/functions/v1/generate-ai-insights`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ action: 'generate_weekly' }),
+        })
+
+        if (!res.ok) {
+          const errText = await res.text()
+          return NextResponse.json({ error: `Edge function failed: ${errText}` }, { status: 500 })
+        }
+
+        const result = await res.json()
+        return NextResponse.json(result)
+      }
+
+      // ═══════════════════════════════════════════════════
+      // AI CHAT HISTORY
+      // ═══════════════════════════════════════════════════
+      case 'get_chat_history': {
+        const { data, error } = await admin.from('ai_chat_history')
+          .select('id, title, created_at, updated_at')
+          .eq('admin_user_id', adminAuth.userId!)
+          .order('updated_at', { ascending: false })
+          .limit(20)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ conversations: data })
+      }
+
+      case 'get_chat_conversation': {
+        const { conversationId } = params as { conversationId: string }
+        if (!conversationId) {
+          return NextResponse.json({ error: 'Missing conversationId' }, { status: 400 })
+        }
+
+        const { data, error } = await admin.from('ai_chat_history')
+          .select('*')
+          .eq('id', conversationId)
+          .eq('admin_user_id', adminAuth.userId!)
+          .single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ conversation: data })
+      }
+
+      case 'save_chat_conversation': {
+        const { conversationId, title, messages } = params as {
+          conversationId?: string; title: string; messages: unknown[]
+        }
+
+        if (conversationId) {
+          const { error } = await admin.from('ai_chat_history')
+            .update({ messages, title, updated_at: new Date().toISOString() })
+            .eq('id', conversationId)
+            .eq('admin_user_id', adminAuth.userId!)
+          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+          return NextResponse.json({ id: conversationId })
+        } else {
+          const { data, error } = await admin.from('ai_chat_history')
+            .insert({
+              admin_user_id: adminAuth.userId!,
+              title,
+              messages,
+            })
+            .select('id')
+            .single()
+          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+          return NextResponse.json({ id: data.id })
+        }
+      }
+
+      case 'delete_chat_conversation': {
+        const { conversationId } = params as { conversationId: string }
+        if (!conversationId) {
+          return NextResponse.json({ error: 'Missing conversationId' }, { status: 400 })
+        }
+        const { error } = await admin.from('ai_chat_history')
+          .delete()
+          .eq('id', conversationId)
+          .eq('admin_user_id', adminAuth.userId!)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

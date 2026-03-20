@@ -450,3 +450,22 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 ### 2026-03-19: Premium Default Change
 
 **PremiumManager.isPremiumUser** default changed from `false` to `true`. Both the property initializer and the `UserDefaults` fallback in `init()` now default to `true`. This means first launch shows all features. StoreKit's `updateFromStoreKit(hasSubscription:)` still overrides this when subscription status is confirmed.
+
+### 2026-03-19: AI Insights Hub — Testing Notes
+
+**Edge Function `generate-ai-insights`**:
+- Error handling: wraps all DB queries in try/catch, returns 500 with error message on failure
+- If `ANTHROPIC_API_KEY` is missing, returns a clear error message (not a crash)
+- Claude response parsing uses regex JSON extraction — if Claude returns malformed JSON, the function errors gracefully
+- Data queries use `.select('id', { count: 'exact', head: true })` for counts — efficient, no full row fetches
+
+**CMS Chat API (`/api/ai-chat`)**:
+- Admin auth verified before any processing (same `verifyAdmin()` as main admin route)
+- SSE streaming: if the stream errors mid-response, client receives an error event and the connection closes cleanly
+- Conversation auto-save happens after streaming completes — if save fails, the chat still works (logged, not thrown)
+
+**Potential test scenarios**:
+- Generate insights with no data in analytics tables (should return generic insights, not crash)
+- Send a chat message when ANTHROPIC_API_KEY is not set (should return 500 with clear message)
+- Verify admin auth rejects non-admin users on both `/api/admin` insight actions and `/api/ai-chat`
+- Test conversation persistence: send message → verify conversation appears in history → reload → verify messages are preserved

@@ -306,3 +306,29 @@ This enables aggressive browser/CDN caching and eliminates conditional request o
 ### Future Consideration
 - If Cloudflare Image Resizing is available on the current plan, poster frame thumbnails could be served as `{video_url}?width=480&format=jpeg` — eliminating client-side frame extraction entirely
 - This would pair with a `poster_frame_url` column on the exercises table (Data Agent domain)
+
+---
+
+## 2026-03-19: AI Insights Hub — Security Inventory
+
+### New Secret: ANTHROPIC_API_KEY
+| Location | Purpose | Access |
+|----------|---------|--------|
+| Supabase Vault | Edge Function `generate-ai-insights` | `Deno.env.get("ANTHROPIC_API_KEY")` |
+| `admin-cms/.env.local` | CMS streaming chat API route | `process.env.ANTHROPIC_API_KEY` |
+
+**Setup**: `supabase secrets set ANTHROPIC_API_KEY=sk-ant-api03-...` and add to `.env.local`
+
+### New API Routes to Monitor
+| Route | Auth | Risk |
+|-------|------|------|
+| `POST /api/admin` actions: `get_ai_insights`, `update_insight_status`, `trigger_insights_generation`, `get_chat_history`, `get_chat_conversation`, `save_chat_conversation`, `delete_chat_conversation` | Admin cookie + email whitelist | Low — standard admin actions, rate-limited |
+| `POST /api/ai-chat` | Admin cookie + email whitelist | Medium — streams to external API, ensure no PII leaks in prompts |
+
+### Security Considerations
+- The `generate-ai-insights` Edge Function sends aggregated platform metrics to Anthropic — **no PII** (no user names, emails, or individual workout data)
+- The chat API sends admin questions + aggregated data context to Anthropic — admin should avoid pasting individual user PII into the chat
+- `ai_chat_history.messages` stores full conversation history — if a chat contains PII references, the admin can delete the conversation
+- RLS on `ai_insights`: authenticated read only (service role writes). No user-facing access.
+- RLS on `ai_chat_history`: user-scoped CRUD (admin can only see their own chats)
+- The `@anthropic-ai/sdk` package was added to admin-cms dependencies — verify no supply chain issues on next audit

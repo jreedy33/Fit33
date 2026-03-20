@@ -212,3 +212,26 @@ When you're an agent and unsure what to do, check this:
 ---
 
 *This team structure ensures every aspect of the app has a clear owner. No task falls through the cracks. No agent steps on another's toes. The Lead iOS Engineer (you, the human) orchestrates — the agents execute.*
+
+---
+
+## AI Insights Hub — Ownership (March 2026)
+
+| Component | Primary Owner | Co-Owner | Files |
+|-----------|--------------|----------|-------|
+| `ai_insights` table + RLS | Data & Backend | Infra (RLS review) | `supabase/20260319_ai_insights.sql` |
+| `ai_chat_history` table + RLS | Data & Backend | Infra (RLS review) | `supabase/20260319_ai_insights.sql` |
+| Edge Function: `generate-ai-insights` | Data & Backend | Infra (secrets) | `supabase/functions/generate-ai-insights/index.ts` |
+| Admin API: insights + chat actions | Data & Backend | Product Engineer | `admin-cms/src/app/api/admin/route.ts` |
+| Chat streaming API | Product Engineer | Infra (auth review) | `admin-cms/src/app/api/ai-chat/route.ts` |
+| AI Insights Hub page | Product Engineer | — | `admin-cms/src/app/insights/page.tsx` |
+| ANTHROPIC_API_KEY secret | Infra & Security | — | Supabase Vault + `.env.local` |
+
+### Workflow: Updating AI Insights
+```
+1. Data Agent maintains the platform data queries in the Edge Function
+2. If new tables/metrics are added to the platform, Data Agent updates collectPlatformData()
+3. Product Engineer maintains the CMS UI and chat experience
+4. Infra Agent owns the API key rotation and security review
+5. To add a new insight category: update the SQL CHECK constraint + Edge Function + CMS filter tabs
+```

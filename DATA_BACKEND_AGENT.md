@@ -393,3 +393,49 @@ App Launch
 ### Future Consideration
 - A `poster_frame_url` column on the `exercises` table could serve CDN-hosted poster thumbnails, eliminating client-side frame extraction for first-view experience
 - This would be the highest-impact long-term improvement for instant visual feedback on exercises never viewed before
+
+---
+
+## 2026-03-19: AI Insights Hub
+
+### New Tables Owned
+| Table | Purpose | RLS |
+|-------|---------|-----|
+| `ai_insights` | AI-generated product insights (weekly summaries, trend alerts, recommendations) | Service role write, authenticated read |
+| `ai_chat_history` | Admin chat threads with Claude | User-scoped CRUD |
+
+**Migration file**: `supabase/20260319_ai_insights.sql`
+
+### New Edge Function: `generate-ai-insights`
+**Path**: `supabase/functions/generate-ai-insights/index.ts`
+**Actions**:
+- `generate_weekly` — Collects platform data snapshot (users, workouts, exercises, onboarding, social, retention) and sends to Claude for analysis. Stores 4-8 structured insights in `ai_insights`.
+- `generate_single` — Same data collection, filtered to a single category.
+- `get_data_context` — Returns raw platform data snapshot as JSON (used by CMS chat API to give Claude live data).
+
+**Data queries performed** (all run against Supabase before Claude call):
+1. `user_profiles` — total, new 7d/30d
+2. `workout_history` — total, 7d/30d counts
+3. `exercise_usage_logs` — top 20 popular exercises
+4. `onboarding_analytics` — per-step completion/drop-off rates
+5. `friendships`, `shared_workouts`, `group_challenges` — social activity 30d
+6. `workout_history` — week-over-week retention proxy (users active this week vs last week)
+
+**Secret**: `ANTHROPIC_API_KEY` stored in Supabase Vault. Set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
+
+### Admin API Actions Added
+| Action | Type | Purpose |
+|--------|------|---------|
+| `get_ai_insights` | read | Fetch insights with optional category/status/priority filters |
+| `update_insight_status` | write | Mark insight as read/archived |
+| `trigger_insights_generation` | write | Invoke Edge Function to generate new insights |
+| `get_chat_history` | read | List admin's chat conversations |
+| `get_chat_conversation` | read | Load a specific conversation with messages |
+| `save_chat_conversation` | write | Create or update a chat thread |
+| `delete_chat_conversation` | write | Delete a chat thread |
+
+### Key Patterns
+- Edge Function uses direct `fetch()` to Anthropic API (not an SDK — Deno environment)
+- CMS chat route uses `@anthropic-ai/sdk` with streaming via `messages.stream()`
+- Claude response is parsed by extracting JSON from the text block (regex `\{[\s\S]*\}`)
+- Data snapshots are stored alongside each insight for auditability

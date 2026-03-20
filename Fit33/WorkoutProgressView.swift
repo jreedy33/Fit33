@@ -532,7 +532,7 @@ struct WorkoutProgressView: View {
                 )
                 .font(.title3)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
         
         // Health Insights Quick Access
         healthInsightsCard
@@ -595,7 +595,7 @@ struct WorkoutProgressView: View {
                         )
                         .font(.title3)
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 
                 // Only the lightweight sections (no charts, no calendar, no achievements)
                 heroStatsSection
@@ -847,7 +847,7 @@ struct WorkoutProgressView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -943,7 +943,7 @@ struct WorkoutProgressView: View {
                             .foregroundColor(.secondary)
                     } else {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -1401,7 +1401,7 @@ struct WorkoutProgressView: View {
             }
             
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             ZStack {
@@ -1604,7 +1604,7 @@ struct WorkoutProgressView: View {
                 )
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -2141,7 +2141,7 @@ struct WorkoutProgressView: View {
                 )
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -2403,7 +2403,7 @@ struct WorkoutProgressView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
         .padding(20)
@@ -4597,12 +4597,12 @@ struct RingLegendRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.primary)
                     
                     if progress >= 1.0 {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.green)
                     }
                 }
@@ -4646,7 +4646,7 @@ struct CompactRingLegend: View {
             
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.primary)
                 
                 HStack(spacing: 2) {

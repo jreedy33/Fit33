@@ -174,7 +174,7 @@ struct AchievementRow: View {
                     .frame(width: 48, height: 48)
                 
                 Image(systemName: achievement.icon)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                     .foregroundColor(achievement.isUnlocked
                         ? achievement.rarityColor
                         : .gray.opacity(0.4))
@@ -188,7 +188,7 @@ struct AchievementRow: View {
                     
                     if achievement.isUnlocked {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(achievement.rarityColor)
                     }
                 }
@@ -250,7 +250,7 @@ struct AchievementUnlockToast: View {
                     .fill(achievement.rarityColor.opacity(0.2))
                     .frame(width: 40, height: 40)
                 Image(systemName: achievement.icon)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                     .foregroundColor(achievement.rarityColor)
             }
             
@@ -321,11 +321,11 @@ struct AchievementShowcase: View {
                                 .fill(achievement.rarityColor.opacity(0.15))
                                 .frame(width: 44, height: 44)
                             Image(systemName: achievement.icon)
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                                 .foregroundColor(achievement.rarityColor)
                         }
                         Text(achievement.title)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }

@@ -206,7 +206,7 @@ struct LocationSelectionCard: View {
         Button(action: onTap) {
             VStack(spacing: 8) {
                 Image(systemName: locationIcon)
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
                     .foregroundColor(isSelected ? .white : .blue)
                 
                 Text(location.displayName)
@@ -256,7 +256,7 @@ struct LocationEquipmentButton: View {
         Button(action: onTap) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                 
                 Text(name)
                     .font(.caption)
@@ -267,7 +267,7 @@ struct LocationEquipmentButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? Color.blue : Color(.systemGray5))

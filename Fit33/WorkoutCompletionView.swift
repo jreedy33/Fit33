@@ -50,199 +50,199 @@ class SoundEffectManager {
 }
 
 // MARK: - Confetti Animation System
+
 struct ConfettiPiece: Identifiable {
     let id = UUID()
     var x: CGFloat
     var y: CGFloat
     var rotation: Double
     var scale: CGFloat
-    var color: Color
-    var shape: ConfettiShape
+    var colorIndex: Int
+    var shapeIndex: Int
     var velocity: CGPoint
     var angularVelocity: Double
     
-    enum ConfettiShape: CaseIterable {
-        case circle, square, triangle, star, dumbbell, trophy, flame, heart
-        
-        var systemImage: String {
-            switch self {
-            case .circle: return "circle.fill"
-            case .square: return "square.fill"
-            case .triangle: return "triangle.fill"
-            case .star: return "star.fill"
-            case .dumbbell: return "dumbbell.fill"
-            case .trophy: return "trophy.fill"
-            case .flame: return "flame.fill"
-            case .heart: return "heart.fill"
-            }
-        }
-    }
+    static let shapeNames = [
+        "circle.fill", "square.fill", "triangle.fill", "star.fill",
+        "dumbbell.fill", "trophy.fill", "flame.fill", "heart.fill"
+    ]
 }
 
 struct ConfettiView: View {
-    @State private var confettiPieces: [ConfettiPiece] = []
-    @State private var animationTimer: Timer?
-    
     let isActive: Bool
     
-    private let confettiColors: [Color] = [
-        // Sophisticated app-matching colors
-        Color.blue.opacity(0.8),           // App blue
-        Color.green.opacity(0.8),          // Success green  
-        Color.cyan.opacity(0.7),           // Teal accent
-        Color.indigo.opacity(0.6),         // Deep blue
-        Color.mint.opacity(0.7),           // Soft mint
-        Color.teal.opacity(0.8),           // App teal
-        Color.purple.opacity(0.6),         // Subtle purple
-        Color.orange.opacity(0.7),         // Warm accent
-        Color.pink.opacity(0.5),           // Soft pink
-        Color.gray.opacity(0.6)            // Neutral gray
-    ]
+    @StateObject private var engine = ConfettiEngine()
     
     var body: some View {
-        ZStack {
-            ForEach(confettiPieces) { piece in
-                Image(systemName: piece.shape.systemImage)
-                    .font(.system(size: piece.scale * 12))
-                    .foregroundColor(piece.color)
-                    .rotationEffect(.degrees(piece.rotation))
-                    .position(x: piece.x, y: piece.y)
-                    .opacity(piece.y > OrientationManager.shared.screenHeight * 0.9 ? 0.3 : 1.0)
-                    .animation(.easeInOut(duration: 0.05), value: piece.x)
-                    .animation(.easeInOut(duration: 0.05), value: piece.y)
-                    .animation(.easeOut(duration: 0.2), value: piece.y)
-            }
-        }
-        .onAppear {
-            if isActive {
-                DispatchQueue.main.async {
-                    startConfetti()
+        TimelineView(.animation(paused: !engine.isAnimating)) { timeline in
+            Canvas(rendersAsynchronously: true) { context, size in
+                engine.update(size: size, date: timeline.date)
+                
+                // Pre-resolve each shape symbol ONCE per frame (8 resolves, not 120)
+                let resolved = ConfettiPiece.shapeNames.map { context.resolve(Image(systemName: $0)) }
+                
+                let fadeStart = size.height * 0.8
+                let fadeRange = size.height * 0.2
+                
+                for piece in engine.pieces {
+                    let alpha = piece.y > fadeStart
+                        ? max(0, 1.0 - (piece.y - fadeStart) / fadeRange)
+                        : 1.0
+                    guard alpha > 0.02 else { continue }
+                    
+                    let s = piece.scale * 12
+                    let symbol = resolved[piece.shapeIndex % resolved.count]
+                    let color = engine.colors[piece.colorIndex % engine.colors.count]
+                    let rect = CGRect(x: -s / 2, y: -s / 2, width: s, height: s)
+                    
+                    var ctx = context
+                    ctx.translateBy(x: piece.x, y: piece.y)
+                    ctx.rotate(by: .degrees(piece.rotation))
+                    ctx.opacity = alpha
+                    ctx.drawLayer { layer in
+                        layer.draw(symbol, in: rect)
+                        layer.blendMode = .sourceIn
+                        layer.fill(Path(rect.insetBy(dx: -1, dy: -1)), with: .color(color))
+                    }
                 }
             }
         }
+        .allowsHitTesting(false)
+        .onAppear {
+            if isActive { engine.start() }
+        }
         .onChange(of: isActive) { newValue in
-            if newValue {
-                startConfetti()
-            } else {
-                stopConfetti()
-            }
+            if newValue { engine.start() } else { engine.stop() }
         }
-        .onDisappear {
-            stopConfetti()
-        }
+        .onDisappear { engine.stop() }
     }
+}
+
+@MainActor
+private class ConfettiEngine: ObservableObject {
+    @Published var isAnimating = false
+    var pieces: [ConfettiPiece] = []
     
-    private func startConfetti() {
-        // Play confetti pop sound immediately
+    let colors: [Color] = [
+        Color(red: 0.0, green: 0.78, blue: 1.0),    // electric cyan
+        Color(red: 0.3, green: 0.5, blue: 1.0),      // vivid blue
+        Color(red: 0.6, green: 0.2, blue: 1.0),      // electric purple
+        Color(red: 1.0, green: 0.2, blue: 0.55),     // hot pink
+        Color(red: 0.0, green: 1.0, blue: 0.65),     // neon mint
+        Color(red: 1.0, green: 0.55, blue: 0.0),     // electric orange
+        Color(red: 0.2, green: 0.95, blue: 0.3),     // neon green
+        Color(red: 1.0, green: 0.82, blue: 0.0),     // bright gold
+        Color(red: 0.0, green: 0.85, blue: 0.85),    // bright teal
+    ]
+    
+    private var isSpawning = false
+    private var lastUpdate: Date?
+    private var startTime: Date?
+    private var spawnAccumulator: TimeInterval = 0
+    private var cleanupCounter = 0
+    
+    private let maxPieces = 120
+    private let gravity: CGFloat = 100
+    private let terminalVelocity: CGFloat = 320
+    
+    func start() {
+        pieces.removeAll()
+        pieces.reserveCapacity(maxPieces)
+        lastUpdate = nil
+        startTime = Date()
+        spawnAccumulator = 0
+        cleanupCounter = 0
+        isSpawning = true
+        isAnimating = true
+        
         SoundEffectManager.shared.playConfettiPop()
         
-        // Initial explosive burst of confetti
-        generateConfettiBurst()
+        let w = OrientationManager.shared.screenWidth
+        spawnBurst(centerX: w * 0.25, count: 15)
+        spawnBurst(centerX: w * 0.5, count: 20)
+        spawnBurst(centerX: w * 0.75, count: 15)
+        spawnFromTop(count: 10)
+    }
+    
+    func stop() {
+        isSpawning = false
+    }
+    
+    func update(size: CGSize, date: Date) {
+        guard isAnimating else { return }
         
-        // Add secondary bursts for more explosive effect
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.generateConfettiPieces(count: 20)
+        let dt: CGFloat
+        if let last = lastUpdate {
+            dt = min(CGFloat(date.timeIntervalSince(last)), 0.033)
+        } else {
+            dt = 0.016
         }
+        lastUpdate = date
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.generateConfettiPieces(count: 15)
-        }
+        let elapsed = startTime.map { date.timeIntervalSince($0) } ?? 0
         
-        // Continue generating confetti for a few seconds
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            updateConfetti()
-            
-            // Add new pieces occasionally for sustained effect
-            if Double.random(in: 0...1) < 0.4 {
-                generateConfettiPieces(count: 3)
+        if isSpawning && elapsed < 2.5 && pieces.count < maxPieces {
+            spawnAccumulator += Double(dt)
+            let interval: TimeInterval = elapsed < 0.4 ? 0.04 : 0.1
+            while spawnAccumulator >= interval && pieces.count < maxPieces {
+                spawnAccumulator -= interval
+                spawnFromTop(count: elapsed < 0.4 ? 3 : 1)
             }
         }
         
-        // Stop after 3 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            stopConfetti()
-        }
-    }
-    
-    private func stopConfetti() {
-        animationTimer?.invalidate()
-        animationTimer = nil
+        if elapsed > 3.0 { isSpawning = false }
         
-        // Fade out remaining pieces
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            confettiPieces.removeAll()
+        let bottom = size.height + 60
+        for i in pieces.indices {
+            pieces[i].velocity.y = min(pieces[i].velocity.y + gravity * dt, terminalVelocity)
+            pieces[i].velocity.x *= 0.995
+            let wobble = sin(CGFloat(elapsed) * 2.5 + pieces[i].x * 0.04) * 12.0 * dt
+            pieces[i].x += pieces[i].velocity.x * dt + wobble
+            pieces[i].y += pieces[i].velocity.y * dt
+            pieces[i].rotation += pieces[i].angularVelocity * dt
         }
-    }
-    
-    private func generateConfettiBurst() {
-        // Create elegant explosion points across screen
-        let screenWidth = OrientationManager.shared.screenWidth
-        generateExplosiveBurst(centerX: screenWidth * 0.25, count: 25)
-        generateExplosiveBurst(centerX: screenWidth * 0.5, count: 35)
-        generateExplosiveBurst(centerX: screenWidth * 0.75, count: 25)
         
-        // Add some scattered pieces for natural look
-        generateConfettiPieces(count: 15)
-    }
-    
-    private func generateExplosiveBurst(centerX: CGFloat, count: Int) {
-        for _ in 0..<count {
-            let piece = ConfettiPiece(
-                x: centerX + CGFloat.random(in: -50...50),
-                y: CGFloat.random(in: -100...50),
-                rotation: Double.random(in: 0...360),
-                scale: CGFloat.random(in: 0.8...2.0), // Bigger pieces for more impact
-                color: confettiColors.randomElement() ?? .blue,
-                shape: ConfettiPiece.ConfettiShape.allCases.randomElement() ?? .circle,
-                velocity: CGPoint(
-                    x: CGFloat.random(in: -4...4), // Smoother horizontal drift
-                    y: CGFloat.random(in: 3...8)   // More controlled falling speed
-                ),
-                angularVelocity: Double.random(in: -8...8) // Gentler rotation
-            )
-            confettiPieces.append(piece)
-        }
-    }
-    
-    private func generateConfettiPieces(count: Int) {
-        let screenWidth = OrientationManager.shared.screenWidth
-        
-        for _ in 0..<count {
-            let piece = ConfettiPiece(
-                x: CGFloat.random(in: 0...screenWidth),
-                y: -50,
-                rotation: Double.random(in: 0...360),
-                scale: CGFloat.random(in: 0.5...1.5),
-                color: confettiColors.randomElement() ?? .blue,
-                shape: ConfettiPiece.ConfettiShape.allCases.randomElement() ?? .circle,
-                velocity: CGPoint(
-                    x: CGFloat.random(in: -3...3),
-                    y: CGFloat.random(in: 2...6)
-                ),
-                angularVelocity: Double.random(in: -10...10)
-            )
-            confettiPieces.append(piece)
-        }
-    }
-    
-    private func updateConfetti() {
-        let screenHeight = OrientationManager.shared.screenHeight
-        
-        for i in confettiPieces.indices.reversed() {
-            confettiPieces[i].x += confettiPieces[i].velocity.x
-            confettiPieces[i].y += confettiPieces[i].velocity.y
-            confettiPieces[i].rotation += confettiPieces[i].angularVelocity
-            
-            // Add natural gravity effect
-            confettiPieces[i].velocity.y += 0.3
-            
-            // Add subtle air resistance for realism
-            confettiPieces[i].velocity.x *= 0.98
-            
-            // Remove pieces that have completely faded out
-            if confettiPieces[i].y > screenHeight + 50 {
-                confettiPieces.remove(at: i)
+        cleanupCounter += 1
+        if cleanupCounter >= 6 {
+            cleanupCounter = 0
+            pieces.removeAll { $0.y > bottom }
+            if pieces.isEmpty && !isSpawning {
+                isAnimating = false
+                lastUpdate = nil
             }
+        }
+    }
+    
+    private func spawnBurst(centerX: CGFloat, count: Int) {
+        let shapeCount = ConfettiPiece.shapeNames.count
+        for _ in 0..<count {
+            pieces.append(ConfettiPiece(
+                x: centerX + .random(in: -50...50),
+                y: .random(in: -60...30),
+                rotation: .random(in: 0...360),
+                scale: .random(in: 0.8...1.8),
+                colorIndex: .random(in: 0..<colors.count),
+                shapeIndex: .random(in: 0..<shapeCount),
+                velocity: CGPoint(x: .random(in: -70...70), y: .random(in: 30...140)),
+                angularVelocity: .random(in: -180...180)
+            ))
+        }
+    }
+    
+    private func spawnFromTop(count: Int) {
+        let w = OrientationManager.shared.screenWidth
+        let shapeCount = ConfettiPiece.shapeNames.count
+        for _ in 0..<count {
+            pieces.append(ConfettiPiece(
+                x: .random(in: 0...w),
+                y: .random(in: -50 ... -5),
+                rotation: .random(in: 0...360),
+                scale: .random(in: 0.5...1.5),
+                colorIndex: .random(in: 0..<colors.count),
+                shapeIndex: .random(in: 0..<shapeCount),
+                velocity: CGPoint(x: .random(in: -40...40), y: .random(in: 20...90)),
+                angularVelocity: .random(in: -200...200)
+            ))
         }
     }
 }
@@ -346,78 +346,79 @@ struct WorkoutCompletionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    // "Workout Complete!" celebration text
-                    VStack(spacing: 8) {
+                VStack(spacing: 16) {
+                    VStack(spacing: 6) {
                         Text("🎉")
-                            .font(.system(size: 50))
+                            .font(.system(size: 44))
                             .scaleEffect(showingCelebration ? 1.0 : 0.5)
                             .animation(.spring(response: 0.6, dampingFraction: 0.6), value: showingCelebration)
                         
                         Text("Workout Complete!")
-                            .font(.title)
+                            .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
                     }
-                    .padding(.top, 20)
+                    .padding(.top, 4)
                     
-                    // Main workout overview card (matches RecentWorkoutCard style)
                     workoutOverviewCard
                     
-                    // Exercise breakdown
                     exerciseBreakdownSection
                     
-                    // Workout notes section
                     workoutNotesSection
                     
-                    // AI Workout Replay button
                     if !replayInsights.isEmpty {
                         replayButton
                     }
                     
-                    // Progress photo prompt (show periodically)
                     progressPhotoPrompt
                     
-                    // Done button
                     doneButton
                     
-                    Spacer(minLength: 60)
+                    Spacer(minLength: 40)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 10)
             }
             .background(
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
                     .ignoresSafeArea(.all, edges: .all)
             )
-            .navigationTitle("Summary")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
                         HapticManager.selectionChanged()
-                        dismiss()
+                        showingShareOptions = true
                     }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.ds_labelLarge)
                             .foregroundColor(.primary)
                     }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        HapticManager.selectionChanged()
-                        showingShareOptions = true
+                        HapticManager.notification(.success)
+                        if !completionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            workout.notes = completionNotes
+                            try? workout.managedObjectContext?.save()
+                        }
+                        workoutManager.finishWorkout()
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            workoutManager.navigateToHomeTab()
+                        }
                     }) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primary)
+                        Text("Done")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
                     }
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(
-                colorScheme == .dark ? Color(white: 0.1).opacity(0.9) : Color.white.opacity(0.9),
+                Color.clear,
                 for: .navigationBar
             )
         }
@@ -474,7 +475,7 @@ struct WorkoutCompletionView: View {
                         .frame(width: 52, height: 52)
                     
                     Image(systemName: "checkmark")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: workoutGradient,
@@ -508,10 +509,10 @@ struct WorkoutCompletionView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "clock.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(workoutGradient[0])
                         Text(formatDurationMinutes(workoutDuration))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Duration")
@@ -528,10 +529,10 @@ struct WorkoutCompletionView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "figure.strengthtraining.traditional")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(workoutGradient[0])
                         Text("\(exercises.count)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Exercises")
@@ -548,10 +549,10 @@ struct WorkoutCompletionView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "repeat")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(workoutGradient[0])
                         Text("\(totalSets)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Sets")
@@ -568,10 +569,10 @@ struct WorkoutCompletionView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.orange)
                         Text("+\(calculateXP())")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("XP")
@@ -590,7 +591,7 @@ struct WorkoutCompletionView: View {
                             .fontWeight(.medium)
                             .foregroundColor(workoutGradient[0])
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(workoutGradient[0].opacity(0.12))
@@ -611,11 +612,20 @@ struct WorkoutCompletionView: View {
     
     // MARK: - Exercise Breakdown
     private var exerciseBreakdownSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Exercise Summary")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "list.bullet.rectangle.fill")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(workoutGradient[0])
+                Text("Exercises")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Spacer()
+                Text("\(exercises.count)")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(workoutGradient[0])
+            }
             
             VStack(spacing: 8) {
                 ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
@@ -623,34 +633,10 @@ struct WorkoutCompletionView: View {
                     let sets = exerciseSets[exerciseId] ?? exerciseSets[exercise.name ?? ""] ?? []
                     let completedSets = sets.filter { $0.isCompleted }
                     
-                    HStack(spacing: 12) {
-                        // Small checkmark circle
-                        ZStack {
-                            Circle()
-                                .stroke(workoutGradient[0], lineWidth: 1.5)
-                                .frame(width: 24, height: 24)
-                            
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(workoutGradient[0])
-                        }
-                        
-                        Text(exercise.displayName)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        Spacer()
-                        
-                        Text("\(completedSets.count) sets")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, Spacing.xs)
-                    .padding(.horizontal, Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(colorScheme == .dark ? Color(white: 0.15) : Color.gray.opacity(0.08))
+                    CompletionExerciseRow(
+                        exercise: exercise,
+                        completedSets: completedSets,
+                        accentColor: workoutGradient[0]
                     )
                 }
             }
@@ -662,7 +648,7 @@ struct WorkoutCompletionView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "note.text")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                 Text("Workout Notes")
                     .font(.subheadline)
@@ -707,7 +693,7 @@ struct WorkoutCompletionView: View {
                 }) {
                     HStack(spacing: 10) {
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                             .foregroundColor(.purple)
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -723,7 +709,7 @@ struct WorkoutCompletionView: View {
                         Spacer()
                         
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                     .padding(Spacing.sm)
@@ -745,12 +731,12 @@ struct WorkoutCompletionView: View {
         }) {
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                 Text("See Your Workout Replay")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
@@ -766,34 +752,30 @@ struct WorkoutCompletionView: View {
         }
     }
     
-    // MARK: - Done Button
+    // MARK: - Reopen Workout Button
     private var doneButton: some View {
         Button(action: {
-            HapticManager.notification(.success)
-            if !completionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                workout.notes = completionNotes
-                try? workout.managedObjectContext?.save()
-            }
-            workoutManager.finishWorkout()
+            HapticManager.impact(.medium)
             dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                workoutManager.navigateToHomeTab()
-            }
         }) {
-            Text("Done")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.md)
-                .background(
-                    LinearGradient(
-                        colors: workoutGradient,
-                        startPoint: .leading,
-                        endPoint: .trailing
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.left")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text("Reopen Workout")
+                    .font(.headline)
+                    .fontWeight(.bold)
+            }
+            .foregroundColor(workoutGradient[0])
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(
+                        LinearGradient(colors: workoutGradient, startPoint: .leading, endPoint: .trailing),
+                        lineWidth: 2
                     )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+            )
         }
         .padding(.top, 8)
     }
@@ -963,6 +945,173 @@ struct ExerciseSummaryCard: View {
         workoutDuration: 2580 // 43 minutes
     )
     .environmentObject(WorkoutManager.shared)
+}
+
+// MARK: - Expandable Exercise Row (matches WorkoutHistoryDetailView)
+struct CompletionExerciseRow: View {
+    let exercise: Exercise
+    let completedSets: [WorkoutSetData]
+    let accentColor: Color
+    @State private var isExpanded = false
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var bestSet: WorkoutSetData? {
+        completedSets.max { ($0.weight * Double($0.reps)) < ($1.weight * Double($1.reps)) }
+    }
+    
+    private var categoryColor: Color {
+        switch exercise.category?.lowercased() {
+        case "chest": return .red
+        case "back": return .blue
+        case "legs", "quadriceps", "hamstrings", "calves", "glutes": return .green
+        case "shoulders": return .purple
+        case "biceps", "triceps", "arms": return .orange
+        case "core", "abs": return .yellow
+        default: return .cyan
+        }
+    }
+    
+    private var categoryIcon: String {
+        switch exercise.category?.lowercased() {
+        case "chest": return "figure.strengthtraining.traditional"
+        case "back": return "figure.rowing"
+        case "legs", "quadriceps", "hamstrings", "calves", "glutes": return "figure.walk"
+        case "shoulders": return "figure.boxing"
+        case "biceps", "triceps", "arms": return "figure.cooldown"
+        case "core", "abs": return "figure.core.training"
+        default: return "figure.mixed.cardio"
+        }
+    }
+    
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isExpanded.toggle()
+            }
+        }) {
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [categoryColor, categoryColor.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 40, height: 40)
+                        
+                        Image(systemName: categoryIcon)
+                            .font(.ds_labelLarge)
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(exercise.displayName)
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 8) {
+                            Text(exercise.category?.capitalized ?? "")
+                                .font(.caption)
+                                .foregroundColor(categoryColor)
+                                .fontWeight(.medium)
+                            
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(completedSets.count) sets")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.ds_bodySmall).fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                
+                if isExpanded {
+                    VStack(spacing: 0) {
+                        Divider()
+                            .padding(.horizontal, Spacing.md)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                Text("This Workout")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.top, 8)
+                            
+                            VStack(spacing: 4) {
+                                ForEach(Array(completedSets.enumerated()), id: \.offset) { index, set in
+                                    let isBest = bestSet?.id == set.id
+                                    
+                                    HStack {
+                                        Text("Set \(index + 1)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 50, alignment: .leading)
+                                        
+                                        Spacer()
+                                        
+                                        if set.weight > 0 {
+                                            Text("\(formatWeight(set.weight)) lbs")
+                                                .font(.caption)
+                                                .fontWeight(isBest ? .bold : .medium)
+                                        }
+                                        
+                                        Text("×")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text("\(set.reps) reps")
+                                            .font(.caption)
+                                            .fontWeight(isBest ? .bold : .medium)
+                                        
+                                        if isBest {
+                                            Image(systemName: "star.fill")
+                                                .font(.system(size: 9))
+                                                .foregroundColor(accentColor)
+                                        }
+                                    }
+                                    .foregroundColor(isBest ? accentColor : .primary)
+                                    .padding(.horizontal, Spacing.md)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        isBest ? AnyView(RoundedRectangle(cornerRadius: 6).fill(accentColor.opacity(0.1))) : AnyView(EmptyView())
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    }
+                }
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(colorScheme == .dark ? Color(white: 0.15) : Color.gray.opacity(0.08))
+        )
+    }
+    
+    private func formatWeight(_ weight: Double) -> String {
+        weight.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(weight))" : String(format: "%.1f", weight)
+    }
 }
 
 // Helper extension for WorkoutSetData initializer

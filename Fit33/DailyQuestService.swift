@@ -262,6 +262,11 @@ class DailyQuestService: ObservableObject {
     @Published var showBonusCelebration: Bool = false
     @Published var lastCompletedQuest: DailyQuest?
     
+    // MARK: - Step Delta Tracking
+    private var lastReportedSteps: Int = 0
+    private let lastReportedStepsKey = "fit33_lastReportedSteps"
+    private let lastReportedStepsDateKey = "fit33_lastReportedStepsDate"
+    
     // MARK: - Cache
     private let cacheKey = "fit33_daily_quests_v2"
     private let cacheDateKey = "fit33_daily_quests_v2_date"
@@ -269,6 +274,7 @@ class DailyQuestService: ObservableObject {
     
     private init() {
         loadCachedQuests()
+        restoreLastReportedSteps()
     }
     
     // MARK: - Computed Properties
@@ -633,18 +639,24 @@ class DailyQuestService: ObservableObject {
     
     /// Call when step count updates (pass total steps for today)
     func onStepsUpdated(todaySteps: Int) async {
+        let delta = todaySteps - lastReportedSteps
+        guard delta > 0 else { return }
+        
         if todaySteps >= 3000 {
-            await reportProgress(questKey: .walk3kSteps, increment: todaySteps)
+            await reportProgress(questKey: .walk3kSteps, increment: delta)
         }
         if todaySteps >= 5000 {
-            await reportProgress(questKey: .walk5kSteps, increment: todaySteps)
+            await reportProgress(questKey: .walk5kSteps, increment: delta)
         }
         if todaySteps >= 7500 {
-            await reportProgress(questKey: .walk7500Steps, increment: todaySteps)
+            await reportProgress(questKey: .walk7500Steps, increment: delta)
         }
         if todaySteps >= 10000 {
-            await reportProgress(questKey: .walk10kSteps, increment: todaySteps)
+            await reportProgress(questKey: .walk10kSteps, increment: delta)
         }
+        
+        lastReportedSteps = todaySteps
+        persistLastReportedSteps()
     }
     
     /// Call when step goal is hit
@@ -724,6 +736,24 @@ class DailyQuestService: ObservableObject {
         if actions >= 3 {
             await reportProgress(questKey: .perfectDay, increment: actions)
         }
+    }
+    
+    // MARK: - Step Delta Persistence
+    
+    private func restoreLastReportedSteps() {
+        let todayKey = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        let savedDate = UserDefaults.standard.double(forKey: lastReportedStepsDateKey)
+        if savedDate == todayKey {
+            lastReportedSteps = UserDefaults.standard.integer(forKey: lastReportedStepsKey)
+        } else {
+            lastReportedSteps = 0
+        }
+    }
+    
+    private func persistLastReportedSteps() {
+        let todayKey = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        UserDefaults.standard.set(lastReportedSteps, forKey: lastReportedStepsKey)
+        UserDefaults.standard.set(todayKey, forKey: lastReportedStepsDateKey)
     }
     
     // MARK: - Cache

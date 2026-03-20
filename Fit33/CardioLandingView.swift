@@ -175,7 +175,7 @@ struct CardioLandingView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.primary)
                     }
                 }
@@ -462,7 +462,7 @@ struct QuickStartCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: activity.icon)
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(activity.color)
                 }
                 
@@ -560,7 +560,7 @@ struct CardioExerciseRow: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: "figure.run")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(.green)
                 }
                 

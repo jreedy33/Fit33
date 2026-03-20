@@ -178,11 +178,11 @@ class FoodDatabaseService: ObservableObject {
             await MainActor.run {
                 self.frequentFoods = frequentItems
                 self.isLoadingFrequent = false
-                print("✅ [CLOUD] Loaded \(frequentItems.count) frequently used foods")
+                AppLogger.info("Successfully loaded \(frequentItems.count) frequently used foods", category: .nutrition)
             }
             
         } catch {
-            print("❌ [CLOUD] Error loading frequent foods: \(error)")
+            AppLogger.error("Error loading frequent foods: \(error.localizedDescription)", category: .nutrition)
             await MainActor.run {
                 self.frequentFoods = []
                 self.isLoadingFrequent = false
@@ -207,7 +207,7 @@ class FoodDatabaseService: ObservableObject {
         
         // Check if cache is still valid
         if Date().timeIntervalSince(cached.timestamp) < cacheValidityDuration {
-            print("⚡️ [CACHE] Hit for '\(normalizedQuery)' - returning \(cached.foods.count) cached results")
+            AppLogger.debug("Cache hit for '\(normalizedQuery)' - returning \(cached.foods.count) cached results", category: .nutrition)
             return cached.foods
         } else {
             // Cache expired, remove it
@@ -235,7 +235,7 @@ class FoodDatabaseService: ObservableObject {
     
     /// Search foods from cloud database (cached USDA data)
     func searchFoods(query: String) async throws -> [CloudFood] {
-        print("🔍 [CLOUD] Searching for: '\(query)'")
+        AppLogger.debug("Searching for: '\(query)'", category: .nutrition)
         
         // Check cache first for instant results
         if let cachedResults = getCachedResults(for: query) {
@@ -258,7 +258,7 @@ class FoodDatabaseService: ObservableObject {
         )
         
         // Call Supabase edge function
-        print("📤 [CLOUD] Invoking edge function...")
+        AppLogger.debug("Invoking edge function for food search", category: .nutrition)
         
         do {
             // Make the request using URLSession to get raw response
@@ -276,38 +276,31 @@ class FoodDatabaseService: ObservableObject {
             // First check if this is an error response from the edge function
             if let errorResponse = try? JSONDecoder().decode(EdgeFunctionErrorResponse.self, from: data),
                let errorMessage = errorResponse.error {
-                print("❌ [CLOUD] Edge function error: \(errorMessage)")
+                AppLogger.error("Edge function error: \(errorMessage)", category: .nutrition)
                 throw NSError(domain: "EdgeFunction", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
             }
             
             // Decode the search response
             let response = try JSONDecoder().decode(CloudFoodSearchResponse.self, from: data)
             
-            print("✅ [CLOUD] Found \(response.foods.count) foods (source: \(response.source))")
+            AppLogger.info("Successfully found \(response.foods.count) foods (source: \(response.source))", category: .nutrition)
             
             // Cache the results for faster future lookups
             cacheResults(response.foods, for: query)
             
             return response.foods
         } catch let DecodingError.typeMismatch(type, context) {
-            print("❌ [CLOUD] Type mismatch error:")
-            print("   Expected type: \(type)")
-            print("   Context: \(context.debugDescription)")
-            print("   Coding path: \(context.codingPath)")
+            AppLogger.error("Type mismatch error: expected \(type), context: \(context.debugDescription), path: \(context.codingPath)", category: .nutrition)
             throw DecodingError.typeMismatch(type, context)
         } catch {
-            print("❌ [CLOUD] Error: \(error)")
-            print("   Error type: \(type(of: error))")
-            if let decodingError = error as? DecodingError {
-                print("   Decoding error details: \(decodingError)")
-            }
+            AppLogger.error("Food search error (\(type(of: error))): \(error.localizedDescription)", category: .nutrition)
             throw error
         }
     }
     
     /// Get detailed food information by FDC ID
     func getFoodDetails(fdcId: Int) async throws -> CloudFood {
-        print("🔍 [CLOUD] Fetching details for FDC ID: \(fdcId)")
+        AppLogger.debug("Fetching details for FDC ID: \(fdcId)", category: .nutrition)
         
         // Prepare request body
         struct DetailsRequest: Encodable {
@@ -323,7 +316,7 @@ class FoodDatabaseService: ObservableObject {
         let response: CloudFoodDetailsResponse = try await supabase.functions
             .invoke("usda-food-search", options: FunctionInvokeOptions(body: request))
         
-        print("✅ [CLOUD] Retrieved food details")
+        AppLogger.info("Successfully retrieved food details", category: .nutrition)
         return response.food
     }
     
@@ -333,7 +326,7 @@ class FoodDatabaseService: ObservableObject {
     func loadRecentFoods(limit: Int = 10) async {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [CLOUD] User not authenticated - skipping recent foods")
+            AppLogger.warning("User not authenticated - skipping recent foods", category: .nutrition)
             await MainActor.run { recentFoods = [] }
             return
         }
@@ -379,7 +372,7 @@ class FoodDatabaseService: ObservableObject {
                     self.isLoadingRecent = false
                 }
                 
-                print("✅ [CLOUD] Loaded \(foods.count) recent foods")
+                AppLogger.info("Successfully loaded \(foods.count) recent foods", category: .nutrition)
             } else {
                 await MainActor.run {
                     self.recentFoods = []
@@ -387,7 +380,7 @@ class FoodDatabaseService: ObservableObject {
                 }
             }
         } catch {
-            print("❌ [CLOUD] Error loading recent foods: \(error)")
+            AppLogger.error("Error loading recent foods: \(error.localizedDescription)", category: .nutrition)
             await MainActor.run {
                 self.recentFoods = []
                 self.isLoadingRecent = false
@@ -399,7 +392,7 @@ class FoodDatabaseService: ObservableObject {
     func loadFavoriteFoods() async {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [CLOUD] User not authenticated - skipping favorites")
+            AppLogger.warning("User not authenticated - skipping favorites", category: .nutrition)
             await MainActor.run { favoriteFoods = [] }
             return
         }
@@ -440,7 +433,7 @@ class FoodDatabaseService: ObservableObject {
                     self.isLoadingFavorites = false
                 }
                 
-                print("✅ [CLOUD] Loaded \(foods.count) favorite foods")
+                AppLogger.info("Successfully loaded \(foods.count) favorite foods", category: .nutrition)
             } else {
                 await MainActor.run {
                     self.favoriteFoods = []
@@ -448,7 +441,7 @@ class FoodDatabaseService: ObservableObject {
                 }
             }
         } catch {
-            print("❌ [CLOUD] Error loading favorite foods: \(error)")
+            AppLogger.error("Error loading favorite foods: \(error.localizedDescription)", category: .nutrition)
             await MainActor.run {
                 self.favoriteFoods = []
                 self.isLoadingFavorites = false
@@ -478,7 +471,7 @@ class FoodDatabaseService: ObservableObject {
                     self.popularFoods = foods
                     self.isLoadingPopular = false
                 }
-                print("✅ [CLOUD] Loaded \(foods.count) globally popular foods")
+                AppLogger.info("Successfully loaded \(foods.count) globally popular foods", category: .nutrition)
                 return
             }
             
@@ -521,7 +514,7 @@ class FoodDatabaseService: ObservableObject {
                     self.popularFoods = orderedFoods
                     self.isLoadingPopular = false
                 }
-                print("✅ [CLOUD] Loaded \(orderedFoods.count) popular foods from aggregation")
+                AppLogger.info("Successfully loaded \(orderedFoods.count) popular foods from aggregation", category: .nutrition)
                 return
             }
             
@@ -530,7 +523,7 @@ class FoodDatabaseService: ObservableObject {
                 self.isLoadingPopular = false
             }
         } catch {
-            print("❌ [CLOUD] Error loading popular foods: \(error)")
+            AppLogger.error("Error loading popular foods: \(error.localizedDescription)", category: .nutrition)
             await MainActor.run {
                 self.popularFoods = []
                 self.isLoadingPopular = false
@@ -566,7 +559,7 @@ class FoodDatabaseService: ObservableObject {
                 self.favoriteIds = Set(rows.map { $0.foodItemId })
             }
         } catch {
-            print("❌ [CLOUD] Error loading favorite IDs: \(error)")
+            AppLogger.error("Error loading favorite IDs: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
@@ -593,7 +586,7 @@ class FoodDatabaseService: ObservableObject {
             favoriteIds.insert(foodItemId)
         }
         
-        print("✅ [CLOUD] Added food \(foodItemId) to favorites")
+        AppLogger.info("Successfully added food \(foodItemId) to favorites", category: .nutrition)
     }
     
     func removeFromFavorites(foodItemId: Int) async throws {
@@ -612,7 +605,7 @@ class FoodDatabaseService: ObservableObject {
             favoriteIds.remove(foodItemId)
         }
         
-        print("✅ [CLOUD] Removed food \(foodItemId) from favorites")
+        AppLogger.info("Successfully removed food \(foodItemId) from favorites", category: .nutrition)
     }
     
     // MARK: - Food History Logging
@@ -629,11 +622,11 @@ class FoodDatabaseService: ObservableObject {
         fat: Int
     ) async throws {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [CLOUD] User not authenticated - skipping history log")
+            AppLogger.warning("User not authenticated - skipping history log", category: .nutrition)
             return
         }
         
-        print("📝 [CLOUD] Logging food: \(foodName) (FDC: \(fdcId)) - \(calories)cal, \(protein)p, \(carbs)c, \(fat)f")
+        AppLogger.debug("Logging food: \(foodName) (FDC: \(fdcId)) - \(calories)cal, \(protein)p, \(carbs)c, \(fat)f", category: .nutrition)
         
         // First, check if this food exists in our food_items cache
         let foodItemQuery = supabase
@@ -652,12 +645,12 @@ class FoodDatabaseService: ObservableObject {
             let results: [FoodItemIdResult] = try await foodItemQuery.execute().value
             foodItemId = results.first?.id
             if let id = foodItemId {
-                print("✅ [CLOUD] Found cached food_item ID: \(id)")
+                AppLogger.debug("Found cached food_item ID: \(id)", category: .nutrition)
             } else {
-                print("⚠️ [CLOUD] Food not in cache, logging with FDC ID only")
+                AppLogger.warning("Food not in cache, logging with FDC ID only", category: .nutrition)
             }
         } catch {
-            print("⚠️ [CLOUD] Error checking food cache: \(error)")
+            AppLogger.warning("Error checking food cache: \(error.localizedDescription)", category: .nutrition)
         }
         
         // Log to history
@@ -692,7 +685,7 @@ class FoodDatabaseService: ObservableObject {
             ))
             .execute()
         
-        print("✅ [CLOUD] Successfully logged food to history")
+        AppLogger.info("Successfully logged food to history", category: .nutrition)
         
         // Update local usage count immediately for responsive UI
         await MainActor.run {
@@ -759,18 +752,18 @@ class FoodDatabaseService: ObservableObject {
             // This tracks how popular a food is across ALL users
             try await supabase.rpc("increment_food_log_count", params: ["fdc_id_param": fdcId])
                 .execute()
-            print("📊 [CLOUD] Incremented global popularity for FDC \(fdcId)")
+            AppLogger.debug("Incremented global popularity for FDC \(fdcId)", category: .nutrition)
         } catch {
             // Non-critical - just log and continue
             // The RPC might not exist yet, we'll create it
-            print("⚠️ [CLOUD] Could not increment global popularity: \(error.localizedDescription)")
+            AppLogger.warning("Could not increment global popularity: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
     /// Remove the most recent entry for a food from history (when meal is deleted)
     func removeFromFoodHistory(fdcId: Int, foodName: String) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [CLOUD] User not authenticated - skipping history removal")
+            AppLogger.warning("User not authenticated - skipping history removal", category: .nutrition)
             return
         }
         
@@ -814,9 +807,9 @@ class FoodDatabaseService: ObservableObject {
                 }
             }
             
-            print("✅ [CLOUD] Removed food from history: \(foodName)")
+            AppLogger.info("Successfully removed food from history: \(foodName)", category: .nutrition)
         } catch {
-            print("❌ [CLOUD] Error removing from history: \(error)")
+            AppLogger.error("Error removing from food history: \(error.localizedDescription)", category: .nutrition)
         }
     }
 }
@@ -968,7 +961,7 @@ struct CloudFood: Decodable {
     }
     
     func toProcessedFoodItem() -> ProcessedFoodItem {
-        print("🔄 [CloudFood] Converting FDC \(fdcId): \(description)")
+        AppLogger.debug("Converting FDC \(fdcId): \(description)", category: .nutrition)
         
         // PRIORITY 1: Use direct nutrition values from database cache
         // These are the accurate USDA values stored per 100g
@@ -989,7 +982,7 @@ struct CloudFood: Decodable {
         let hasDirectValues = finalCalories > 0 || finalProtein > 0 || finalCarbs > 0 || finalFat > 0
         
         if !hasDirectValues, let nutrients = foodNutrients {
-            print("📊 [CloudFood] Using foodNutrients array (\(nutrients.count) nutrients)")
+            AppLogger.debug("Using foodNutrients array (\(nutrients.count) nutrients)", category: .nutrition)
             for nutrient in nutrients {
                 switch nutrient.nutrientNumber {
                 case "208": finalCalories = nutrient.value
@@ -1009,7 +1002,7 @@ struct CloudFood: Decodable {
             }
         }
         
-        print("📊 [CloudFood] Final nutrition: \(Int(finalCalories)) cal, \(finalProtein)p, \(finalCarbs)c, \(finalFat)f")
+        AppLogger.debug("Final nutrition: \(Int(finalCalories)) cal, \(finalProtein)p, \(finalCarbs)c, \(finalFat)f", category: .nutrition)
         
         let nutrition = NutritionInfo(
             calories: finalCalories,
@@ -1054,7 +1047,7 @@ struct CloudFood: Decodable {
             dataType: dataType  // Pass dataType for ranking
         )
         
-        print("✅ [CloudFood] Converted successfully with \(foodPortions.count) portions, dataType: \(dataType ?? "unknown")")
+        AppLogger.info("Successfully converted food with \(foodPortions.count) portions, dataType: \(dataType ?? "unknown")", category: .nutrition)
         return result
     }
 }

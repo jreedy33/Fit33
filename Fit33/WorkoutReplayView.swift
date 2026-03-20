@@ -44,7 +44,7 @@ struct WorkoutReplayView: View {
             .overlay(alignment: .topTrailing) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.trailing, 16)
@@ -105,7 +105,7 @@ struct WorkoutReplayView: View {
                         .fill(insight.iconColor.opacity(0.15))
                         .frame(width: 40, height: 40)
                     Image(systemName: insight.icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(insight.iconColor)
                 }
                 
@@ -127,7 +127,7 @@ struct WorkoutReplayView: View {
             if let tip = insight.actionTip {
                 HStack(spacing: 6) {
                     Image(systemName: "lightbulb.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.yellow)
                     Text(tip)
                         .font(.caption)

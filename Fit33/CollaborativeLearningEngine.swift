@@ -101,7 +101,7 @@ class CollaborativeLearningEngine: ObservableObject {
         return Array(pairings.prefix(limit))
     }
     
-    /// Get programs that worked well for similar users
+    // TODO: Delegate to SmartProgramRecommender.shared for unified recommendation logic
     func getRecommendedPrograms(
         for userProfile: UserProfileSnapshot
     ) async -> [SuccessfulProgram] {
@@ -273,7 +273,15 @@ class CollaborativeLearningEngine: ObservableObject {
             var similarUsers: [SimilarUser] = []
             
             for userProfile in profiles {
-                let similarity = calculateSimilarity(profile, userProfile)
+                let snapshot = UserProfileSnapshot(
+                    id: userProfile.user_id,
+                    goal: userProfile.goal,
+                    experience: userProfile.experience,
+                    equipment: userProfile.equipment,
+                    ageRange: userProfile.age_range,
+                    gender: userProfile.gender
+                )
+                let similarity = calculateSimilarity(profile, snapshot)
                 
                 if similarity >= similarityThreshold {
                     similarUsers.append(SimilarUser(
@@ -297,29 +305,25 @@ class CollaborativeLearningEngine: ObservableObject {
         }
     }
     
-    private func calculateSimilarity(_ profile1: UserProfileSnapshot, _ profile2: Any) -> Double {
-        guard let p2 = profile2 as? (goal: String, experience: String, equipment: [String]) else {
-            return 0
-        }
-        
+    private func calculateSimilarity(_ profile1: UserProfileSnapshot, _ profile2: UserProfileSnapshot) -> Double {
         var score: Double = 0
         var weights: Double = 0
         
         // Goal match (40% weight)
-        if profile1.goal.lowercased() == p2.goal.lowercased() {
+        if profile1.goal.lowercased() == profile2.goal.lowercased() {
             score += 0.4
         }
         weights += 0.4
         
         // Experience match (30% weight)
-        if profile1.experience.lowercased() == p2.experience.lowercased() {
+        if profile1.experience.lowercased() == profile2.experience.lowercased() {
             score += 0.3
         }
         weights += 0.3
         
         // Equipment overlap (30% weight)
         let equip1 = Set(profile1.equipment.map { $0.lowercased() })
-        let equip2 = Set(p2.equipment.map { $0.lowercased() })
+        let equip2 = Set(profile2.equipment.map { $0.lowercased() })
         let overlap = Double(equip1.intersection(equip2).count)
         let total = Double(max(equip1.count, equip2.count))
         if total > 0 {
@@ -739,6 +743,17 @@ struct UserProfileSnapshot: Identifiable {
     let gender: String?
     let weight: Double?
     let height: Double?
+    
+    init(id: String, goal: String, experience: String, equipment: [String], ageRange: String?, gender: String?, weight: Double? = nil, height: Double? = nil) {
+        self.id = id
+        self.goal = goal
+        self.experience = experience
+        self.equipment = equipment
+        self.ageRange = ageRange
+        self.gender = gender
+        self.weight = weight
+        self.height = height
+    }
     
     init(from user: User) {
         self.id = user.id?.uuidString ?? UUID().uuidString

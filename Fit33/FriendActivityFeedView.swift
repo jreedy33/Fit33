@@ -321,9 +321,9 @@ struct FriendActivityCard: View {
                     HStack(spacing: 4) {
                         ForEach(muscles.prefix(3), id: \.self) { muscle in
                             Text(muscle.capitalized)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.ds_caption)
                                 .foregroundColor(muscleGradient.first ?? .blue)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 3)
                                 .background(
                                     Capsule()
@@ -403,7 +403,7 @@ struct FriendActivityCard: View {
             
             if activity.workoutId != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary.opacity(0.5))
             }
         }
@@ -508,7 +508,7 @@ struct FriendActivityCard: View {
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -536,7 +536,7 @@ struct FriendActivityCard: View {
             }
         } label: {
             Image(systemName: showEmojiPicker ? "xmark.circle.fill" : "face.smiling")
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
@@ -572,9 +572,9 @@ struct FriendActivityCard: View {
             ForEach(Array(activity.reactions.enumerated()), id: \.offset) { _, reaction in
                 HStack(spacing: 2) {
                     Text(reaction.emoji)
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                     Text(reaction.senderName?.split(separator: " ").first.map(String.init) ?? "Friend")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 6)

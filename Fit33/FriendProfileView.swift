@@ -184,7 +184,7 @@ struct FriendProfileView: View {
                     .font(.headline)
                     .foregroundColor(.primary)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             ActiveChallengeWidget(challenge: challenge) {
                 selectedChallenge = challenge
@@ -258,7 +258,7 @@ struct FriendProfileView: View {
     private func statCard(icon: String, gradientColors: [Color], value: String, label: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: gradientColors,
@@ -355,7 +355,7 @@ struct FriendProfileView: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.blue, .purple],
@@ -470,7 +470,7 @@ struct FriendProfileView: View {
             Spacer()
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.orange, .red],
@@ -537,7 +537,7 @@ struct FriendProfileView: View {
                         .fill(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 40, height: 40)
                     Text(resolvedType.emoji)
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -556,7 +556,7 @@ struct FriendProfileView: View {
                 // Live score comparison
                 VStack(spacing: 2) {
                     Text(challenge.amWinning ? "🏆" : "")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("\(resolver.formattedProgress(for: challenge)) - \(resolver.formatValue(challenge.opponentTodayProgress ?? 0, unit: challenge.targetUnit, type: resolvedType))")
                         .font(.caption)
                         .fontWeight(.bold)
@@ -564,7 +564,7 @@ struct FriendProfileView: View {
                 }
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(resolvedType.color)
             }
             .padding(Spacing.md)
@@ -607,7 +607,7 @@ struct FriendProfileView: View {
                     .font(.headline)
                     .foregroundColor(.primary)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 8) {
                 ForEach(friendChallenges.prefix(3)) { challenge in
@@ -634,7 +634,7 @@ struct FriendProfileView: View {
                     .font(.headline)
                     .foregroundColor(.primary)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             if sentWorkoutsToFriend.isEmpty {
                 VStack(spacing: 12) {
@@ -650,7 +650,7 @@ struct FriendProfileView: View {
                             .frame(width: 60, height: 60)
                         
                         Image(systemName: "arrow.left.arrow.right.circle")
-                            .font(.system(size: 28))
+                            .font(.ds_heading1)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.blue, .cyan],
@@ -670,7 +670,7 @@ struct FriendProfileView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                .padding(.vertical, Spacing.lg)
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1005,7 +1005,7 @@ struct CreateWorkoutForFriendView: View {
             Spacer()
             
             Image(systemName: "paperplane.fill")
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.blue, .cyan],
@@ -1088,7 +1088,7 @@ struct CreateWorkoutForFriendView: View {
                     .foregroundColor(.blue)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             if selectedExercises.isEmpty {
                 emptyExercisesView
@@ -1269,7 +1269,7 @@ struct CreateWorkoutForFriendView: View {
                 .font(.subheadline)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, 14)
                 .background(
                     Capsule()

@@ -67,9 +67,9 @@ class StoreKitManager: ObservableObject {
             let ids = ProductID.allCases.map(\.rawValue)
             let storeProducts = try await Product.products(for: Set(ids))
             products = storeProducts.sorted { $0.price < $1.price }
-            print("📦 [StoreKit] Loaded \(products.count) products")
+            AppLogger.info("StoreKit loaded \(products.count) products", category: .general)
         } catch {
-            print("📦 [StoreKit] Failed to load products: \(error.localizedDescription)")
+            AppLogger.error("StoreKit failed to load products: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -87,17 +87,17 @@ class StoreKitManager: ObservableObject {
                 await transaction.finish()
                 await updatePurchasedProducts()
                 purchaseState = .purchased
-                print("📦 [StoreKit] Purchase successful: \(product.id)")
+                AppLogger.info("StoreKit purchase successful: \(product.id)", category: .general)
                 return true
                 
             case .userCancelled:
                 purchaseState = .cancelled
-                print("📦 [StoreKit] Purchase cancelled by user")
+                AppLogger.info("StoreKit purchase cancelled by user", category: .general)
                 return false
                 
             case .pending:
                 purchaseState = .idle
-                print("📦 [StoreKit] Purchase pending (Ask to Buy / SCA)")
+                AppLogger.info("StoreKit purchase pending (Ask to Buy / SCA)", category: .general)
                 return false
                 
             @unknown default:
@@ -106,7 +106,7 @@ class StoreKitManager: ObservableObject {
             }
         } catch {
             purchaseState = .failed(error.localizedDescription)
-            print("📦 [StoreKit] Purchase error: \(error.localizedDescription)")
+            AppLogger.error("StoreKit purchase error: \(error.localizedDescription)", category: .general)
             return false
         }
     }
@@ -117,9 +117,9 @@ class StoreKitManager: ObservableObject {
         do {
             try await AppStore.sync()
             await updatePurchasedProducts()
-            print("📦 [StoreKit] Purchases restored")
+            AppLogger.info("StoreKit purchases restored", category: .general)
         } catch {
-            print("📦 [StoreKit] Restore failed: \(error.localizedDescription)")
+            AppLogger.error("StoreKit restore failed: \(error.localizedDescription)", category: .general)
             purchaseState = .failed("Could not restore purchases. Please try again.")
         }
     }
@@ -134,7 +134,7 @@ class StoreKitManager: ObservableObject {
                     await transaction.finish()
                     await self?.updatePurchasedProducts()
                 } catch {
-                    print("📦 [StoreKit] Transaction verification failed: \(error)")
+                    AppLogger.error("StoreKit transaction verification failed: \(error.localizedDescription)", category: .general)
                 }
             }
         }
@@ -162,6 +162,25 @@ class StoreKitManager: ObservableObject {
                     )
                 }
             }
+        }
+        
+        if let info = latestStatus {
+            var willAutoRenew = true
+            if let product = products.first(where: { $0.id == info.productID }),
+               let statuses = try? await product.subscription?.status {
+                for status in statuses {
+                    if case .verified(let renewalInfo) = status.renewalInfo {
+                        willAutoRenew = renewalInfo.willAutoRenew
+                        break
+                    }
+                }
+            }
+            latestStatus = SubscriptionStatusInfo(
+                productID: info.productID,
+                expirationDate: info.expirationDate,
+                isInTrial: info.isInTrial,
+                willAutoRenew: willAutoRenew
+            )
         }
         
         purchasedProductIDs = purchased

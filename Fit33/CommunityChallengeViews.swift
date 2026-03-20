@@ -376,7 +376,7 @@ struct CommunityChallengesHubView: View {
                         }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.ds_heading3)
                     }
                 }
             }
@@ -502,7 +502,7 @@ struct CommunityChallengesHubView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
@@ -510,7 +510,7 @@ struct CommunityChallengesHubView: View {
                     .cornerRadius(CornerRadius.md)
             }
         }
-        .padding(32)
+        .padding(Spacing.xl)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 20)
@@ -756,7 +756,7 @@ struct CommunityLeaderboardWidget: View {
                     .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
                     .frame(width: 40, height: 40)
                 Text(challenge.displayEmoji)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
             
             VStack(alignment: .leading, spacing: 2) {
@@ -949,7 +949,7 @@ struct CommunityLeaderboardWidget: View {
                         .foregroundColor(iconColor)
                 }
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(valueColor)
             }
             Text(label)
@@ -1039,7 +1039,7 @@ struct CommunityLeaderboardWidget: View {
                     Group {
                         if let emoji = rankEmoji(for: entry.rank) {
                             Text(emoji)
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                         } else {
                             Text("\(entry.rank)")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -1138,7 +1138,7 @@ struct CommunityLeaderboardWidget: View {
     private var emptyLeaderboardPlaceholder: some View {
         HStack {
             Image(systemName: "chart.bar.fill")
-                .font(.system(size: 12))
+                .font(.ds_bodySmall)
                 .foregroundColor(themeColor.opacity(0.35))
             Text("Leaderboard updates as members log progress")
                 .font(.caption2)
@@ -1192,7 +1192,7 @@ struct CommunityLeaderboardWidget: View {
                 .frame(width: 32, alignment: .trailing)
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.ds_caption).fontWeight(.semibold)
                 .foregroundColor(themeColor.opacity(0.5))
         }
         .padding(.horizontal, Spacing.md)
@@ -1251,7 +1251,7 @@ struct FeaturedChallengeCard: View {
                         .stroke(LinearGradient(colors: tg, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
                         .frame(width: 44, height: 44)
                     Text(challenge.displayEmoji)
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1574,7 +1574,7 @@ struct CommunityLeaderboardView: View {
                     Text("\(lb.myCurrentStreak)")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                     Image(systemName: "flame.fill")
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.orange)
                 }
                 Text("Streak")
@@ -1612,7 +1612,7 @@ struct CommunityLeaderboardView: View {
         Button(action: { showingShare = true }) {
             HStack(spacing: 12) {
                 Image(systemName: "megaphone.fill")
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                     .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1668,23 +1668,23 @@ struct CommunityLeaderboardView: View {
                     Text("")
                         .frame(width: 40)
                     Text("Member")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
                         .padding(.leading, 8)
                     Spacer()
                     Text("Today")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
                         .frame(width: 55, alignment: .trailing)
                     Text("Days")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
                         .frame(width: 40, alignment: .trailing)
                     Text("Streak")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
                         .frame(width: 48, alignment: .trailing)
@@ -1746,9 +1746,9 @@ struct CommunityLeaderboardView: View {
                 
                 Group {
                     switch entry.rank {
-                    case 1: Text("🥇").font(.system(size: 18))
-                    case 2: Text("🥈").font(.system(size: 18))
-                    case 3: Text("🥉").font(.system(size: 18))
+                    case 1: Text("🥇").font(.ds_heading3)
+                    case 2: Text("🥈").font(.ds_heading3)
+                    case 3: Text("🥉").font(.ds_heading3)
                     default:
                         Text("#\(entry.rank)")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -1807,12 +1807,12 @@ struct CommunityLeaderboardView: View {
             // Today's progress
             HStack(spacing: 3) {
                 Text("\(entry.todayProgress)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(entry.targetHitToday ? .green : .primary)
                 
                 if entry.targetHitToday {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.green)
                 }
             }
@@ -1972,7 +1972,7 @@ struct CommunityCreateChallengeView: View {
                                     if dailyTarget > 1 { dailyTarget -= stepAmount(for: selectedType) }
                                 }) {
                                     Image(systemName: "minus.circle.fill")
-                                        .font(.system(size: 28))
+                                        .font(.ds_heading1)
                                         .foregroundColor(.blue)
                                 }
                                 
@@ -1992,7 +1992,7 @@ struct CommunityCreateChallengeView: View {
                                     dailyTarget += stepAmount(for: selectedType)
                                 }) {
                                     Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 28))
+                                        .font(.ds_heading1)
                                         .foregroundColor(.blue)
                                 }
                             }
@@ -2205,7 +2205,7 @@ struct CommunityJoinSheet: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding(32)
+                        .padding(Spacing.xl)
                         
                         Spacer()
                         
@@ -2361,7 +2361,7 @@ struct PrivateChallengeJoinSheet: View {
                             }
                             .foregroundColor(.purple)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(Color.purple.opacity(0.12))
                             .clipShape(Capsule())
                             
@@ -2415,7 +2415,7 @@ struct PrivateChallengeJoinSheet: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding(32)
+                        .padding(Spacing.xl)
                         
                         Spacer()
                         
@@ -3275,10 +3275,10 @@ struct CommunityDetailView: View {
                     
                     // Days completed
                     Text("\(entry.daysCompleted)d")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(.primary)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .padding(.horizontal, Spacing.xs)
                 .background(
                     entry.isCurrentUser
@@ -3323,7 +3323,7 @@ struct CommunityDetailView: View {
                 .font(.caption2)
                 .foregroundColor(color)
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(color)
             Text(label)
                 .font(.system(size: 9, weight: .medium))

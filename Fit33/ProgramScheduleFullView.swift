@@ -110,7 +110,7 @@ struct ProgramScheduleFullView: View {
                         .shadow(color: programColor.opacity(0.3), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -172,7 +172,7 @@ struct ProgramScheduleFullView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Grid layout for day tiles
             LazyVGrid(columns: [
@@ -261,11 +261,11 @@ struct ProgramDayTile: View {
                         .foregroundColor(.white)
                 } else if !isUnlocked {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 } else if isRestDay {
                     Image(systemName: "moon.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 } else {
                     VStack(spacing: 1) {
@@ -273,7 +273,7 @@ struct ProgramDayTile: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.white.opacity(0.9))
                         Text("\(day)")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                 }
@@ -482,7 +482,7 @@ struct ProgramDayPreviewView: View {
                         }
                         .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Spacing.xxs)
                     
                     VStack(spacing: 10) {
                         ForEach(Array(generatedExercises.enumerated()), id: \.offset) { index, exercise in
@@ -671,7 +671,7 @@ struct ProgramExerciseCard: View {
             // Swap button
             Button(action: onTapSwap) {
                 Image(systemName: "arrow.triangle.swap")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(programColor)
                     .padding(Spacing.xs)
                     .background(programColor.opacity(0.1))
@@ -730,7 +730,7 @@ struct ProgramExerciseSwapView: View {
                                 Image(systemName: "arrow.right.circle.fill")
                                     .foregroundColor(programColor)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                         }
                     }
                 }

@@ -217,7 +217,7 @@ struct LearningEngineDebugView: View {
                         Text(exercise.capitalized)
                             .font(.caption)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(Color.purple.opacity(0.2))
                             .cornerRadius(CornerRadius.sm)
                     }

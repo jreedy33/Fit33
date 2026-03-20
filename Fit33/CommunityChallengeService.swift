@@ -83,7 +83,7 @@ struct CommunityFriendInfo: Codable, Identifiable {
     }
 }
 
-struct CommunityChallenge: Codable, Identifiable {
+struct CommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -114,11 +114,6 @@ struct CommunityChallenge: Codable, Identifiable {
     
     var displayEmoji: String { emoji ?? "🌍" }
     
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
-    /// Shareable URL for this challenge
     var shareURL: URL? {
         URL(string: "https://fit33.app/c/\(inviteSlug)")
     }
@@ -199,7 +194,7 @@ struct CommunityChallenge: Codable, Identifiable {
 
 /// A community challenge that the user's friends are in but the user hasn't joined yet.
 /// Powers the "Your friends are in these communities" discovery widget.
-struct DiscoverableCommunityChallenge: Codable, Identifiable {
+struct DiscoverableCommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -220,10 +215,6 @@ struct DiscoverableCommunityChallenge: Codable, Identifiable {
     
     var id: UUID { challengeId }
     var displayEmoji: String { emoji ?? "🌍" }
-    
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
     
     var formattedParticipantCount: String {
         if participantCount >= 1000 {
@@ -259,7 +250,7 @@ struct DiscoverableCommunityChallenge: Codable, Identifiable {
 }
 
 /// Enriched detail response for community challenge detail view
-struct CommunityDetailResponse: Codable {
+struct CommunityDetailResponse: Codable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -298,10 +289,6 @@ struct CommunityDetailResponse: Codable {
     /// Shareable URL for this community challenge
     var shareURL: URL? {
         URL(string: "https://fit33.app/c/\(inviteSlug)")
-    }
-    
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     var todayProgressPercentage: Double {
@@ -350,7 +337,7 @@ struct CommunityDetailResponse: Codable {
     }
 }
 
-struct FeaturedCommunityChallenge: Codable, Identifiable {
+struct FeaturedCommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -373,10 +360,6 @@ struct FeaturedCommunityChallenge: Codable, Identifiable {
     
     var id: UUID { challengeId }
     var displayEmoji: String { emoji ?? "🌍" }
-    
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
     
     var formattedParticipantCount: String {
         if participantCount >= 1000 {
@@ -451,7 +434,7 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
     }
 }
 
-struct CommunityLeaderboardResponse: Codable {
+struct CommunityLeaderboardResponse: Codable, ChallengeTypeResolvable {
     let challengeId: UUID
     let challengeTitle: String
     let challengeEmoji: String?
@@ -486,12 +469,10 @@ struct CommunityLeaderboardResponse: Codable {
         case myBestStreak = "my_best_streak"
     }
     
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
+    var title: String { challengeTitle }
 }
 
-struct CommunityChallengePreview: Codable, Identifiable {
+struct CommunityChallengePreview: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -513,10 +494,6 @@ struct CommunityChallengePreview: Codable, Identifiable {
     
     var id: UUID { challengeId }
     var displayEmoji: String { emoji ?? "🌍" }
-    
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
     
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
@@ -581,7 +558,7 @@ class CommunityChallengeService: ObservableObject {
         let now = Date()
         if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
             #if DEBUG
-            print("⏭️ [COMMUNITY] Skipping refresh — last refresh was \(Int(now.timeIntervalSince(last)))s ago")
+            AppLogger.debug("Skipping community refresh — last was \(Int(now.timeIntervalSince(last)))s ago", category: .social)
             #endif
             return
         }
@@ -594,7 +571,7 @@ class CommunityChallengeService: ObservableObject {
         _ = await (challenges, featured, discoverable)
         
         #if DEBUG
-        print("✅ [COMMUNITY] Full refresh completed")
+        AppLogger.info("Successfully completed community full refresh", category: .social)
         #endif
     }
     
@@ -637,10 +614,10 @@ class CommunityChallengeService: ObservableObject {
             }
             
             #if DEBUG
-            print("✅ [COMMUNITY] Fetched \(result.count) community challenges")
+            AppLogger.info("Successfully fetched \(result.count) community challenges", category: .social)
             #endif
         } catch {
-            print("❌ [COMMUNITY] Error fetching my challenges: \(error)")
+            AppLogger.error("Error fetching my community challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -751,10 +728,10 @@ class CommunityChallengeService: ObservableObject {
             
             discoverableChallenges = sorted
             #if DEBUG
-            print("✅ [COMMUNITY] Fetched \(sorted.count) discoverable friend communities (sorted by friend count)")
+            AppLogger.info("Successfully fetched \(sorted.count) discoverable friend communities", category: .social)
             #endif
         } catch {
-            print("❌ [COMMUNITY] Error fetching discoverable challenges: \(error)")
+            AppLogger.error("Error fetching discoverable challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -817,10 +794,10 @@ class CommunityChallengeService: ObservableObject {
             
             featuredChallenges = result
             #if DEBUG
-            print("✅ [COMMUNITY] Fetched \(result.count) featured challenges")
+            AppLogger.info("Successfully fetched \(result.count) featured challenges", category: .social)
             #endif
         } catch {
-            print("❌ [COMMUNITY] Error fetching featured: \(error)")
+            AppLogger.error("Error fetching featured challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -872,12 +849,12 @@ class CommunityChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [COMMUNITY] Created community challenge: \(id)")
+            AppLogger.info("Successfully created community challenge: \(id)", category: .social)
             #endif
             await fetchMyChallenges()
             return id
         } catch {
-            print("❌ [COMMUNITY] Error creating challenge: \(error)")
+            AppLogger.error("Error creating community challenge: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -902,13 +879,13 @@ class CommunityChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [COMMUNITY] Joined community challenge: \(id)")
+            AppLogger.info("Successfully joined community challenge: \(id)", category: .social)
             #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
             return id
         } catch {
-            print("❌ [COMMUNITY] Error joining challenge: \(error)")
+            AppLogger.error("Error joining community challenge: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
             return nil
         }
@@ -934,14 +911,14 @@ class CommunityChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [COMMUNITY] Joined friend-gated community: \(id)")
+            AppLogger.info("Successfully joined friend-gated community: \(id)", category: .social)
             #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
             await fetchDiscoverableChallenges()
             return id
         } catch {
-            print("❌ [COMMUNITY] Error joining friend-gated challenge: \(error)")
+            AppLogger.error("Error joining friend-gated challenge: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
             return nil
         }
@@ -968,7 +945,7 @@ class CommunityChallengeService: ObservableObject {
             
             return results.first
         } catch {
-            print("❌ [COMMUNITY] Error fetching challenge detail: \(error)")
+            AppLogger.error("Error fetching community challenge detail: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -984,7 +961,7 @@ class CommunityChallengeService: ObservableObject {
         // channel triggers "You cannot call postgresChange after joining the channel" warning
         // and silently breaks the subscription.
         if communityRealtimeChannel != nil {
-            print("⏭️ [COMMUNITY] Already subscribed to real-time updates — skipping")
+            AppLogger.debug("Already subscribed to community real-time updates — skipping", category: .social)
             return
         }
         
@@ -1021,14 +998,14 @@ class CommunityChallengeService: ObservableObject {
         // Handle participant changes → refresh widget data
         Task {
             for await _ in participantInserts {
-                print("📡 [COMMUNITY-RT] New participant joined a community")
+                AppLogger.debug("Realtime: new participant joined a community", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in participantUpdates {
-                print("📡 [COMMUNITY-RT] Participant updated")
+                AppLogger.debug("Realtime: community participant updated", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
@@ -1036,21 +1013,21 @@ class CommunityChallengeService: ObservableObject {
         // Handle progress changes → refresh leaderboard data
         Task {
             for await _ in progressInserts {
-                print("📡 [COMMUNITY-RT] New progress logged")
+                AppLogger.debug("Realtime: new community progress logged", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in progressUpdates {
-                print("📡 [COMMUNITY-RT] Progress updated")
+                AppLogger.debug("Realtime: community progress updated", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         await channel.subscribe()
         communityRealtimeChannel = channel
-        print("📡 [COMMUNITY] Subscribed to real-time community updates")
+        AppLogger.info("Successfully subscribed to real-time community updates", category: .social)
     }
     
     /// Unsubscribe from real-time updates
@@ -1058,7 +1035,7 @@ class CommunityChallengeService: ObservableObject {
         if let channel = communityRealtimeChannel {
             await channel.unsubscribe()
             communityRealtimeChannel = nil
-            print("📡 [COMMUNITY] Unsubscribed from real-time updates")
+            AppLogger.debug("Unsubscribed from community real-time updates", category: .social)
         }
     }
     
@@ -1092,11 +1069,11 @@ class CommunityChallengeService: ObservableObject {
             
             myChallenges.removeAll { $0.challengeId == challengeId }
             #if DEBUG
-            print("✅ [COMMUNITY] Left community challenge: \(challengeId)")
+            AppLogger.info("Successfully left community challenge: \(challengeId)", category: .social)
             #endif
             return true
         } catch {
-            print("❌ [COMMUNITY] Error leaving challenge: \(error)")
+            AppLogger.error("Error leaving community challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1125,7 +1102,7 @@ class CommunityChallengeService: ObservableObject {
                     .value
                 
                 #if DEBUG
-                print("✅ [COMMUNITY] Logged progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))")
+                AppLogger.info("Successfully logged community progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))", category: .social)
                 #endif
                 return true
             } catch {
@@ -1134,10 +1111,10 @@ class CommunityChallengeService: ObservableObject {
                     // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections
                     // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                    print("⚠️ [COMMUNITY] log_community_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    AppLogger.warning("log_community_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    print("❌ [COMMUNITY] Error logging progress: \(error)")
+                    AppLogger.error("Error logging community progress: \(error.localizedDescription)", category: .social)
                     return false
                 }
             }
@@ -1166,7 +1143,7 @@ class CommunityChallengeService: ObservableObject {
             
             return results.first
         } catch {
-            print("❌ [COMMUNITY] Error fetching leaderboard: \(error)")
+            AppLogger.error("Error fetching community leaderboard: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1188,7 +1165,7 @@ class CommunityChallengeService: ObservableObject {
             
             return results.first
         } catch {
-            print("❌ [COMMUNITY] Error looking up challenge: \(error)")
+            AppLogger.error("Error looking up community challenge: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1203,7 +1180,7 @@ class CommunityChallengeService: ObservableObject {
         let matching = myChallenges.filter { $0.resolvedType == type }
         guard !matching.isEmpty else { return }
         
-        print("⚡ [COMMUNITY] Quick sync \(type.rawValue): \(value) to \(matching.count) community challenge(s) (allowDecrease: \(allowDecrease))")
+        AppLogger.debug("Quick sync \(type.rawValue): \(value) to \(matching.count) community challenge(s) (allowDecrease: \(allowDecrease))", category: .social)
         
         for challenge in matching {
             var adjustedValue = value
@@ -1232,15 +1209,14 @@ class CommunityChallengeService: ObservableObject {
     func syncAllTrackingToCommunityChallenges() async {
         guard !myChallenges.isEmpty else { return }
         
-        // Ensure MealService has today's data (not stale yesterday meals)
-        MealService.shared.ensureFreshForToday()
+        let progress = await gatherCurrentProgress()
         
         #if DEBUG
-        print("🔄 [COMMUNITY] Syncing tracking data to \(myChallenges.count) community challenges...")
+        AppLogger.debug("Syncing tracking data to \(myChallenges.count) community challenges...", category: .social)
         #endif
         
         for (index, challenge) in myChallenges.enumerated() {
-            let progressValue = await calculateProgress(for: challenge)
+            let progressValue = resolveProgress(for: challenge, from: progress)
             
             // For "recalculable" types (protein, hydration, calories) the local value
             // is authoritative — it's freshly computed from today's meals/logs.
@@ -1270,65 +1246,22 @@ class CommunityChallengeService: ObservableObject {
         // Refresh to show updated progress
         await fetchMyChallenges()
         #if DEBUG
-        print("✅ [COMMUNITY] Community challenge sync complete")
+        AppLogger.info("Successfully completed community challenge sync", category: .social)
         #endif
     }
     
-    /// Calculate progress from HealthKit/services for a community challenge
-    private func calculateProgress(for challenge: CommunityChallenge) async -> Int {
-        let healthKit = HealthKitService.shared
-        let healthKitManager = HealthKitManager.shared
-        
+    private func resolveProgress(for challenge: CommunityChallenge, from data: ChallengeProgressData) -> Int {
         switch challenge.challengeType {
-        case "steps":
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKit.todaySteps
-            return steps
-            
-        case "walk":
-            if challenge.targetUnit == "minutes" {
-                let walkMinutes = healthKit.recentWorkouts
-                    .filter { $0.workoutType == .walking && Calendar.current.isDateInToday($0.startDate) }
-                    .reduce(0) { $0 + $1.durationMinutes }
-                return walkMinutes
-            }
-            return 0
-            
-        case "run":
-            if challenge.targetUnit == "minutes" {
-                let runMinutes = healthKit.recentWorkouts
-                    .filter { $0.workoutType == .running && Calendar.current.isDateInToday($0.startDate) }
-                    .reduce(0) { $0 + $1.durationMinutes }
-                return runMinutes
-            }
-            return 0
-            
-        case "lift", "workout_streak":
-            return 0 // Tracked via manual workout completions
-            
-        case "active_minutes":
-            return healthKit.todayActiveMinutes
-            
-        case "hydrate":
-            let totalMl = HydrationService.shared.todayTotal
-            if challenge.targetUnit.lowercased() == "oz" {
-                return Int(Double(totalMl) / 29.5735)
-            }
-            return totalMl
-            
-        case "protein":
-            return MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
-            
-        case "calories":
-            let hkCal = healthKit.todayCalories
-            let mealCal = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
-            return max(hkCal, mealCal)
-            
-        case "sleep":
-            let sleepHours = healthKit.lastNightSleep ?? 0
-            return Int(sleepHours * 60) // Convert to minutes for comparison
-            
-        default:
-            return 0
+        case "steps":       return data.steps
+        case "walk":        return challenge.targetUnit == "minutes" ? data.walkMinutesToday : 0
+        case "run":         return challenge.targetUnit == "minutes" ? data.runMinutesToday : 0
+        case "lift", "workout_streak": return 0
+        case "active_minutes": return data.activeMinutes
+        case "hydrate":     return data.hydrationInUnit(challenge.targetUnit)
+        case "protein":     return data.protein
+        case "calories":    return max(data.calories, data.mealCalories)
+        case "sleep":       return data.sleepMinutes
+        default:            return 0
         }
     }
     

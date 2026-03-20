@@ -81,7 +81,7 @@ struct SharedWorkoutPreviewView: View {
                     .frame(width: 70, height: 70)
                 
                 Image(systemName: "paperplane.fill")
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color.blue, Color.purple],
@@ -241,7 +241,7 @@ struct SharedWorkoutPreviewView: View {
             
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "quote.bubble.fill")
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
                 
                 Text(message)

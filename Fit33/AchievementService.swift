@@ -92,7 +92,7 @@ class BadgeService: ObservableObject {
                 self.achievements = result
             }
         } catch {
-            print("❌ Failed to fetch achievements: \(error)")
+            AppLogger.error("Failed to fetch achievements: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -156,7 +156,7 @@ class BadgeService: ObservableObject {
             
             return true
         } catch {
-            print("❌ Failed to check achievement \(key): \(error)")
+            AppLogger.error("Failed to check achievement \(key): \(error.localizedDescription)", category: .general)
             return false
         }
     }

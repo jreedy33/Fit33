@@ -243,6 +243,9 @@ async function sendToAPNs(
   }
 
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
+
     const response = await fetch(
       `https://${apnsHost}/3/device/${deviceToken}`,
       {
@@ -254,9 +257,11 @@ async function sendToAPNs(
           'apns-priority': '10',
           'apns-expiration': '0',
         },
-        body: JSON.stringify(apnsPayload)
+        body: JSON.stringify(apnsPayload),
+        signal: controller.signal,
       }
     )
+    clearTimeout(timeoutId)
 
     if (response.ok) {
       return { success: true }

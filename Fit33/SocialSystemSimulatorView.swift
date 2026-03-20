@@ -358,7 +358,7 @@ struct SocialSystemSimulatorView: View {
                 .foregroundColor(entry.durationMs > 3000 ? .red : (entry.durationMs > 1000 ? .orange : .secondary))
                 .monospacedDigit()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .padding(.horizontal, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 6)
@@ -558,7 +558,7 @@ struct SimulationReportDetailView: View {
                                         .foregroundColor(.blue)
                                 }
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                         }
                     }
                 }
@@ -600,7 +600,7 @@ struct SimulationReportDetailView: View {
                                 Text(entry.phase)
                                     .font(.caption2)
                                     .fontWeight(.bold)
-                                    .padding(.horizontal, 4)
+                                    .padding(.horizontal, Spacing.xxs)
                                     .padding(.vertical, 1)
                                     .background(Color.blue.opacity(0.1))
                                     .cornerRadius(3)
@@ -633,7 +633,7 @@ struct SimulationReportDetailView: View {
                                     .foregroundColor(.orange)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     }
                 }
             }
@@ -756,7 +756,7 @@ struct QuickRealtimeTestResultView: View {
                             )
                         }
                     }
-                    .padding(.vertical, 24)
+                    .padding(.vertical, Spacing.lg)
                     .frame(maxWidth: .infinity)
                     .background(
                         result.passed
@@ -770,7 +770,7 @@ struct QuickRealtimeTestResultView: View {
                             ForEach(Array(result.details.enumerated()), id: \.offset) { _, line in
                                 if line.isEmpty {
                                     Divider()
-                                        .padding(.vertical, 4)
+                                        .padding(.vertical, Spacing.xxs)
                                 } else {
                                     Text(line)
                                         .font(.system(.caption, design: .monospaced))

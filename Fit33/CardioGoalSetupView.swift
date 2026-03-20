@@ -122,7 +122,7 @@ struct CardioGoalSetupView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.primary)
                             .frame(width: 32, height: 32)
                             .background(Circle().fill(Color(.systemGray5)))
@@ -335,7 +335,7 @@ struct CardioGoalSetupView: View {
                             .frame(width: 48, height: 48)
                         
                         Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 20))
+                            .font(.ds_heading3)
                             .foregroundColor(bluetoothManager.connectionState == .connected ? .green : .cyan)
                     }
                     
@@ -393,7 +393,7 @@ struct CardioGoalSetupView: View {
         }) {
             HStack {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                 
                 Text("GO")
                     .font(.title2)
@@ -428,7 +428,7 @@ struct GoalTypeButton: View {
         Button(action: onTap) {
             VStack(spacing: 6) {
                 Image(systemName: goalType.icon)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                 
                 Text(goalType.rawValue)
                     .font(.caption2)
@@ -629,7 +629,7 @@ struct RecommendationBubble: View {
         }) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(color)
                 
                 HStack(alignment: .lastTextBaseline, spacing: 2) {

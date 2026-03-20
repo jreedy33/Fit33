@@ -397,7 +397,7 @@ struct WorkoutShareCard: View {
             .font(.headline)
             .foregroundColor(.primary)
         }
-        .padding(32)
+        .padding(Spacing.xl)
         .frame(width: 375)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.xl)
@@ -466,7 +466,7 @@ struct ShareButton: View {
             case .iconWithLabel:
                 HStack(spacing: 6) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                     Text("Share")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -502,7 +502,7 @@ struct InviteFriendsSection: View {
             // Header
             HStack {
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.blue)
                 Text("Invite Friends")
                     .font(.headline)
@@ -527,7 +527,7 @@ struct InviteFriendsSection: View {
                                 .frame(width: 44, height: 44)
                             
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.white)
                         }
                         
@@ -545,7 +545,7 @@ struct InviteFriendsSection: View {
                         Spacer()
                         
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary)
                     }
                     .padding(Spacing.md)

@@ -304,7 +304,7 @@ struct EdgeFadeMaskDemoView: View {
 
             VStack(spacing: 24) {
                 Text("Seamless Video Embed")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.ds_stat)
                     .foregroundColor(.white)
 
                 // Video with content-aware seamless embed
@@ -320,7 +320,7 @@ struct EdgeFadeMaskDemoView: View {
 
                 VStack(spacing: 8) {
                     Text("Content-Aware Blend + Edge Fade")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.white.opacity(0.8))
 
                     Text("multiply blend removes white · figure never clipped")

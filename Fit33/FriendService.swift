@@ -57,9 +57,9 @@ class FriendService: ObservableObject {
             let data = try JSONEncoder().encode(friends)
             UserDefaults.standard.set(data, forKey: friendsCacheKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: friendsCacheDateKey)
-            print("💾 [FRIENDS] Cached \(friends.count) friends")
+            AppLogger.debug("[FRIENDS] Cached \(friends.count) friends", category: .social)
         } catch {
-            print("⚠️ [FRIENDS] Failed to cache friends: \(error)")
+            AppLogger.warning("[FRIENDS] Failed to cache friends: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -70,10 +70,10 @@ class FriendService: ObservableObject {
             let cached = try JSONDecoder().decode([Friend].self, from: data)
             if !cached.isEmpty {
                 friends = cached
-                print("⚡️ [FRIENDS] Loaded \(cached.count) cached friends (instant)")
+                AppLogger.debug("[FRIENDS] Loaded \(cached.count) cached friends (instant)", category: .social)
             }
         } catch {
-            print("⚠️ [FRIENDS] Failed to load cached friends: \(error)")
+            AppLogger.warning("[FRIENDS] Failed to load cached friends: \(error.localizedDescription)", category: .social)
             UserDefaults.standard.removeObject(forKey: friendsCacheKey)
         }
     }
@@ -85,7 +85,7 @@ class FriendService: ObservableObject {
     func refreshHomeScreenData() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
         
-        print("🔄 [REFRESH] Refreshing home screen friend data...")
+        AppLogger.debug("[REFRESH] Refreshing home screen friend data...", category: .social)
         
         // Initialize tracking sets if empty
         if lastCheckedWorkoutIds.isEmpty {
@@ -101,7 +101,7 @@ class FriendService: ObservableObject {
         
         _ = await (workoutsTask, requestsTask)
         
-        print("✅ [REFRESH] Home screen data refreshed")
+        AppLogger.info("[REFRESH] Home screen data refreshed", category: .social)
     }
     
     // MARK: - Check for New Workouts
@@ -128,7 +128,7 @@ class FriendService: ObservableObject {
             if let workout = receivedWorkouts.first(where: { $0.id == newId }) {
                 // Only notify for unviewed workouts
                 if workout.viewedAt == nil {
-                    print("📬 [NEW WORKOUT] Detected new workout from \(workout.senderName)")
+                    AppLogger.info("[NEW WORKOUT] Detected new workout from \(workout.senderName)", category: .social)
                     
                     NotificationManager.shared.sendSharedWorkoutNotification(
                         senderName: workout.senderName,
@@ -164,7 +164,7 @@ class FriendService: ObservableObject {
         // Haptic feedback for new friend requests
         for newId in newRequestIds {
             if let request = pendingRequests.first(where: { $0.requestId == newId }) {
-                print("👋 [NEW REQUEST] Detected new friend request from \(request.displayName)")
+                AppLogger.info("[NEW REQUEST] Detected new friend request from \(request.displayName)", category: .social)
                 
                 // Haptic feedback for new request
                 HapticManager.notification(.success)
@@ -225,19 +225,19 @@ class FriendService: ObservableObject {
             logger.log(.info, category: .social, message: "Fetched \(result.count) friends", metadata: result.isEmpty ? nil : [
                 "friends": result.prefix(5).map { $0.friendName ?? $0.friendUsername ?? "?" }.joined(separator: ", ")
             ])
-            print("✅ Fetched \(result.count) friends")
+            AppLogger.info("Fetched \(result.count) friends", category: .social)
             
             // Preload/refresh friend photos (detects URL changes for updated photos)
             let photoData = result.map { (id: $0.friendId.uuidString, url: $0.profilePhotoUrl) }
             FriendPhotoCache.shared.preloadPhotos(for: photoData)
         } catch {
-            print("❌ Error fetching friends: \(error)")
+            AppLogger.error("Error fetching friends: \(error.localizedDescription)", category: .social)
         }
     }
     
     func removeFriend(friendshipId: UUID) async -> Bool {
         guard let friendToRemove = friends.first(where: { $0.friendshipId == friendshipId }) else {
-            print("❌ Friend not found in local state")
+            AppLogger.error("Friend not found in local state", category: .social)
             return false
         }
         
@@ -250,10 +250,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             friends.removeAll { $0.friendshipId == friendshipId }
-            print("✅ Friend removed")
+            AppLogger.info("Friend removed", category: .social)
             return true
         } catch {
-            print("❌ Error removing friend: \(error)")
+            AppLogger.error("Error removing friend: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -270,10 +270,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             friends.removeAll { $0.friendId == userId }
-            print("✅ User blocked")
+            AppLogger.info("User blocked", category: .social)
             return true
         } catch {
-            print("❌ Error blocking user: \(error)")
+            AppLogger.error("Error blocking user: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -287,10 +287,10 @@ class FriendService: ObservableObject {
                 .rpc("unblock_user", params: UnblockParams(p_target_user_id: userId.uuidString))
                 .execute()
             
-            print("✅ User unblocked")
+            AppLogger.info("User unblocked", category: .social)
             return true
         } catch {
-            print("❌ Error unblocking user: \(error)")
+            AppLogger.error("Error unblocking user: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -305,27 +305,27 @@ class FriendService: ObservableObject {
                 .value
             
             self.pendingRequests = result
-            print("✅ Fetched \(result.count) pending friend requests")
+            AppLogger.info("Fetched \(result.count) pending friend requests", category: .social)
         } catch {
-            print("❌ Error fetching friend requests: \(error)")
+            AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
         }
     }
     
     func sendFriendRequest(toUserId: UUID, message: String? = nil) async -> Bool {
-        print("📤 [FRIEND REQUEST] Sending request to user: \(toUserId)")
+        AppLogger.debug("[FRIEND REQUEST] Sending request to user: \(toUserId)", category: .social)
         
         // Verify we're authenticated
         guard SupabaseManager.shared.isAuthenticated else {
-            print("❌ [FRIEND REQUEST] Not authenticated - cannot send request")
+            AppLogger.error("[FRIEND REQUEST] Not authenticated - cannot send request", category: .social)
             return false
         }
         
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            print("❌ [FRIEND REQUEST] No current user ID - cannot send request")
+            AppLogger.error("[FRIEND REQUEST] No current user ID - cannot send request", category: .social)
             return false
         }
         
-        print("📤 [FRIEND REQUEST] Current user: \(currentUserId), Target: \(toUserId)")
+        AppLogger.debug("[FRIEND REQUEST] Current user: \(currentUserId), Target: \(toUserId)", category: .social)
         
         do {
             var params: [String: String] = ["target_user_id": toUserId.uuidString]
@@ -333,7 +333,7 @@ class FriendService: ObservableObject {
                 params["request_message"] = msg
             }
             
-            print("📤 [FRIEND REQUEST] Calling send_friend_request RPC...")
+            AppLogger.debug("[FRIEND REQUEST] Calling send_friend_request RPC...", category: .social)
             let requestId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("send_friend_request", params: params)
                 .execute()
@@ -343,7 +343,7 @@ class FriendService: ObservableObject {
                 "to_user_id": toUserId.uuidString.prefix(8),
                 "request_id": requestId.uuidString.prefix(8)
             ])
-            print("✅ [FRIEND REQUEST] Request sent successfully! ID: \(requestId)")
+            AppLogger.info("[FRIEND REQUEST] Request sent successfully! ID: \(requestId)", category: .social)
             await fetchUnreadCount()
             await fetchSentRequests()  // Refresh sent requests list
             
@@ -356,13 +356,13 @@ class FriendService: ObservableObject {
                 "to_user_id": toUserId.uuidString.prefix(8),
                 "error": "\(error)"
             ])
-            print("❌ [FRIEND REQUEST] Error sending friend request: \(error)")
-            print("❌ [FRIEND REQUEST] Error details: \(String(describing: error))")
+            AppLogger.error("[FRIEND REQUEST] Error sending friend request: \(error.localizedDescription)", category: .social)
+            AppLogger.error("[FRIEND REQUEST] Error details: \(String(describing: error))", category: .social)
             
             // Check if error is "Friend request already exists" - treat as success
             let errorString = String(describing: error)
             if errorString.contains("Friend request already exists") || errorString.contains("already exists") {
-                print("ℹ️ [FRIEND REQUEST] Request already exists - treating as success")
+                AppLogger.info("[FRIEND REQUEST] Request already exists - treating as success", category: .social)
                 await fetchUnreadCount()
                 await fetchSentRequests()
                 return true
@@ -385,12 +385,12 @@ class FriendService: ObservableObject {
                 await fetchFriends()
                 NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "✅ Friend request ACCEPTED", metadata: ["request_id": requestId.uuidString.prefix(8)])
-                print("✅ Friend request accepted")
+                AppLogger.info("Friend request accepted", category: .social)
             }
             return success
         } catch {
             logger.log(.error, category: .social, message: "Accept friend request FAILED", metadata: ["error": "\(error)"])
-            print("❌ Error accepting friend request: \(error)")
+            AppLogger.error("Error accepting friend request: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -407,12 +407,12 @@ class FriendService: ObservableObject {
                 pendingRequests.removeAll { $0.requestId == requestId }
                 NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "Friend request DECLINED", metadata: ["request_id": requestId.uuidString.prefix(8)])
-                print("✅ Friend request declined")
+                AppLogger.info("Friend request declined", category: .social)
             }
             return success
         } catch {
             logger.log(.error, category: .social, message: "Decline friend request FAILED", metadata: ["error": "\(error)"])
-            print("❌ Error declining friend request: \(error)")
+            AppLogger.error("Error declining friend request: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -427,9 +427,9 @@ class FriendService: ObservableObject {
                 .value
             
             self.sentRequests = result
-            print("✅ Fetched \(result.count) sent friend requests")
+            AppLogger.info("Fetched \(result.count) sent friend requests", category: .social)
         } catch {
-            print("❌ Error fetching sent friend requests: \(error)")
+            AppLogger.error("Error fetching sent friend requests: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -443,11 +443,11 @@ class FriendService: ObservableObject {
             if success {
                 // Update local state
                 sentRequests.removeAll { $0.requestId == requestId }
-                print("✅ Friend request cancelled")
+                AppLogger.info("Friend request cancelled", category: .social)
             }
             return success
         } catch {
-            print("❌ Error cancelling friend request: \(error)")
+            AppLogger.error("Error cancelling friend request: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -470,7 +470,7 @@ class FriendService: ObservableObject {
                 .value
             return result
         } catch {
-            print("❌ Error checking friendship: \(error)")
+            AppLogger.error("Error checking friendship: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -496,9 +496,9 @@ class FriendService: ObservableObject {
                 .value
             
             self.searchResults = result
-            print("✅ Found \(result.count) users matching '\(query)'")
+            AppLogger.info("Found \(result.count) users matching '\(query)'", category: .social)
         } catch {
-            print("❌ Error searching users: \(error)")
+            AppLogger.error("Error searching users: \(error.localizedDescription)", category: .social)
             searchResults = []
         }
     }
@@ -517,9 +517,9 @@ class FriendService: ObservableObject {
             let filteredResult = result.filter { !addressedWorkoutIds.contains($0.id) }
             
             self.receivedWorkouts = filteredResult
-            print("✅ Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)")
+            AppLogger.info("Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)", category: .social)
         } catch {
-            print("❌ Error fetching received workouts: \(error)")
+            AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -531,9 +531,9 @@ class FriendService: ObservableObject {
                 .value
             
             self.sentWorkouts = result
-            print("✅ Fetched \(result.count) sent workouts")
+            AppLogger.info("Fetched \(result.count) sent workouts", category: .social)
         } catch {
-            print("❌ Error fetching sent workouts: \(error)")
+            AppLogger.error("Error fetching sent workouts: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -579,14 +579,14 @@ class FriendService: ObservableObject {
                 .value
             
             await fetchSentWorkouts()
-            print("✅ Workout sent to friend")
+            AppLogger.info("Workout sent to friend", category: .social)
             
             // Update daily quest progress for sharing a workout
             await DailyQuestService.shared.onWorkoutShared()
             
             return true
         } catch {
-            print("❌ Error sending workout: \(error)")
+            AppLogger.error("Error sending workout: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -603,10 +603,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             await fetchReceivedWorkouts()
-            print("✅ Workout accepted")
+            AppLogger.info("Workout accepted", category: .social)
             return true
         } catch {
-            print("❌ Error accepting workout: \(error)")
+            AppLogger.error("Error accepting workout: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -623,10 +623,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             await fetchReceivedWorkouts()
-            print("✅ Workout declined")
+            AppLogger.info("Workout declined", category: .social)
             return true
         } catch {
-            print("❌ Error declining workout: \(error)")
+            AppLogger.error("Error declining workout: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -640,10 +640,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             await fetchReceivedWorkouts()
-            print("✅ Workout saved to favorites")
+            AppLogger.info("Workout saved to favorites", category: .social)
             return true
         } catch {
-            print("❌ Error saving workout to favorites: \(error)")
+            AppLogger.error("Error saving workout to favorites: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -658,9 +658,9 @@ class FriendService: ObservableObject {
             
             await fetchReceivedWorkouts()
             NotificationManager.shared.updateBadgeCount()
-            print("✅ Workout marked as viewed")
+            AppLogger.info("Workout marked as viewed", category: .social)
         } catch {
-            print("❌ Error marking workout viewed: \(error)")
+            AppLogger.error("Error marking workout viewed: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -681,10 +681,10 @@ class FriendService: ObservableObject {
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
-            print("✅ Workout marked as started: \(workoutId)")
+            AppLogger.info("Workout marked as started: \(workoutId)", category: .social)
             return true
         } catch {
-            print("❌ Error marking workout started: \(error)")
+            AppLogger.error("Error marking workout started: \(error.localizedDescription)", category: .social)
             // Keep it addressed locally even if server fails
             return true
         }
@@ -702,10 +702,10 @@ class FriendService: ObservableObject {
                 .execute()
             
             await fetchReceivedWorkouts()
-            print("✅ Workout marked as completed")
+            AppLogger.info("Workout marked as completed", category: .social)
             return true
         } catch {
-            print("❌ Error marking workout completed: \(error)")
+            AppLogger.error("Error marking workout completed: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -731,12 +731,12 @@ class FriendService: ObservableObject {
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
-            print("✅ Workout deleted from server: \(workoutId)")
+            AppLogger.info("Workout deleted from server: \(workoutId)", category: .social)
             return true
         } catch {
-            print("❌ Error deleting workout: \(error)")
+            AppLogger.error("Error deleting workout: \(error.localizedDescription)", category: .social)
             // Keep it addressed locally even if server delete fails
-            print("⚠️ Keeping workout marked as addressed locally despite server error")
+            AppLogger.warning("Keeping workout marked as addressed locally despite server error", category: .social)
             return true  // Return true so UI treats it as deleted
         }
     }
@@ -766,9 +766,9 @@ class FriendService: ObservableObject {
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
-            print("✅ Workout saved: \(workoutId)")
+            AppLogger.info("Workout saved: \(workoutId)", category: .social)
         } catch {
-            print("❌ Error saving workout to server: \(error)")
+            AppLogger.error("Error saving workout to server: \(error.localizedDescription)", category: .social)
             // Keep it addressed locally even if server fails
             // Don't re-throw - the user sees it as saved
         }
@@ -824,9 +824,9 @@ class FriendService: ObservableObject {
                 .value
             
             self.notifications = result
-            print("✅ Fetched \(result.count) notifications")
+            AppLogger.info("Fetched \(result.count) notifications", category: .social)
         } catch {
-            print("❌ Error fetching notifications: \(error)")
+            AppLogger.error("Error fetching notifications: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -839,7 +839,7 @@ class FriendService: ObservableObject {
             
             self.unreadNotificationCount = count
         } catch {
-            print("❌ Error fetching unread count: \(error)")
+            AppLogger.error("Error fetching unread count: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -856,7 +856,7 @@ class FriendService: ObservableObject {
             }
             unreadNotificationCount = max(0, unreadNotificationCount - 1)
         } catch {
-            print("❌ Error marking notification read: \(error)")
+            AppLogger.error("Error marking notification read: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -873,7 +873,7 @@ class FriendService: ObservableObject {
             }
             unreadNotificationCount = 0
         } catch {
-            print("❌ Error marking all notifications read: \(error)")
+            AppLogger.error("Error marking all notifications read: \(error.localizedDescription)", category: .social)
         }
     }
 }

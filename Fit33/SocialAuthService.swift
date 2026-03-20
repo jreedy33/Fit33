@@ -72,25 +72,6 @@ class SocialAuthService: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Google Sign-In
-    
-    /// Initiates Google Sign-In flow via Supabase OAuth
-    /// This opens a web view for Google authentication
-    func getGoogleSignInURL() -> URL? {
-        // Supabase OAuth URL for Google
-        let supabaseURL = AppConfig.Supabase.url
-        let redirectURL = "fit33://login-callback"
-        
-        // Construct the OAuth URL
-        var components = URLComponents(string: "\(supabaseURL)/auth/v1/authorize")
-        components?.queryItems = [
-            URLQueryItem(name: "provider", value: "google"),
-            URLQueryItem(name: "redirect_to", value: redirectURL)
-        ]
-        
-        return components?.url
-    }
-    
     // MARK: - Cryptographic Helpers
     
     /// Generates a random nonce string for security
@@ -222,10 +203,10 @@ struct SignInWithAppleButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: "applelogo")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                 
                 Text("Continue with Apple")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
             }
             .foregroundColor(colorScheme == .dark ? .black : .white)
             .frame(maxWidth: .infinity)
@@ -253,7 +234,7 @@ struct SignInWithGoogleButton: View {
                     .frame(width: 20, height: 20)
                 
                 Text("Continue with Google")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
             }
             .foregroundColor(.black)
             .frame(maxWidth: .infinity)
@@ -283,7 +264,7 @@ struct SocialLoginDivider: View {
             .frame(height: 1)
             
             Text("or continue with")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary.opacity(0.7))
             
             // Gradient line - fades to center

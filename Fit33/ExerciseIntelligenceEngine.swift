@@ -39,9 +39,20 @@ final class ExerciseIntelligenceEngine {
         
         // Core muscles
         "Abs": ["Obliques", "Lower Back", "Hip Flexors"],
+        "Lower Abs": ["Abs", "Hip Flexors", "Obliques"],
         "Obliques": ["Abs", "Core"],
         "Core": ["Abs", "Obliques", "Glutes"],
-        "Lower Back": ["Hamstrings", "Glutes", "Abs"]
+        "Lower Back": ["Hamstrings", "Glutes", "Abs"],
+        
+        // Additional muscles from exercise database
+        "Upper Chest": ["Chest", "Front Delts", "Triceps"],
+        "Lower Chest": ["Chest", "Triceps"],
+        "Inner Thighs": ["Glutes", "Quads", "Hip Flexors"],
+        "Hips": ["Glutes", "Hip Flexors", "Inner Thighs"],
+        "Rotator Cuff": ["Shoulders", "Rear Delts"],
+        "Neck": ["Traps", "Upper Back"],
+        "Full Body": ["Quads", "Chest", "Back", "Shoulders"],
+        "Ankles": ["Calves"]
     ]
     
     // MARK: - Movement Pattern Categories
@@ -268,24 +279,24 @@ final class ExerciseIntelligenceEngine {
         loadExerciseData()
     }
     
-    func loadExerciseData() {
-        // BUG FIX: Guard against double-loading. init() calls this, and then
-        // Fit33App.runIntelligenceInit() calls it again explicitly.
-        // Without this guard, exercises are fetched from Supabase twice (~6500 each time),
-        // wasting network bandwidth and holding ~2x memory during the overlap.
+    func loadExerciseData(prefetchedExercises: [ExerciseDTO]? = nil) {
         guard !isInitialized && !isLoading else { return }
         isLoading = true
         
-        // Load in background with low priority to not block UI
         Task(priority: .background) {
-            await loadFromDatabase()
+            await loadFromDatabase(prefetchedExercises: prefetchedExercises)
             await MainActor.run { self.isLoading = false }
         }
     }
     
-    private func loadFromDatabase() async {
+    private func loadFromDatabase(prefetchedExercises: [ExerciseDTO]? = nil) async {
         do {
-            let exercises = try await SupabaseManager.shared.fetchAllExercises()
+            let exercises: [ExerciseDTO]
+            if let prefetchedExercises = prefetchedExercises {
+                exercises = prefetchedExercises
+            } else {
+                exercises = try await SupabaseManager.shared.fetchAllExercises()
+            }
             
             await MainActor.run {
                 for exercise in exercises {
@@ -341,14 +352,10 @@ final class ExerciseIntelligenceEngine {
                 }
                 
                 isInitialized = true
-                #if DEBUG
-                print("🧠 ExerciseIntelligenceEngine: Loaded \(exerciseCache.count) exercises")
-                print("   Equipment groups: \(equipmentToExercises.keys.count)")
-                print("   Muscle groups: \(muscleToExercises.keys.count)")
-                #endif
+                AppLogger.info("ExerciseIntelligenceEngine loaded \(exerciseCache.count) exercises, \(equipmentToExercises.keys.count) equipment groups, \(muscleToExercises.keys.count) muscle groups", category: .workout)
             }
         } catch {
-            print("❌ ExerciseIntelligenceEngine: Failed to load data: \(error)")
+            AppLogger.error("ExerciseIntelligenceEngine failed to load data: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -577,7 +584,7 @@ final class ExerciseIntelligenceEngine {
                 }
                 
             case .fullBody:
-                return ["Chest", "Back", "Legs", "Shoulders", "Abs"]
+                return ["Chest", "Back", "Quads", "Shoulders", "Abs"]
                 
             case .broSplit:
                 switch day % 5 {

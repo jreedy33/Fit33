@@ -27,7 +27,7 @@ private func resetOnboardingForTesting() {
     let userManuallySignedOut = UserDefaults.standard.bool(forKey: "user_manually_signed_out")
     
     if userManuallySignedOut {
-        print("🔐 [DEBUG] User manually signed out - will show onboarding")
+        AppLogger.debug("User manually signed out - will show onboarding", category: .auth)
         // Clear the flag so it doesn't persist forever
         // The flag will be set again if they sign out again
         return  // Don't override - let the normal flow show onboarding
@@ -35,7 +35,7 @@ private func resetOnboardingForTesting() {
     
     // Skip reset if we want to stay logged in during development
     if SKIP_ONBOARDING_FOR_DEVELOPMENT {
-        print("⏭️ [DEBUG] Development mode - keeping existing session")
+        AppLogger.debug("Development mode - keeping existing session", category: .auth)
         return
     }
     
@@ -49,9 +49,9 @@ private func resetOnboardingForTesting() {
             user.hasCompletedOnboarding = false
         }
         try context.save()
-        print("🔄 [DEBUG] Onboarding reset - will show onboarding flow")
+        AppLogger.debug("Onboarding reset - will show onboarding flow", category: .general)
     } catch {
-        print("⚠️ [DEBUG] Could not reset onboarding: \(error)")
+        AppLogger.warning("Could not reset onboarding: \(error.localizedDescription)", category: .general)
     }
 }
 #endif
@@ -105,7 +105,7 @@ struct Fit33App: App {
         // This will clear Core Data and force fresh sync from Supabase
         let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
         if needsExerciseRefresh {
-            print("🔥🔥🔥 FORCING EXERCISE REFRESH - CLEARING CACHED DATA 🔥🔥🔥")
+            AppLogger.debug("FORCING EXERCISE REFRESH - CLEARING CACHED DATA", category: .general)
             let context = PersistenceController.shared.container.viewContext
             let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
             let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
@@ -115,9 +115,9 @@ struct Fit33App: App {
                 try context.save()
                 ExerciseLibraryService.shared.invalidateCache()
                 UserDefaults.standard.set(true, forKey: "exercise_lever_fix_applied_v1")
-                print("✅ Core Data cleared - exercises will reload from Supabase automatically")
+                AppLogger.info("Core Data cleared - exercises will reload from Supabase automatically", category: .general)
             } catch {
-                print("❌ Error clearing exercises: \(error)")
+                AppLogger.error("Error clearing exercises: \(error.localizedDescription)", category: .general)
             }
         }
         
@@ -220,7 +220,7 @@ struct Fit33App: App {
         // 🚀 Set fast startup mode flag for SupabaseManager
         UserDefaults.standard.set(FAST_STARTUP_MODE, forKey: "FAST_STARTUP_MODE")
         if FAST_STARTUP_MODE {
-            print("⚡ [FAST STARTUP] Enabled - skipping heavy cloud syncs")
+            AppLogger.debug("FAST STARTUP enabled - skipping heavy cloud syncs", category: .general)
         }
         #endif
         
@@ -252,7 +252,7 @@ struct Fit33App: App {
         ) { _ in
             VideoStreamingService.shared.clearPreloadCache()
             VideoPreloadManager.shared.reduceCache()
-            print("⚠️ Memory warning - cleared video prefetch cache")
+            AppLogger.warning("Memory warning - cleared video prefetch cache", category: .general)
         }
         
         // 📺 ATT + AdMob: Request tracking authorization then init SDK.
@@ -262,25 +262,25 @@ struct Fit33App: App {
         if !FAST_STARTUP_MODE {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 guard UIApplication.shared.applicationState == .active else {
-                    print("📺 App not active yet, deferring ATT request")
+                    AppLogger.debug("App not active yet, deferring ATT request", category: .general)
                     return
                 }
                 if AdManager.shared.adsEnabled {
-                    print("📺 Requesting ATT and pre-warming AdMob SDK...")
+                    AppLogger.debug("Requesting ATT and pre-warming AdMob SDK...", category: .general)
                     AdManager.shared.requestTrackingAndInitialize()
                 }
             }
         } else {
-            print("⚡ [FAST STARTUP] Skipping AdMob pre-warm")
+            AppLogger.debug("FAST STARTUP - Skipping AdMob pre-warm", category: .general)
         }
         #else
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             guard UIApplication.shared.applicationState == .active else {
-                print("📺 App not active yet, deferring ATT request")
+                AppLogger.debug("App not active yet, deferring ATT request", category: .general)
                 return
             }
             if AdManager.shared.adsEnabled {
-                print("📺 Requesting ATT and pre-warming AdMob SDK...")
+                AppLogger.debug("Requesting ATT and pre-warming AdMob SDK...", category: .general)
                 AdManager.shared.requestTrackingAndInitialize()
             }
         }
@@ -292,7 +292,7 @@ struct Fit33App: App {
         if !FAST_STARTUP_MODE {
             scheduleIntelligenceInit()
         } else {
-            print("⚡ [FAST STARTUP] Skipping intelligence engine initialization")
+            AppLogger.debug("FAST STARTUP - Skipping intelligence engine initialization", category: .general)
         }
         #else
         scheduleIntelligenceInit()
@@ -320,14 +320,14 @@ struct Fit33App: App {
         HeavyWorkSentinel.shared.beginHeavyWork(reason: "Intelligence initialization")
         defer { HeavyWorkSentinel.shared.endHeavyWork(reason: "Intelligence initialization") }
         
-        print("🧠 [INIT] Starting background intelligence initialization...")
+        AppLogger.debug("Starting background intelligence initialization...", category: .general)
         
         // Wait for CPU to settle before starting heavy work
         await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
         
         // Step 1: Load exercise data (light)
         ExerciseIntelligenceEngine.shared.loadExerciseData()
-        print("🧠 [INIT] Intelligence engine data loading started")
+        AppLogger.debug("Intelligence engine data loading started", category: .general)
         
         // Yield and wait before next heavy operation
         await Task.yield()
@@ -336,7 +336,7 @@ struct Fit33App: App {
         // Step 2: Build exercise maps (CPU intensive - staggered)
         if !CPUProtection.shared.isCPUCritical() {
             await ExerciseMappingService.shared.buildMaps()
-            print("🧠 [INIT] Exercise mapping service initialized")
+            AppLogger.debug("Exercise mapping service initialized", category: .general)
         }
         
         await Task.yield()
@@ -345,7 +345,7 @@ struct Fit33App: App {
         // Step 3: Initialize pairing engine (moderate)
         if !CPUProtection.shared.isCPUCritical() {
             SmartExercisePairingEngine.shared.initialize()
-            print("🧠 [INIT] Smart exercise pairing engine initialized")
+            AppLogger.debug("Smart exercise pairing engine initialized", category: .general)
         }
         
         await Task.yield()
@@ -354,7 +354,7 @@ struct Fit33App: App {
         // Step 4: Popularity data (network + light processing)
         if !CPUProtection.shared.isCPUTooHigh() {
             await ExercisePopularityService.shared.refreshFromServer()
-            print("📊 [INIT] Exercise popularity data loaded")
+            AppLogger.debug("Exercise popularity data loaded", category: .general)
         }
         
         await Task.yield()
@@ -363,7 +363,7 @@ struct Fit33App: App {
         // Step 5: Collaborative learning (network + moderate processing)
         if !CPUProtection.shared.isCPUTooHigh() {
             await CollaborativeLearningEngine.shared.syncGlobalData()
-            print("🌐 [INIT] Collaborative learning engine synced")
+            AppLogger.debug("Collaborative learning engine synced", category: .general)
         }
         
         await Task.yield()
@@ -376,12 +376,12 @@ struct Fit33App: App {
         if !CPUProtection.shared.isCPUCritical() {
             let context = PersistenceController.shared.container.viewContext
             await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
-            print("🧠 [INIT] User behavior learning engine initialized")
+            AppLogger.debug("User behavior learning engine initialized", category: .general)
         } else {
-            print("⚠️ [INIT] Skipping behavior analysis - CPU too high")
+            AppLogger.warning("Skipping behavior analysis - CPU too high", category: .general)
         }
         
-        print("🧠 [INIT] Exercise intelligence systems fully initialized")
+        AppLogger.info("Exercise intelligence systems fully initialized", category: .general)
     }
     
     @State private var showCoreDataFatalError = false
@@ -434,13 +434,13 @@ struct Fit33App: App {
                     if PersistenceController.storeWasReset {
                         PersistenceController.storeWasReset = false
                         persistenceController.cleanupStoreBackup()
-                        print("✅ [CORE DATA] Store reset auto-recovered via cloud sync — user unaffected")
+                        AppLogger.info("Store reset auto-recovered via cloud sync — user unaffected", category: .general)
                     }
 
                     // Load user limitations for safety filtering
                     if supabaseManager.isAuthenticated {
                         await LimitationsService.shared.fetchUserLimitations()
-                        print("🛡️ [SAFETY] User limitations loaded")
+                        AppLogger.debug("User limitations loaded", category: .general)
                         
                         // Update session log with user info
                         SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
@@ -497,24 +497,20 @@ struct Fit33App: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OAuthCallback"))) { notification in
                     // Handle OAuth callback (Google, Facebook Sign-In)
-                    print("🔐🔐🔐 [AUTH] OAuthCallback notification received!")
+                    AppLogger.debug("OAuthCallback notification received!", category: .auth)
                     if let url = notification.object as? URL {
-                        print("🔐 [AUTH] Processing OAuth callback from notification")
-                        print("🔐 [AUTH] Callback URL: \(url.absoluteString)")
-                        print("🔐 [AUTH] Fragment: \(url.fragment ?? "none")")
+                        AppLogger.debug("Processing OAuth callback — URL: \(url.absoluteString), fragment: \(url.fragment ?? "none")", category: .auth)
                         Task {
                             do {
                                 let (isNewUser, socialUsername) = try await supabaseManager.handleOAuthCallback(url: url)
-                                print("✅ OAuth callback handled successfully (new user: \(isNewUser))")
-                                print("✅ Current user email: \(supabaseManager.currentUser?.email ?? "nil")")
-                                print("✅ User metadata: \(supabaseManager.currentUser?.userMetadata ?? [:])")
+                                AppLogger.info("OAuth callback handled successfully (new user: \(isNewUser), email: \(supabaseManager.currentUser?.email ?? "nil"))", category: .auth)
                                 
                                 // Force UI update and store data on main thread
                                 await MainActor.run {
                                     // Store social username for onboarding pre-fill (Facebook/Instagram)
                                     if let username = socialUsername, isNewUser {
                                         UserDefaults.standard.set(username, forKey: "pending_social_username")
-                                        print("📘 Stored social username for onboarding: @\(username)")
+                                        AppLogger.debug("Stored social username for onboarding: @\(username)", category: .auth)
                                     }
                                     
                                     // Store OAuth-provided name for onboarding BEFORE posting notification
@@ -522,17 +518,17 @@ struct Fit33App: App {
                                         if let fullName = supabaseManager.currentUser?.userMetadata["full_name"] as? String, !fullName.isEmpty {
                                             UserDefaults.standard.set(fullName, forKey: "pending_oauth_name")
                                             UserDefaults.standard.synchronize() // Force immediate write
-                                            print("🔐 Stored OAuth name (full_name) for onboarding: \(fullName)")
+                                            AppLogger.debug("Stored OAuth name (full_name) for onboarding: \(fullName)", category: .auth)
                                         } else if let name = supabaseManager.currentUser?.userMetadata["name"] as? String, !name.isEmpty {
                                             UserDefaults.standard.set(name, forKey: "pending_oauth_name")
                                             UserDefaults.standard.synchronize() // Force immediate write
-                                            print("🔐 Stored OAuth name (name) for onboarding: \(name)")
+                                            AppLogger.debug("Stored OAuth name (name) for onboarding: \(name)", category: .auth)
                                         }
                                         
                                         // Also store email for pre-fill
                                         if let email = supabaseManager.currentUser?.email, !email.isEmpty {
                                             UserDefaults.standard.set(email, forKey: "pending_oauth_email")
-                                            print("🔐 Stored OAuth email for onboarding: \(email)")
+                                            AppLogger.debug("Stored OAuth email for onboarding: \(email)", category: .auth)
                                         }
                                     }
                                     
@@ -541,8 +537,7 @@ struct Fit33App: App {
                                     // Post notification to trigger onboarding navigation for new users
                                     // AFTER storing the name data
                                     if isNewUser {
-                                        print("👤 [OAUTH] New user - posting notification to start onboarding")
-                                        print("👤 [OAUTH] Verifying stored name: \(UserDefaults.standard.string(forKey: "pending_oauth_name") ?? "nil")")
+                                        AppLogger.debug("New user - posting notification to start onboarding (stored name: \(UserDefaults.standard.string(forKey: "pending_oauth_name") ?? "nil"))", category: .auth)
                                         NotificationCenter.default.post(
                                             name: Notification.Name("OAuthNewUserNeedsOnboarding"),
                                             object: nil
@@ -550,17 +545,14 @@ struct Fit33App: App {
                                     }
                                 }
                             } catch {
-                                print("❌ OAuth callback error: \(error)")
+                                AppLogger.error("OAuth callback error: \(error.localizedDescription)", category: .auth)
                             }
                         }
                     }
                 }
                 .onOpenURL { url in
                     // Handle deep link URLs
-                    print("🔗🔗🔗 [ONOPENURL] App opened with URL: \(url.absoluteString)")
-                    print("🔗 [ONOPENURL] URL scheme: \(url.scheme ?? "none")")
-                    print("🔗 [ONOPENURL] URL host: \(url.host ?? "none")")
-                    print("🔗 [ONOPENURL] URL fragment: \(url.fragment ?? "none")")
+                    AppLogger.debug("App opened with URL: \(url.absoluteString) (scheme: \(url.scheme ?? "none"), host: \(url.host ?? "none"), fragment: \(url.fragment ?? "none"))", category: .general)
                     
                     let scheme = url.scheme?.lowercased() ?? ""
                     
@@ -568,14 +560,14 @@ struct Fit33App: App {
                     if scheme == "fit33" {
                         // Direct OAuth callback handling (highest priority)
                         if url.host?.lowercased() == "login-callback" {
-                            print("🔐 [ONOPENURL] OAuth callback detected - posting notification directly")
+                            AppLogger.debug("OAuth callback detected - posting notification directly", category: .auth)
                             NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: url)
                             return
                         }
                         
                         // Use the DeepLinkManager to route
                         if DeepLinkManager.shared.handleURL(url) {
-                            print("✅ [ONOPENURL] Deep link handled by DeepLinkManager")
+                            AppLogger.info("Deep link handled by DeepLinkManager", category: .general)
                             return
                         }
                     }
@@ -585,7 +577,7 @@ struct Fit33App: App {
                         // Handle different deep link paths
                         if url.host == "running" {
                             // Deep link from Live Activity - navigate to running view
-                            print("🏃 Deep link to running workout")
+                            AppLogger.debug("Deep link to running workout", category: .general)
                             DeepLinkManager.shared.pendingDestination = .running
                             return
                         }
@@ -594,12 +586,12 @@ struct Fit33App: App {
                         Task {
                             do {
                                 let (isNewUser, socialUsername) = try await supabaseManager.handleOAuthCallback(url: url)
-                                print("✅ OAuth callback handled successfully (new user: \(isNewUser))")
+                                AppLogger.info("OAuth callback handled successfully (new user: \(isNewUser))", category: .auth)
                                 
                                 // Store social username for onboarding pre-fill (Facebook/Instagram)
                                 if let username = socialUsername, isNewUser {
                                     UserDefaults.standard.set(username, forKey: "pending_social_username")
-                                    print("📘 Stored social username for onboarding: @\(username)")
+                                    AppLogger.debug("Stored social username for onboarding: @\(username)", category: .auth)
                                 }
                                 
                                 // Force UI update after successful OAuth
@@ -607,7 +599,7 @@ struct Fit33App: App {
                                     UserManager.shared.reloadCurrentUser()
                                 }
                             } catch {
-                                print("❌ OAuth callback error: \(error)")
+                                AppLogger.error("OAuth callback error: \(error.localizedDescription)", category: .auth)
                             }
                         }
                         return
@@ -616,12 +608,12 @@ struct Fit33App: App {
                     // Handle universal links (https://fit33.app/...)
                     if scheme == "https" {
                         if DeepLinkManager.shared.handleURL(url) {
-                            print("✅ Universal link handled")
+                            AppLogger.info("Universal link handled", category: .general)
                             return
                         }
                     }
                     
-                    print("⚠️ Unhandled URL: \(url.absoluteString)")
+                    AppLogger.warning("Unhandled URL: \(url.absoluteString)", category: .general)
                 }
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     switch newPhase {
@@ -729,6 +721,12 @@ struct Fit33App: App {
     
     // Check if user should receive a comeback reminder
     private func checkForComebackReminder() async {
+        // Skip if user worked out today (check UserDefaults which is updated on workout completion)
+        if let lastWorkout = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
+           Calendar.current.isDateInToday(lastWorkout) {
+            return
+        }
+        
         let context = persistenceController.container.viewContext
         let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
         fetchRequest.fetchLimit = 1
@@ -738,8 +736,8 @@ struct Fit33App: App {
             if let user = users.first, let lastWorkout = user.lastWorkoutDate {
                 let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
                 
-                // Send comeback reminder if it's been 2+ days
-                if daysSinceLastWorkout >= 2 {
+                // Only send if it's been 3+ days (not 2 — avoid false positives for rest days)
+                if daysSinceLastWorkout >= 3 {
                     // Only send once per day max
                     let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
                     if let lastReminder = lastComebackReminder {
@@ -752,7 +750,7 @@ struct Fit33App: App {
                 }
             }
         } catch {
-            print("❌ Error checking for comeback reminder: \(error)")
+            AppLogger.error("Error checking for comeback reminder: \(error.localizedDescription)", category: .general)
         }
     }
 }

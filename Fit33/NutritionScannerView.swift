@@ -90,7 +90,7 @@ struct NutritionScannerView: View {
                     .font(.body)
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.xl)
             }
             
             VStack(spacing: 12) {

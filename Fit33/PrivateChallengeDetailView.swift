@@ -98,7 +98,7 @@ struct PrivateChallengeDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                 }
             }
         }
@@ -183,41 +183,41 @@ struct PrivateChallengeDetailView: View {
                 // Private badge
                 HStack(spacing: 4) {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("Private")
                         .font(.caption2)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.purple)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Capsule().fill(Color.purple.opacity(0.15)))
                 
                 // Member count
                 HStack(spacing: 4) {
                     Image(systemName: "person.2.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text(challenge.formattedMemberCount)
                         .font(.caption2)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.blue)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Capsule().fill(Color.blue.opacity(0.15)))
                 
                 // Admin badge
                 if challenge.isAdmin {
                     HStack(spacing: 4) {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                         Text("Admin")
                             .font(.caption2)
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.yellow)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(Capsule().fill(Color.yellow.opacity(0.15)))
                 }
             }
@@ -334,10 +334,10 @@ struct PrivateChallengeDetailView: View {
     private func statItem(value: String, label: String, icon: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(color)
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(.white)
             Text(label)
                 .font(.caption2)
@@ -374,7 +374,7 @@ struct PrivateChallengeDetailView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     // MARK: - Leaderboard Section
@@ -415,7 +415,7 @@ struct PrivateChallengeDetailView: View {
     private func miniStat(value: String, label: String) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(.white)
             Text(label)
                 .font(.caption2)
@@ -435,7 +435,7 @@ struct PrivateChallengeDetailView: View {
         return HStack(spacing: 12) {
             // Rank
             Text("\(member.rank ?? 0)")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(rankColor(member.rank ?? 0))
                 .frame(width: 24)
             
@@ -467,7 +467,7 @@ struct PrivateChallengeDetailView: View {
                         Text("YOU")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundColor(.purple)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Spacing.xxs)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(Color.purple.opacity(0.2)))
                     }
@@ -495,12 +495,12 @@ struct PrivateChallengeDetailView: View {
             // Today's progress (live for current user, DB for others)
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(displayProgress)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.white)
                 
                 if (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false)) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.green)
                 }
             }
@@ -624,7 +624,7 @@ struct PrivateChallengeDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white.opacity(0.5))
                         .frame(width: 32, height: 32)
                 }
@@ -701,7 +701,7 @@ struct PrivateChallengeDetailView: View {
                             .frame(width: 36, height: 36)
                     } else {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white)
                             .frame(width: 36, height: 36)
                             .background(
@@ -785,7 +785,7 @@ struct PrivateChallengeDetailView: View {
             Button(action: { showInviteSheet = true }) {
                 HStack(spacing: 8) {
                     Image(systemName: "person.badge.plus")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                     Text("Invite Friends")
                         .font(.headline)
                         .fontWeight(.semibold)
@@ -808,7 +808,7 @@ struct PrivateChallengeDetailView: View {
             Button(action: { showShareSheet = true }) {
                 HStack(spacing: 8) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                     Text("Share Code: \(challenge.joinCode)")
                         .font(.subheadline)
                         .fontWeight(.semibold)

@@ -1431,7 +1431,7 @@ struct PreferenceToggleRow: View {
                         .frame(width: 36, height: 36)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(isEnabled ? .white : .secondary)
                 }
                 

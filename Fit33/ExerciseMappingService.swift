@@ -73,8 +73,7 @@ final class ExerciseMappingService {
     
     /// Build all maps from exercise database (call once on app launch)
     /// ⚡️ OPTIMIZED: Now uses deduplication, chunking, and yielding
-    func buildMaps() async {
-        // 🛡️ Prevent duplicate builds
+    func buildMaps(prefetchedExercises: [ExerciseDTO]? = nil) async {
         guard !isInitialized && !isBuildingMaps else {
             #if DEBUG
             if isInitialized {
@@ -95,8 +94,12 @@ final class ExerciseMappingService {
         #endif
         
         do {
-            // ⚡️ Use cached/deduplicated fetch
-            let exercises = try await SupabaseManager.shared.fetchAllExercises()
+            let exercises: [ExerciseDTO]
+            if let prefetchedExercises = prefetchedExercises {
+                exercises = prefetchedExercises
+            } else {
+                exercises = try await SupabaseManager.shared.fetchAllExercises()
+            }
             
             #if DEBUG
             print("🗺️ [MAPPING] Using \(exercises.count) exercises for map building...")

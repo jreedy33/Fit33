@@ -74,7 +74,7 @@ struct AdminPasswordView: View {
                             .foregroundColor(.red)
                     }
                 }
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Spacing.xl)
                 
                 // Submit button
                 Button(action: validatePassword) {
@@ -92,7 +92,7 @@ struct AdminPasswordView: View {
                         )
                         .cornerRadius(CornerRadius.md)
                 }
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Spacing.xl)
                 .disabled(password.isEmpty)
                 .opacity(password.isEmpty ? 0.6 : 1)
                 
@@ -1043,7 +1043,7 @@ struct BugReportCard: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(statusColor)
                         .cornerRadius(6)
                     
@@ -2095,7 +2095,7 @@ struct QualityAuditTabContent: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Color.gray.opacity(0.2))
                 .cornerRadius(6)
         }

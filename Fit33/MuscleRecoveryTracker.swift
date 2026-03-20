@@ -60,9 +60,13 @@ class ProgramMuscleRecoveryTracker {
     
     // All tracked muscle groups
     static let allMuscleGroups: [String] = [
-        "Chest", "Back", "Shoulders", "Biceps", "Triceps",
-        "Quadriceps", "Hamstrings", "Glutes", "Calves",
-        "Core", "Forearms", "Traps", "Lats"
+        "Chest", "Upper Chest", "Lower Chest",
+        "Back", "Lats", "Upper Back", "Lower Back",
+        "Shoulders", "Front Delts", "Side Delts", "Rear Delts", "Rotator Cuff",
+        "Biceps", "Triceps", "Forearms",
+        "Quads", "Hamstrings", "Glutes", "Calves",
+        "Core", "Abs", "Obliques", "Hip Flexors",
+        "Traps", "Inner Thighs", "Neck"
     ]
     
     // MARK: - Recovery Status
@@ -229,7 +233,7 @@ class ProgramMuscleRecoveryTracker {
         
         // Legs
         if name.contains("squat") || name.contains("leg") || name.contains("quad") {
-            muscles.append("Quadriceps")
+            muscles.append("Quads")
         }
         if name.contains("hamstring") || name.contains("curl") && name.contains("leg") || name.contains("deadlift") {
             muscles.append("Hamstrings")
@@ -351,11 +355,15 @@ class ProgramMuscleRecoveryTracker {
             "Chest": ["Triceps", "Shoulders"],
             "Back": ["Biceps", "Rear Delts"],
             "Shoulders": ["Triceps", "Traps"],
-            "Quadriceps": ["Hamstrings", "Glutes", "Calves"],
+            "Quads": ["Hamstrings", "Glutes", "Calves"],
             "Hamstrings": ["Glutes", "Lower Back"],
             "Glutes": ["Hamstrings", "Core"],
             "Biceps": ["Forearms"],
-            "Triceps": ["Chest", "Shoulders"]
+            "Triceps": ["Chest", "Shoulders"],
+            "Front Delts": ["Chest", "Triceps"],
+            "Rear Delts": ["Back", "Upper Back"],
+            "Lats": ["Biceps", "Rear Delts"],
+            "Core": ["Glutes", "Lower Back"]
         ]
         
         return complementMap[primaryMuscle] ?? []
@@ -368,8 +376,10 @@ class ProgramMuscleRecoveryTracker {
             "Back": ["Chest"],
             "Biceps": ["Triceps"],
             "Triceps": ["Biceps"],
-            "Quadriceps": ["Hamstrings"],
-            "Hamstrings": ["Quadriceps"]
+            "Quads": ["Hamstrings"],
+            "Hamstrings": ["Quads"],
+            "Front Delts": ["Rear Delts"],
+            "Rear Delts": ["Front Delts"]
         ]
         
         return antagonistMap[muscle] ?? []

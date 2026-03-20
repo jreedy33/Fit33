@@ -24,15 +24,46 @@ import Supabase
 final class LearningCacheStorage: @unchecked Sendable {
     static let shared = LearningCacheStorage()
     
-    var userPreferences: UserBehaviorProfile?
-    var exerciseAffinityCache: [String: Double] = [:]
-    var equipmentAffinityCache: [String: Double] = [:]
-    var muscleGroupAffinityCache: [String: Double] = [:]
-    var categoryAffinityCache: [String: Double] = [:]
-    var movementPatternCache: [String: Double] = [:]
-    var exerciseVariationCache: [String: Set<String>] = [:]
+    private let lock = NSLock()
+    
+    private var _userPreferences: UserBehaviorProfile?
+    private var _exerciseAffinityCache: [String: Double] = [:]
+    private var _equipmentAffinityCache: [String: Double] = [:]
+    private var _muscleGroupAffinityCache: [String: Double] = [:]
+    private var _categoryAffinityCache: [String: Double] = [:]
+    private var _movementPatternCache: [String: Double] = [:]
+    private var _exerciseVariationCache: [String: Set<String>] = [:]
     
     private init() {}
+    
+    var userPreferences: UserBehaviorProfile? {
+        get { lock.withLock { _userPreferences } }
+        set { lock.withLock { _userPreferences = newValue } }
+    }
+    var exerciseAffinityCache: [String: Double] {
+        get { lock.withLock { _exerciseAffinityCache } }
+        set { lock.withLock { _exerciseAffinityCache = newValue } }
+    }
+    var equipmentAffinityCache: [String: Double] {
+        get { lock.withLock { _equipmentAffinityCache } }
+        set { lock.withLock { _equipmentAffinityCache = newValue } }
+    }
+    var muscleGroupAffinityCache: [String: Double] {
+        get { lock.withLock { _muscleGroupAffinityCache } }
+        set { lock.withLock { _muscleGroupAffinityCache = newValue } }
+    }
+    var categoryAffinityCache: [String: Double] {
+        get { lock.withLock { _categoryAffinityCache } }
+        set { lock.withLock { _categoryAffinityCache = newValue } }
+    }
+    var movementPatternCache: [String: Double] {
+        get { lock.withLock { _movementPatternCache } }
+        set { lock.withLock { _movementPatternCache = newValue } }
+    }
+    var exerciseVariationCache: [String: Set<String>] {
+        get { lock.withLock { _exerciseVariationCache } }
+        set { lock.withLock { _exerciseVariationCache = newValue } }
+    }
 }
 
 // MARK: - User Behavior Learning Engine
@@ -715,7 +746,16 @@ class UserBehaviorLearningEngine: ObservableObject {
     // MARK: - 🆕 Smart Swap & Selection Tracking (nonisolated)
     
     /// Get penalty for exercises that are frequently swapped (0 = no penalty, up to 60 for heavily swapped)
+    /// Accessible from any isolation context via LearningCacheStorage (thread-safe)
+    nonisolated static func swapPenalty(for exerciseName: String) -> Double {
+        return _computeSwapPenalty(for: exerciseName.lowercased())
+    }
+    
     nonisolated private func getSwapPenalty(for exerciseName: String) -> Double {
+        return Self._computeSwapPenalty(for: exerciseName)
+    }
+    
+    nonisolated private static func _computeSwapPenalty(for exerciseName: String) -> Double {
         guard let swapData = LearningCacheStorage.shared.userPreferences?.swapHistory[exerciseName] else { return 0 }
         
         // No penalty for 1-2 swaps (maybe equipment was busy)
@@ -892,23 +932,7 @@ class UserBehaviorLearningEngine: ObservableObject {
     /// Normalize equipment for learning engine (sync version for nonisolated context)
     /// Handles new database format (Cable Machine, Lever Machine, etc.)
     nonisolated private func normalizeEquipmentSync(_ equipment: String) -> String {
-        let lowered = equipment.lowercased()
-        
-        // Handle combined equipment - take first part
-        let firstPart = lowered.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? lowered
-        
-        if firstPart.contains("dumbbell") { return "dumbbells" }
-        if firstPart.contains("barbell") || firstPart.contains("ez bar") || firstPart.contains("trap bar") { return "barbell" }
-        if firstPart.contains("cable") { return "cables" }  // Catches "Cable Machine"
-        if firstPart.contains("lever") || (firstPart.contains("machine") && !firstPart.contains("smith") && !firstPart.contains("cable")) { return "machines" }
-        if firstPart.contains("kettlebell") { return "kettlebell" }
-        if firstPart.contains("band") || firstPart.contains("resistance") { return "resistance bands" }
-        if firstPart.contains("body") || firstPart == "none" || firstPart.isEmpty { return "bodyweight" }
-        if firstPart.contains("smith") { return "smith machine" }
-        if firstPart.contains("bench") { return "bench" }
-        if firstPart.contains("pull-up") || firstPart.contains("pullup") { return "bodyweight" }
-        
-        return lowered
+        ExerciseFilterService.normalizeEquipment(equipment)
     }
     
     /// Get exercises similar to user's favorites for substitution/alternatives
@@ -1217,24 +1241,7 @@ class UserBehaviorLearningEngine: ObservableObject {
     /// Normalize equipment for learning engine (async context version)
     /// Handles new database format (Cable Machine, Lever Machine, etc.)
     private func normalizeEquipment(_ equipment: String) -> String {
-        let lowered = equipment.lowercased()
-        
-        // Handle combined equipment - take first part
-        let firstPart = lowered.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? lowered
-        
-        // Group similar equipment - updated for new database format
-        if firstPart.contains("dumbbell") { return "dumbbells" }
-        if firstPart.contains("barbell") || firstPart.contains("ez bar") || firstPart.contains("trap bar") { return "barbell" }
-        if firstPart.contains("cable") { return "cables" }  // Catches "Cable Machine"
-        if firstPart.contains("lever") || (firstPart.contains("machine") && !firstPart.contains("smith") && !firstPart.contains("cable")) { return "machines" }
-        if firstPart.contains("kettlebell") { return "kettlebell" }
-        if firstPart.contains("band") || firstPart.contains("resistance") { return "resistance bands" }
-        if firstPart.contains("body") || firstPart == "none" || firstPart.isEmpty { return "bodyweight" }
-        if firstPart.contains("smith") { return "smith machine" }
-        if firstPart.contains("bench") { return "bench" }
-        if firstPart.contains("pull-up") || firstPart.contains("pullup") { return "bodyweight" }
-        
-        return lowered
+        ExerciseFilterService.normalizeEquipment(equipment)
     }
     
     private func categorizeTimeOfDay(hour: Int) -> String {

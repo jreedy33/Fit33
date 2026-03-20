@@ -109,7 +109,7 @@ struct NotificationSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color.cardBackground)
@@ -156,7 +156,7 @@ struct NotificationSettingsView: View {
             }) {
                 HStack {
                     Image(systemName: "bell.badge.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                     Text("Enable Notifications")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -205,7 +205,7 @@ struct NotificationSettingsView: View {
                             .frame(width: 40, height: 40)
                         
                         Image(systemName: notificationManager.masterNotificationsEnabled ? "bell.fill" : "bell.slash.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.ds_heading3)
                             .foregroundColor(.white)
                     }
                     
@@ -321,7 +321,7 @@ struct NotificationSettingsView: View {
                                 .frame(width: 40, height: 40)
                             
                             Image(systemName: category.icon)
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                                 .foregroundColor(category.color)
                         }
                         
@@ -369,7 +369,7 @@ struct NotificationSettingsView: View {
     private func notificationToggleRow(_ type: NotificationType) -> some View {
         HStack(spacing: 16) {
             Image(systemName: type.icon)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
                 .foregroundColor(type.color)
                 .frame(width: 28)
             
@@ -436,7 +436,7 @@ struct NotificationSettingsView: View {
                     // Start time
                     HStack(spacing: 16) {
                         Image(systemName: "bed.double.fill")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                             .foregroundColor(.indigo)
                             .frame(width: 28)
                         
@@ -461,7 +461,7 @@ struct NotificationSettingsView: View {
                     // End time
                     HStack(spacing: 16) {
                         Image(systemName: "sunrise.fill")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                             .foregroundColor(.yellow)
                             .frame(width: 28)
                         
@@ -542,7 +542,7 @@ struct NotificationSettingsView: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(color)
                     .frame(width: 24)
                 
@@ -576,7 +576,7 @@ struct NotificationSettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             content()
                 .background(
@@ -603,7 +603,7 @@ struct NotificationPreviewCard: View {
                         .frame(width: 36, height: 36)
                     
                     Image(systemName: type.icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(type.color)
                 }
                 

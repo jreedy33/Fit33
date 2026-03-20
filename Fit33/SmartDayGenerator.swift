@@ -449,7 +449,7 @@ class SmartDayGenerator {
                     }
                     
                     // Also block by pattern
-                    let upperPatterns: [MovementPattern] = [.horizontalPress, .verticalPress, .tricepExtension, .bicepCurl, .lateralRaise]
+                    let upperPatterns: [SelectionMovementPattern] = [.horizontalPress, .verticalPress, .tricepExtension, .bicepCurl, .lateralRaise]
                     if upperPatterns.contains(pattern) {
                         continue
                     }
@@ -644,20 +644,35 @@ class SmartDayGenerator {
         
         // Map muscle names to database muscle group names
         let muscleMapping: [String: [String]] = [
-            "chest": ["chest", "pectorals"],
-            "back": ["back", "lats", "latissimus dorsi", "upper back", "middle back"],
-            "lats": ["lats", "latissimus dorsi"],
-            "shoulders": ["shoulders", "deltoids", "delts", "anterior deltoid", "lateral deltoid"],
-            "biceps": ["biceps", "bicep"],
-            "triceps": ["triceps", "tricep"],
-            "quadriceps": ["quadriceps", "quads", "legs"],
-            "hamstrings": ["hamstrings", "hamstring"],
-            "glutes": ["glutes", "gluteus", "glute"],
-            "calves": ["calves", "calf"],
-            "core": ["core", "abs", "abdominals", "obliques"],
-            "forearms": ["forearms", "forearm"],
-            "traps": ["traps", "trapezius"],
-            "rear delts": ["rear delts", "posterior deltoid"]
+            "chest": ["chest", "upper chest", "lower chest"],
+            "upper chest": ["upper chest", "chest"],
+            "lower chest": ["lower chest", "chest"],
+            "back": ["back", "lats", "upper back", "lower back"],
+            "lats": ["lats", "back"],
+            "upper back": ["upper back", "back", "traps"],
+            "lower back": ["lower back", "back"],
+            "shoulders": ["shoulders", "front delts", "side delts", "rear delts"],
+            "front delts": ["front delts", "shoulders"],
+            "side delts": ["side delts", "shoulders"],
+            "rear delts": ["rear delts", "shoulders"],
+            "biceps": ["biceps"],
+            "triceps": ["triceps"],
+            "quadriceps": ["quads", "quadriceps"],
+            "quads": ["quads", "quadriceps"],
+            "hamstrings": ["hamstrings"],
+            "glutes": ["glutes"],
+            "calves": ["calves"],
+            "core": ["core", "abs", "obliques", "lower abs"],
+            "abs": ["abs", "core", "lower abs"],
+            "obliques": ["obliques", "core"],
+            "forearms": ["forearms"],
+            "traps": ["traps", "upper back"],
+            "rotator cuff": ["rotator cuff", "shoulders"],
+            "hip flexors": ["hip flexors", "hips"],
+            "hips": ["hips", "hip flexors", "inner thighs"],
+            "inner thighs": ["inner thighs", "hips"],
+            "neck": ["neck"],
+            "full body": ["full body"]
         ]
         
         let searchTerms = muscleMapping[normalizedMuscle] ?? [normalizedMuscle]

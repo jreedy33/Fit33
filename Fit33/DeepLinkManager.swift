@@ -23,6 +23,7 @@ class DeepLinkManager: ObservableObject {
         
         // Challenges
         case challenges         // List of active challenges
+        case challengeCreation  // Open challenge creation flow (same as "Challenge a Friend" widget)
         case challengeInvite(challengeId: String)
         case challengeDetail(challengeId: String)
         

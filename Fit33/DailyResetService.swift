@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import CoreData
 import UserNotifications
+import HealthKit
 
 /// DailyResetService handles all midnight reset and daily archival operations
 /// - Archives daily metrics to database (nutrition, hydration, weight)
@@ -465,8 +466,28 @@ extension HealthKitService {
     }
     
     private func fetchStepCountForDate(_ date: Date) async -> Int? {
-        // This is a placeholder - the actual implementation
-        // would use the existing HealthKit infrastructure
-        return nil
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+        
+        let healthStore = HKHealthStore()
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: endOfDay, options: .strictStartDate)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: stepType,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum
+            ) { _, result, _ in
+                guard let sum = result?.sumQuantity() else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: Int(sum.doubleValue(for: .count())))
+            }
+            healthStore.execute(query)
+        }
     }
 }

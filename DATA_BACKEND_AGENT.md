@@ -295,6 +295,39 @@ Every migration must have a documented rollback:
 
 ---
 
+## Logic Audit Learnings
+
+### Ownership from Logic Audit (March 2026)
+- BUG-02: Strava double-counting fix — use `max(stored, incoming)` not `stored + incoming` (FIXED)
+- BUG-10: Exercise performance column alignment — `max_weight`/`max_reps` is canonical (FIXED)
+- SEC-02: Server-side contact matching RPC — `match_contacts_by_phone()` (FIXED)
+- SEC-04: Multi-device push tokens — composite key on `(user_id, device_token)` (FIXED)
+
+### Key Rules Established
+- Strava sync pattern: ALWAYS use `max(stored, incoming)`, never add incoming to stored
+- Exercise performance table uses `max_weight`/`max_reps` column names (not `best_set_*`)
+- Age range bucketing: use "25-34" offset style (not decade "20-29")
+- `WeightTrackingService` is the single source of truth for user weight
+- Phone number matching MUST happen server-side via RPC, never download all profiles
+
+### Active Workout Data Flow (March 2026)
+- `WorkoutManager.initializeSetsForExercise()` must PRE-FILL `WorkoutSetData.weight` and `.reps` from cached history — not just set count
+- Previous workout data caching follows a two-phase pattern: warmup cache (synchronous, <1ms) → deferred async cloud fetch for cache misses
+- Data sources checked in order: (1) pre-warmed `previousExerciseSets` cache, (2) `ExerciseHistoryService` local cache, (3) Supabase cloud fetch
+- `syncSetsWithPreviousData()` must preserve user-entered data — only overwrite sets where `isCompleted == false` AND weight/reps are zero
+
+### Future: Offline Swap Graph Schema
+- `ExerciseSwapService` currently queries Core Data on every shuffle tap
+- Design needed: pre-computed swap graph loaded at workout start, keyed by exercise ID, containing ranked swap candidates with equipment variants and complementary exercises
+- Consider Core Data relationship or in-memory dictionary built from `exercises.json` swap metadata
+
+### Additional Domains Owned
+- Exercise data quality (exercises.json and Supabase exercise data)
+- PII redaction: implement edge function changes under Infra & Security guidance
+- Edge function logic (Infra & Security owns deployment/secrets/access control)
+
+---
+
 ## Quick Reference: Files You Own
 
 | File | Purpose |
@@ -306,7 +339,7 @@ Every migration must have a documented rollback:
 | `ChallengeService.swift` | Challenge data operations |
 | `FriendService.swift` | Friendship data operations |
 | `MealService.swift` | Meal/nutrition data |
-| `WorkoutManager.swift` (persistence) | Workout data storage |
+| `WorkoutManager.swift` (persistence + set init) | Workout data storage, set pre-fill from history |
 | `RealtimeService.swift` | Supabase realtime subscriptions |
 | `FoodDatabaseService.swift` | Food search API |
 | `supabase/` | Edge functions and migrations |
@@ -333,3 +366,30 @@ Every migration must have a documented rollback:
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 7 (contact sync), 8 (unit conversion)
+
+---
+
+## Video Mapping Pipeline (March 2026)
+
+### Authoritative Signal for Video Readiness
+- `VideoStreamingService.shared.$videosLoaded` (`@Published private(set) var videosLoaded = false`) is the authoritative signal that video filename mappings are loaded
+- `VideoPlaybackEngine` observes this via Combine to set its own `mappingsLoaded` flag — replaces a previous `Thread.sleep(3.0)` approach
+- Do NOT introduce alternative readiness signals — always observe `videosLoaded`
+
+### Video Mapping Data Flow
+```
+App Launch
+  → VideoStreamingService.loadVideoMappingsFromDatabase()
+    → fetchVideoFilenamesFromServer() (async)
+      → Supabase: paginated SELECT on exercises table (batches of 1000, ~6500 rows)
+      → Cached for 12 hours (UserDefaults timestamp check)
+      → Populates: videoFilenameCache, genderVideoCache, videoURLCache
+      → Sets videosLoaded = true
+  → VideoPlaybackEngine observes $videosLoaded
+    → Sets mappingsLoaded = true
+    → Pre-warms favorite exercise videos
+```
+
+### Future Consideration
+- A `poster_frame_url` column on the `exercises` table could serve CDN-hosted poster thumbnails, eliminating client-side frame extraction for first-view experience
+- This would be the highest-impact long-term improvement for instant visual feedback on exercises never viewed before

@@ -226,6 +226,26 @@ AppLogger.debug("Loaded \(count) exercises", category: .data)
 
 ---
 
+## Logic Audit Learnings
+
+### Ownership from Logic Audit (March 2026)
+- SEC-01: OAuth tokens migrated to Keychain via `KeychainHelper.swift` (FIXED)
+- SEC-03: Phone verification rate limiting persisted to UserDefaults (FIXED)
+- BUG-08: DailyResetService step count implemented via HealthKit (FIXED)
+- BUG-11: StoreKit willAutoRenew reads actual renewal info (FIXED)
+
+### Key Rules Established
+- ALL OAuth tokens MUST use Keychain (never UserDefaults) — enforced via `KeychainHelper`
+- Phone verification rate limiting must survive app restarts (persisted counter + lockout)
+- StoreKit renewal status must read from `Product.SubscriptionInfo.RenewalInfo`
+- PII redaction is Infra's policy domain; Data Agent implements edge function changes
+- Edge function split: Infra owns deployment/secrets/access, Data owns business logic
+
+### Files Added
+- `Fit33/KeychainHelper.swift` — shared Keychain utility for token storage
+
+---
+
 ## Quick Reference: Files You Own
 
 | File | Purpose |
@@ -264,3 +284,25 @@ AppLogger.debug("Loaded \(count) exercises", category: .data)
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 6 (phone verification), 14 (auth flow)
+
+---
+
+## CDN & Video Infrastructure (March 2026)
+
+### R2 CDN Configuration
+- Base URL: `https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev`
+- Serves all exercise preview videos (~6500 exercises, MP4 format)
+- CDN pre-warming: HEAD request on app launch establishes DNS + TLS handshake
+- Now uses `URLSession.shared` (not ephemeral) so the warmed connection pool is reused by AVFoundation
+- Retry logic: up to 3 attempts with exponential backoff (1s, 2s) if initial pre-warm fails
+
+### Cache-Control Recommendation
+Video files on R2 are static assets that never change. Recommended headers:
+```
+Cache-Control: public, max-age=31536000, immutable
+```
+This enables aggressive browser/CDN caching and eliminates conditional request overhead.
+
+### Future Consideration
+- If Cloudflare Image Resizing is available on the current plan, poster frame thumbnails could be served as `{video_url}?width=480&format=jpeg` — eliminating client-side frame extraction entirely
+- This would pair with a `poster_frame_url` column on the exercises table (Data Agent domain)

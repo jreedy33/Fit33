@@ -146,11 +146,11 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: userManager.showLevelUpCelebration)
         .onChange(of: userManager.hasCompletedOnboarding) { oldValue, newValue in
-            print("🎓 [TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))")
+            AppLogger.debug("[TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))", category: .ui)
             
             // Detect actual onboarding completion (user went from not-onboarded to onboarded)
             if newValue && !oldValue {
-                print("🎓 [TUTORIAL] Onboarding completed! lastKnown: \(String(describing: lastKnownOnboardingState)), shownThisSession: \(hasShownTutorialThisSession)")
+                AppLogger.debug("[TUTORIAL] Onboarding completed! lastKnown: \(String(describing: lastKnownOnboardingState)), shownThisSession: \(hasShownTutorialThisSession)", category: .ui)
                 
                 // Show tutorial if:
                 // 1. Haven't shown it already this session, AND
@@ -158,9 +158,10 @@ struct ContentView: View {
                 //    - lastKnownOnboardingState being nil means app just launched with existing user (skip)
                 //    - lastKnownOnboardingState being false means user actually went through onboarding flow
                 if !hasShownTutorialThisSession && lastKnownOnboardingState == false {
-                    print("🎓 [TUTORIAL] ✅ Showing welcome tutorial!")
+                    AppLogger.info("[TUTORIAL] Showing welcome tutorial!", category: .ui)
                     hasShownTutorialThisSession = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
                         showWelcomeTutorial = true
                     }
                 }
@@ -177,7 +178,7 @@ struct ContentView: View {
                 // Record the initial state AFTER UserManager has loaded
                 // If user is already onboarded, we won't show tutorial (returning user)
                 // If user is not onboarded, we'll show tutorial when they complete it
-                print("🎓 [TUTORIAL] Initial state captured: hasCompletedOnboarding = \(userManager.hasCompletedOnboarding)")
+                AppLogger.debug("[TUTORIAL] Initial state captured: hasCompletedOnboarding = \(userManager.hasCompletedOnboarding)", category: .ui)
                 lastKnownOnboardingState = userManager.hasCompletedOnboarding
             }
             
@@ -188,10 +189,10 @@ struct ContentView: View {
             let needsRefresh = UserDefaults.standard.string(forKey: "exerciseDataVersion") != currentExerciseVersion
             
             if needsRefresh && SupabaseManager.shared.isAuthenticated {
-                print("🔄 Detected new exercise data version - forcing fresh sync...")
+                AppLogger.debug("Detected new exercise data version - forcing fresh sync...", category: .ui)
                 await ExerciseLibraryService.shared.forceSyncExercises()
                 UserDefaults.standard.set(currentExerciseVersion, forKey: "exerciseDataVersion")
-                print("✅ Exercise data updated to \(currentExerciseVersion)")
+                AppLogger.info("Exercise data updated to \(currentExerciseVersion)", category: .ui)
             }
         }
     }
@@ -217,6 +218,7 @@ class GoButtonState: ObservableObject {
     private var showVersion: Int = 0 // Track show/hide cycles to prevent race conditions
     var primaryColor: Color = Color(red: 0.2, green: 0.7, blue: 0.3)
     var secondaryColor: Color = Color(red: 0.15, green: 0.55, blue: 0.85)
+    var accessibilityText: String = "Start workout"
     
     // Tracking
     private var showTime: Date?
@@ -226,9 +228,10 @@ class GoButtonState: ObservableObject {
     
     func show(primaryColor: Color = Color(red: 0.2, green: 0.7, blue: 0.3),
               secondaryColor: Color? = nil,
+              accessibilityText: String = "Start workout",
               source: String = "unknown",
               action: @escaping () -> Void) {
-        print("🟢 [GoButton] show() called")
+        AppLogger.debug("[GoButton] show() called", category: .ui)
         showTime = Date()
         showSource = source
         
@@ -243,17 +246,18 @@ class GoButtonState: ObservableObject {
         self.isTriggering = false
         self.primaryColor = primaryColor
         self.secondaryColor = secondaryColor ?? primaryColor.opacity(0.7)
+        self.accessibilityText = accessibilityText
         self.startAction = action
         self.showVersion += 1 // Increment version to invalidate pending hide() calls
         
         DispatchQueue.main.async {
             self.isVisible = true
-            print("🟢 [GoButton] isVisible = true")
+            AppLogger.debug("[GoButton] isVisible = true", category: .ui)
         }
     }
     
     func hide(reason: String = "navigation") {
-        print("🔴 [GoButton] hide() called")
+        AppLogger.debug("[GoButton] hide() called", category: .ui)
         
         // Calculate visible duration
         var visibleMs: Int = 0
@@ -281,16 +285,16 @@ class GoButtonState: ObservableObject {
             // This prevents race condition where show() sets action, then pending hide() clears it
             if self.showVersion == hideVersion {
                 self.startAction = nil
-                print("🔴 [GoButton] Hidden and cleared")
+                AppLogger.debug("[GoButton] Hidden and cleared", category: .ui)
             } else {
-                print("🔴 [GoButton] Hidden but action preserved (new show() pending)")
+                AppLogger.debug("[GoButton] Hidden but action preserved (new show() pending)", category: .ui)
             }
         }
     }
     
     func triggerStart() {
         let startTime = CFAbsoluteTimeGetCurrent()
-        print("⏱️ [GoButton] triggerStart() BEGIN")
+        AppLogger.debug("[GoButton] triggerStart() BEGIN", category: .ui)
         
         // Calculate response time (how long user took to tap)
         var responseMs: Int = 0
@@ -308,14 +312,14 @@ class GoButtonState: ObservableObject {
         
         // Prevent double-triggers
         guard !isTriggering else {
-            print("⚠️ [GoButton] Already triggering, ignoring duplicate call")
+            AppLogger.warning("[GoButton] Already triggering, ignoring duplicate call", category: .ui)
             SessionLogManager.shared.log(.warning, category: .userAction, message: "⚠️ GO! DOUBLE TAP BLOCKED")
             return
         }
         
         // Capture action before any state changes
         guard let action = startAction else {
-            print("❌ [GoButton] No startAction set!")
+            AppLogger.error("[GoButton] No startAction set!", category: .ui)
             SessionLogManager.shared.log(.error, category: .error, message: "❌ GO! NO ACTION", metadata: [
                 "element_id": "E200"
             ])
@@ -326,7 +330,7 @@ class GoButtonState: ObservableObject {
         isTriggering = true
         isVisible = false
         
-        print("⏱️ [GoButton] Executing action...")
+        AppLogger.debug("[GoButton] Executing action...", category: .ui)
         let actionStart = CFAbsoluteTimeGetCurrent()
         
         // Execute action synchronously
@@ -335,8 +339,8 @@ class GoButtonState: ObservableObject {
         let actionDuration = (CFAbsoluteTimeGetCurrent() - actionStart) * 1000
         let totalDuration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
         
-        print("⏱️ [GoButton] Action took: \(actionDuration)ms")
-        print("⏱️ [GoButton] TOTAL: \(totalDuration)ms")
+        AppLogger.debug("[GoButton] Action took: \(actionDuration)ms", category: .ui)
+        AppLogger.debug("[GoButton] TOTAL: \(totalDuration)ms", category: .ui)
         
         // Log timing
         SessionLogManager.shared.log(.info, category: .userAction, message: "⏱️ GO! ACTION COMPLETE", metadata: [
@@ -353,11 +357,11 @@ class GoButtonState: ObservableObject {
             ])
         }
         
-        // Clear state after a brief moment
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
             self?.startAction = nil
             self?.isTriggering = false
-            print("🎯 [GoButton] State reset complete")
+            AppLogger.debug("[GoButton] State reset complete", category: .ui)
         }
     }
 }
@@ -375,7 +379,8 @@ struct GoButtonOverlay: View {
                     FloatingGoButton(
                         action: { state.triggerStart() },
                         primaryColor: state.primaryColor,
-                        secondaryColor: state.secondaryColor
+                        secondaryColor: state.secondaryColor,
+                        accessibilityText: state.accessibilityText
                     )
                     .offset(x: 3, y: 2) // Fine-tune centering between Exercises and Meals tabs
                     Spacer()
@@ -586,7 +591,7 @@ struct MainTabView: View {
                 workoutManager.shouldNavigateToHomeTab = false
                 workoutManager.shouldClearWorkoutTabNav = false  // Also reset clear flag
                 
-                print("🏠 ContentView: Switching to home tab")
+                AppLogger.debug("ContentView: Switching to home tab", category: .ui)
                 withAnimation {
                     selectedTab = 0
                 }
@@ -599,7 +604,7 @@ struct MainTabView: View {
                 workoutManager.shouldNavigateToHomeTabInstant = false
                 workoutManager.shouldClearWorkoutTabNav = false
                 
-                print("🏠 ContentView: Switching to home tab (instant)")
+                AppLogger.debug("ContentView: Switching to home tab (instant)", category: .ui)
                 // NO animation - instant switch
                 selectedTab = 0
             }
@@ -642,7 +647,7 @@ struct MainTabView: View {
             // Navigate to Custom Workout Builder (from Exercise Detail "Add to workout" button)
             if shouldNavigate {
                 selectedTab = 2  // Switch to Workout tab first, WorkoutTabView handles the navigation
-                print("➕ Switching to Workout tab for Custom Workout Builder")
+                AppLogger.debug("Switching to Workout tab for Custom Workout Builder", category: .ui)
             }
         }
         .onChange(of: selectedTab) { oldValue, newValue in
@@ -650,16 +655,16 @@ struct MainTabView: View {
                 let switchStartTime = CACurrentMediaTime()
                 
                 // 🔍 FREEZE DEBUG: Step-by-step logging to find where tab switch hangs
-                print("🔍 [TAB FREEZE] ━━━ onChange START: tab \(oldValue)→\(newValue) ━━━")
+                AppLogger.debug("[TAB FREEZE] onChange START: tab \(oldValue)→\(newValue)", category: .ui)
                 MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
                 
                 // ⚡️ INSTANT TAB SWITCHING: When tabs are preloaded, transition is instant
                 let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
-                print("🔍 [TAB FREEZE] step 1: isInstantSwitch=\(isInstantSwitch) (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
+                AppLogger.debug("[TAB FREEZE] step 1: isInstantSwitch=\(isInstantSwitch) (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // ⚡️ PERFORMANCE: Start optimized tab transition
                 tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
-                print("🔍 [TAB FREEZE] step 2: beginTransition done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
+                AppLogger.debug("[TAB FREEZE] step 2: beginTransition done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // Mark tab as visited for lazy loading
                 if let tab = LazyTabManager.Tab(rawValue: newValue) {
@@ -669,7 +674,7 @@ struct MainTabView: View {
                         SmartPrefetch.shared.prefetchForTab(tab)
                     }
                 }
-                print("🔍 [TAB FREEZE] step 3: markVisited+prefetch done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
+                AppLogger.debug("[TAB FREEZE] step 3: markVisited+prefetch done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // Log tab switch with screen IDs
                 let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
@@ -687,12 +692,12 @@ struct MainTabView: View {
                     "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
                     "is_instant": isInstantSwitch
                 ])
-                print("🔍 [TAB FREEZE] step 4: session logging done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
+                AppLogger.debug("[TAB FREEZE] step 4: session logging done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
 
                 scrollToTopTrigger = UUID()
                 // Immediately hide GO button when switching tabs
                 GoButtonState.shared.hide(reason: "tab_switch")
-                print("🔍 [TAB FREEZE] step 5: GoButton hidden (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)")
+                AppLogger.debug("[TAB FREEZE] step 5: GoButton hidden (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // Always pop to root when switching to Home tab
                 // This prevents stale navigation states from showing unexpected views
@@ -707,19 +712,19 @@ struct MainTabView: View {
                 }
                 
                 let onChangeElapsed = (CACurrentMediaTime() - switchStartTime) * 1000
-                print("🔍 [TAB FREEZE] step 6: onChange handler COMPLETE (\(String(format: "%.1f", onChangeElapsed))ms)")
+                AppLogger.debug("[TAB FREEZE] step 6: onChange handler COMPLETE (\(String(format: "%.1f", onChangeElapsed))ms)", category: .ui)
                 if onChangeElapsed > 100 {
-                    print("⚠️ [TAB FREEZE] onChange handler took \(String(format: "%.0f", onChangeElapsed))ms — may cause jank")
+                    AppLogger.warning("[TAB FREEZE] onChange handler took \(String(format: "%.0f", onChangeElapsed))ms — may cause jank", category: .ui)
                 }
                 
                 // ⚡️ End transition tracking (async to not block)
                 DispatchQueue.main.async { [self] in
                     let endTime = CACurrentMediaTime()
                     let totalMs = (endTime - switchStartTime) * 1000
-                    print("🔍 [TAB FREEZE] step 7: endTransition callback fired (\(String(format: "%.1f", totalMs))ms since start)")
+                    AppLogger.debug("[TAB FREEZE] step 7: endTransition callback fired (\(String(format: "%.1f", totalMs))ms since start)", category: .ui)
                     tabSwitchOptimizer.endTransition()
                     MainThreadWatchdog.shared.clearContext()
-                    print("🔍 [TAB FREEZE] ━━━ onChange FULLY DONE: tab \(oldValue)→\(newValue) (\(String(format: "%.1f", totalMs))ms) ━━━")
+                    AppLogger.debug("[TAB FREEZE] onChange FULLY DONE: tab \(oldValue)→\(newValue) (\(String(format: "%.1f", totalMs))ms)", category: .ui)
                 }
             }
             // Defer HealthKit fetches to not block tab switch animation
@@ -848,143 +853,154 @@ struct MainTabView: View {
         case .dashboard:
             selectedTab = 0
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Home tab")
+            AppLogger.debug("[DEEPLINK] Switched to Home tab", category: .ui)
             
         case .workout, .running:
             selectedTab = 2
             // Don't clear destination - WorkoutTabView needs to handle specific navigation
-            print("🔗 [DEEPLINK] Switched to Workout tab")
+            AppLogger.debug("[DEEPLINK] Switched to Workout tab", category: .ui)
             
         case .mealsTab:
             selectedTab = 3
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Meals tab")
+            AppLogger.debug("[DEEPLINK] Switched to Meals tab", category: .ui)
             
         case .statsTab, .personalRecord:
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab")
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab", category: .ui)
             
         // Dashboard Widget Navigation (Home tab + scroll to widget)
         case .hydration:
-            selectedTab = 3  // Meals tab contains Hydration widget
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            selectedTab = 3
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 NotificationCenter.default.post(name: .scrollToWidget, object: "hydration")
             }
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Navigating to Hydration widget on Meals tab")
+            AppLogger.debug("[DEEPLINK] Navigating to Hydration widget on Meals tab", category: .ui)
             
         case .stepTracker:
-            selectedTab = 0  // Home tab contains Step Tracker
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            selectedTab = 0
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 NotificationCenter.default.post(name: .scrollToWidget, object: "stepTracker")
             }
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Navigating to Step Tracker widget on Home tab")
+            AppLogger.debug("[DEEPLINK] Navigating to Step Tracker widget on Home tab", category: .ui)
             
         case .weightTracker:
-            selectedTab = 3  // Meals tab contains Weight Tracker
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            selectedTab = 3
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 NotificationCenter.default.post(name: .scrollToWidget, object: "weightTracker")
             }
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Navigating to Weight Tracker widget on Meals tab")
+            AppLogger.debug("[DEEPLINK] Navigating to Weight Tracker widget on Meals tab", category: .ui)
             
         case .workoutHistory:
             selectedTab = 0
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 NotificationCenter.default.post(name: .scrollToWidget, object: "workoutHistory")
             }
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Navigating to Workout History")
+            AppLogger.debug("[DEEPLINK] Navigating to Workout History", category: .ui)
             
         case .streakInfo:
             selectedTab = 0
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 NotificationCenter.default.post(name: .scrollToWidget, object: "streakInfo")
             }
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Navigating to Streak Info")
+            AppLogger.debug("[DEEPLINK] Navigating to Streak Info", category: .ui)
             
         // Social - handled by Friends tab with deep push
         case .friends:
             selectedTab = 4
             deepLinkManager.pendingFriendsRoute = "FriendsList"
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab → pushing FriendsList")
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing FriendsList", category: .ui)
             
         case .friendRequests:
             selectedTab = 4
             deepLinkManager.pendingFriendsRoute = "FriendRequests"
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab → pushing FriendRequests")
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing FriendRequests", category: .ui)
             
         // Received workouts - handled by WorkoutTabView
         case .receivedWorkouts, .receivedWorkout, .sharedWorkout:
             selectedTab = 2
             // Don't clear - WorkoutTabView handles the navigation
-            print("🔗 [DEEPLINK] Switched to Workout tab for shared workout")
+            AppLogger.debug("[DEEPLINK] Switched to Workout tab for shared workout", category: .ui)
             
         // Challenges - route based on specificity
         case .challenges:
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab for challenges list")
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab for challenges list", category: .ui)
+            
+        case .challengeCreation:
+            selectedTab = 0
+            deepLinkManager.pendingDashboardRoute = "ChallengeCreation"
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Home tab → opening challenge creation flow", category: .ui)
             
         case .challengeInvite:
             // Invite widget is on Dashboard (Home tab)
             selectedTab = 0
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Home tab for challenge invite widget")
+            AppLogger.debug("[DEEPLINK] Switched to Home tab for challenge invite widget", category: .ui)
             
         case .challengeDetail(let challengeId):
             // Navigate to Home tab and push the challenge detail view
             selectedTab = 0
             deepLinkManager.pendingDashboardRoute = "ChallengeDetail:\(challengeId)"
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Home tab → pushing challenge detail: \(challengeId)")
+            AppLogger.debug("[DEEPLINK] Switched to Home tab → pushing challenge detail: \(challengeId)", category: .ui)
             
         // Community Challenges - join sheet is presented from ContentView
         case .communityChallenge(let slug):
             deepLinkManager.pendingCommunitySlug = slug
             deepLinkManager.showCommunityJoinSheet = true
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Showing community join sheet for: \(slug)")
+            AppLogger.debug("[DEEPLINK] Showing community join sheet for: \(slug)", category: .ui)
             
         case .communityChallengeBrowse:
             selectedTab = 2
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Workout tab for community browse")
+            AppLogger.debug("[DEEPLINK] Switched to Workout tab for community browse", category: .ui)
             
         // Private Challenges - navigate to Friends tab where detail views exist
         case .privateChallengeDetail(let challengeId):
             selectedTab = 4
             deepLinkManager.pendingFriendsRoute = "PrivateChallenge_\(challengeId)"
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Friends tab → pushing private challenge detail: \(challengeId)")
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing private challenge detail: \(challengeId)", category: .ui)
             
         case .privateChallengeInvite:
             // Private invite widget shows on Dashboard
             selectedTab = 0
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Switched to Home tab for private challenge invite")
+            AppLogger.debug("[DEEPLINK] Switched to Home tab for private challenge invite", category: .ui)
             
         // Private Challenge Join by Code - show preview sheet
         case .privateChallengeJoinByCode(let code):
             deepLinkManager.pendingPrivateJoinCode = code
             deepLinkManager.showPrivateJoinSheet = true
             deepLinkManager.pendingDestination = nil
-            print("🔗 [DEEPLINK] Showing private challenge join sheet for code: \(code)")
+            AppLogger.debug("[DEEPLINK] Showing private challenge join sheet for code: \(code)", category: .ui)
         }
     }
     
     // Update the workout tab label color
     private func updateWorkoutTabLabelColor(isRed: Bool) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first else { return }
             
-            // Find all UITabBarButtons and update the workout one (index 2)
             if let tabBar = findTabBar(in: window) {
                 let tabBarButtons = tabBar.subviews.filter { String(describing: type(of: $0)).contains("Button") }
                 if tabBarButtons.count > 2 {
@@ -1018,7 +1034,8 @@ struct MainTabView: View {
     
     // Scale the Workout tab (index 2) when GO button is visible
     private func updateTabBarScale(isGoButtonVisible: Bool) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first else { return }
             
@@ -1026,15 +1043,13 @@ struct MainTabView: View {
                 let tabBarButtons = tabBar.subviews.filter { String(describing: type(of: $0)).contains("Button") }
                 if tabBarButtons.count > 2 {
                     let sortedButtons = tabBarButtons.sorted { $0.frame.minX < $1.frame.minX }
-                    let workoutButton = sortedButtons[2] // Workout tab is index 2
+                    let workoutButton = sortedButtons[2]
                     
                     UIView.animate(withDuration: 0.2) {
                         if isGoButtonVisible {
-                            // Scale down the workout tab when GO button is visible
                             workoutButton.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
                             workoutButton.alpha = 0.2
                         } else {
-                            // Reset to normal
                             workoutButton.transform = .identity
                             workoutButton.alpha = 1.0
                         }
@@ -1065,7 +1080,7 @@ struct SimpleMealPlanView: View {
     @AppStorage("hasSeenMacroGoalsExplainer") private var hasSeenMacroGoalsExplainer = false
     @State private var selectedMeal: MealType? = nil {
         didSet {
-            print("🔄 [CONTENTVIEW] selectedMeal changed to: \(String(describing: selectedMeal))")
+            AppLogger.debug("[CONTENTVIEW] selectedMeal changed to: \(String(describing: selectedMeal))", category: .ui)
         }
     }
     
@@ -1083,25 +1098,24 @@ struct SimpleMealPlanView: View {
                     destination: Group {
                         if let meal = selectedMeal {
                             FoodSearchView(mealType: meal) { foodEntry in
-                                print("🍽️ [CONTENTVIEW] Food entry received: \(foodEntry.name)")
-                                print("🍽️ [CONTENTVIEW] Meal type: \(meal.rawValue)")
-                                print("🍽️ [CONTENTVIEW] Calories: \(foodEntry.calories)")
+                                AppLogger.debug("[CONTENTVIEW] Food entry received: \(foodEntry.name), meal: \(meal.rawValue), calories: \(foodEntry.calories)", category: .ui)
                                 
                                 // Save to meal service
                                 if let user = userManager.currentUser {
-                                    print("🍽️ [CONTENTVIEW] User found, calling MealService.addMealEntry")
+                                    AppLogger.debug("[CONTENTVIEW] User found, calling MealService.addMealEntry", category: .ui)
                                     MealService.shared.addMealEntry(foodEntry, mealType: meal, user: user)
-                                    print("🍽️ [CONTENTVIEW] MealService.addMealEntry completed")
+                                    AppLogger.debug("[CONTENTVIEW] MealService.addMealEntry completed", category: .ui)
                                     
                                     // Show macro goals explainer on first meal input
                                     if !hasSeenMacroGoalsExplainer {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                        Task { @MainActor in
+                                            try? await Task.sleep(nanoseconds: 500_000_000)
                                             showingMacroGoalsExplainer = true
                                             hasSeenMacroGoalsExplainer = true
                                         }
                                     }
                                 } else {
-                                    print("❌ [CONTENTVIEW] No current user found!")
+                                    AppLogger.error("[CONTENTVIEW] No current user found!", category: .ui)
                                 }
                                 
                                 // Reset selection to dismiss
@@ -1109,7 +1123,7 @@ struct SimpleMealPlanView: View {
                             }
                             .environmentObject(userManager)
                             .onAppear {
-                                print("🚀 [CONTENTVIEW] FoodSearchView appeared for meal: \(meal.rawValue)")
+                                AppLogger.debug("[CONTENTVIEW] FoodSearchView appeared for meal: \(meal.rawValue)", category: .ui)
                             }
                         }
                     },
@@ -1166,10 +1180,10 @@ struct SimpleMealPlanView: View {
                         switch widgetId {
                         case "hydration":
                             scrollProxy.scrollTo("hydration", anchor: .center)
-                            print("💧 [MEALS] Scrolled to Hydration widget")
+                            AppLogger.debug("[MEALS] Scrolled to Hydration widget", category: .ui)
                         case "weightTracker":
                             scrollProxy.scrollTo("weightTracker", anchor: .center)
-                            print("⚖️ [MEALS] Scrolled to Weight Tracker widget")
+                            AppLogger.debug("[MEALS] Scrolled to Weight Tracker widget", category: .ui)
                         default:
                             break
                         }
@@ -1182,10 +1196,9 @@ struct SimpleMealPlanView: View {
             }
         }
         .onAppear {
-            print("📊 [MEAL PLAN] View appeared, loading today's meals")
+            AppLogger.debug("[MEAL PLAN] View appeared, loading today's meals", category: .ui)
             mealService.loadTodaysMeals()
-            print("📊 [MEAL PLAN] Loaded \(mealService.todaysMeals.count) meals")
-            print("📊 [MEAL PLAN] Consumed calories: \(consumedCalories)")
+            AppLogger.debug("[MEAL PLAN] Loaded \(mealService.todaysMeals.count) meals, consumed calories: \(consumedCalories)", category: .ui)
         }
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -1418,7 +1431,7 @@ struct SimpleMealPlanView: View {
             )
             .cornerRadius(CornerRadius.md)
         }
-        .padding(32)
+        .padding(Spacing.xl)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(.ultraThinMaterial)
@@ -1511,7 +1524,7 @@ struct SimpleMealPlanView: View {
             // Section header
             HStack {
                 Image(systemName: "fork.knife")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [mealTypes[max(0, selectedMealPage == -1 ? currentIndex : selectedMealPage)].gradientColors.0,
@@ -1528,7 +1541,7 @@ struct SimpleMealPlanView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Swipeable meal cards
             GeometryReader { geometry in
@@ -1596,7 +1609,7 @@ struct SimpleMealPlanView: View {
                         }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
         }
         .onAppear {
             // Initialize to current meal time on first appear
@@ -1646,7 +1659,7 @@ struct SimpleMealPlanView: View {
             // Section header
             HStack {
                 Image(systemName: "fork.knife")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.green, .mint],
@@ -1662,7 +1675,7 @@ struct SimpleMealPlanView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // All meal sections stacked
             ForEach(MealType.allCases, id: \.self) { mealType in
@@ -1692,7 +1705,7 @@ struct SimpleMealPlanView: View {
                         .frame(width: 32, height: 32)
                     
                     Image(systemName: mealType.icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.white)
                 }
                 
@@ -1849,7 +1862,7 @@ struct SimpleMealPlanView: View {
                     // Header 0: Daily Insights
                     HStack {
                         Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.teal, .mint],
@@ -1883,7 +1896,7 @@ struct SimpleMealPlanView: View {
                     // Header 1: Today's Macros (center/default)
                     HStack {
                         Image(systemName: "chart.pie.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.teal, .mint],
@@ -1917,7 +1930,7 @@ struct SimpleMealPlanView: View {
                     // Header 2: Weekly Progress
                     HStack {
                         Image(systemName: "chart.bar.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.teal, .mint],
@@ -1951,7 +1964,7 @@ struct SimpleMealPlanView: View {
                 .offset(x: -CGFloat(selectedNutritionPage) * (headerWidth + spacing))
             }
             .frame(height: 28)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             .animation(.easeOut(duration: 0.25), value: selectedNutritionPage)
             
             // Swipeable cards
@@ -2161,12 +2174,12 @@ struct SimpleMealPlanView: View {
                 
                 HStack(spacing: 8) {
                     Image(systemName: insight.icon)
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(insight.color)
                         .frame(width: 16)
                     
                     Text(insight.text)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.primary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.75)
@@ -3134,7 +3147,7 @@ struct InsightRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: insight.icon)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(insight.color)
                 .frame(width: 20)
             
@@ -3160,7 +3173,7 @@ struct QuickInsightStat: View {
                     .font(.ds_caption)
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.primary)
             }
             Text(label)
@@ -3299,7 +3312,7 @@ struct SwipeableMealCard: View {
                         .frame(width: 48, height: 48)
                     
                     Image(systemName: mealType.icon)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: gradientColors,
@@ -3410,7 +3423,7 @@ struct SwipeableMealCard: View {
                     Button(action: onAddFood) {
                         HStack(spacing: 6) {
                             Image(systemName: "plus")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                             Text("Add Food")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
@@ -3542,7 +3555,7 @@ struct MacroPill: View {
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .background(
             Capsule()
                 .fill(color.opacity(0.12))
@@ -3713,7 +3726,7 @@ struct MealRowCard: View {
                     
                     // Chevron (always visible, matching exercise cards)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
@@ -3859,7 +3872,7 @@ struct MealRowCard: View {
                         Button(action: onAddFood) {
                             HStack(spacing: 5) {
                                 Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 14))
+                                    .font(.ds_bodySmall)
                                 Text("Add more")
                                     .font(.caption)
                                     .fontWeight(.semibold)
@@ -3979,7 +3992,7 @@ struct ExpandedMealItemRow: View {
             // Delete button
             Button(action: onDelete) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                     .foregroundColor(.red.opacity(0.6))
                     .frame(width: 32, height: 32) // Larger hit area
                     .contentShape(Rectangle())
@@ -4010,7 +4023,7 @@ struct MacroBadge: View {
                 .foregroundColor(.primary)
         }
         .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .background(color.opacity(0.1))
         .clipShape(Capsule())
     }
@@ -4120,9 +4133,9 @@ struct SimpleProfileSetupView: View {
         
         do {
             try PersistenceController.shared.container.viewContext.save()
-            print("✅ [PROFILE] Saved weight: \(weightValue), height: \(heightValue)")
+            AppLogger.info("[PROFILE] Saved weight: \(weightValue), height: \(heightValue)", category: .ui)
         } catch {
-            print("❌ [PROFILE] Error saving: \(error)")
+            AppLogger.error("[PROFILE] Error saving: \(error.localizedDescription)", category: .ui)
         }
         
         showingProfileSetup = false
@@ -4160,7 +4173,7 @@ struct WorkoutTimerIndicator: View {
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     RoundedRectangle(cornerRadius: CornerRadius.sm)
                         .fill(.ultraThinMaterial)
@@ -4239,15 +4252,15 @@ struct USDAFoodSearchView: View {
                 TextField("Search USDA database (e.g., eggs, chicken)", text: $searchText)
                     .textFieldStyle(PlainTextFieldStyle())
                     .onChange(of: searchText) { newValue in
-                        print("🔍 [CONTENTVIEW] Search text changed to: '\(newValue)'")
+                        AppLogger.debug("[CONTENTVIEW] Search text changed to: '\(newValue)'", category: .ui)
                         searchDebouncer?.invalidate()
                         searchDebouncer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-                            print("⏰ [CONTENTVIEW] Debounce timer fired for: '\(newValue)'")
+                            AppLogger.debug("[CONTENTVIEW] Debounce timer fired for: '\(newValue)'", category: .ui)
                             if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                print("✅ [CONTENTVIEW] Calling foodService.searchFoods() for: '\(newValue)'")
+                                AppLogger.debug("[CONTENTVIEW] Calling foodService.searchFoods() for: '\(newValue)'", category: .ui)
                                 foodService.searchFoods(query: newValue)
                             } else {
-                                print("⚠️ [CONTENTVIEW] Query empty, clearing results")
+                                AppLogger.warning("[CONTENTVIEW] Query empty, clearing results", category: .ui)
                                 foodService.searchResults = []
                             }
                         }
@@ -4565,7 +4578,7 @@ struct NutritionMetricCard: View {
                         .frame(width: 32, height: 32)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(color)
                 }
                 
@@ -4769,7 +4782,7 @@ struct MacronutrientPieChart: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
@@ -4848,7 +4861,7 @@ struct DetailedNutritionView: View {
                 SummaryMetricCard(title: "Nutrition Score", value: "85%", target: "90%", color: .purple, icon: "star.fill")
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
@@ -4883,7 +4896,7 @@ struct DetailedNutritionView: View {
                 ProgressRow(title: "Meal Consistency", progress: 0.0, color: .orange)
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
@@ -5054,7 +5067,7 @@ struct MiniInsightTile: View {
         VStack(spacing: 4) {
             // Floating icon
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.ds_heading3).fontWeight(.semibold)
                 .foregroundColor(color)
             
             // Value

@@ -21,7 +21,8 @@ final class SessionLogManager: ObservableObject {
     private var sessionStartTime: Date?
     private var sessionId: String = ""
     private let logQueue = DispatchQueue(label: "com.fit33.sessionlog", qos: .utility)
-    private let maxLogEntries = 5000 // Prevent memory issues
+    private let maxLogEntries = 1000
+    private let maxLogAge: TimeInterval = 86400 // 24 hours
     
     // User context captured at session start
     private var userContext: UserContext?
@@ -957,6 +958,17 @@ final class SessionLogManager: ObservableObject {
         bugReportPending = true
     }
     
+    deinit {
+        sessionLog.removeAll()
+        activeTimers.removeAll()
+        screenHistory.removeAll()
+        screenDurationHistory.removeAll()
+        actionTimeline.removeAll()
+        navigationStack.removeAll()
+        modalStack.removeAll()
+        sheetStack.removeAll()
+    }
+    
     // MARK: - Session Lifecycle
     
     /// Start a new logging session (call on app launch)
@@ -1290,10 +1302,14 @@ final class SessionLogManager: ObservableObject {
         logQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Prevent memory overflow
+            // Circular buffer: drop oldest when full
             if self.sessionLog.count >= self.maxLogEntries {
-                self.sessionLog.removeFirst(100) // Remove oldest entries
+                let dropCount = self.maxLogEntries / 4
+                self.sessionLog.removeFirst(dropCount)
             }
+            // Time-based pruning: discard entries older than 24h
+            let cutoff = Date().addingTimeInterval(-self.maxLogAge)
+            self.sessionLog.removeAll { $0.timestamp < cutoff }
             
             let entry = LogEntry(
                 timestamp: Date(),

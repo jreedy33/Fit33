@@ -41,47 +41,79 @@ final class FitbitService: ObservableObject {
     // MARK: - Private Properties
     
     private var accessToken: String? {
-        get { UserDefaults.standard.string(forKey: "fitbit_access_token") }
-        set { UserDefaults.standard.set(newValue, forKey: "fitbit_access_token") }
+        get { KeychainHelper.load(key: "fitbit_access_token") }
+        set {
+            if let val = newValue { KeychainHelper.save(key: "fitbit_access_token", value: val) }
+            else { KeychainHelper.delete(key: "fitbit_access_token") }
+        }
     }
     
     private var refreshToken: String? {
-        get { UserDefaults.standard.string(forKey: "fitbit_refresh_token") }
-        set { UserDefaults.standard.set(newValue, forKey: "fitbit_refresh_token") }
+        get { KeychainHelper.load(key: "fitbit_refresh_token") }
+        set {
+            if let val = newValue { KeychainHelper.save(key: "fitbit_refresh_token", value: val) }
+            else { KeychainHelper.delete(key: "fitbit_refresh_token") }
+        }
     }
     
     private var tokenExpiresAt: Date? {
         get {
-            let timestamp = UserDefaults.standard.double(forKey: "fitbit_token_expires_at")
-            return timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : nil
+            guard let str = KeychainHelper.load(key: "fitbit_token_expires_at"),
+                  let timestamp = Double(str), timestamp > 0 else { return nil }
+            return Date(timeIntervalSince1970: timestamp)
         }
         set {
-            UserDefaults.standard.set(newValue?.timeIntervalSince1970 ?? 0, forKey: "fitbit_token_expires_at")
+            if let ts = newValue?.timeIntervalSince1970 {
+                KeychainHelper.save(key: "fitbit_token_expires_at", value: String(ts))
+            } else {
+                KeychainHelper.delete(key: "fitbit_token_expires_at")
+            }
         }
     }
     
     private var userId: String? {
-        get { UserDefaults.standard.string(forKey: "fitbit_user_id") }
-        set { UserDefaults.standard.set(newValue, forKey: "fitbit_user_id") }
+        get { KeychainHelper.load(key: "fitbit_user_id") }
+        set {
+            if let val = newValue { KeychainHelper.save(key: "fitbit_user_id", value: val) }
+            else { KeychainHelper.delete(key: "fitbit_user_id") }
+        }
     }
     
     // MARK: - Initialization
     
     private init() {
-        // Check if we have a valid connection
+        migrateTokensFromUserDefaults()
+        
         isConnected = accessToken != nil && refreshToken != nil
         
         if isConnected {
-            // Load cached profile
             if let data = UserDefaults.standard.data(forKey: "fitbit_user"),
                let user = try? JSONDecoder().decode(FitbitUser.self, from: data) {
                 userProfile = user
             }
             
-            // Load last sync date
             if let date = UserDefaults.standard.object(forKey: "fitbit_last_sync") as? Date {
                 lastSyncDate = date
             }
+        }
+    }
+    
+    private func migrateTokensFromUserDefaults() {
+        let ud = UserDefaults.standard
+        let keys = ["fitbit_access_token", "fitbit_refresh_token", "fitbit_user_id", "fitbit_code_verifier"]
+        
+        for key in keys {
+            if let val = ud.string(forKey: key), KeychainHelper.load(key: key) == nil {
+                KeychainHelper.save(key: key, value: val)
+                ud.removeObject(forKey: key)
+            }
+        }
+        
+        let expiresKey = "fitbit_token_expires_at"
+        let ts = ud.double(forKey: expiresKey)
+        if ts > 0 && KeychainHelper.load(key: expiresKey) == nil {
+            KeychainHelper.save(key: expiresKey, value: String(ts))
+            ud.removeObject(forKey: expiresKey)
         }
     }
     
@@ -93,8 +125,7 @@ final class FitbitService: ObservableObject {
         let codeVerifier = generateCodeVerifier()
         let codeChallenge = generateCodeChallenge(from: codeVerifier)
         
-        // Store code verifier for token exchange
-        UserDefaults.standard.set(codeVerifier, forKey: "fitbit_code_verifier")
+        KeychainHelper.save(key: "fitbit_code_verifier", value: codeVerifier)
         
         var components = URLComponents(string: Config.authorizationUrl)
         components?.queryItems = [
@@ -129,7 +160,7 @@ final class FitbitService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        guard let codeVerifier = UserDefaults.standard.string(forKey: "fitbit_code_verifier") else {
+        guard let codeVerifier = KeychainHelper.load(key: "fitbit_code_verifier") else {
             throw FitbitError.tokenExchangeFailed
         }
         
@@ -182,8 +213,7 @@ final class FitbitService: ObservableObject {
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn))
         userId = tokenResponse.userId
         
-        // Clear code verifier
-        UserDefaults.standard.removeObject(forKey: "fitbit_code_verifier")
+        KeychainHelper.delete(key: "fitbit_code_verifier")
         
         isConnected = true
         
@@ -672,9 +702,13 @@ final class FitbitService: ObservableObject {
         lastSyncDate = nil
         isConnected = false
         
+        KeychainHelper.delete(key: "fitbit_code_verifier")
         UserDefaults.standard.removeObject(forKey: "fitbit_user")
         UserDefaults.standard.removeObject(forKey: "fitbit_last_sync")
-        UserDefaults.standard.removeObject(forKey: "fitbit_code_verifier")
+        
+        for key in ["fitbit_access_token", "fitbit_refresh_token", "fitbit_token_expires_at", "fitbit_user_id", "fitbit_code_verifier"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         
         // Update integration status in database
         Task {

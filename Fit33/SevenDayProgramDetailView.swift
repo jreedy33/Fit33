@@ -76,7 +76,7 @@ struct SevenDayProgramDetailView: View {
                         .shadow(color: Color.blue.opacity(0.4), radius: 12, x: 0, y: 6)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.ds_heading1)
                         .foregroundColor(.white)
                 }
                 .padding(.top, 8)
@@ -86,7 +86,7 @@ struct SevenDayProgramDetailView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.xl)
                     .padding(.top, 8)
                 
                 // Compact stat pills - horizontal
@@ -182,7 +182,7 @@ struct SevenDayProgramDetailView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(accentGradient)
                         .padding(Spacing.xs)
                         .background(Circle().fill(Color.white.opacity(colorScheme == .dark ? 0.1 : 0.8)))
@@ -202,11 +202,11 @@ struct SevenDayProgramDetailView: View {
     private func statPill(icon: String, value: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: icon)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundStyle(accentGradient)
             
             Text(value)
-                .font(.system(size: 11, weight: .medium))
+                .font(.ds_labelSmall)
                 .foregroundColor(.primary)
         }
         .padding(.horizontal, Spacing.xs)

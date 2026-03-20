@@ -124,7 +124,7 @@ struct LimitationsSettingsView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.orange)
                 
                 Text("IMPORTANT SAFETY NOTICE")
@@ -159,7 +159,7 @@ struct LimitationsSettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             ForEach(limitationsService.userLimitations) { limitation in
                 LimitationRowCard(
@@ -189,7 +189,7 @@ struct LimitationsSettingsView: View {
                         .frame(width: 40, height: 40)
                     
                     Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -209,7 +209,7 @@ struct LimitationsSettingsView: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             .padding(Spacing.md)
@@ -240,7 +240,7 @@ struct LimitationsSettingsView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
         }
         .padding(.top, 40)
     }
@@ -265,7 +265,7 @@ struct LimitationRowCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: limitation.affectedArea.icon)
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(limitation.affectedArea.color)
                 }
                 
@@ -286,7 +286,7 @@ struct LimitationRowCard: View {
                         }
                         .foregroundColor(.white)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(limitation.severity.color)
@@ -304,13 +304,13 @@ struct LimitationRowCard: View {
                 // Delete button
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             .padding(14)
@@ -643,7 +643,7 @@ struct AreaSelectionCard: View {
                         .frame(width: 40, height: 40)
                     
                     Image(systemName: area.icon)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? area.color : .secondary)
                 }
                 
@@ -679,7 +679,7 @@ struct AccommodationButton: View {
             HStack(spacing: 12) {
                 // Icon
                 Image(systemName: level.icon)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(isSelected ? .white : level.color)
                     .frame(width: 28, height: 28)
                     .background(
@@ -705,7 +705,7 @@ struct AccommodationButton: View {
                 // Checkmark
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(level.color)
                 }
             }
@@ -733,7 +733,7 @@ struct TypeButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: type.icon)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                     .foregroundColor(isSelected ? .blue : .secondary)
                     .frame(width: 24)
                 

@@ -294,7 +294,7 @@ struct ProfileView: View {
                             NavigationLink(value: ProfileRoute.limitations) {
                                 HStack(spacing: 12) {
                                     Image(systemName: "bandage.fill")
-                                        .font(.system(size: 16, weight: .medium))
+                                        .font(.ds_bodyRegular).fontWeight(.medium)
                                         .foregroundColor(.red)
                                         .frame(width: 28)
                                     
@@ -311,7 +311,7 @@ struct ProfileView: View {
                                     Spacer()
                                     
                                     Image(systemName: "chevron.right")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.ds_labelMedium)
                                         .foregroundColor(.secondary.opacity(0.5))
                                 }
                                 .padding(.horizontal, Spacing.md)
@@ -332,7 +332,7 @@ struct ProfileView: View {
                             }) {
                                 HStack(spacing: 12) {
                                     Image(systemName: isPhoneVerified ? "checkmark.shield.fill" : "shield.fill")
-                                        .font(.system(size: 16, weight: .medium))
+                                        .font(.ds_bodyRegular).fontWeight(.medium)
                                         .foregroundColor(.blue)
                                         .frame(width: 28)
                                     
@@ -360,7 +360,7 @@ struct ProfileView: View {
                                             .foregroundColor(.blue)
                                     } else {
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
                                 }
@@ -385,7 +385,7 @@ struct ProfileView: View {
                                 }) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "message.fill")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.green)
                                             .frame(width: 28)
                                         
@@ -401,7 +401,7 @@ struct ProfileView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -418,7 +418,7 @@ struct ProfileView: View {
                                 }) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "paperplane.fill")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.green)
                                             .frame(width: 28)
                                         
@@ -434,7 +434,7 @@ struct ProfileView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -451,7 +451,7 @@ struct ProfileView: View {
                                 }) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "square.and.arrow.up")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.blue)
                                             .frame(width: 28)
                                         
@@ -467,7 +467,7 @@ struct ProfileView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary.opacity(0.5))
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -487,7 +487,7 @@ struct ProfileView: View {
                                 NavigationLink(destination: ProgressPhotoGalleryView()) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "photo.on.rectangle.angled")
-                                            .font(.system(size: 16))
+                                            .font(.ds_bodyRegular)
                                             .foregroundColor(.purple)
                                             .frame(width: 32)
                                         
@@ -513,7 +513,7 @@ struct ProfileView: View {
                                             .foregroundColor(.secondary)
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -535,7 +535,7 @@ struct ProfileView: View {
                                     HStack(spacing: 12) {
                                         // Strava orange icon
                                         Image(systemName: "figure.run")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(Color(red: 252/255, green: 76/255, blue: 2/255))
                                             .frame(width: 28)
                                         
@@ -556,7 +556,7 @@ struct ProfileView: View {
                                         }
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -572,7 +572,7 @@ struct ProfileView: View {
                                     HStack(spacing: 12) {
                                         // Fitbit teal icon
                                         Image(systemName: "heart.circle.fill")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
                                             .frame(width: 28)
                                         
@@ -593,7 +593,7 @@ struct ProfileView: View {
                                         }
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -609,7 +609,7 @@ struct ProfileView: View {
                                     HStack(spacing: 12) {
                                         // InBody teal/cyan icon
                                         Image(systemName: "figure.stand")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(Color(red: 0/255, green: 150/255, blue: 167/255))
                                             .frame(width: 28)
                                         
@@ -630,7 +630,7 @@ struct ProfileView: View {
                                         }
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -646,7 +646,7 @@ struct ProfileView: View {
                                     HStack(spacing: 12) {
                                         // Apple Health red/pink icon
                                         Image(systemName: "heart.fill")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.red)
                                             .frame(width: 28)
                                         
@@ -667,7 +667,7 @@ struct ProfileView: View {
                                         }
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(.ds_labelMedium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.horizontal, Spacing.md)
@@ -688,7 +688,7 @@ struct ProfileView: View {
                                 Button(action: { HapticManager.impact(.light); showingSignOutConfirmation = true }) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.orange)
                                             .frame(width: 28)
                                         
@@ -709,7 +709,7 @@ struct ProfileView: View {
                                 Button(action: { HapticManager.impact(.light); showingDeleteAccountConfirmation = true }) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "trash.fill")
-                                            .font(.system(size: 16, weight: .medium))
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
                                             .foregroundColor(.red)
                                             .frame(width: 28)
                                         
@@ -767,7 +767,7 @@ struct ProfileView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(value: ProfileRoute.settings) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(.blue)
                 }
             }
@@ -933,7 +933,7 @@ struct ProfileView: View {
                                     .frame(width: 32, height: 32)
                                 
                                 Image(systemName: "camera.fill")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.ds_labelMedium)
                                     .foregroundColor(.white)
                             }
                             .offset(x: -5, y: -5)
@@ -1144,7 +1144,7 @@ struct ProfileView: View {
                     y: 8
                 )
         )
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
         .padding(.top, 12)
     }
     
@@ -1180,7 +1180,7 @@ struct ProfileView: View {
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
         .padding(.vertical, 14)
         .background(
             Capsule()
@@ -1747,7 +1747,7 @@ struct ProfileInfoRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -1785,7 +1785,7 @@ struct UsernameProfileRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 Image(systemName: "at")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -1810,7 +1810,7 @@ struct UsernameProfileRow: View {
                             .font(.subheadline)
                             .foregroundColor(.blue)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.blue.opacity(0.7))
                     }
                 } else {
@@ -1820,7 +1820,7 @@ struct UsernameProfileRow: View {
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -1843,7 +1843,7 @@ struct PhoneProfileRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 Image(systemName: "phone.fill")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -1866,7 +1866,7 @@ struct PhoneProfileRow: View {
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary)
                     }
                 } else {
@@ -1875,7 +1875,7 @@ struct PhoneProfileRow: View {
                             .font(.subheadline)
                             .foregroundColor(.blue)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.blue.opacity(0.7))
                     }
                 }
@@ -1962,7 +1962,7 @@ struct UsernameSetupSheet: View {
                                 .padding(.leading, 16)
                             
                             TextField("username", text: $username)
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .padding(.vertical, Spacing.md)
@@ -2009,7 +2009,7 @@ struct UsernameSetupSheet: View {
                             .padding(.leading, 4)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     
                     // Check Availability Button
                     Button(action: checkAvailability) {
@@ -2031,7 +2031,7 @@ struct UsernameSetupSheet: View {
                         )
                     }
                     .disabled(username.count < 3 || isCheckingAvailability)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     
                     // Save Button (only shows when available)
                     if isAvailable == true {
@@ -2060,7 +2060,7 @@ struct UsernameSetupSheet: View {
                             )
                         }
                         .disabled(isSaving)
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                     }
                     
                     Spacer()
@@ -2152,7 +2152,7 @@ struct EditableProfileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -2191,7 +2191,7 @@ struct PickerProfileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -2221,7 +2221,7 @@ struct PickerProfileRow: View {
                         .foregroundColor(.primary)
                     
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(.secondary)
                 }
             }
@@ -2242,7 +2242,7 @@ struct StepperProfileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -2304,7 +2304,7 @@ struct HeightEditRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "ruler")
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan.opacity(0.8)],
@@ -2366,7 +2366,7 @@ struct StatSummaryCard: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.ds_heading3).fontWeight(.semibold)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [color, color.opacity(0.7)],

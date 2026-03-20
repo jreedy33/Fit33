@@ -20,12 +20,29 @@ class PhoneVerificationService: ObservableObject {
     @Published var verificationSent = false
     @Published var isVerified = false
     @Published var error: String?
-    @Published var remainingAttempts = 5
+    @Published var remainingAttempts: Int {
+        didSet {
+            UserDefaults.standard.set(remainingAttempts, forKey: "phone_verify_remaining")
+            if remainingAttempts <= 0 {
+                UserDefaults.standard.set(Date().timeIntervalSince1970 + 3600, forKey: "phone_verify_lockout")
+            }
+        }
+    }
     
     // MARK: - Private
     private let supabaseManager = SupabaseManager.shared
     
-    private init() {}
+    private init() {
+        let lockout = UserDefaults.standard.double(forKey: "phone_verify_lockout")
+        if lockout > 0 && Date().timeIntervalSince1970 >= lockout {
+            UserDefaults.standard.removeObject(forKey: "phone_verify_lockout")
+            UserDefaults.standard.set(5, forKey: "phone_verify_remaining")
+            _remainingAttempts = Published(initialValue: 5)
+        } else {
+            let stored = UserDefaults.standard.object(forKey: "phone_verify_remaining") as? Int ?? 5
+            _remainingAttempts = Published(initialValue: stored)
+        }
+    }
     
     // MARK: - Send Verification Code
     
@@ -33,6 +50,13 @@ class PhoneVerificationService: ObservableObject {
     /// - Parameter phoneNumber: Phone number (digits only, e.g., "5551234567")
     /// - Returns: True if code was sent successfully
     func sendVerificationCode(to phoneNumber: String) async -> Bool {
+        let lockout = UserDefaults.standard.double(forKey: "phone_verify_lockout")
+        if lockout > 0 && Date().timeIntervalSince1970 < lockout {
+            let minutes = Int((lockout - Date().timeIntervalSince1970) / 60)
+            error = "Too many attempts. Try again in \(max(minutes, 1)) minutes."
+            return false
+        }
+        
         guard !phoneNumber.isEmpty else {
             error = "Please enter a phone number"
             return false
@@ -89,6 +113,13 @@ class PhoneVerificationService: ObservableObject {
     ///   - phoneNumber: The phone number being verified
     /// - Returns: True if verification successful
     func verifyCode(_ code: String, for phoneNumber: String) async -> Bool {
+        let lockout = UserDefaults.standard.double(forKey: "phone_verify_lockout")
+        if lockout > 0 && Date().timeIntervalSince1970 < lockout {
+            let minutes = Int((lockout - Date().timeIntervalSince1970) / 60)
+            error = "Too many attempts. Try again in \(max(minutes, 1)) minutes."
+            return false
+        }
+        
         guard code.count == 6 else {
             error = "Please enter the 6-digit code"
             return false
@@ -152,6 +183,7 @@ class PhoneVerificationService: ObservableObject {
         isVerified = false
         error = nil
         remainingAttempts = 5
+        UserDefaults.standard.removeObject(forKey: "phone_verify_lockout")
     }
 }
 

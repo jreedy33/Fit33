@@ -68,8 +68,58 @@ func parseFlexibleDate(_ string: String) -> Date {
     }
     
     // Fallback to current date
-    print("⚠️ [CHALLENGES] Could not parse date: \(string)")
+    AppLogger.warning("Could not parse date: \(string)", category: .social)
     return Date()
+}
+
+// MARK: - Shared Challenge Progress Data
+
+struct ChallengeProgressData {
+    let steps: Int
+    let activeMinutes: Int
+    let calories: Int
+    let protein: Int
+    let mealCalories: Int
+    let hydrationMl: Int
+    let walkMinutesToday: Int
+    let runMinutesToday: Int
+    let sleepMinutes: Int
+    
+    func hydrationInUnit(_ unit: String) -> Int {
+        unit.lowercased() == "oz" ? Int(Double(hydrationMl) / 29.5735) : hydrationMl
+    }
+}
+
+@MainActor
+func gatherCurrentProgress() async -> ChallengeProgressData {
+    MealService.shared.ensureFreshForToday()
+    
+    let hkService = HealthKitService.shared
+    let hkManager = HealthKitManager.shared
+    
+    let steps = hkManager.todaySteps > 0 ? hkManager.todaySteps : hkService.todaySteps
+    
+    let walkMinutes = hkService.recentWorkouts
+        .filter { $0.workoutType == .walking && Calendar.current.isDateInToday($0.startDate) }
+        .reduce(0) { $0 + $1.durationMinutes }
+    
+    let runMinutes = hkService.recentWorkouts
+        .filter { $0.workoutType == .running && Calendar.current.isDateInToday($0.startDate) }
+        .reduce(0) { $0 + $1.durationMinutes }
+    
+    let sleepHours = hkService.lastNightSleep ?? 0
+    
+    return ChallengeProgressData(
+        steps: steps,
+        activeMinutes: hkService.todayActiveMinutes,
+        calories: hkService.todayCalories,
+        protein: MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein },
+        mealCalories: MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories },
+        hydrationMl: HydrationService.shared.todayTotal,
+        walkMinutesToday: walkMinutes,
+        runMinutesToday: runMinutes,
+        sleepMinutes: Int(sleepHours * 60)
+    )
 }
 
 // MARK: - Challenge Service
@@ -110,7 +160,7 @@ class ChallengeService: ObservableObject {
         guard !activeChallenges.isEmpty else {
             // Clear cache if no active challenges
             UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
-            print("🗑️ [CHALLENGES] Cleared cached active challenges")
+            AppLogger.debug("Cleared cached active challenges", category: .social)
             return
         }
         
@@ -120,9 +170,9 @@ class ChallengeService: ObservableObject {
             UserDefaults.standard.set(data, forKey: activeChallengesCacheKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
             UserDefaults.standard.synchronize() // Force immediate write
-            print("💾 [CHALLENGES] Cached \(activeChallenges.count) active challenges")
+            AppLogger.debug("Cached \(activeChallenges.count) active challenges", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Failed to cache active challenges: \(error)")
+            AppLogger.error("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -130,7 +180,7 @@ class ChallengeService: ObservableObject {
     private func cachePendingInvites() {
         guard !pendingInvites.isEmpty else {
             UserDefaults.standard.removeObject(forKey: pendingInvitesCacheKey)
-            print("🗑️ [CHALLENGES] Cleared cached pending invites")
+            AppLogger.debug("Cleared cached pending invites", category: .social)
             return
         }
         
@@ -139,15 +189,15 @@ class ChallengeService: ObservableObject {
             let data = try encoder.encode(pendingInvites)
             UserDefaults.standard.set(data, forKey: pendingInvitesCacheKey)
             UserDefaults.standard.synchronize()
-            print("💾 [CHALLENGES] Cached \(pendingInvites.count) pending invites")
+            AppLogger.debug("Cached \(pendingInvites.count) pending invites", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Failed to cache pending invites: \(error)")
+            AppLogger.error("Failed to cache pending invites: \(error.localizedDescription)", category: .social)
         }
     }
     
     /// Load cached challenges from UserDefaults (called on init for instant display)
     private func loadCachedChallenges() {
-        print("🔍 [CHALLENGES] Loading cached challenges...")
+        AppLogger.debug("Loading cached challenges...", category: .social)
         
         // Check if the cache is from a previous day — if so, today's progress values are stale
         let cacheTimestamp = UserDefaults.standard.double(forKey: cacheDateKey)
@@ -163,7 +213,7 @@ class ChallengeService: ObservableObject {
                 // If cache is from a previous day, zero out today-specific fields
                 // so stale yesterday progress doesn't appear as today's progress
                 if !isCacheFromToday && !cached.isEmpty {
-                    print("🌙 [CHALLENGES] Cache is from previous day — zeroing out today's progress for clean reset")
+                    AppLogger.debug("Cache is from previous day — zeroing out today's progress for clean reset", category: .social)
                     cached = cached.map { challenge in
                         ActiveChallenge(
                             challengeId: challenge.challengeId,
@@ -197,13 +247,13 @@ class ChallengeService: ObservableObject {
                 }
                 
                 self.activeChallenges = cached
-                print("✅ [CHALLENGES] Loaded \(cached.count) cached active challenges instantly\(isCacheFromToday ? "" : " (today progress zeroed)")")
+                AppLogger.info("Loaded \(cached.count) cached active challenges instantly\(isCacheFromToday ? "" : " (today progress zeroed)")", category: .social)
             } catch {
-                print("⚠️ [CHALLENGES] Failed to decode cached active challenges: \(error)")
+                AppLogger.warning("Failed to decode cached active challenges: \(error.localizedDescription)", category: .social)
                 UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
             }
         } else {
-            print("ℹ️ [CHALLENGES] No cached active challenges found")
+            AppLogger.debug("No cached active challenges found", category: .social)
         }
         
         // Load cached pending invites
@@ -212,13 +262,13 @@ class ChallengeService: ObservableObject {
                 let decoder = JSONDecoder()
                 let cached = try decoder.decode([ChallengeInvite].self, from: data)
                 self.pendingInvites = cached
-                print("✅ [CHALLENGES] Loaded \(cached.count) cached pending invites instantly")
+                AppLogger.info("Loaded \(cached.count) cached pending invites instantly", category: .social)
             } catch {
-                print("⚠️ [CHALLENGES] Failed to decode cached pending invites: \(error)")
+                AppLogger.warning("Failed to decode cached pending invites: \(error.localizedDescription)", category: .social)
                 UserDefaults.standard.removeObject(forKey: pendingInvitesCacheKey)
             }
         } else {
-            print("ℹ️ [CHALLENGES] No cached pending invites found")
+            AppLogger.debug("No cached pending invites found", category: .social)
         }
         
         // Load cached pending sent challenges (outgoing)
@@ -226,9 +276,9 @@ class ChallengeService: ObservableObject {
             do {
                 let cached = try JSONDecoder().decode([PendingSentChallenge].self, from: data)
                 self.pendingSentChallenges = cached
-                print("✅ [CHALLENGES] Loaded \(cached.count) cached pending sent challenges instantly")
+                AppLogger.info("Loaded \(cached.count) cached pending sent challenges instantly", category: .social)
             } catch {
-                print("⚠️ [CHALLENGES] Failed to decode cached pending sent: \(error)")
+                AppLogger.warning("Failed to decode cached pending sent: \(error.localizedDescription)", category: .social)
                 UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
             }
         }
@@ -244,7 +294,7 @@ class ChallengeService: ObservableObject {
         activeChallenges = []
         pendingInvites = []
         pendingSentChallenges = []
-        print("🗑️ [CHALLENGES] Cleared all challenge caches")
+        AppLogger.debug("Cleared all challenge caches", category: .social)
     }
     
     // MARK: - Fetch All Data
@@ -288,9 +338,9 @@ class ChallengeService: ObservableObject {
                 FriendPhotoCache.shared.preloadPhotos(for: creatorPhotos)
             }
             
-            print("✅ [CHALLENGES] Fetched \(result.count) pending challenge invites")
+            AppLogger.info("Fetched \(result.count) pending challenge invites", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Error fetching pending invites: \(error)")
+            AppLogger.error("Error fetching pending invites: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -310,7 +360,7 @@ class ChallengeService: ObservableObject {
         // Show notifications for new invites
         for newId in newInviteIds {
             if let invite = pendingInvites.first(where: { $0.challengeId == newId }) {
-                print("🎯 [NEW CHALLENGE] Detected new challenge invite from \(invite.creatorName ?? "Friend")")
+                AppLogger.info("Detected new challenge invite from \(invite.creatorName ?? "Friend")", category: .social)
                 
                 // Send local notification
                 NotificationManager.shared.sendChallengeInviteNotification(
@@ -329,7 +379,7 @@ class ChallengeService: ObservableObject {
     /// Fetch challenges I sent that are waiting for opponent to accept
     func fetchPendingSentChallenges() async {
         guard SupabaseManager.shared.isAuthenticated else {
-            print("⚠️ [CHALLENGES] Not authenticated, skipping pending sent fetch")
+            AppLogger.warning("Not authenticated, skipping pending sent fetch", category: .social)
             return
         }
         
@@ -345,7 +395,7 @@ class ChallengeService: ObservableObject {
             await MainActor.run {
                 // Clear old cache if server returns different data
                 if result.count != self.pendingSentChallenges.count {
-                    print("🔄 [CHALLENGES] Pending sent count changed: \(self.pendingSentChallenges.count) → \(result.count)")
+                    AppLogger.debug("Pending sent count changed: \(self.pendingSentChallenges.count) → \(result.count)", category: .social)
                 }
                 self.pendingSentChallenges = result
             }
@@ -353,11 +403,11 @@ class ChallengeService: ObservableObject {
             logger.log(.info, category: .challenge, message: "Fetched \(result.count) pending SENT challenges", metadata: result.isEmpty ? nil : [
                 "challenges": result.map { "\($0.displayTitle) → \($0.opponentName ?? "?")" }.joined(separator: ", ")
             ])
-            print("💾 [CHALLENGES] Cached \(result.count) pending sent challenges")
-            print("✅ [CHALLENGES] Fetched \(result.count) pending sent challenges")
+            AppLogger.debug("Cached \(result.count) pending sent challenges", category: .social)
+            AppLogger.info("Fetched \(result.count) pending sent challenges", category: .social)
         } catch {
             logger.log(.error, category: .challenge, message: "Failed to fetch pending sent challenges", metadata: ["error": "\(error)"])
-            print("❌ [CHALLENGES] Error fetching pending sent challenges: \(error)")
+            AppLogger.error("Error fetching pending sent challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -371,44 +421,44 @@ class ChallengeService: ObservableObject {
         do {
             let data = try JSONEncoder().encode(pendingSentChallenges)
             UserDefaults.standard.set(data, forKey: pendingSentCacheKey)
-            print("💾 [CHALLENGES] Cached \(pendingSentChallenges.count) pending sent challenges")
+            AppLogger.debug("Cached \(pendingSentChallenges.count) pending sent challenges", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Failed to cache pending sent: \(error)")
+            AppLogger.error("Failed to cache pending sent: \(error.localizedDescription)", category: .social)
         }
     }
     
     /// Cancel a pending challenge I sent
     func cancelPendingChallenge(challengeId: UUID) async -> Bool {
-        print("🗑️ [CHALLENGES] cancelPendingChallenge called for: \(challengeId)")
+        AppLogger.debug("cancelPendingChallenge called for: \(challengeId)", category: .social)
         do {
             struct CancelParams: Encodable {
                 let p_challenge_id: String
             }
             
-            print("📤 [CHALLENGES] Calling cancel_challenge RPC...")
+            AppLogger.debug("Calling cancel_challenge RPC...", category: .social)
             let _: Bool = try await SupabaseManager.shared.supabaseClient
                 .rpc("cancel_challenge", params: CancelParams(p_challenge_id: challengeId.uuidString))
                 .execute()
                 .value
-            print("✅ [CHALLENGES] cancel_challenge RPC successful")
+            AppLogger.info("cancel_challenge RPC successful", category: .social)
             
             // Remove from local list on main thread
             await MainActor.run {
                 pendingSentChallenges.removeAll { $0.challengeId == challengeId }
-                print("🗑️ [CHALLENGES] Removed from local pendingSentChallenges")
+                AppLogger.debug("Removed from local pendingSentChallenges", category: .social)
             }
             cachePendingSentChallenges()
             
             // Also refresh from server to ensure consistency
-            print("🔄 [CHALLENGES] Refreshing pending sent challenges from server...")
+            AppLogger.debug("Refreshing pending sent challenges from server...", category: .social)
             await fetchPendingSentChallenges()
             
-            print("✅ [CHALLENGES] Cancelled pending challenge: \(challengeId)")
-            print("   Remaining pending sent: \(pendingSentChallenges.count)")
+            AppLogger.info("Cancelled pending challenge: \(challengeId)", category: .social)
+            AppLogger.debug("Remaining pending sent: \(pendingSentChallenges.count)", category: .social)
             return true
         } catch {
-            print("❌ [CHALLENGES] Error cancelling challenge: \(error)")
-            print("❌ [CHALLENGES] Error details: \(String(describing: error))")
+            AppLogger.error("Error cancelling challenge: \(error.localizedDescription)", category: .social)
+            AppLogger.error("Error cancelling challenge details: \(String(describing: error))", category: .social)
             return false
         }
     }
@@ -433,7 +483,7 @@ class ChallengeService: ObservableObject {
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
                     // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
-                    print("🔄 [CHALLENGES] \(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...")
+                    AppLogger.warning("\(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                     continue
                 }
@@ -473,16 +523,16 @@ class ChallengeService: ObservableObject {
             
             // Advanced logging: show exactly what progress values the widget will display
             for c in result {
-                print("📊 [WIDGET DATA] '\(c.displayTitle)' → myTotal: \(c.myTotalProgress), myToday: \(c.myTodayProgress ?? -1), oppTotal: \(c.opponentTotalProgress), oppToday: \(c.opponentTodayProgress ?? -1), amWinning: \(c.amWinning), amWinningToday: \(c.amWinningToday ?? false)")
+                AppLogger.verbose("Widget data '\(c.displayTitle)' → myTotal: \(c.myTotalProgress), myToday: \(c.myTodayProgress ?? -1), oppTotal: \(c.opponentTotalProgress), oppToday: \(c.opponentTodayProgress ?? -1), amWinning: \(c.amWinning), amWinningToday: \(c.amWinningToday ?? false)", category: .social)
             }
             
             logger.log(.info, category: .challenge, message: "Fetched \(result.count) active challenges", metadata: result.isEmpty ? nil : [
                 "challenges": result.map { "\($0.displayTitle) vs \($0.opponentName ?? "?")" }.joined(separator: ", ")
             ])
-            print("✅ [CHALLENGES] Fetched \(result.count) active challenges")
+            AppLogger.info("Fetched \(result.count) active challenges", category: .social)
         } catch {
             logger.log(.error, category: .challenge, message: "Failed to fetch active challenges", metadata: ["error": "\(error)"])
-            print("❌ [CHALLENGES] Error fetching active challenges: \(error)")
+            AppLogger.error("Error fetching active challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -494,11 +544,11 @@ class ChallengeService: ObservableObject {
     func fetchTemplates(force: Bool = false) async {
         // Skip if already loaded and not forcing
         if hasLoadedTemplates && !force && !challengeTemplates.isEmpty {
-            print("⏭️ [CHALLENGES] Templates already loaded (\(challengeTemplates.count)), skipping fetch")
+            AppLogger.debug("Templates already loaded (\(challengeTemplates.count)), skipping fetch", category: .social)
             return
         }
         
-        print("🔄 [CHALLENGES] Fetching templates... (force: \(force), hasLoaded: \(hasLoadedTemplates))")
+        AppLogger.debug("Fetching templates... (force: \(force), hasLoaded: \(hasLoadedTemplates))", category: .social)
         
         do {
             let result: [ChallengeTemplate] = try await SupabaseManager.shared.supabaseClient
@@ -510,16 +560,16 @@ class ChallengeService: ObservableObject {
             await MainActor.run {
                 // Only update if actually different to avoid unnecessary UI updates
                 if self.challengeTemplates.count != result.count {
-                    print("📝 [CHALLENGES] Updating templates: \(self.challengeTemplates.count) → \(result.count)")
+                    AppLogger.debug("Updating templates: \(self.challengeTemplates.count) → \(result.count)", category: .social)
                     self.challengeTemplates = result
                 } else {
-                    print("✅ [CHALLENGES] Templates unchanged (\(result.count))")
+                    AppLogger.debug("Templates unchanged (\(result.count))", category: .social)
                 }
                 self.hasLoadedTemplates = true
             }
-            print("✅ [CHALLENGES] Fetched \(result.count) challenge templates")
+            AppLogger.info("Fetched \(result.count) challenge templates", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Error fetching templates: \(error)")
+            AppLogger.error("Error fetching templates: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -528,12 +578,12 @@ class ChallengeService: ObservableObject {
     func getTemplatesWithoutPublishing() async -> [ChallengeTemplate] {
         // Return cached if available
         if !challengeTemplates.isEmpty {
-            print("🏆 [CHALLENGES] Returning cached templates: \(challengeTemplates.count)")
+            AppLogger.debug("Returning cached templates: \(challengeTemplates.count)", category: .social)
             return challengeTemplates
         }
         
         // Fetch fresh but don't update @Published property
-        print("🔄 [CHALLENGES] Fetching templates silently (no publish)...")
+        AppLogger.debug("Fetching templates silently (no publish)...", category: .social)
         
         do {
             let result: [ChallengeTemplate] = try await SupabaseManager.shared.supabaseClient
@@ -541,10 +591,10 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Fetched \(result.count) templates (silent)")
+            AppLogger.info("Fetched \(result.count) templates (silent)", category: .social)
             return result
         } catch {
-            print("❌ [CHALLENGES] Error fetching templates silently: \(error)")
+            AppLogger.error("Error fetching templates silently: \(error.localizedDescription)", category: .social)
             return []
         }
     }
@@ -575,7 +625,7 @@ class ChallengeService: ObservableObject {
         }
         
         // Retry RPC once after a brief delay (transient network issues)
-        print("🔄 [CHALLENGES] Retrying challenge creation after delay...")
+        AppLogger.debug("Retrying challenge creation after delay...", category: .social)
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
         
         if let challengeId = await createChallengeViaRPC(
@@ -588,7 +638,7 @@ class ChallengeService: ObservableObject {
         }
         
         // Fallback: Direct table inserts if RPC is broken/missing
-        print("⚠️ [CHALLENGES] RPC failed twice, attempting direct table insert fallback...")
+        AppLogger.warning("RPC failed twice, attempting direct table insert fallback...", category: .social)
         if let challengeId = await createChallengeDirectInsert(
             opponentId: opponentId, type: type, title: title, description: description,
             dailyTarget: dailyTarget, totalTarget: totalTarget, targetUnit: targetUnit,
@@ -598,7 +648,7 @@ class ChallengeService: ObservableObject {
             return challengeId
         }
         
-        print("❌ [CHALLENGES] All challenge creation methods failed")
+        AppLogger.error("All challenge creation methods failed", category: .social)
         return nil
     }
     
@@ -635,22 +685,17 @@ class ChallengeService: ObservableObject {
                 p_timezone: TimeZone.current.identifier
             )
             
-            print("📤 [CHALLENGES] Calling create_challenge RPC...")
-            print("   └─ opponent: \(opponentId.uuidString.prefix(8))...")
-            print("   └─ type: \(type.rawValue), title: \(title)")
-            print("   └─ daily_target: \(dailyTarget ?? 0), duration: \(durationDays)d")
+            AppLogger.debug("Calling create_challenge RPC... opponent: \(opponentId.uuidString.prefix(8)), type: \(type.rawValue), title: \(title), daily_target: \(dailyTarget ?? 0), duration: \(durationDays)d", category: .social)
             
             let challengeId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("create_challenge", params: params)
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] RPC created challenge: \(challengeId)")
+            AppLogger.info("RPC created challenge: \(challengeId)", category: .social)
             return challengeId
         } catch {
-            print("❌ [CHALLENGES] RPC create_challenge failed: \(error)")
-            print("   └─ Error type: \(String(describing: Swift.type(of: error)))")
-            print("   └─ Details: \(error.localizedDescription)")
+            AppLogger.error("RPC create_challenge failed: \(error.localizedDescription) (type: \(String(describing: Swift.type(of: error))))", category: .social)
             return nil
         }
     }
@@ -662,7 +707,7 @@ class ChallengeService: ObservableObject {
         startDateStr: String, durationDays: Int
     ) async -> UUID? {
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            print("❌ [CHALLENGES] No current user for direct insert")
+            AppLogger.error("No current user for direct insert", category: .social)
             return nil
         }
         
@@ -713,12 +758,12 @@ class ChallengeService: ObservableObject {
                 creator_timezone: TimeZone.current.identifier
             )
             
-            print("📝 [CHALLENGES] Direct insert: group_challenges...")
+            AppLogger.debug("Direct insert: group_challenges...", category: .social)
             try await SupabaseManager.shared.supabaseClient
                 .from("group_challenges")
                 .insert(challenge)
                 .execute()
-            print("✅ [CHALLENGES] group_challenges row created: \(challengeId)")
+            AppLogger.info("group_challenges row created: \(challengeId)", category: .social)
             
             // Step 2: Insert creator + opponent participants
             // Note: challenge_participants has NO "role" column
@@ -749,15 +794,15 @@ class ChallengeService: ObservableObject {
                 notify_on_opponent_complete: true
             )
             
-            print("📝 [CHALLENGES] Direct insert: challenge_participants...")
+            AppLogger.debug("Direct insert: challenge_participants...", category: .social)
             do {
                 try await SupabaseManager.shared.supabaseClient
                     .from("challenge_participants")
                     .insert([creatorParticipant, opponentParticipant])
                     .execute()
-                print("✅ [CHALLENGES] Both participants created")
+                AppLogger.info("Both participants created", category: .social)
             } catch {
-                print("❌ [CHALLENGES] Participant insert failed — cleaning up orphaned challenge \(challengeId)")
+                AppLogger.error("Participant insert failed — cleaning up orphaned challenge \(challengeId)", category: .social)
                 try? await SupabaseManager.shared.supabaseClient
                     .from("group_challenges")
                     .delete()
@@ -796,17 +841,16 @@ class ChallengeService: ObservableObject {
                     .from("push_notification_queue")
                     .insert(notification)
                     .execute()
-                print("✅ [CHALLENGES] Push notification queued")
+                AppLogger.info("Push notification queued", category: .social)
             } catch {
-                print("⚠️ [CHALLENGES] Failed to queue notification (non-critical): \(error.localizedDescription)")
+                AppLogger.warning("Failed to queue notification (non-critical): \(error.localizedDescription)", category: .social)
             }
             
-            print("✅ [CHALLENGES] Direct insert challenge created: \(challengeId)")
+            AppLogger.info("Direct insert challenge created: \(challengeId)", category: .social)
             return challengeId
             
         } catch {
-            print("❌ [CHALLENGES] Direct insert fallback failed: \(error)")
-            print("   └─ Details: \(error.localizedDescription)")
+            AppLogger.error("Direct insert fallback failed: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -819,7 +863,7 @@ class ChallengeService: ObservableObject {
             "type": type.rawValue,
             "unit": targetUnit
         ])
-        print("✅ [CHALLENGES] Created challenge: \(challengeId)")
+        AppLogger.info("Created challenge: \(challengeId)", category: .social)
         
         // Log interaction for friend ranking
         await FriendRankingService.shared.logInteraction(
@@ -842,7 +886,7 @@ class ChallengeService: ObservableObject {
         let challengeStartDay = calendar.startOfDay(for: startDate)
         
         if challengeStartDay <= today {
-            print("🔄 [CHALLENGES] Challenge starts today - syncing creator's existing progress...")
+            AppLogger.debug("Challenge starts today - syncing creator's existing progress...", category: .social)
             await syncCreatorProgressOnCreate(
                 challengeId: challengeId,
                 challengeType: type,
@@ -897,14 +941,14 @@ class ChallengeService: ObservableObject {
                 p_timezone: TimeZone.current.identifier
             )
             
-            print("📤 [CHALLENGES] Calling create_group_challenge RPC with \(memberIds.count) members...")
+            AppLogger.debug("Calling create_group_challenge RPC with \(memberIds.count) members...", category: .social)
             
             let groupId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("create_group_challenge", params: params)
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Created group challenge: \(groupId)")
+            AppLogger.info("Created group challenge: \(groupId)", category: .social)
             
             // Log interactions for all members
             for memberId in memberIds {
@@ -921,14 +965,13 @@ class ChallengeService: ObservableObject {
             
             return groupId
         } catch {
-            print("❌ [CHALLENGES] RPC create_group_challenge failed: \(error)")
-            print("   └─ Details: \(error.localizedDescription)")
+            AppLogger.error("RPC create_group_challenge failed: \(error.localizedDescription)", category: .social)
         }
         
         // Fallback: Direct inserts
-        print("⚠️ [CHALLENGES] Attempting direct insert fallback for group challenge...")
+        AppLogger.warning("Attempting direct insert fallback for group challenge...", category: .social)
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            print("❌ [CHALLENGES] No current user for group challenge fallback")
+            AppLogger.error("No current user for group challenge fallback", category: .social)
             return nil
         }
         
@@ -1004,7 +1047,7 @@ class ChallengeService: ObservableObject {
                     .insert(participants)
                     .execute()
             } catch {
-                print("❌ [CHALLENGES] Group participant insert failed — cleaning up orphaned challenge \(challengeId)")
+                AppLogger.error("Group participant insert failed — cleaning up orphaned challenge \(challengeId)", category: .social)
                 try? await SupabaseManager.shared.supabaseClient
                     .from("group_challenges")
                     .delete()
@@ -1013,7 +1056,7 @@ class ChallengeService: ObservableObject {
                 throw error
             }
             
-            print("✅ [CHALLENGES] Group challenge created via direct insert: \(challengeId)")
+            AppLogger.info("Group challenge created via direct insert: \(challengeId)", category: .social)
             
             for memberId in memberIds {
                 await FriendRankingService.shared.logInteraction(
@@ -1027,7 +1070,7 @@ class ChallengeService: ObservableObject {
             await fetchActiveGroupChallenges()
             return challengeId
         } catch {
-            print("❌ [CHALLENGES] Group challenge direct insert failed: \(error)")
+            AppLogger.error("Group challenge direct insert failed: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1064,9 +1107,9 @@ class ChallengeService: ObservableObject {
                 FriendPhotoCache.shared.preloadPhotos(for: memberPhotos)
             }
             
-            print("✅ [CHALLENGES] Fetched \(result.count) active group challenges")
+            AppLogger.info("Fetched \(result.count) active group challenges", category: .social)
         } catch {
-            print("❌ [CHALLENGES] Error fetching group challenges: \(error)")
+            AppLogger.error("Error fetching group challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1080,7 +1123,7 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Accepted group challenge: \(challengeId), all accepted: \(allAccepted)")
+            AppLogger.info("Accepted group challenge: \(challengeId), all accepted: \(allAccepted)", category: .social)
             await fetchActiveGroupChallenges()
             
             // IMPORTANT: Sync existing health data immediately after accepting
@@ -1095,7 +1138,7 @@ class ChallengeService: ObservableObject {
             
             return allAccepted
         } catch {
-            print("❌ [CHALLENGES] Error accepting group challenge: \(error)")
+            AppLogger.error("Error accepting group challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1107,7 +1150,7 @@ class ChallengeService: ObservableObject {
                 .rpc("decline_group_challenge", params: DeclineParams(p_challenge_id: challengeId.uuidString))
                 .execute()
             
-            print("✅ [CHALLENGES] Declined group challenge: \(challengeId)")
+            AppLogger.info("Declined group challenge: \(challengeId)", category: .social)
             
             // Remove from local list immediately
             activeGroupChallenges.removeAll { $0.challengeId == challengeId }
@@ -1119,7 +1162,7 @@ class ChallengeService: ObservableObject {
             // Update app icon badge after clearing a pending invite
             await MainActor.run { NotificationManager.shared.updateBadgeCount() }
         } catch {
-            print("❌ [CHALLENGES] Error declining group challenge: \(error)")
+            AppLogger.error("Error declining group challenge: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1134,7 +1177,7 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Left group challenge: \(challengeId), result: \(result)")
+            AppLogger.info("Left group challenge: \(challengeId), result: \(result)", category: .social)
             
             // Remove from local group challenges
             activeGroupChallenges.removeAll { $0.challengeId == challengeId }
@@ -1149,7 +1192,7 @@ class ChallengeService: ObservableObject {
             
             return result
         } catch {
-            print("❌ [CHALLENGES] Error leaving group challenge: \(error)")
+            AppLogger.error("Error leaving group challenge: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1168,10 +1211,10 @@ class ChallengeService: ObservableObject {
             // Remove from local list
             activeGroupChallenges.removeAll { $0.challengeId == challengeId }
             
-            print("✅ [CHALLENGES] Cancelled group challenge: \(challengeId)")
+            AppLogger.info("Cancelled group challenge: \(challengeId)", category: .social)
             return true
         } catch {
-            print("❌ [CHALLENGES] Error cancelling group challenge: \(error)")
+            AppLogger.error("Error cancelling group challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1193,10 +1236,10 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Nudged member \(recipientId) for challenge \(challengeId): \(sent ? "sent" : "already nudged")")
+            AppLogger.info("Nudged member \(recipientId) for challenge \(challengeId): \(sent ? "sent" : "already nudged")", category: .social)
             return sent
         } catch {
-            print("❌ [CHALLENGES] Error nudging member: \(error)")
+            AppLogger.error("Error nudging member: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1221,24 +1264,24 @@ class ChallengeService: ObservableObject {
                 ))
                 .execute()
             
-            print("✅ [CHALLENGES] Logged group progress: \(progressValue) for \(challengeId)")
+            AppLogger.info("Logged group progress: \(progressValue) for \(challengeId)", category: .social)
             return true
         } catch {
-            print("❌ [CHALLENGES] Error logging group progress: \(error)")
+            AppLogger.error("Error logging group progress: \(error.localizedDescription)", category: .social)
             return false
         }
     }
     
     /// Sync existing health data immediately after accepting a group challenge
     private func syncExistingProgressToGroupChallenge(challengeId: UUID) async {
-        print("🔄 [CHALLENGES] Syncing existing progress for group challenge \(challengeId)...")
+        AppLogger.debug("Syncing existing progress for group challenge \(challengeId)...", category: .social)
         
         // Refresh HealthKit data first
         await HealthKitService.shared.syncAllData(force: true)
         
         // Find this group challenge
         guard let challenge = activeGroupChallenges.first(where: { $0.challengeId == challengeId }) else {
-            print("⚠️ [CHALLENGES] Could not find group challenge in active list")
+            AppLogger.warning("Could not find group challenge in active list", category: .social)
             return
         }
         
@@ -1249,13 +1292,13 @@ class ChallengeService: ObservableObject {
         )
         
         if progressValue > 0 {
-            print("📊 [CHALLENGES] Found existing progress: \(progressValue) \(challenge.targetUnit)")
+            AppLogger.debug("Found existing progress: \(progressValue) \(challenge.targetUnit)", category: .social)
             let success = await logGroupProgress(challengeId: challengeId, progressValue: progressValue)
             if success {
-                print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to group challenge")
+                AppLogger.info("Synced \(progressValue) \(challenge.targetUnit) to group challenge", category: .social)
             }
         } else {
-            print("ℹ️ [CHALLENGES] No existing progress to sync for group challenge")
+            AppLogger.debug("No existing progress to sync for group challenge", category: .social)
         }
     }
     
@@ -1263,7 +1306,7 @@ class ChallengeService: ObservableObject {
     func syncHealthKitDataToGroupChallenges() async {
         guard !activeGroupChallenges.isEmpty else { return }
         
-        print("🔄 [CHALLENGES] Syncing HealthKit data to \(activeGroupChallenges.count) active group challenges...")
+        AppLogger.debug("Syncing HealthKit data to \(activeGroupChallenges.count) active group challenges...", category: .social)
         
         for challenge in activeGroupChallenges {
             // Sync if user has accepted, even if challenge is still "pending" (waiting for others)
@@ -1278,23 +1321,23 @@ class ChallengeService: ObservableObject {
             if progressValue > 0 {
                 let success = await logGroupProgress(challengeId: challenge.challengeId, progressValue: progressValue)
                 if success {
-                    print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to group '\(challenge.displayTitle)'")
+                    AppLogger.info("Synced \(progressValue) \(challenge.targetUnit) to group '\(challenge.displayTitle)'", category: .social)
                 }
             }
         }
         
         // Refresh to show updated progress
         await fetchActiveGroupChallenges()
-        print("✅ [CHALLENGES] Group challenge HealthKit sync complete")
+        AppLogger.info("Group challenge HealthKit sync complete", category: .social)
     }
     
     /// Sync creator's existing health data when they create a challenge that starts today
     /// This ensures they get credit for progress already made before creating the challenge
     private func syncCreatorProgressOnCreate(challengeId: UUID, challengeType: ChallengeType, targetUnit: String) async {
-        print("🔄 [CHALLENGES] Syncing creator's existing progress for newly created challenge...")
+        AppLogger.debug("Syncing creator's existing progress for newly created challenge...", category: .social)
         
         // First, refresh HealthKit data to ensure we have the latest
-        print("📱 [CHALLENGES] Refreshing HealthKit data for creator...")
+        AppLogger.debug("Refreshing HealthKit data for creator...", category: .social)
         await HealthKitService.shared.syncAllData(force: true)
         
         // Calculate progress from all available health data sources
@@ -1304,7 +1347,7 @@ class ChallengeService: ObservableObject {
         )
         
         if progressValue > 0 {
-            print("📊 [CHALLENGES] Found existing creator progress: \(progressValue) \(targetUnit)")
+            AppLogger.debug("Found existing creator progress: \(progressValue) \(targetUnit)", category: .social)
             
             let success = await logProgress(
                 challengeId: challengeId,
@@ -1313,10 +1356,10 @@ class ChallengeService: ObservableObject {
             )
             
             if success {
-                print("✅ [CHALLENGES] Logged creator's initial progress of \(progressValue) \(targetUnit)")
+                AppLogger.info("Logged creator's initial progress of \(progressValue) \(targetUnit)", category: .social)
             }
         } else {
-            print("ℹ️ [CHALLENGES] No existing progress to sync for creator")
+            AppLogger.debug("No existing progress to sync for creator", category: .social)
         }
     }
     
@@ -1326,18 +1369,18 @@ class ChallengeService: ObservableObject {
         logger.log(.info, category: .challenge, message: accept ? "⚡ ACCEPTING challenge" : "❌ DECLINING challenge", metadata: [
             "challenge_id": challengeId.uuidString.prefix(8)
         ])
-        print("🔄 [CHALLENGES] respondToChallenge called - challengeId: \(challengeId), accept: \(accept)")
+        AppLogger.debug("respondToChallenge called - challengeId: \(challengeId), accept: \(accept)", category: .social)
         do {
             // Get challenge details BEFORE accepting (need type/unit for progress sync)
             let inviteDetails = pendingInvites.first { $0.challengeId == challengeId }
-            print("📋 [CHALLENGES] Invite details: \(inviteDetails?.title ?? "not found")")
+            AppLogger.debug("Invite details: \(inviteDetails?.title ?? "not found")", category: .social)
             
             struct RespondParams: Encodable {
                 let p_challenge_id: String
                 let p_accept: Bool
             }
             
-            print("📤 [CHALLENGES] Calling respond_to_challenge RPC...")
+            AppLogger.debug("Calling respond_to_challenge RPC...", category: .social)
             let _: Bool = try await SupabaseManager.shared.supabaseClient
                 .rpc("respond_to_challenge", params: RespondParams(
                     p_challenge_id: challengeId.uuidString,
@@ -1345,17 +1388,17 @@ class ChallengeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            print("✅ [CHALLENGES] RPC call successful")
+            AppLogger.info("respond_to_challenge RPC call successful", category: .social)
             
             // Force refresh from server to ensure UI updates properly
             await MainActor.run {
                 // Clear locally first
                 pendingInvites.removeAll { $0.challengeId == challengeId }
-                print("🗑️ [CHALLENGES] Removed challenge from pending invites locally")
+                AppLogger.debug("Removed challenge from pending invites locally", category: .social)
             }
             
             if accept {
-                print("✅ [ACCEPT FLOW] Step 1: RPC successful - starting data refresh")
+                AppLogger.info("[ACCEPT FLOW] Step 1: RPC successful - starting data refresh", category: .social)
                 
                 // Fetch fresh data from server (both 1v1 AND group challenges)
                 await fetchPendingInvites()
@@ -1363,24 +1406,24 @@ class ChallengeService: ObservableObject {
                 await fetchActiveGroupChallenges()  // CRITICAL: Group challenge may have been accepted via 1v1 path
                 await fetchPendingSentChallenges()
                 
-                print("📊 [ACCEPT FLOW] Step 2: After initial fetch - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
+                AppLogger.debug("[ACCEPT FLOW] Step 2: After initial fetch - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)", category: .social)
                 
                 // IMPORTANT: Sync existing progress from today
-                print("🔄 [ACCEPT FLOW] Step 3: Syncing existing HealthKit progress...")
+                AppLogger.debug("[ACCEPT FLOW] Step 3: Syncing existing HealthKit progress...", category: .social)
                 await syncExistingProgressOnAccept(challengeId: challengeId, inviteDetails: inviteDetails)
                 
                 // Also sync group challenge progress if this was a group challenge
                 await syncExistingProgressToGroupChallenge(challengeId: challengeId)
                 
                 // Fetch AGAIN after syncing our progress so the widget shows updated numbers
-                print("🔄 [ACCEPT FLOW] Step 4: Fetching active challenges AGAIN after progress sync...")
+                AppLogger.debug("[ACCEPT FLOW] Step 4: Fetching active challenges AGAIN after progress sync...", category: .social)
                 await fetchActiveChallenges()
                 await fetchActiveGroupChallenges()
                 
-                print("📊 [ACCEPT FLOW] Step 5: Final state - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)")
-                print("✅ [ACCEPT FLOW] Complete - widget should now show correct progress")
+                AppLogger.debug("[ACCEPT FLOW] Step 5: Final state - Active 1v1: \(activeChallenges.count), Active Group: \(activeGroupChallenges.count), myToday: \(activeChallenges.first?.myTodayProgress ?? -1), oppToday: \(activeChallenges.first?.opponentTodayProgress ?? -1)", category: .social)
+                AppLogger.info("[ACCEPT FLOW] Complete - widget should now show correct progress", category: .social)
             } else {
-                print("✅ [CHALLENGES] Declined challenge - refreshing pending invites")
+                AppLogger.info("Declined challenge - refreshing pending invites", category: .social)
                 await fetchPendingInvites()  // Refresh to remove the declined one
             }
             
@@ -1389,8 +1432,8 @@ class ChallengeService: ObservableObject {
             
             return true
         } catch {
-            print("❌ [CHALLENGES] Error responding to challenge: \(error)")
-            print("❌ [CHALLENGES] Error details: \(String(describing: error))")
+            AppLogger.error("Error responding to challenge: \(error.localizedDescription)", category: .social)
+            AppLogger.error("Error responding to challenge details: \(String(describing: error))", category: .social)
             return false
         }
     }
@@ -1398,21 +1441,21 @@ class ChallengeService: ObservableObject {
     /// Sync existing health data when a challenge is accepted
     /// This ensures users get credit for progress already made today
     private func syncExistingProgressOnAccept(challengeId: UUID, inviteDetails: ChallengeInvite?) async {
-        print("🔄 [CHALLENGES] Syncing existing progress for newly accepted challenge...")
+        AppLogger.debug("Syncing existing progress for newly accepted challenge...", category: .social)
         
         // First, refresh HealthKit data to ensure we have the latest
-        print("📱 [CHALLENGES] Refreshing HealthKit data...")
+        AppLogger.debug("Refreshing HealthKit data...", category: .social)
         await HealthKitService.shared.syncAllData(force: true)
         
         // Also refresh Strava if connected
         if StravaService.shared.isConnected {
-            print("🏃 [CHALLENGES] Refreshing Strava data...")
+            AppLogger.debug("Refreshing Strava data...", category: .social)
             await StravaService.shared.syncActivities()
         }
         
         // Find the accepted challenge in our active list
         guard let challenge = activeChallenges.first(where: { $0.challengeId == challengeId }) else {
-            print("⚠️ [CHALLENGES] Could not find accepted challenge in active list")
+            AppLogger.warning("Could not find accepted challenge in active list", category: .social)
             return
         }
         
@@ -1423,7 +1466,7 @@ class ChallengeService: ObservableObject {
         )
         
         if progressValue > 0 {
-            print("📊 [CHALLENGES] Found existing progress: \(progressValue) \(challenge.targetUnit)")
+            AppLogger.debug("Found existing progress: \(progressValue) \(challenge.targetUnit)", category: .social)
             
             let success = await logProgress(
                 challengeId: challengeId,
@@ -1432,15 +1475,15 @@ class ChallengeService: ObservableObject {
             )
             
             if success {
-                print("✅ [CHALLENGES] Logged initial progress of \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'")
+                AppLogger.info("Logged initial progress of \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'", category: .social)
                 
                 // Check if this already meets the daily target
                 if progressValue >= (challenge.dailyTarget ?? 0) {
-                    print("🎉 [CHALLENGES] User already met daily target! (\(progressValue)/\(challenge.dailyTarget ?? 0))")
+                    AppLogger.info("User already met daily target! (\(progressValue)/\(challenge.dailyTarget ?? 0))", category: .social)
                 }
             }
         } else {
-            print("ℹ️ [CHALLENGES] No existing progress to sync for this challenge type")
+            AppLogger.debug("No existing progress to sync for this challenge type", category: .social)
         }
     }
     
@@ -1454,7 +1497,7 @@ class ChallengeService: ObservableObject {
             targetUnit: targetUnit
         )
         totalProgress = max(totalProgress, healthKitProgress)
-        print("📱 [CHALLENGES] HealthKit progress: \(healthKitProgress)")
+        AppLogger.verbose("HealthKit progress: \(healthKitProgress)", category: .social)
         
         // 2. Get Strava data if connected
         let stravaProgress = await calculateProgressFromStrava(
@@ -1472,9 +1515,9 @@ class ChallengeService: ObservableObject {
             // So we still take max to avoid double counting
             totalProgress = max(totalProgress, healthKitProgress + stravaProgress / 2) // Conservative estimate
         }
-        print("🏃 [CHALLENGES] Strava progress: \(stravaProgress)")
+        AppLogger.verbose("Strava progress: \(stravaProgress)", category: .social)
         
-        print("📊 [CHALLENGES] Total progress from all sources: \(totalProgress)")
+        AppLogger.verbose("Total progress from all sources: \(totalProgress)", category: .social)
         return totalProgress
     }
     
@@ -1576,10 +1619,10 @@ class ChallengeService: ObservableObject {
             pendingInvites.removeAll { $0.challengeId == challengeId }
             cachePendingInvites()
             
-            print("✅ [CHALLENGES] Challenge cancelled successfully")
+            AppLogger.info("Challenge cancelled successfully", category: .social)
             return true
         } catch {
-            print("❌ [CHALLENGES] Error cancelling challenge: \(error)")
+            AppLogger.error("Error cancelling challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1626,14 +1669,14 @@ class ChallengeService: ObservableObject {
                     .execute()
                     .value
                 
-                print("✅ [PROGRESS LOG] Logged \(progressValue) (source: \(source)) for challenge \(challengeId.uuidString.prefix(8))")
+                AppLogger.info("Logged \(progressValue) (source: \(source)) for challenge \(challengeId.uuidString.prefix(8))", category: .social)
                 
                 // Refresh active challenges to show updated progress
                 await fetchActiveChallenges()
                 
                 // Log what the widget will now show
                 if let updated = activeChallenges.first(where: { $0.challengeId == challengeId }) {
-                    print("📊 [PROGRESS LOG] After refresh → myToday: \(updated.myTodayProgress ?? -1), oppToday: \(updated.opponentTodayProgress ?? -1), myTotal: \(updated.myTotalProgress), oppTotal: \(updated.opponentTotalProgress)")
+                    AppLogger.verbose("After refresh → myToday: \(updated.myTodayProgress ?? -1), oppToday: \(updated.opponentTodayProgress ?? -1), myTotal: \(updated.myTotalProgress), oppTotal: \(updated.opponentTotalProgress)", category: .social)
                 }
                 
                 return true
@@ -1643,10 +1686,10 @@ class ChallengeService: ObservableObject {
                     // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections at startup
                     // Use increasing backoff: 1s, 2s, 4s, 8s to let the request storm settle
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                    print("⚠️ [CHALLENGES] log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    AppLogger.warning("log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    print("❌ [CHALLENGES] Error logging progress: \(error)")
+                    AppLogger.error("Error logging progress: \(error.localizedDescription)", category: .social)
                     return false
                 }
             }
@@ -1660,7 +1703,7 @@ class ChallengeService: ObservableObject {
     /// Call this when HealthKit data updates (steps, workouts, active minutes)
     func syncHealthKitDataToChallenges() async {
         guard !activeChallenges.isEmpty else {
-            print("📊 [CHALLENGES] No active challenges to sync")
+            AppLogger.debug("No active challenges to sync", category: .social)
             return
         }
         
@@ -1672,15 +1715,15 @@ class ChallengeService: ObservableObject {
         
         let healthKit = HealthKitService.shared
         
-        print("🔄 [CHALLENGES] Syncing HealthKit data to \(activeChallenges.count) active challenges...")
+        AppLogger.debug("Syncing HealthKit data to \(activeChallenges.count) active challenges...", category: .social)
         
         for challenge in activeChallenges {
-            print("📊 [CHALLENGES] Checking challenge '\(challenge.title)' (status: \(challenge.status))")
+            AppLogger.verbose("Checking challenge '\(challenge.title)' (status: \(challenge.status))", category: .social)
             
             // Sync if challenge is active OR pending (pending means accepted but waiting for start date)
             // This ensures users who accept early get credit for progress made before start date
             guard challenge.status == "active" || challenge.status == "pending" else {
-                print("⏭️ [CHALLENGES] Skipping '\(challenge.title)' - status is '\(challenge.status)'")
+                AppLogger.verbose("Skipping '\(challenge.title)' - status is '\(challenge.status)'", category: .social)
                 continue
             }
             
@@ -1689,7 +1732,7 @@ class ChallengeService: ObservableObject {
                 targetUnit: challenge.targetUnit
             )
             
-            print("📊 [CHALLENGES] Calculated \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'")
+            AppLogger.verbose("Calculated \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'", category: .social)
             
             // For "recalculable" types (protein, hydration, calories) the local value
             // is authoritative — we MUST log even when 0 so stale yesterday rows
@@ -1698,7 +1741,7 @@ class ChallengeService: ObservableObject {
             let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
             
             if progressValue > 0 || isRecalculable {
-                print("🔄 [CHALLENGES] Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)' (allowDecrease: \(isRecalculable))...")
+                AppLogger.debug("Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)' (allowDecrease: \(isRecalculable))...", category: .social)
                 let success = await logProgress(
                     challengeId: challenge.challengeId,
                     progressValue: max(progressValue, 0),
@@ -1707,16 +1750,16 @@ class ChallengeService: ObservableObject {
                 )
                 
                 if success {
-                    print("✅ [CHALLENGES] Synced \(progressValue) \(challenge.targetUnit) to '\(challenge.title)' from HealthKit")
+                    AppLogger.info("Synced \(progressValue) \(challenge.targetUnit) to '\(challenge.title)' from HealthKit", category: .social)
                 } else {
-                    print("❌ [CHALLENGES] Failed to sync progress for '\(challenge.title)'")
+                    AppLogger.error("Failed to sync progress for '\(challenge.title)'", category: .social)
                 }
             } else {
-                print("⏭️ [CHALLENGES] Skipping '\(challenge.title)' - progressValue is 0")
+                AppLogger.verbose("Skipping '\(challenge.title)' - progressValue is 0", category: .social)
             }
         }
         
-        print("✅ [CHALLENGES] HealthKit sync complete for all 1v1 challenges")
+        AppLogger.info("HealthKit sync complete for all 1v1 challenges", category: .social)
         
         // Also sync group challenges
         await syncHealthKitDataToGroupChallenges()
@@ -1802,13 +1845,11 @@ class ChallengeService: ObservableObject {
             return MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
             
         case "calories":
-            // Calorie challenge — pull from HealthKit (burned) or MealService (consumed)
-            let hkCalories = healthKit.todayCalories
-            let mealCalories = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
-            return max(hkCalories, mealCalories)
+            // Calorie challenge uses burned calories only (HealthKit active energy)
+            return healthKit.todayCalories
             
         default:
-            print("⚠️ [CHALLENGES] Unknown challenge type: \(challengeType)")
+            AppLogger.warning("Unknown challenge type: \(challengeType)", category: .social)
             return 0
         }
     }
@@ -1824,7 +1865,7 @@ class ChallengeService: ObservableObject {
         // Without this, a new-day sync can push yesterday's protein/calories as today's.
         MealService.shared.ensureFreshForToday()
         
-        print("🔄 [CHALLENGES] Universal sync: pushing all tracking data to challenges...")
+        AppLogger.debug("Universal sync: pushing all tracking data to challenges...", category: .social)
         
         // Sync 1v1 challenges
         for challenge in activeChallenges {
@@ -1847,10 +1888,8 @@ class ChallengeService: ObservableObject {
                 source = "meals"
                 
             case .calories:
-                let hkCal = HealthKitService.shared.todayCalories
-                let mealCal = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
-                progressValue = max(hkCal, mealCal)
-                source = hkCal >= mealCal ? "healthkit" : "meals"
+                progressValue = HealthKitService.shared.todayCalories
+                source = "healthkit"
                 
             case .steps:
                 let steps = HealthKitManager.shared.todaySteps > 0
@@ -1916,7 +1955,7 @@ class ChallengeService: ObservableObject {
         // Also sync community challenges
         await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
         
-        print("✅ [CHALLENGES] Universal tracking sync complete")
+        AppLogger.info("Universal tracking sync complete", category: .social)
     }
     
     /// Quick sync for a SPECIFIC challenge type (called immediately when user logs data).
@@ -1948,7 +1987,7 @@ class ChallengeService: ObservableObject {
         }
         
         let totalCount = matching.count + matchingGroup.count
-        print("⚡ [CHALLENGES] Quick sync \(type.rawValue): \(value) \(type.unitLabel) to \(totalCount) challenge(s) (allowDecrease: \(allowDecrease))")
+        AppLogger.debug("Quick sync \(type.rawValue): \(value) \(type.unitLabel) to \(totalCount) challenge(s) (allowDecrease: \(allowDecrease))", category: .social)
         
         for challenge in matching {
             var adjustedValue = value
@@ -2013,7 +2052,7 @@ class ChallengeService: ObservableObject {
     ) async {
         guard !activeChallenges.isEmpty else { return }
         
-        print("🏃 [CHALLENGES] Checking Strava \(workoutType) workout against challenges...")
+        AppLogger.debug("Checking Strava \(workoutType) workout against challenges...", category: .social)
         
         for challenge in activeChallenges {
             guard challenge.status == "active" else { continue }
@@ -2072,7 +2111,7 @@ class ChallengeService: ObservableObject {
                 )
                 
                 if success {
-                    print("✅ [CHALLENGES] Logged Strava \(workoutType): \(progressValue) \(challenge.targetUnit) to '\(challenge.title)'")
+                    AppLogger.info("Logged Strava \(workoutType): \(progressValue) \(challenge.targetUnit) to '\(challenge.title)'", category: .social)
                 }
             }
         }
@@ -2083,7 +2122,7 @@ class ChallengeService: ObservableObject {
     func syncFit33WorkoutToChallenge(workoutType: String) async {
         guard !activeChallenges.isEmpty else { return }
         
-        print("💪 [CHALLENGES] Checking Fit33 \(workoutType) workout against challenges...")
+        AppLogger.debug("Checking Fit33 \(workoutType) workout against challenges...", category: .social)
         
         for challenge in activeChallenges {
             guard challenge.status == "active" else { continue }
@@ -2113,7 +2152,7 @@ class ChallengeService: ObservableObject {
                 )
                 
                 if success {
-                    print("✅ [CHALLENGES] Logged Fit33 \(workoutType) workout to '\(challenge.title)'")
+                    AppLogger.info("Logged Fit33 \(workoutType) workout to '\(challenge.title)'", category: .social)
                 }
             }
         }
@@ -2128,7 +2167,7 @@ class ChallengeService: ObservableObject {
         
         // 1v1 challenges
         for challenge in activeChallenges {
-            guard challenge.status == "active" || challenge.status == "pending" else { continue }
+            guard challenge.status == "active" else { continue }
             guard challenge.challengeType == challengeType else { continue }
             
             let success = await logProgress(
@@ -2138,7 +2177,7 @@ class ChallengeService: ObservableObject {
             )
             
             if success {
-                print("✅ [CHALLENGES] Logged \(source) \(challengeType): \(progressValue) to '\(challenge.title)'")
+                AppLogger.info("Logged \(source) \(challengeType): \(progressValue) to '\(challenge.title)'", category: .social)
             }
         }
         
@@ -2153,7 +2192,7 @@ class ChallengeService: ObservableObject {
             )
             
             if success {
-                print("✅ [CHALLENGES] Logged \(source) \(challengeType): \(progressValue) to group '\(challenge.displayTitle)'")
+                AppLogger.info("Logged \(source) \(challengeType): \(progressValue) to group '\(challenge.displayTitle)'", category: .social)
             }
         }
     }
@@ -2166,7 +2205,7 @@ class ChallengeService: ObservableObject {
         // Ensure meals are fresh for protein/calorie challenges
         MealService.shared.ensureFreshForToday()
         
-        print("🔄 [CHALLENGES] Recalculating progress for \(activeChallenges.count) challenges...")
+        AppLogger.debug("Recalculating progress for \(activeChallenges.count) challenges...", category: .social)
         
         let eligible = activeChallenges.filter { $0.status == "active" || $0.status == "pending" }
         
@@ -2201,7 +2240,7 @@ class ChallengeService: ObservableObject {
         // Refresh challenges to show updated progress
         await fetchActiveChallenges()
         
-        print("✅ [CHALLENGES] All challenge progress recalculated")
+        AppLogger.info("All challenge progress recalculated", category: .social)
     }
     
     // MARK: - Get Challenge Details
@@ -2219,7 +2258,7 @@ class ChallengeService: ObservableObject {
             
             return result.first
         } catch {
-            print("❌ [CHALLENGES] Error fetching challenge details: \(error)")
+            AppLogger.error("Error fetching challenge details: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -2242,10 +2281,10 @@ class ChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CHALLENGES] Notification preference updated: \(notify ? "ON" : "OFF")")
+            AppLogger.info("Notification preference updated: \(notify ? "ON" : "OFF")", category: .social)
             return true
         } catch {
-            print("❌ [CHALLENGES] Error updating notification preference: \(error)")
+            AppLogger.error("Error updating notification preference: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -2265,41 +2304,9 @@ class ChallengeService: ObservableObject {
             
             return result
         } catch {
-            print("❌ [CHALLENGES] Error fetching challenges with friend: \(error)")
+            AppLogger.error("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
             return []
         }
-    }
-    
-    // MARK: - Sync HealthKit Progress
-    
-    /// Automatically sync HealthKit data to relevant challenges
-    func syncHealthKitProgress() async {
-        let healthKit = HealthKitService.shared
-        
-        // Ensure HealthKit is authorized
-        guard healthKit.isAuthorized else { return }
-        
-        // Sync today's data to active step/walk/run challenges
-        for challenge in activeChallenges {
-            switch ChallengeType(rawValue: challenge.challengeType) {
-            case .steps:
-                await logProgress(
-                    challengeId: challenge.challengeId,
-                    progressValue: healthKit.todaySteps,
-                    source: "healthkit"
-                )
-            case .activeMinutes:
-                await logProgress(
-                    challengeId: challenge.challengeId,
-                    progressValue: healthKit.todayActiveMinutes,
-                    source: "healthkit"
-                )
-            default:
-                break
-            }
-        }
-        
-        print("✅ [CHALLENGES] Synced HealthKit data to challenges")
     }
 }
 
@@ -2311,66 +2318,54 @@ class ChallengeService: ObservableObject {
 class ChallengeProgressResolver: ObservableObject {
     static let shared = ChallengeProgressResolver()
     
-    private let hydrationService = HydrationService.shared
-    private let mealService = MealService.shared
-    private let healthKitService = HealthKitService.shared
-    private let healthKitManager = HealthKitManager.shared
-    
     private init() {}
     
-    /// Returns the live "my today" progress value for the given challenge type, read from the
-    /// actual tracking service. Always returns `max(localValue, serverValue)` so the displayed
-    /// number is never lower than what the server has — this keeps both devices consistent.
-    func liveProgress(for challenge: ActiveChallenge) -> Int {
-        let resolvedType = challenge.resolvedType
-        let serverValue = challenge.myTodayProgress ?? 0
-        
+    static func resolveProgress(challengeType: ChallengeType, targetUnit: String, serverValue: Int) -> Int {
         let localValue: Int
         
-        switch resolvedType {
+        switch challengeType {
         case .steps:
-            // Prefer HealthKitManager (real-time observer) → HealthKitService fallback
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
+            let steps = HealthKitManager.shared.todaySteps > 0 ? HealthKitManager.shared.todaySteps : HealthKitService.shared.todaySteps
             localValue = steps
             
         case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            // If challenge target is in oz, convert
-            if challenge.targetUnit.lowercased() == "oz" {
+            let totalMl = HydrationService.shared.todayTotal
+            if targetUnit.lowercased() == "oz" {
                 localValue = Int(Double(totalMl) / 29.5735)
             } else {
                 localValue = totalMl
             }
             
         case .protein:
-            localValue = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+            localValue = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
             
         case .calories:
-            // Use HealthKit active calories (burned) — or MealService consumed calories
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            localValue = max(hkCalories, mealCalories)
+            localValue = HealthKitService.shared.todayCalories
             
         case .activeMinutes:
-            localValue = healthKitService.todayActiveMinutes
+            localValue = HealthKitService.shared.todayActiveMinutes
             
         case .walk, .run:
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            if challenge.targetUnit.lowercased().contains("min") {
-                localValue = healthKitService.todayActiveMinutes
+            if targetUnit.lowercased().contains("min") {
+                localValue = HealthKitService.shared.todayActiveMinutes
             } else {
-                localValue = Int(km)
+                let km = HealthKitService.shared.todayDistance / 1000.0
+                localValue = Int(km.rounded())
             }
             
         case .lift, .workoutStreak:
             localValue = 0
         }
         
-        // CRITICAL: Always return the higher of local vs server so both devices
-        // agree. Local can lag (HealthKit not loaded yet) or server can lag
-        // (network delay). max() keeps the widget consistent for both users.
         return max(localValue, serverValue)
+    }
+    
+    func liveProgress(for challenge: ActiveChallenge) -> Int {
+        Self.resolveProgress(
+            challengeType: challenge.resolvedType,
+            targetUnit: challenge.targetUnit,
+            serverValue: challenge.myTodayProgress ?? 0
+        )
     }
     
     /// Returns a formatted string for the live progress + unit
@@ -2424,48 +2419,11 @@ class ChallengeProgressResolver: ObservableObject {
     /// Always returns max(local, server) so the displayed value is never lower
     /// than what the server has — keeps all devices consistent.
     func liveProgress(for challenge: ActiveGroupChallenge, serverValue: Int = 0) -> Int {
-        let resolvedType = challenge.resolvedType
-        
-        let localValue: Int
-        
-        switch resolvedType {
-        case .steps:
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
-            localValue = steps
-            
-        case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            if challenge.targetUnit.lowercased() == "oz" {
-                localValue = Int(Double(totalMl) / 29.5735)
-            } else {
-                localValue = totalMl
-            }
-            
-        case .protein:
-            localValue = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-            
-        case .calories:
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            localValue = max(hkCalories, mealCalories)
-            
-        case .activeMinutes:
-            localValue = healthKitService.todayActiveMinutes
-            
-        case .walk, .run:
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            if challenge.targetUnit.lowercased().contains("min") {
-                localValue = healthKitService.todayActiveMinutes
-            } else {
-                localValue = Int(km)
-            }
-            
-        case .lift, .workoutStreak:
-            localValue = 0
-        }
-        
-        return max(localValue, serverValue)
+        Self.resolveProgress(
+            challengeType: challenge.resolvedType,
+            targetUnit: challenge.targetUnit,
+            serverValue: serverValue
+        )
     }
     
     // MARK: - Community Challenge Live Progress
@@ -2474,49 +2432,11 @@ class ChallengeProgressResolver: ObservableObject {
     /// HealthKit / tracking-service data. Always returns max(local, server) so
     /// the displayed value is never lower than what the server has.
     func liveProgress(for challenge: CommunityChallenge) -> Int {
-        let resolvedType = challenge.resolvedType
-        let serverValue = challenge.myTodayProgress ?? 0
-        
-        let localValue: Int
-        
-        switch resolvedType {
-        case .steps:
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
-            localValue = steps
-            
-        case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            if challenge.targetUnit.lowercased() == "oz" {
-                localValue = Int(Double(totalMl) / 29.5735)
-            } else {
-                localValue = totalMl
-            }
-            
-        case .protein:
-            localValue = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-            
-        case .calories:
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            localValue = max(hkCalories, mealCalories)
-            
-        case .activeMinutes:
-            localValue = healthKitService.todayActiveMinutes
-            
-        case .walk, .run:
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            if challenge.targetUnit.lowercased().contains("min") {
-                localValue = healthKitService.todayActiveMinutes
-            } else {
-                localValue = Int(km)
-            }
-            
-        case .lift, .workoutStreak:
-            localValue = 0
-        }
-        
-        return max(localValue, serverValue)
+        Self.resolveProgress(
+            challengeType: challenge.resolvedType,
+            targetUnit: challenge.targetUnit,
+            serverValue: challenge.myTodayProgress ?? 0
+        )
     }
     
     /// Formatted live progress string for a community challenge
@@ -2537,43 +2457,11 @@ class ChallengeProgressResolver: ObservableObject {
     /// Returns live "my today" progress for a private challenge, using the same
     /// HealthKit / tracking-service data. Always returns max(local, server).
     func liveProgress(for challenge: PrivateChallenge) -> Int {
-        let resolvedType = challenge.resolvedType
-        let serverValue = challenge.myTodayProgress ?? 0
-        
-        let localValue: Int
-        
-        switch resolvedType {
-        case .steps:
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
-            localValue = steps
-        case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            if challenge.targetUnit.lowercased() == "oz" {
-                localValue = Int(Double(totalMl) / 29.5735)
-            } else {
-                localValue = totalMl
-            }
-        case .protein:
-            localValue = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-        case .calories:
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            localValue = max(hkCalories, mealCalories)
-        case .activeMinutes:
-            localValue = healthKitService.todayActiveMinutes
-        case .walk, .run:
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            if challenge.targetUnit.lowercased().contains("min") {
-                localValue = healthKitService.todayActiveMinutes
-            } else {
-                localValue = Int(km)
-            }
-        case .lift, .workoutStreak:
-            localValue = 0
-        }
-        
-        return max(localValue, serverValue)
+        Self.resolveProgress(
+            challengeType: challenge.resolvedType,
+            targetUnit: challenge.targetUnit,
+            serverValue: challenge.myTodayProgress ?? 0
+        )
     }
     
     /// Formatted live progress string for a private challenge
@@ -2593,48 +2481,11 @@ class ChallengeProgressResolver: ObservableObject {
     
     /// Returns live "my today" progress for a community leaderboard response.
     func liveProgress(for lb: CommunityLeaderboardResponse) -> Int {
-        let resolvedType = lb.resolvedType
-        let serverValue = lb.myTodayProgress
-        
-        switch resolvedType {
-        case .steps:
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
-            return steps > 0 ? steps : serverValue
-            
-        case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            if lb.targetUnit.lowercased() == "oz" {
-                let totalOz = Int(Double(totalMl) / 29.5735)
-                return totalOz > 0 ? totalOz : serverValue
-            }
-            return totalMl > 0 ? totalMl : serverValue
-            
-        case .protein:
-            let protein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-            return protein > 0 ? protein : serverValue
-            
-        case .calories:
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            let value = max(hkCalories, mealCalories)
-            return value > 0 ? value : serverValue
-            
-        case .activeMinutes:
-            let minutes = healthKitService.todayActiveMinutes
-            return minutes > 0 ? minutes : serverValue
-            
-        case .walk, .run:
-            if lb.targetUnit.lowercased().contains("min") {
-                let minutes = healthKitService.todayActiveMinutes
-                return minutes > 0 ? minutes : serverValue
-            }
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            return km > 0 ? Int(km) : serverValue
-            
-        case .lift, .workoutStreak:
-            return serverValue
-        }
+        Self.resolveProgress(
+            challengeType: lb.resolvedType,
+            targetUnit: lb.targetUnit,
+            serverValue: lb.myTodayProgress
+        )
     }
     
     /// Whether the user hit today's target for a community leaderboard response
@@ -2647,48 +2498,11 @@ class ChallengeProgressResolver: ObservableObject {
     
     /// Returns live "my today" progress for a community detail response.
     func liveProgress(for detail: CommunityDetailResponse) -> Int {
-        let resolvedType = detail.resolvedType
-        let serverValue = detail.myTodayProgress
-        
-        switch resolvedType {
-        case .steps:
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKitService.todaySteps
-            return steps > 0 ? steps : serverValue
-            
-        case .hydrate:
-            let totalMl = hydrationService.todayTotal
-            if detail.targetUnit.lowercased() == "oz" {
-                let totalOz = Int(Double(totalMl) / 29.5735)
-                return totalOz > 0 ? totalOz : serverValue
-            }
-            return totalMl > 0 ? totalMl : serverValue
-            
-        case .protein:
-            let protein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-            return protein > 0 ? protein : serverValue
-            
-        case .calories:
-            let hkCalories = healthKitService.todayCalories
-            let mealCalories = mealService.todaysMeals.reduce(0) { $0 + $1.calories }
-            let value = max(hkCalories, mealCalories)
-            return value > 0 ? value : serverValue
-            
-        case .activeMinutes:
-            let minutes = healthKitService.todayActiveMinutes
-            return minutes > 0 ? minutes : serverValue
-            
-        case .walk, .run:
-            if detail.targetUnit.lowercased().contains("min") {
-                let minutes = healthKitService.todayActiveMinutes
-                return minutes > 0 ? minutes : serverValue
-            }
-            let distance = healthKitService.todayDistance
-            let km = distance / 1000.0
-            return km > 0 ? Int(km) : serverValue
-            
-        case .lift, .workoutStreak:
-            return serverValue
-        }
+        Self.resolveProgress(
+            challengeType: detail.resolvedType,
+            targetUnit: detail.targetUnit,
+            serverValue: detail.myTodayProgress
+        )
     }
 }
 
@@ -2793,9 +2607,34 @@ enum ChallengeType: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Challenge Type Resolution Protocol
+
+protocol ChallengeTypeResolvable {
+    var challengeType: String { get }
+    var targetUnit: String { get }
+    var title: String { get }
+}
+
+extension ChallengeTypeResolvable {
+    var resolvedType: ChallengeType {
+        if let direct = ChallengeType(rawValue: challengeType),
+           direct != .steps && direct != .activeMinutes { return direct }
+        switch targetUnit.lowercased() {
+        case "ml", "oz": return .hydrate
+        case "grams", "g": return .protein
+        case "calories", "cal", "kcal": return .calories
+        default: break
+        }
+        if title.contains("💧") { return .hydrate }
+        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
+        if title.contains("🔥") && (targetUnit.lowercased().contains("cal")) { return .calories }
+        return ChallengeType(rawValue: challengeType) ?? .steps
+    }
+}
+
 // MARK: - Data Models
 
-struct ChallengeInvite: Codable, Identifiable {
+struct ChallengeInvite: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let challengeType: String
     let title: String
@@ -2826,22 +2665,6 @@ struct ChallengeInvite: Codable, Identifiable {
         ChallengeType(rawValue: challengeType)
     }
     
-    /// Smart type detection using targetUnit and title emoji
-    var resolvedType: ChallengeType {
-        if let direct = ChallengeType(rawValue: challengeType),
-           direct != .steps && direct != .activeMinutes { return direct }
-        switch targetUnit.lowercased() {
-        case "ml", "oz": return .hydrate
-        case "grams", "g": return .protein
-        case "calories", "cal", "kcal": return .calories
-        default: break
-        }
-        if title.contains("💧") { return .hydrate }
-        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
-        return ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
-    /// Display title without emojis, with K formatting
     var displayTitle: String {
         var t = title
         if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
@@ -2916,7 +2739,7 @@ struct ChallengeInvite: Codable, Identifiable {
 }
 
 /// Challenge I sent that is waiting for the opponent to accept
-struct PendingSentChallenge: Codable, Identifiable {
+struct PendingSentChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let challengeType: String
     let title: String
@@ -2947,22 +2770,6 @@ struct PendingSentChallenge: Codable, Identifiable {
         ChallengeType(rawValue: challengeType)
     }
     
-    /// Smart type detection using targetUnit and title emoji
-    var resolvedType: ChallengeType {
-        if let direct = ChallengeType(rawValue: challengeType),
-           direct != .steps && direct != .activeMinutes { return direct }
-        switch targetUnit.lowercased() {
-        case "ml", "oz": return .hydrate
-        case "grams", "g": return .protein
-        case "calories", "cal", "kcal": return .calories
-        default: break
-        }
-        if title.contains("💧") { return .hydrate }
-        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
-        return ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
-    /// Display title without emojis, with K formatting
     var displayTitle: String {
         var t = title
         if t.hasPrefix("🤝 ") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
@@ -2997,7 +2804,7 @@ struct PendingSentChallenge: Codable, Identifiable {
     }
 }
 
-struct ActiveChallenge: Codable, Identifiable, Hashable {
+struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable {
     let challengeId: UUID
     
     func hash(into hasher: inout Hasher) { hasher.combine(challengeId) }
@@ -3105,30 +2912,6 @@ struct ActiveChallenge: Codable, Identifiable, Hashable {
         ChallengeType(rawValue: challengeType)
     }
     
-    /// Smart type detection: uses targetUnit and title emoji to infer the real challenge type
-    /// even if it was stored as a fallback (e.g. hydration stored as "steps")
-    var resolvedType: ChallengeType {
-        // First try direct mapping
-        if let direct = ChallengeType(rawValue: challengeType),
-           direct != .steps && direct != .activeMinutes {
-            return direct
-        }
-        // Infer from targetUnit
-        switch targetUnit.lowercased() {
-        case "ml", "oz":     return .hydrate
-        case "grams", "g":   return .protein
-        case "calories", "cal", "kcal": return .calories
-        default: break
-        }
-        // Infer from title emoji
-        if title.contains("💧") { return .hydrate }
-        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
-        if title.contains("🔥") && (targetUnit.lowercased().contains("cal")) { return .calories }
-        // Fall back to raw type or .steps
-        return ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
-    /// Detect challenge mode from the title prefix (🤝 = accountability, ⚔️ = competition)
     var mode: ChallengeMode {
         ChallengeMode.from(title: title)
     }
@@ -3279,7 +3062,7 @@ struct GroupChallengeMember: Codable, Identifiable {
     }
 }
 
-struct ActiveGroupChallenge: Codable, Identifiable, Hashable {
+struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable {
     let challengeId: UUID
     
     func hash(into hasher: inout Hasher) { hasher.combine(challengeId) }
@@ -3307,21 +3090,6 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
-    }
-    
-    /// Smart type detection using targetUnit and title emoji
-    var resolvedType: ChallengeType {
-        if let direct = ChallengeType(rawValue: challengeType),
-           direct != .steps && direct != .activeMinutes { return direct }
-        switch targetUnit.lowercased() {
-        case "ml", "oz": return .hydrate
-        case "grams", "g": return .protein
-        case "calories", "cal", "kcal": return .calories
-        default: break
-        }
-        if title.contains("💧") { return .hydrate }
-        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
-        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     var challengeMode: ChallengeMode {
@@ -3502,7 +3270,7 @@ struct DailyProgressEntry: Codable, Identifiable {
     }
 }
 
-struct FriendChallenge: Codable, Identifiable {
+struct FriendChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let challengeType: String
     let title: String
@@ -3522,21 +3290,6 @@ struct FriendChallenge: Codable, Identifiable {
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
-    }
-    
-    /// Smart type detection using targetUnit and title emoji
-    var resolvedType: ChallengeType {
-        if let direct = ChallengeType(rawValue: challengeType),
-           direct != .steps && direct != .activeMinutes { return direct }
-        switch targetUnit.lowercased() {
-        case "ml", "oz": return .hydrate
-        case "grams", "g": return .protein
-        case "calories", "cal", "kcal": return .calories
-        default: break
-        }
-        if title.contains("💧") { return .hydrate }
-        if title.contains("🥩") || title.contains("🍗") || title.contains("🥚") { return .protein }
-        return ChallengeType(rawValue: challengeType) ?? .steps
     }
     
     var isActive: Bool {

@@ -81,7 +81,7 @@ class AdManager: NSObject, ObservableObject {
         super.init()
         
         // Don't initialize SDK here - wait until app is ready
-        print("📺 AdManager created, SDK will initialize when needed")
+        AppLogger.debug("AdManager created, SDK will initialize when needed", category: .general)
     }
     
     /// Initialize the Google Mobile Ads SDK
@@ -90,38 +90,38 @@ class AdManager: NSObject, ObservableObject {
     private var sdkInitStartTime: Date?
     
     func initializeSDK() {
-        print("📺 [SDK] initializeSDK called - isSDKInitialized: \(isSDKInitialized)")
+        AppLogger.debug("initializeSDK called - isSDKInitialized: \(isSDKInitialized)", category: .general)
         guard !isSDKInitialized else {
-            print("📺 [SDK] Already initialized, skipping")
+            AppLogger.debug("Already initialized, skipping", category: .general)
             return
         }
         
         // Check premium status
         let isPremium = PremiumManager.shared.isPremiumUser
-        print("📺 [SDK] isPremiumUser: \(isPremium)")
+        AppLogger.debug("isPremiumUser: \(isPremium)", category: .general)
         
         // Premium users don't need ads SDK
         guard !isPremium else {
-            print("📺 [SDK] Premium user, skipping SDK initialization")
+            AppLogger.debug("Premium user, skipping SDK initialization", category: .general)
             return
         }
         
-        print("📺 [SDK] adsEnabled: \(adsEnabled)")
+        AppLogger.debug("adsEnabled: \(adsEnabled)", category: .general)
         guard adsEnabled else {
-            print("📺 [SDK] Ads disabled, skipping SDK initialization")
+            AppLogger.debug("Ads disabled, skipping SDK initialization", category: .general)
             return
         }
         
-        print("📺 [SDK] ✅ All checks passed, initializing AdMob SDK...")
+        AppLogger.debug("All checks passed, initializing AdMob SDK...", category: .general)
         sdkInitStartTime = Date()
         
         MobileAds.shared.start { [weak self] status in
             let initDuration = Int((Date().timeIntervalSince(self?.sdkInitStartTime ?? Date())) * 1000)
-            print("📺 AdMob SDK initialized")
+            AppLogger.info("AdMob SDK initialized", category: .general)
             SessionLogManager.shared.logAdSDKInitialized(durationMs: initDuration)
             
             for (adapter, state) in status.adapterStatusesByClassName {
-                print("📺 Adapter: \(adapter) - \(state.state.rawValue == 1 ? "Ready" : "Not Ready")")
+                AppLogger.debug("Adapter: \(adapter) - \(state.state.rawValue == 1 ? "Ready" : "Not Ready")", category: .general)
             }
             
             self?.isSDKInitialized = true
@@ -148,13 +148,13 @@ class AdManager: NSObject, ObservableObject {
         }
         
         guard !PremiumManager.shared.isPremiumUser else {
-            print("📺 [ATT] Premium user, skipping ATT request")
+            AppLogger.debug("Premium user, skipping ATT request", category: .general)
             attResolved = true
             return
         }
         
         guard adsEnabled else {
-            print("📺 [ATT] Ads disabled, skipping ATT request")
+            AppLogger.debug("Ads disabled, skipping ATT request", category: .general)
             attResolved = true
             return
         }
@@ -163,35 +163,35 @@ class AdManager: NSObject, ObservableObject {
         
         switch status {
         case .notDetermined:
-            print("📺 [ATT] Requesting tracking authorization...")
+            AppLogger.debug("Requesting tracking authorization...", category: .general)
             ATTrackingManager.requestTrackingAuthorization { [weak self] authStatus in
                 DispatchQueue.main.async {
                     self?.attResolved = true
                     switch authStatus {
                     case .authorized:
-                        print("📺 [ATT] Tracking authorized — initializing SDK with personalized ads")
+                        AppLogger.debug("Tracking authorized — initializing SDK with personalized ads", category: .general)
                     case .denied:
-                        print("📺 [ATT] Tracking denied — initializing SDK with limited ads")
+                        AppLogger.debug("Tracking denied — initializing SDK with limited ads", category: .general)
                     case .restricted:
-                        print("📺 [ATT] Tracking restricted — initializing SDK with limited ads")
+                        AppLogger.debug("Tracking restricted — initializing SDK with limited ads", category: .general)
                     case .notDetermined:
-                        print("📺 [ATT] Status still not determined")
+                        AppLogger.debug("ATT status still not determined", category: .general)
                     @unknown default:
-                        print("📺 [ATT] Unknown status: \(authStatus.rawValue)")
+                        AppLogger.debug("Unknown ATT status: \(authStatus.rawValue)", category: .general)
                     }
                     self?.initializeSDK()
                 }
             }
         case .authorized:
-            print("📺 [ATT] Already authorized")
+            AppLogger.debug("ATT already authorized", category: .general)
             attResolved = true
             initializeSDK()
         case .denied, .restricted:
-            print("📺 [ATT] Already denied/restricted — will show limited ads")
+            AppLogger.debug("ATT already denied/restricted — will show limited ads", category: .general)
             attResolved = true
             initializeSDK()
         @unknown default:
-            print("📺 [ATT] Unknown ATT status: \(status.rawValue)")
+            AppLogger.debug("Unknown ATT status: \(status.rawValue)", category: .general)
             attResolved = true
             initializeSDK()
         }
@@ -204,7 +204,7 @@ class AdManager: NSObject, ObservableObject {
         guard adsEnabled else { return }
         
         if !isSDKInitialized {
-            print("📺 Preparing ads for workout...")
+            AppLogger.debug("Preparing ads for workout...", category: .general)
             if attResolved {
                 initializeSDK()
             } else {
@@ -231,14 +231,14 @@ class AdManager: NSObject, ObservableObject {
             return
         }
         
-        print("📺 Loading interstitial ad...")
+        AppLogger.debug("Loading interstitial ad...", category: .general)
         adLoadStartTime = Date()
         
         InterstitialAd.load(with: adUnitID, request: Request()) { [weak self] ad, error in
             let loadTime = Int((Date().timeIntervalSince(self?.adLoadStartTime ?? Date())) * 1000)
             
             if let error = error {
-                print("📺 Failed to load interstitial ad: \(error.localizedDescription)")
+                AppLogger.error("Failed to load interstitial ad: \(error.localizedDescription)", category: .general)
                 SessionLogManager.shared.logAdLoad(success: false, adUnitId: self?.adUnitID ?? "", loadTimeMs: loadTime, error: error.localizedDescription)
                 DispatchQueue.main.async {
                     self?.isAdReady = false
@@ -246,7 +246,7 @@ class AdManager: NSObject, ObservableObject {
                 return
             }
             
-            print("📺 Interstitial ad loaded successfully")
+            AppLogger.info("Interstitial ad loaded successfully", category: .general)
             SessionLogManager.shared.logAdLoad(success: true, adUnitId: self?.adUnitID ?? "", loadTimeMs: loadTime)
             self?.interstitialAd = ad
             self?.interstitialAd?.fullScreenContentDelegate = self
@@ -264,26 +264,26 @@ class AdManager: NSObject, ObservableObject {
     func showInterstitialAd(from viewController: UIViewController, completion: @escaping () -> Void) {
         // Premium users never see ads
         guard !PremiumManager.shared.isPremiumUser else {
-            print("📺 Premium user, skipping ad")
+            AppLogger.debug("Premium user, skipping ad", category: .general)
             completion()
             return
         }
         
         guard adsEnabled else {
-            print("📺 Ads disabled, skipping ad")
+            AppLogger.debug("Ads disabled, skipping ad", category: .general)
             completion()
             return
         }
         
         guard let interstitialAd = interstitialAd else {
-            print("📺 No ad available, loading new one")
+            AppLogger.debug("No ad available, loading new one", category: .general)
             SessionLogManager.shared.logAdError(adUnitId: adUnitID, error: "No ad available", context: "showInterstitialAd")
             loadInterstitialAd()
             completion()
             return
         }
         
-        print("📺 Showing interstitial ad")
+        AppLogger.debug("Showing interstitial ad", category: .general)
         SessionLogManager.shared.logAdShow(adUnitId: adUnitID, placement: "rest_timer")
         self.onAdDismissed = completion
         self.adStartTime = Date()
@@ -298,17 +298,17 @@ class AdManager: NSObject, ObservableObject {
     func shouldShowAd() -> Bool {
         // Premium users never see ads
         if PremiumManager.shared.isPremiumUser {
-            print("📺 Premium user - no ads")
+            AppLogger.debug("Premium user - no ads", category: .general)
             return false
         }
         
-        print("📺 shouldShowAd check: adsEnabled=\(adsEnabled), isAdReady=\(isAdReady), isSDKInitialized=\(isSDKInitialized)")
+        AppLogger.debug("shouldShowAd check: adsEnabled=\(adsEnabled), isAdReady=\(isAdReady), isSDKInitialized=\(isSDKInitialized)", category: .general)
         if !adsEnabled {
-            print("📺 Ads are disabled in settings")
+            AppLogger.debug("Ads are disabled in settings", category: .general)
             return false
         }
         if !isAdReady {
-            print("📺 Ad not ready - will load in background for next time")
+            AppLogger.debug("Ad not ready - will load in background for next time", category: .general)
             // Load in background - don't block the current check
             Task.detached(priority: .background) {
                 await MainActor.run {
@@ -333,11 +333,11 @@ class AdManager: NSObject, ObservableObject {
             return
         }
         
-        print("📺 Loading rewarded ad...")
+        AppLogger.debug("Loading rewarded ad...", category: .general)
         
         RewardedAd.load(with: rewardedAdUnitID, request: Request()) { [weak self] ad, error in
             if let error = error {
-                print("📺 Failed to load rewarded ad: \(error.localizedDescription)")
+                AppLogger.error("Failed to load rewarded ad: \(error.localizedDescription)", category: .general)
                 SessionLogManager.shared.logAdLoad(success: false, adUnitId: self?.rewardedAdUnitID ?? "", loadTimeMs: 0, error: error.localizedDescription)
                 DispatchQueue.main.async {
                     self?.isRewardedAdReady = false
@@ -345,7 +345,7 @@ class AdManager: NSObject, ObservableObject {
                 return
             }
             
-            print("📺 Rewarded ad loaded successfully")
+            AppLogger.info("Rewarded ad loaded successfully", category: .general)
             SessionLogManager.shared.logAdLoad(success: true, adUnitId: self?.rewardedAdUnitID ?? "", loadTimeMs: 0)
             self?.rewardedAd = ad
             self?.rewardedAd?.fullScreenContentDelegate = self
@@ -363,18 +363,18 @@ class AdManager: NSObject, ObservableObject {
     func showRewardedAd(from viewController: UIViewController, onReward: @escaping () -> Void) {
         // Premium users never see ads
         guard !PremiumManager.shared.isPremiumUser else {
-            print("📺 Premium user, skipping rewarded ad")
+            AppLogger.debug("Premium user, skipping rewarded ad", category: .general)
             return
         }
         
         guard let rewardedAd = rewardedAd else {
-            print("📺 No rewarded ad available, loading new one")
+            AppLogger.debug("No rewarded ad available, loading new one", category: .general)
             SessionLogManager.shared.logAdError(adUnitId: rewardedAdUnitID, error: "No rewarded ad available", context: "showRewardedAd")
             loadRewardedAd()
             return
         }
         
-        print("📺 Showing rewarded ad")
+        AppLogger.debug("Showing rewarded ad", category: .general)
         SessionLogManager.shared.logAdShow(adUnitId: rewardedAdUnitID, placement: "daily_quest_watch_ads")
         self.onRewardEarned = onReward
         self.isShowingRewardedAd = true
@@ -384,7 +384,7 @@ class AdManager: NSObject, ObservableObject {
             self.isShowingAd = true
             rewardedAd.present(from: viewController) { [weak self] in
                 // User earned the reward (watched the full video)
-                print("📺 User earned rewarded ad reward!")
+                AppLogger.info("User earned rewarded ad reward!", category: .general)
                 DispatchQueue.main.async {
                     self?.onRewardEarned?()
                     self?.onRewardEarned = nil
@@ -399,7 +399,7 @@ class AdManager: NSObject, ObservableObject {
         guard !PremiumManager.shared.isPremiumUser else { return }
         
         if !isSDKInitialized {
-            print("📺 Preparing rewarded ad, initializing SDK...")
+            AppLogger.debug("Preparing rewarded ad, initializing SDK...", category: .general)
             initializeSDK()
             // After SDK init, loadRewardedAd will be called from the init callback
             // We need to also load rewarded when SDK finishes
@@ -414,19 +414,19 @@ class AdManager: NSObject, ObservableObject {
 extension AdManager: FullScreenContentDelegate {
     
     func adDidRecordImpression(_ ad: FullScreenPresentingAd) {
-        print("📺 Ad recorded impression")
+        AppLogger.debug("Ad recorded impression", category: .general)
     }
     
     func adDidRecordClick(_ ad: FullScreenPresentingAd) {
         let unitId = isShowingRewardedAd ? rewardedAdUnitID : adUnitID
-        print("📺 Ad recorded click")
+        AppLogger.debug("Ad recorded click", category: .general)
         SessionLogManager.shared.logAdClicked(adUnitId: unitId)
     }
     
     func ad(_ ad: FullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
         let isRewarded = isShowingRewardedAd
         let unitId = isRewarded ? rewardedAdUnitID : adUnitID
-        print("📺 \(isRewarded ? "Rewarded" : "Interstitial") ad failed to present: \(error.localizedDescription)")
+        AppLogger.error("\(isRewarded ? "Rewarded" : "Interstitial") ad failed to present: \(error.localizedDescription)", category: .general)
         SessionLogManager.shared.logAdError(adUnitId: unitId, error: error.localizedDescription, context: "present")
         DispatchQueue.main.async {
             self.isShowingAd = false
@@ -449,22 +449,22 @@ extension AdManager: FullScreenContentDelegate {
     }
     
     func adWillPresentFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("📺 Ad will present")
+        AppLogger.debug("Ad will present", category: .general)
     }
     
     func adWillDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("📺 Ad will dismiss")
+        AppLogger.debug("Ad will dismiss", category: .general)
     }
     
     func adDidDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
         let isRewarded = isShowingRewardedAd
         let unitId = isRewarded ? rewardedAdUnitID : adUnitID
-        print("📺 \(isRewarded ? "Rewarded" : "Interstitial") ad dismissed")
+        AppLogger.debug("\(isRewarded ? "Rewarded" : "Interstitial") ad dismissed", category: .general)
         
         // Calculate how long the ad was shown and ROUND to whole seconds
         let rawDuration = Date().timeIntervalSince(adStartTime ?? Date())
         let roundedDuration = round(rawDuration)
-        print("📺 Ad was shown for \(rawDuration)s (raw) → \(roundedDuration)s (rounded)")
+        AppLogger.debug("Ad was shown for \(rawDuration)s (raw) → \(roundedDuration)s (rounded)", category: .general)
         
         // Log the ad dismissal with watch duration
         SessionLogManager.shared.logAdDismissed(adUnitId: unitId, watchedDurationMs: Int(rawDuration * 1000))
@@ -476,7 +476,7 @@ extension AdManager: FullScreenContentDelegate {
                 self.isRewardedAdReady = false
                 self.isShowingRewardedAd = false
                 self.onRewardEarned = nil
-                print("📺 Rewarded ad fully dismissed")
+                AppLogger.debug("Rewarded ad fully dismissed", category: .general)
             }
             // Preload the next rewarded ad
             loadRewardedAd()
@@ -489,10 +489,10 @@ extension AdManager: FullScreenContentDelegate {
             DispatchQueue.main.async {
                 self.isShowingAd = false
                 self.isAdReady = false
-                print("📺 Calling ad completion callback...")
+                AppLogger.debug("Calling ad completion callback...", category: .general)
                 self.onAdDismissed?()
                 self.onAdDismissed = nil
-                print("📺 Ad completion callback finished")
+                AppLogger.debug("Ad completion callback finished", category: .general)
             }
             // Preload the next interstitial ad
             loadInterstitialAd()

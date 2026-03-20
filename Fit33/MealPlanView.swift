@@ -70,7 +70,29 @@ struct MealPlanView: View {
         return userWeight == 0 || userHeight == 0 || nutritionGoals == nil
     }
     
+    private var topFadeOverlay: some View {
+        VStack(spacing: 0) {
+            let fadeColor = colorScheme == .dark
+                ? Color(red: 0.06, green: 0.06, blue: 0.06)
+                : Color.white
+            fadeColor.frame(height: 30)
+            LinearGradient(
+                stops: [
+                    .init(color: fadeColor, location: 0),
+                    .init(color: fadeColor.opacity(0.6), location: 0.4),
+                    .init(color: fadeColor.opacity(0), location: 1.0)
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 50)
+            .allowsHitTesting(false)
+            Spacer()
+        }
+        .ignoresSafeArea(.all, edges: .top)
+    }
+    
     private var mainNutritionView: some View {
+        ZStack {
         ScrollView {
             VStack(spacing: 24) {
                 // Nutrition Goals Overview
@@ -95,6 +117,8 @@ struct MealPlanView: View {
             AnimatedOrbBackground.meals(colorScheme: colorScheme)
                 .ignoresSafeArea(.all, edges: .all)
         )
+        topFadeOverlay
+        }
         .sheet(item: $showingSavedMealDetail) { meal in
             SavedMealDetailView(meal: meal)
         }
@@ -296,7 +320,7 @@ struct MealPlanView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(Color.orange)
@@ -311,7 +335,7 @@ struct MealPlanView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
             }
         }
         .padding(Spacing.md)
@@ -370,7 +394,7 @@ struct MealPlanView: View {
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: "cart.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white)
                     }
                     
@@ -1219,7 +1243,7 @@ struct SavedMealDetailView: View {
                             .font(.caption)
                             .fontWeight(.semibold)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(Color.white.opacity(0.2))
                             .cornerRadius(CornerRadius.sm)
                     }
@@ -1254,7 +1278,7 @@ struct SavedMealDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(Color.purple.opacity(0.1))

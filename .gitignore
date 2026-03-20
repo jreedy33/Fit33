@@ -109,6 +109,15 @@ node_modules/
 package-lock.json
 yarn.lock
 
+# Regeneratable data exports
+*.csv
+r2_bucket_export.json
+*.pdf
+*_metrics*.json
+
+# Wrangler (Cloudflare credentials cache)
+.wrangler/
+
 # Deployment artifacts
 *.zip
 *.tar.gz

@@ -48,13 +48,11 @@ class GeneratedProgramService: ObservableObject {
     
     /// Start a program
     func startProgram(_ program: DynamicProgramGenerator.GeneratedProgram) {
-        // Deactivate any current program
-        if var currentActive = activeProgram {
-            if let index = generatedPrograms.firstIndex(where: { $0.id == currentActive.id }) {
-                var updated = currentActive
-                // Can't modify isActive directly as it's let, would need to recreate
-                generatedPrograms[index] = updated
-            }
+        if let currentActive = activeProgram,
+           let index = generatedPrograms.firstIndex(where: { $0.id == currentActive.id }) {
+            var updated = generatedPrograms[index]
+            updated.isActive = false
+            generatedPrograms[index] = updated
         }
         
         // Activate new program
@@ -500,7 +498,7 @@ struct GeneratedProgramCard: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(programColor)
                         .clipShape(Capsule())
                 }
@@ -649,7 +647,7 @@ struct EmptyProgramsView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(32)
+        .padding(Spacing.xl)
     }
 }
 

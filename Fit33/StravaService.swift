@@ -39,42 +39,71 @@ final class StravaService: ObservableObject {
     // MARK: - Private Properties
     
     private var accessToken: String? {
-        get { UserDefaults.standard.string(forKey: "strava_access_token") }
-        set { UserDefaults.standard.set(newValue, forKey: "strava_access_token") }
+        get { KeychainHelper.load(key: "strava_access_token") }
+        set {
+            if let val = newValue { KeychainHelper.save(key: "strava_access_token", value: val) }
+            else { KeychainHelper.delete(key: "strava_access_token") }
+        }
     }
     
     private var refreshToken: String? {
-        get { UserDefaults.standard.string(forKey: "strava_refresh_token") }
-        set { UserDefaults.standard.set(newValue, forKey: "strava_refresh_token") }
+        get { KeychainHelper.load(key: "strava_refresh_token") }
+        set {
+            if let val = newValue { KeychainHelper.save(key: "strava_refresh_token", value: val) }
+            else { KeychainHelper.delete(key: "strava_refresh_token") }
+        }
     }
     
     private var tokenExpiresAt: Date? {
         get {
-            let timestamp = UserDefaults.standard.double(forKey: "strava_token_expires_at")
-            return timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : nil
+            guard let str = KeychainHelper.load(key: "strava_token_expires_at"),
+                  let timestamp = Double(str), timestamp > 0 else { return nil }
+            return Date(timeIntervalSince1970: timestamp)
         }
         set {
-            UserDefaults.standard.set(newValue?.timeIntervalSince1970 ?? 0, forKey: "strava_token_expires_at")
+            if let ts = newValue?.timeIntervalSince1970 {
+                KeychainHelper.save(key: "strava_token_expires_at", value: String(ts))
+            } else {
+                KeychainHelper.delete(key: "strava_token_expires_at")
+            }
         }
     }
     
     // MARK: - Initialization
     
     private init() {
-        // Check if we have a valid connection
+        migrateTokensFromUserDefaults()
+        
         isConnected = accessToken != nil && refreshToken != nil
         
         if isConnected {
-            // Load cached athlete profile
             if let data = UserDefaults.standard.data(forKey: "strava_athlete"),
                let athlete = try? JSONDecoder().decode(StravaAthlete.self, from: data) {
                 athleteProfile = athlete
             }
             
-            // Load last sync date
             if let date = UserDefaults.standard.object(forKey: "strava_last_sync") as? Date {
                 lastSyncDate = date
             }
+        }
+    }
+    
+    private func migrateTokensFromUserDefaults() {
+        let ud = UserDefaults.standard
+        let keys = ["strava_access_token", "strava_refresh_token"]
+        
+        for key in keys {
+            if let val = ud.string(forKey: key), KeychainHelper.load(key: key) == nil {
+                KeychainHelper.save(key: key, value: val)
+                ud.removeObject(forKey: key)
+            }
+        }
+        
+        let expiresKey = "strava_token_expires_at"
+        let ts = ud.double(forKey: expiresKey)
+        if ts > 0 && KeychainHelper.load(key: expiresKey) == nil {
+            KeychainHelper.save(key: expiresKey, value: String(ts))
+            ud.removeObject(forKey: expiresKey)
         }
     }
     
@@ -516,6 +545,10 @@ final class StravaService: ObservableObject {
         
         UserDefaults.standard.removeObject(forKey: "strava_athlete")
         UserDefaults.standard.removeObject(forKey: "strava_last_sync")
+        
+        for key in ["strava_access_token", "strava_refresh_token", "strava_token_expires_at"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         
         // Update integration status in database
         Task {

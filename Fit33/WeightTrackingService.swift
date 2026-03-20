@@ -126,7 +126,9 @@ struct WeightGoal: Codable {
 }
 
 // MARK: - Weight Tracking Service
-
+/// Single source of truth for weight data. Other services (UserManager, onboarding)
+/// may cache weight locally for quick access, but this service owns the authoritative
+/// value synced with Supabase and HealthKit.
 class WeightTrackingService: ObservableObject {
     static let shared = WeightTrackingService()
     
@@ -164,11 +166,11 @@ class WeightTrackingService: ObservableObject {
         iso8601.string(from: date)
     }
     
-    private var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }
+    }()
     
     // MARK: - Init
     
@@ -277,16 +279,16 @@ class WeightTrackingService: ObservableObject {
         statistics?.monthlyChange ?? 0
     }
     
-    /// Progress towards goal (0-1)
+    /// Progress towards goal (0-1), works for both weight loss and gain
     var goalProgress: Double {
         guard let goal = weightGoal, let stats = statistics else { return 0 }
         let current = stats.currentWeight
         let start = stats.startingWeight
         let target = goal.targetWeight
         
-        guard start != target else { return 1.0 }
+        guard abs(target - start) > 0.01 else { return 1.0 }
         
-        let progress = (start - current) / (start - target)
+        let progress = abs(current - start) / abs(target - start)
         return min(max(progress, 0), 1.0)
     }
     
@@ -382,7 +384,7 @@ class WeightTrackingService: ObservableObject {
     }
     
     private func loadTodayLog(userId: UUID) async {
-        let today = dateFormatter.string(from: Date())
+        let today = Self.dateFormatter.string(from: Date())
         let startOfDay = Calendar.current.startOfDay(for: Date())
         let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
         
@@ -583,7 +585,7 @@ class WeightTrackingService: ObservableObject {
         let goalData = WeightGoalUpsert(
             user_id: userId.uuidString,
             target_weight: targetWeight,
-            target_date: targetDate.map { dateFormatter.string(from: $0) },
+            target_date: targetDate.map { Self.dateFormatter.string(from: $0) },
             goal_type: goalType.rawValue,
             updated_at: dateToISO(Date())
         )
@@ -742,7 +744,7 @@ class WeightTrackingService: ObservableObject {
             averageWeight: weights.reduce(0, +) / Double(weights.count),
             totalEntries: recentLogs.count,
             streakDays: calculateStreak(),
-            lastLoggedDate: recentLogs.first.map { dateFormatter.string(from: $0.loggedAt) }
+            lastLoggedDate: recentLogs.first.map { Self.dateFormatter.string(from: $0.loggedAt) }
         )
     }
     

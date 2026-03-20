@@ -26,7 +26,7 @@ class MealService: ObservableObject {
         if let lastLoad = lastLoadDate, Calendar.current.isDateInToday(lastLoad) {
             return // Already loaded today — data is fresh
         }
-        print("🔄 [MEAL SERVICE] Data stale (loaded on a different day) — refreshing for today")
+        AppLogger.debug("Data stale (loaded on a different day) — refreshing for today", category: .nutrition)
         loadTodaysMeals()
     }
     
@@ -36,31 +36,27 @@ class MealService: ObservableObject {
         // Input validation - return early on invalid data
         let trimmedName = foodEntry.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, trimmedName.count <= 200 else {
-            print("❌ [MEAL SERVICE] Validation failed: food name must be 1-200 characters")
+            AppLogger.error("Validation failed: food name must be 1-200 characters", category: .nutrition)
             return
         }
         guard (0...10000).contains(foodEntry.calories) else {
-            print("❌ [MEAL SERVICE] Validation failed: calories must be 0-10000")
+            AppLogger.error("Validation failed: calories must be 0-10000", category: .nutrition)
             return
         }
         guard (0...1000).contains(foodEntry.protein) else {
-            print("❌ [MEAL SERVICE] Validation failed: protein must be 0-1000g")
+            AppLogger.error("Validation failed: protein must be 0-1000g", category: .nutrition)
             return
         }
         guard (0...1000).contains(foodEntry.carbs) else {
-            print("❌ [MEAL SERVICE] Validation failed: carbs must be 0-1000g")
+            AppLogger.error("Validation failed: carbs must be 0-1000g", category: .nutrition)
             return
         }
         guard (0...1000).contains(foodEntry.fat) else {
-            print("❌ [MEAL SERVICE] Validation failed: fat must be 0-1000g")
+            AppLogger.error("Validation failed: fat must be 0-1000g", category: .nutrition)
             return
         }
 
-        print("📥 [MEAL SERVICE] === addMealEntry called ===")
-        print("📥 [MEAL SERVICE] Food: \(foodEntry.name)")
-        print("📥 [MEAL SERVICE] Meal type: \(mealType.rawValue)")
-        print("📥 [MEAL SERVICE] Calories: \(foodEntry.calories)")
-        print("📥 [MEAL SERVICE] FDC ID: \(foodEntry.fdcId ?? -1)")
+        AppLogger.debug("addMealEntry called — Food: \(foodEntry.name), type: \(mealType.rawValue), cal: \(foodEntry.calories), FDC: \(foodEntry.fdcId ?? -1)", category: .nutrition)
         
         let mealEntry = MealEntry(context: viewContext)
         mealEntry.id = UUID()
@@ -86,7 +82,7 @@ class MealService: ObservableObject {
                     do {
                         try await SupabaseManager.shared.saveMealToCloud(meal: mealEntry)
                     } catch {
-                        print("⚠️ [MEAL SERVICE] Failed to sync meal to cloud: \(error)")
+                        AppLogger.warning("Failed to sync meal to cloud: \(error.localizedDescription)", category: .nutrition)
                     }
                 }
             }
@@ -94,7 +90,7 @@ class MealService: ObservableObject {
             // Log to cloud database for history tracking
             if let fdcId = foodEntry.fdcId {
                 Task {
-                    print("📝 [MEAL SERVICE] Logging food to cloud: \(trimmedName) (FDC: \(fdcId))")
+                    AppLogger.debug("Logging food to cloud: \(trimmedName) (FDC: \(fdcId))", category: .nutrition)
                     do {
                         try await foodDatabase.logFoodToHistory(
                             fdcId: fdcId,
@@ -107,13 +103,13 @@ class MealService: ObservableObject {
                             carbs: foodEntry.carbs,
                             fat: foodEntry.fat
                         )
-                        print("✅ [MEAL SERVICE] Successfully logged to cloud")
+                        AppLogger.info("Successfully logged food to cloud", category: .nutrition)
                     } catch {
-                        print("❌ [MEAL SERVICE] Failed to log to cloud: \(error)")
+                        AppLogger.error("Failed to log to cloud: \(error.localizedDescription)", category: .nutrition)
                     }
                 }
             } else {
-                print("⚠️ [MEAL SERVICE] No FDC ID - skipping cloud logging")
+                AppLogger.warning("No FDC ID - skipping cloud logging", category: .nutrition)
             }
             
             // Track food addition for recipe recommendations
@@ -167,12 +163,12 @@ class MealService: ObservableObject {
                 }
             }
         } catch {
-            print("Error saving meal entry: \(error)")
+            AppLogger.error("Error saving meal entry: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
     func removeMealEntry(_ mealEntryData: MealEntryData) {
-        print("🗑️ [MEAL SERVICE] Removing meal: \(mealEntryData.foodName)")
+        AppLogger.debug("Removing meal: \(mealEntryData.foodName)", category: .nutrition)
         
         let request: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", mealEntryData.id as CVarArg)
@@ -184,14 +180,14 @@ class MealService: ObservableObject {
                 viewContext.delete(mealEntry)
                 try viewContext.save()
                 loadTodaysMeals()
-                print("✅ [MEAL SERVICE] Deleted from local database")
+                AppLogger.info("Successfully deleted meal from local database", category: .nutrition)
                 
                 // Also delete from cloud to prevent reappearing on sync
                 if SupabaseManager.shared.isAuthenticated {
                     Task {
                         do {
                             try await SupabaseManager.shared.deleteMealFromCloud(mealId: mealEntryData.id)
-                            print("✅ [MEAL SERVICE] Deleted from cloud")
+                            AppLogger.info("Successfully deleted meal from cloud", category: .nutrition)
                             
                             // Also remove from food history so it doesn't affect "frequently used"
                             await foodDatabase.removeFromFoodHistory(
@@ -199,7 +195,7 @@ class MealService: ObservableObject {
                                 foodName: mealEntryData.foodName
                             )
                         } catch {
-                            print("⚠️ [MEAL SERVICE] Failed to delete from cloud: \(error)")
+                            AppLogger.warning("Failed to delete meal from cloud: \(error.localizedDescription)", category: .nutrition)
                         }
                     }
                 }
@@ -225,12 +221,12 @@ class MealService: ObservableObject {
                 }
             }
         } catch {
-            print("❌ [MEAL SERVICE] Error removing meal entry: \(error)")
+            AppLogger.error("Error removing meal entry: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
     func clearAllMeals() {
-        print("🗑️ [MEAL SERVICE] Clearing ALL meal entries from Core Data")
+        AppLogger.debug("Clearing ALL meal entries from Core Data", category: .nutrition)
         let request: NSFetchRequest<NSFetchRequestResult> = MealEntry.fetchRequest()
         let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
         
@@ -238,9 +234,9 @@ class MealService: ObservableObject {
             try viewContext.execute(deleteRequest)
             try viewContext.save()
             todaysMeals = []
-            print("✅ [MEAL SERVICE] All meals cleared successfully")
+            AppLogger.info("Successfully cleared all meals", category: .nutrition)
         } catch {
-            print("❌ [MEAL SERVICE] Error clearing meals: \(error)")
+            AppLogger.error("Error clearing meals: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
@@ -282,16 +278,14 @@ class MealService: ObservableObject {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         
-        print("📅 [MEAL SERVICE] Loading meals for today")
-        print("📅 [MEAL SERVICE] Start of day: \(startOfDay)")
-        print("📅 [MEAL SERVICE] End of day: \(endOfDay)")
+        AppLogger.debug("Loading meals for today (\(startOfDay) – \(endOfDay))", category: .nutrition)
         
         request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
         request.sortDescriptors = [NSSortDescriptor(keyPath: \MealEntry.date, ascending: true)]
         
         do {
             let results = try viewContext.fetch(request)
-            print("📅 [MEAL SERVICE] Found \(results.count) meal entries for today")
+            AppLogger.debug("Found \(results.count) meal entries for today", category: .nutrition)
             
             todaysMeals = results.map { mealEntry in
                 let data = MealEntryData(
@@ -307,7 +301,7 @@ class MealService: ObservableObject {
                     date: mealEntry.date ?? Date(),
                     fdcId: Int(mealEntry.fdcId)
                 )
-                print("   - \(data.foodName): \(data.calories)cal, \(data.protein)p, \(data.carbs)c, \(data.fat)f (\(data.mealType.rawValue))")
+                AppLogger.verbose("  - \(data.foodName): \(data.calories)cal, \(data.protein)p, \(data.carbs)c, \(data.fat)f (\(data.mealType.rawValue))", category: .nutrition)
                 return data
             }
             
@@ -316,7 +310,7 @@ class MealService: ObservableObject {
             let totalCarbs = todaysMeals.reduce(0) { $0 + $1.carbs }
             let totalFat = todaysMeals.reduce(0) { $0 + $1.fat }
             
-            print("📊 [MEAL SERVICE] Today's totals: \(totalCals)cal, \(totalProtein)p, \(totalCarbs)c, \(totalFat)f")
+            AppLogger.debug("Today's totals: \(totalCals)cal, \(totalProtein)p, \(totalCarbs)c, \(totalFat)f", category: .nutrition)
             
             // 🧠 ADVANCED INTELLIGENCE: Track nutrition for performance correlation
             // This links today's nutrition to tomorrow's workout performance
@@ -334,7 +328,7 @@ class MealService: ObservableObject {
                 }
             }
         } catch {
-            print("Error loading today's meals: \(error)")
+            AppLogger.error("Error loading today's meals: \(error.localizedDescription)", category: .nutrition)
             todaysMeals = []
         }
         
@@ -368,7 +362,7 @@ class MealService: ObservableObject {
                 )
             }
         } catch {
-            print("Error loading meals for date: \(error)")
+            AppLogger.error("Error loading meals for date: \(error.localizedDescription)", category: .nutrition)
             return []
         }
     }

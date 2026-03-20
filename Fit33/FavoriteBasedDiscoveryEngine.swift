@@ -14,19 +14,23 @@ import CoreData
 class FavoriteBasedDiscoveryEngine {
     static let shared = FavoriteBasedDiscoveryEngine()
     
-    // Track which favorites/variants were used recently to ensure variety
     private var recentlyUsedFavorites: [String: Date] = [:]
     private var recentlyUsedVariants: [String: Date] = [:]
-    private var discoveredExercises: Set<String> = [] // Exercises user has been shown as "discovery"
+    private var discoveredExercises: Set<String> = []
     
-    // Configuration
-    private let actualFavoriteChance: Double = 0.35      // 35% chance to use the actual favorite
-    private let similarExerciseChance: Double = 0.40    // 40% chance for similar exercise
-    private let discoveryChance: Double = 0.25           // 25% chance for discovery (new exercise)
-    private let cooldownDays: Int = 3                    // Days before repeating same exercise
-    private let maxFavoritesPerWorkout: Int = 2          // Don't overload with favorites
+    private let actualFavoriteChance: Double = 0.35
+    private let similarExerciseChance: Double = 0.40
+    private let discoveryChance: Double = 0.25
+    private let cooldownDays: Int = 3
+    private let maxFavoritesPerWorkout: Int = 2
     
-    private init() {}
+    private static let favoriteCooldownKey = "FavoriteDiscovery_favoriteCooldowns"
+    private static let variantCooldownKey = "FavoriteDiscovery_variantCooldowns"
+    private static let discoveredKey = "FavoriteDiscovery_discovered"
+    
+    private init() {
+        loadState()
+    }
     
     // MARK: - Main API
     
@@ -112,6 +116,7 @@ class FavoriteBasedDiscoveryEngine {
                     recommendations.append(discovery)
                     usedExercises.insert(discovery.exerciseName)
                     discoveredExercises.insert(discovery.exerciseName)
+                    saveState()
                 }
             }
         }
@@ -347,13 +352,35 @@ class FavoriteBasedDiscoveryEngine {
         } else {
             recentlyUsedVariants[normalized] = Date()
         }
+        saveState()
     }
     
-    // MARK: - Persistence (optional - for tracking discoveries across sessions)
+    // MARK: - Persistence
+    
+    private func loadState() {
+        let defaults = UserDefaults.standard
+        if let dict = defaults.dictionary(forKey: Self.favoriteCooldownKey) as? [String: Date] {
+            recentlyUsedFavorites = dict
+        }
+        if let dict = defaults.dictionary(forKey: Self.variantCooldownKey) as? [String: Date] {
+            recentlyUsedVariants = dict
+        }
+        if let arr = defaults.stringArray(forKey: Self.discoveredKey) {
+            discoveredExercises = Set(arr)
+        }
+    }
+    
+    private func saveState() {
+        let defaults = UserDefaults.standard
+        defaults.set(recentlyUsedFavorites as NSDictionary, forKey: Self.favoriteCooldownKey)
+        defaults.set(recentlyUsedVariants as NSDictionary, forKey: Self.variantCooldownKey)
+        defaults.set(Array(discoveredExercises), forKey: Self.discoveredKey)
+    }
     
     func clearCooldowns() {
         recentlyUsedFavorites.removeAll()
         recentlyUsedVariants.removeAll()
+        saveState()
         print("🔄 [FAVORITES] Cooldowns cleared")
     }
     

@@ -109,7 +109,7 @@ struct ExerciseSubstitutionView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.primary)
                             .frame(width: 32, height: 32)
                             .background(
@@ -163,7 +163,7 @@ struct ExerciseSubstitutionView: View {
                         .frame(width: 80, height: 80)
                     
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundColor(categoryColor)
                 }
                 
@@ -190,7 +190,7 @@ struct ExerciseSubstitutionView: View {
                             }
                             .foregroundColor(categoryColor)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(categoryColor.opacity(0.15))
@@ -207,7 +207,7 @@ struct ExerciseSubstitutionView: View {
                             }
                             .foregroundColor(.secondary)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(Color.cardBackground)
@@ -527,7 +527,7 @@ struct FilterPill: View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -579,7 +579,7 @@ struct SubstituteExerciseCard: View {
                         .frame(width: 56, height: 56)
                     
                     Image(systemName: substitute.matchReason.icon)
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(isSelected ? .white : categoryColor)
                 }
                 
@@ -595,13 +595,13 @@ struct SubstituteExerciseCard: View {
                         // Match reason badge
                         HStack(spacing: 4) {
                             Image(systemName: substitute.matchReason.icon)
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                             Text(substitute.matchReason.rawValue)
                                 .font(.caption2)
                         }
                         .foregroundColor(substitute.matchReason.color)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(substitute.matchReason.color.opacity(0.15))
@@ -613,7 +613,7 @@ struct SubstituteExerciseCard: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(
                                     Capsule()
                                         .fill(Color.cardBackground)
@@ -639,7 +639,7 @@ struct SubstituteExerciseCard: View {
                     // Match percentage
                     VStack(spacing: 2) {
                         Text("\(substitute.matchScore)%")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                         Text("match")
                             .font(.caption2)

@@ -155,7 +155,7 @@ struct FitbitSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.green)
                     Text("Connected")
                         .font(.subheadline)
@@ -185,7 +185,7 @@ struct FitbitSettingsView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0, green: 0.73, blue: 0.77)))
                 } else {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
                 }
             }
@@ -396,7 +396,7 @@ struct FitbitSettingsView: View {
     private func miniStatItem(icon: String, value: String, label: String, color: Color) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.ds_labelLarge)
                 .foregroundColor(color)
             
             Text(value)
@@ -449,7 +449,7 @@ struct FitbitSettingsView: View {
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(.indigo)
             }
             
@@ -478,7 +478,7 @@ struct FitbitSettingsView: View {
             // Sleep quality indicator
             sleepQualityBadge(hours: sleep.sleepHours)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private func sleepQualityBadge(hours: Double) -> some View {
@@ -487,7 +487,7 @@ struct FitbitSettingsView: View {
             .font(.caption2)
             .fontWeight(.medium)
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(color.opacity(0.15))
             .foregroundColor(color)
             .cornerRadius(6)
@@ -536,7 +536,7 @@ struct FitbitSettingsView: View {
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: activity.activityIcon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
             }
             
@@ -596,7 +596,7 @@ struct FitbitSettingsView: View {
                 }
                 
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             
@@ -625,7 +625,7 @@ struct FitbitSettingsView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 } else {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                 }
                 Text(fitbit.isLoading ? "Syncing..." : "Sync Now")
                     .fontWeight(.semibold)
@@ -870,7 +870,7 @@ struct FitbitCompactCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: "heart.circle.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 }
                 

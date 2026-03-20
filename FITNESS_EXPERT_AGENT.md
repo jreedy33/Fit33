@@ -173,6 +173,11 @@ Optimal training frequency per muscle group (Schoenfeld 2016 meta-analysis):
 | `SmartProgramRecommender.swift` | Split recommendations match user profile correctly |
 | `FoundationalExerciseDatabase.swift` | Beginner exercises are truly foundational and safe |
 | `StrengthProfileRecommendationEngine.swift` | Weight recommendations are safe and progressive |
+| `ExerciseSwapService.swift` | Tiered swap logic (equipment variant vs complementary) follows exercise science |
+| `ProgressiveWorkoutIntelligence` | Progressive overload values are safe and evidence-based |
+| `ActiveWorkoutView.swift` | Set initialization, shuffle, and progressive overload flows are correct |
+| `SmartExerciseSearchService.swift` | Unified search: typo dictionary covers exercise terms; variation generator handles singular/plural; secondary field matching uses correct muscle/category names |
+| `ExerciseFilterService.swift` | `exerciseMatchesEquipment()` handles all 16 equipment categories; `isExerciseForMuscleGroup()` covers all 30 primary muscles |
 
 ### Communication Protocol
 
@@ -217,6 +222,9 @@ Before any workout-related code ships, the Fitness Expert validates:
 - [ ] **Beginner safety** is maintained (no Olympic lifts, no behind-neck press)
 - [ ] **Unilateral work** is included in leg days (lunges/split squats)
 - [ ] **Spinal loading** is not excessive (max 1 heavy hinge per workout)
+- [ ] **Set pre-fill values** use working sets only (warmup sets filtered from history)
+- [ ] **Swap tiers** follow the pattern: swaps 1-2 = equipment variant, swaps 3+ = complementary exercise
+- [ ] **Minimum 3 sets** created for any new/shuffled exercise (never a single empty set)
 
 ---
 
@@ -231,6 +239,28 @@ When the Fitness Expert needs to make a judgment call:
 4. Is it BALANCED?       → Does it complement the rest of the workout/program?
 5. Is it PRACTICAL?      → Can the user actually do this with their equipment?
 ```
+
+---
+
+## Logic Audit Updates (March 2026)
+
+### Key Findings Fixed
+- BUG-01: `CollaborativeLearningEngine.calculateSimilarity()` was completely non-functional (always returned 0). Now properly compares `UserProfileSnapshot` objects.
+- BUG-03: Operator precedence in exercise classification — calf exercises were matching without muscle validation. Fixed with explicit parentheses.
+- GAP-08: Body fat thresholds now gender-aware (female: essential ~12%, athletic ~18%, fitness ~25%, high ~32%)
+
+### Standards Established
+- `MovementPattern` enum consolidated to 30 canonical cases in `ExerciseTypes.swift` — review and validate this set covers all training modalities
+- Equipment normalization: `ExerciseFilterService.normalizeEquipment()` is the single source of truth
+- Age range bucketing: standardized to "25-34" offset ranges (matches standard demographics)
+- Exercise substitution: `SmartExercisePairingEngine` is the sole engine (AlternativeExerciseEngine deleted)
+
+### Files Updated in Domain
+- `CollaborativeLearningEngine.swift` — now functional for similarity scoring
+- `SmartExercisePairingEngine.swift` — operator precedence fixed, thread safety added (@MainActor)
+- `BodyCompositionTrackingService.swift` — gender-aware body fat thresholds
+- `ExerciseTypes.swift` (NEW) — shared MovementPattern enum
+- `AlternativeExerciseEngine.swift` (DELETED) — consolidated into SmartExercisePairingEngine
 
 ---
 
@@ -267,3 +297,109 @@ When the Fitness Expert needs to make a judgment call:
 - When a user starts a workout, all sets should be PRE-FILLED with previous workout values (weight + reps), not just shown as placeholders
 - This applies to: warmup cache, ExerciseHistoryService cache, cloud fetch, and smart recommendations
 - The user can immediately tap the checkmark to accept previous values without retyping
+
+**Warmup Set Detection** (future — heuristics defined):
+- A warmup set is any set where: `SetType == .warmup` (if explicitly tagged by the user), OR weight < 60% of the heaviest working set weight AND reps <= 5
+- Warmup sets MUST be excluded from history calculations (previous workout averages, progressive overload baseline)
+- Warmup sets should NOT count toward weekly volume tracking per muscle group
+- When displaying "previous workout" placeholders, only working sets should appear
+
+**Remaining Opportunities**:
+- `ProgressiveWorkoutIntelligence` generates standalone suggestions but should integrate with `GeneratedProgramService` periodization for program-context workouts
+- Swap learning: after 3+ swaps away from an exercise across sessions, that exercise should drop in suggestion priority
+- Pre-computed swap graph at workout start would eliminate per-shuffle Core Data latency
+
+### 2026-03-19: Exercise Database Overhaul (6,428 exercises)
+
+**Data Source**: `New Exercise Data - Manus.csv` → Supabase `exercises` table
+
+**Canonical Values** — All code MUST use these exact values when matching against the database:
+
+#### Categories (9)
+`Legs` (1861) · `Core` (1288) · `Full Body` (714) · `Back` (702) · `Shoulders` (653) · `Chest` (631) · `Arms` (547) · `Neck` (29) · `Hips` (3)
+
+#### Workout Types (4)
+`Strength` (5353) · `Stretch` (617) · `Plyometrics` (358) · `Cardio` (100)
+> **Breaking change**: Previous data used `"Stretching"` — now `"Stretch"`. `ExerciseFilterService.exerciseType(for:)` accepts both.
+
+#### Primary Muscles (30)
+Abs · Ankles · Back · Biceps · Calves · Chest · Core · Forearms · Front Delts · Full Body · Glutes · Hamstrings · Hip Flexors · Hips · Inner Thighs · Lats · Lower Abs · Lower Back · Lower Chest · Neck · Obliques · Quads · Rear Delts · Rotator Cuff · Shoulders · Side Delts · Traps · Triceps · Upper Back · Upper Chest
+> **Note**: "Quads" is canonical, NOT "Quadriceps". Legacy code uses "Quadriceps" through mapping layers (`SmartDayGenerator.muscleMapping`, `ExerciseFilterService.isExerciseForMuscleGroup`).
+
+#### Secondary Muscles (25)
+Abs · Biceps · Calves · Chest · Core · Forearms · Front Delts · Glutes · Hamstrings · Hip Abductors · Hip Flexors · Inner Thighs · Lats · Lower Back · Lower Chest · Obliques · Quads · Rear Delts · Rotator Cuff · Shoulders · Side Delts · Traps · Triceps · Upper Back · Upper Chest
+
+#### Equipment Categories (normalized, `equipment_category` column, 16)
+`bodyweight` · `dumbbell` · `cable` · `band` · `barbell` · `machine` · `kettlebell` · `trx` · `gymnastic_rings` · `pull_up_bar` · `smith_machine` · `stability_ball` · `plate` · `ez_bar` · `medicine_ball` · `foam_roller`
+> These are snake_case in the DB. `ExerciseFilterService.normalizeEquipment()` maps them to display names (e.g., `smith_machine` → "Smith Machine").
+
+#### Equipment (display-facing, `equipment` column, 130+ unique values)
+Primary equipment appears first in comma-separated strings. Examples: `"Bodyweight"`, `"Dumbbells, Incline Bench"`, `"Barbell, Flat Bench"`, `"Cables"`, `"Resistance Band, Anchor Point"`.
+
+#### Exercise Families (top 40, `exercise_family` column)
+general_exercise (682) · squat (246) · crunch (204) · leg_raise (165) · stretch_general (156) · russian_twist (151) · push_up (150) · bicep_curl (139) · back_exercise (139) · chest_fly (137) · boxing (126) · plank (122) · leg_exercise (121) · lunge (117) · arm_exercise (107) · tricep_extension (103) · shoulder_press (99) · yoga (99) · bench_press (98) · lateral_raise (97) · calf_raise (92) · romanian_deadlift (89) · back_extension (84) · pull_up (80) · glute_bridge (80) · hip_abduction (74) · shoulder_exercise (69) · walking (69) · front_raise (67) · side_bend (67) · lat_pulldown (66) · back_stretch (65) · rear_delt (65) · leg_curl (63) · hip_stretch (62) · split_squat (60) · glute_kickback (59) · external_rotation (57) · glute_exercise (54) · cable_row (54)
+
+#### Movement Patterns (sparse — only ~860/6428 exercises have this field)
+Squat (467) · Curl (271) · Press (15) · Push Up (9) · Fly (8) · Hip Hinge (8) · + 28 others
+> Most exercises have NULL `movement_pattern`. The `ExerciseTypes.MovementPattern` enum is an independent abstraction used for internal classification — NOT a direct match to DB values.
+
+#### Key Metadata Fields
+- `is_compound` (BOOLEAN) — compound vs isolation
+- `exercise_family` + `complementary_families` — used by `ExerciseSwapService` for swap tiers
+- `equipment_category` — normalized equipment for filtering
+- `is_equipment_primary` — whether equipment defines the exercise identity
+- `difficulty_level` (1-5): 1=easy (1144), 2=moderate (3675), 3=hard (1290), 4=very hard (242), 5=expert (77)
+- `priority_build_muscle`, `priority_get_lean`, `priority_home`, `priority_gym` — goal-specific scoring (0-100)
+- `duration_based` (BOOLEAN) — TRUE for stretches, planks, cardio holds
+
+**Code Compatibility Fixes Applied**:
+- `ExerciseFilterService`: Added snake_case equipment mappings, "Hips" category, "Stretch"/"Stretching" dual handling
+- `SmartDayGenerator`: Muscle mapping updated to use DB muscle names (Quads, Front Delts, etc.)
+- `ExerciseIntelligenceEngine`: Synergy map expanded for all new muscles, full body split uses "Quads"
+- `SmartRecommendationEngine`: Recovery tracker expanded to 26 muscle groups, equipment priorities include Kettlebell/TRX/Smith Machine
+- `WorkoutGeneratorService`: Category mapping aligned to new categories
+- `SmartExercisePairingEngine`: Equipment groups added for TRX/Rings, Stability Ball, Pull-Up Bar, Medicine Ball
+- `MuscleRecoveryTracker`: All muscle groups updated from "Quadriceps" to "Quads", expanded tracked muscles
+
+### 2026-03-18: Weight Input - Per-Side Mode & Plate Calculator
+
+**Standard Plate Weights** (lb): 45, 35, 25, 10, 5, 2.5
+**Standard Bar Weights** (lb): 45 (Olympic), 35 (women's Olympic), 25 (EZ curl bar)
+
+**Per-Side Convention**: Most lifters communicate barbell weight as "plates per side" (e.g., "a plate and a quarter" = 45+25 per side = 185 total). The per-side toggle and plate calculator support this mental model.
+
+**Weight Storage Rule**: Weight is ALWAYS stored as total in `WorkoutSetData.weight`. Per-side mode is purely an input convenience — the conversion happens at input/display time, never in the data layer. Progressive overload, history, and analytics all use total weight.
+
+**Plate Calculator Validation**: Standard plate math should always produce valid totals. Common patterns:
+- 135 = bar(45) + 45/side
+- 185 = bar(45) + 45+25/side
+- 225 = bar(45) + 45+45/side
+- 315 = bar(45) + 45+45+45/side
+
+### 2026-03-19: Active Workout Settings Panel Defaults
+
+**Default Rest Timer**: 90 seconds. Range: 0-300s in 15-second increments.
+- 0s = Off (no timer)
+- 30-60s = Endurance / circuit training
+- 60-90s = Hypertrophy (default sweet spot)
+- 120-180s = Strength / heavy compound lifts
+- 180-300s = Powerlifting / maximal effort
+
+**Auto-Start Rest Timer**: Default ON. Most users expect the timer to start automatically after completing a set. Users doing supersets or drop sets can toggle it off in the settings panel.
+
+**Bar Weight Options**: 45 lb (20 kg) Olympic standard, 35 lb (15 kg) women's Olympic, 25 lb (10 kg) EZ curl bar. These cover 99% of gym bars.
+
+**Per-Side Mode**: Now persisted via `@AppStorage("workoutPerSideMode")` across all exercises and workouts. Previously was `@State` and reset every session.
+
+### 2026-03-19: Rest Timer Settings Now Wired Correctly
+
+**`defaultRestSeconds` fix**: `getRestDuration(for:)` previously returned hardcoded values by exercise category (legs: 180s, back/chest: 120s, default: 90s) and completely ignored the user's configured `defaultRestSeconds` from the settings panel. Now it returns `TimeInterval(defaultRestSeconds)` directly. When `defaultRestSeconds == 0`, the timer does not start (user explicitly disabled it).
+
+**`autoStartRestTimer` fix**: This setting was stored in `@AppStorage` and toggled in the settings panel but was never read in any timer logic. Now it gates the `RestTimer.startWithAdOffset()` call in the set completion action. When `false`, completing a set marks it done but does not start the rest countdown. This is important for supersets, drop sets, and circuit training where automatic rest timers between every set would be counterproductive.
+
+**Rest period science still applies**: The recommended ranges in the settings panel remain:
+- 0s = Off (supersets, circuits, drop sets)
+- 30-60s = Endurance / circuit training
+- 60-90s = Hypertrophy (default 90s)
+- 120-180s = Strength / heavy compound lifts
+- 180-300s = Powerlifting / maximal effort

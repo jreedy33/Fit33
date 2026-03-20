@@ -94,6 +94,21 @@ enum ProgramGoal: String, CaseIterable, Codable {
         case .bodybuilding: return "figure.arms.open"
         }
     }
+    
+    static func fromUserGoalString(_ goal: String) -> ProgramGoal {
+        switch goal.lowercased() {
+        case "strength", "get stronger":        return .gainStrength
+        case "bulk", "build muscle", "muscle":  return .buildMuscle
+        case "cut", "lose weight", "fat loss":  return .loseWeight
+        case "tone", "toning", "define":        return .toneUp
+        case "cardio", "endurance":             return .improveEndurance
+        case "powerlifting":                    return .powerlifting
+        case "bodybuilding":                    return .bodybuilding
+        case "athletic", "athletic performance": return .athletic
+        case "flexibility", "mobility":         return .flexibility
+        default:                                return .generalFitness
+        }
+    }
 }
 
 /// Days per week options
@@ -251,6 +266,7 @@ class ProgramLibraryService: ObservableObject {
     
     // MARK: - Smart Recommendations
     
+    // TODO: Delegate to SmartProgramRecommender.shared for unified recommendation logic
     func getRecommendedPrograms(
         forExperience experience: String,
         goal: String,

@@ -10,6 +10,26 @@ class ProgressiveWorkoutIntelligence {
     
     private init() {}
     
+    // MARK: - Program Phase Definitions
+    
+    enum ProgramPhase: String {
+        case foundation  // Week 1: moderate intensity, form focus
+        case build       // Week 2: slight volume increase
+        case push        // Week 3: higher volume
+        case peak        // Week 4: max intensity, failure sets
+        case deload      // Week 5+: recovery, reduced volume
+        
+        static func from(weekNumber: Int) -> ProgramPhase {
+            switch weekNumber {
+            case 1: return .foundation
+            case 2: return .build
+            case 3: return .push
+            case 4: return .peak
+            default: return .deload
+            }
+        }
+    }
+    
     // MARK: - Progressive Set Recommendations
     
     /// Generate progressive set recommendations based on last workout
@@ -17,36 +37,59 @@ class ProgressiveWorkoutIntelligence {
     func generateProgressiveSets(
         for exerciseName: String,
         targetSetCount: Int = 4,
-        context: NSManagedObjectContext
+        context: NSManagedObjectContext,
+        programWeek: Int? = nil,
+        prescribedReps: (min: Int, max: Int)? = nil
     ) -> [ProgressiveSetRecommendation] {
         
         // Get last workout performance
         guard let lastPerformance = fetchLastWorkoutPerformance(exerciseName: exerciseName, context: context) else {
-            // No history - return empty for strength engine to handle
             return []
         }
         
         print("📊 Analyzing last performance for '\(exerciseName)':")
         print("   Last workout: \(lastPerformance.sets.count) sets")
+        if let week = programWeek {
+            print("   Program week: \(week) (\(ProgramPhase.from(weekNumber: week).rawValue))")
+        }
         
-        // Analyze consistency and readiness for progression
         guard let analysis = analyzePerformanceForProgression(lastPerformance) else {
-            // No valid analysis - return empty for default handling
             return []
         }
         
+        // If in a program context, use phase-aware logic
+        if let week = programWeek {
+            return generateProgramAwareSets(
+                analysis: analysis,
+                targetSetCount: targetSetCount,
+                phase: ProgramPhase.from(weekNumber: week),
+                prescribedReps: prescribedReps,
+                exerciseName: exerciseName
+            )
+        }
+        
+        // Standalone workout: use standard progressive logic
+        return generateStandaloneSets(
+            analysis: analysis,
+            targetSetCount: targetSetCount,
+            exerciseName: exerciseName
+        )
+    }
+    
+    /// Standard progressive overload for standalone (non-program) workouts
+    private func generateStandaloneSets(
+        analysis: PerformanceAnalysis,
+        targetSetCount: Int,
+        exerciseName: String
+    ) -> [ProgressiveSetRecommendation] {
         var recommendations: [ProgressiveSetRecommendation] = []
         
         if analysis.readyForProgression {
-            // PROGRESSIVE STRATEGY: Increase weight on first sets
             let progressiveWeight = analysis.suggestedProgressionWeight
             let maintenanceWeight = analysis.mostConsistentWeight
-            
-            // Example: 4 sets = [progressive, progressive, maintenance, maintenance]
             let progressiveSets = max(1, targetSetCount / 2)
             let maintenanceSets = targetSetCount - progressiveSets
             
-            // Add progressive sets
             for i in 1...progressiveSets {
                 recommendations.append(ProgressiveSetRecommendation(
                     setNumber: i,
@@ -56,8 +99,6 @@ class ProgressiveWorkoutIntelligence {
                     note: i == 1 ? "🔥 Push yourself!" : "💪 Keep going!"
                 ))
             }
-            
-            // Add maintenance sets
             for i in 1...maintenanceSets {
                 recommendations.append(ProgressiveSetRecommendation(
                     setNumber: progressiveSets + i,
@@ -71,25 +112,20 @@ class ProgressiveWorkoutIntelligence {
             print("   ✅ Progressive plan: \(progressiveSets)×\(Int(progressiveWeight))lbs + \(maintenanceSets)×\(Int(maintenanceWeight))lbs")
             
         } else if analysis.shouldDeload {
-            // DELOAD STRATEGY: Reduce weight to focus on form/recovery
-            let deloadWeight = analysis.mostConsistentWeight * 0.9 // 10% reduction
-            
+            let deloadWeight = analysis.mostConsistentWeight * 0.9
             for i in 1...targetSetCount {
                 recommendations.append(ProgressiveSetRecommendation(
                     setNumber: i,
                     weight: deloadWeight,
-                    reps: analysis.targetReps + 2, // More reps at lighter weight
+                    reps: analysis.targetReps + 2,
                     type: .deload,
                     note: "🧘 Deload week - focus on form"
                 ))
             }
-            
             print("   ⚠️ Deload recommended: \(Int(deloadWeight))lbs for recovery")
             
         } else {
-            // MAINTAIN STRATEGY: Keep same weight
             let weight = analysis.mostConsistentWeight
-            
             for i in 1...targetSetCount {
                 recommendations.append(ProgressiveSetRecommendation(
                     setNumber: i,
@@ -99,8 +135,117 @@ class ProgressiveWorkoutIntelligence {
                     note: "💪 Build consistency"
                 ))
             }
-            
             print("   → Maintain: \(Int(weight))lbs × \(analysis.targetReps)")
+        }
+        
+        return recommendations
+    }
+    
+    /// Program-aware progressive overload that respects periodization phases
+    private func generateProgramAwareSets(
+        analysis: PerformanceAnalysis,
+        targetSetCount: Int,
+        phase: ProgramPhase,
+        prescribedReps: (min: Int, max: Int)?,
+        exerciseName: String
+    ) -> [ProgressiveSetRecommendation] {
+        var recommendations: [ProgressiveSetRecommendation] = []
+        let baseWeight = analysis.mostConsistentWeight
+        let repTarget = prescribedReps.map { ($0.min + $0.max) / 2 } ?? analysis.targetReps
+        
+        switch phase {
+        case .foundation:
+            // Week 1: moderate intensity, focus on form. Use same weight, prescribed reps.
+            for i in 1...targetSetCount {
+                recommendations.append(ProgressiveSetRecommendation(
+                    setNumber: i,
+                    weight: baseWeight,
+                    reps: repTarget,
+                    type: .maintenance,
+                    note: "📐 Foundation - nail your form"
+                ))
+            }
+            print("   📐 Foundation phase: \(Int(baseWeight))lbs × \(repTarget)")
+            
+        case .build:
+            // Week 2: try progression on anchor sets (first half)
+            if analysis.readyForProgression {
+                let progressiveWeight = analysis.suggestedProgressionWeight
+                let progressiveSets = max(1, targetSetCount / 2)
+                for i in 1...progressiveSets {
+                    recommendations.append(ProgressiveSetRecommendation(
+                        setNumber: i,
+                        weight: progressiveWeight,
+                        reps: repTarget,
+                        type: .progressive,
+                        note: "📈 Build phase - push slightly"
+                    ))
+                }
+                for i in (progressiveSets + 1)...targetSetCount {
+                    recommendations.append(ProgressiveSetRecommendation(
+                        setNumber: i,
+                        weight: baseWeight,
+                        reps: repTarget,
+                        type: .maintenance,
+                        note: "✓ Maintain form"
+                    ))
+                }
+            } else {
+                for i in 1...targetSetCount {
+                    recommendations.append(ProgressiveSetRecommendation(
+                        setNumber: i,
+                        weight: baseWeight,
+                        reps: repTarget,
+                        type: .maintenance,
+                        note: "📈 Build phase - build consistency"
+                    ))
+                }
+            }
+            print("   📈 Build phase for '\(exerciseName)'")
+            
+        case .push:
+            // Week 3: higher volume, all sets at progression weight if ready
+            let weight = analysis.readyForProgression ? analysis.suggestedProgressionWeight : baseWeight
+            for i in 1...targetSetCount {
+                recommendations.append(ProgressiveSetRecommendation(
+                    setNumber: i,
+                    weight: weight,
+                    reps: repTarget,
+                    type: analysis.readyForProgression ? .progressive : .maintenance,
+                    note: "🔥 Push phase - challenge yourself"
+                ))
+            }
+            print("   🔥 Push phase: \(Int(weight))lbs × \(repTarget)")
+            
+        case .peak:
+            // Week 4: max intensity, last set to failure
+            let weight = analysis.readyForProgression ? analysis.suggestedProgressionWeight : baseWeight
+            for i in 1...targetSetCount {
+                let isLastSet = i == targetSetCount
+                recommendations.append(ProgressiveSetRecommendation(
+                    setNumber: i,
+                    weight: weight,
+                    reps: isLastSet ? max(repTarget - 2, prescribedReps?.min ?? 4) : repTarget,
+                    type: isLastSet ? .progressive : .maintenance,
+                    note: isLastSet ? "⚡ Peak - go to failure!" : "💪 Keep intensity high"
+                ))
+            }
+            print("   ⚡ Peak phase: \(Int(weight))lbs, last set to failure")
+            
+        case .deload:
+            // Week 5+: reduced volume and intensity for recovery
+            let deloadWeight = baseWeight * 0.6
+            let deloadReps = repTarget + 3
+            for i in 1...targetSetCount {
+                recommendations.append(ProgressiveSetRecommendation(
+                    setNumber: i,
+                    weight: deloadWeight,
+                    reps: deloadReps,
+                    type: .deload,
+                    note: "🧘 Deload - light and controlled"
+                ))
+            }
+            print("   🧘 Deload phase: \(Int(deloadWeight))lbs × \(deloadReps)")
         }
         
         return recommendations
@@ -134,7 +279,7 @@ class ProgressiveWorkoutIntelligence {
             }
             
             let completedSets = sets
-                .filter { $0.isCompleted && $0.weight > 0 }
+                .filter { $0.isCompleted && $0.weight > 0 && ($0.setType ?? "Normal") != "Warmup" }
                 .sorted { $0.setNumber < $1.setNumber }
             
             guard !completedSets.isEmpty else { return nil }

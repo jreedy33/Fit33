@@ -63,7 +63,7 @@ struct PrivateChallengeMember: Codable, Identifiable {
 }
 
 /// A private challenge summary (returned by get_my_private_challenges)
-struct PrivateChallenge: Codable, Identifiable {
+struct PrivateChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -98,11 +98,6 @@ struct PrivateChallenge: Codable, Identifiable {
     
     var isAdmin: Bool { myRole == "admin" }
     
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
-    /// Progress percentage for today (0.0 to 1.0)
     var todayProgressPercentage: Double {
         guard dailyTarget > 0 else { return 0 }
         return min(1.0, Double(myTodayProgress ?? 0) / Double(dailyTarget))
@@ -156,7 +151,7 @@ struct PrivateChallenge: Codable, Identifiable {
 
 /// Preview data for a private challenge (returned by lookup_private_challenge_by_code)
 /// Used to show challenge info before the user decides to join
-struct PrivateChallengePreview: Codable, Identifiable {
+struct PrivateChallengePreview: Codable, Identifiable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -177,10 +172,6 @@ struct PrivateChallengePreview: Codable, Identifiable {
     var id: UUID { challengeId }
     var displayEmoji: String { emoji ?? "🔒" }
     
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
-    
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description, emoji
@@ -200,7 +191,7 @@ struct PrivateChallengePreview: Codable, Identifiable {
 }
 
 /// Full detail response for a private challenge
-struct PrivateChallengeDetail: Codable {
+struct PrivateChallengeDetail: Codable, ChallengeTypeResolvable {
     let challengeId: UUID
     let title: String
     let description: String?
@@ -239,10 +230,6 @@ struct PrivateChallengeDetail: Codable {
     
     var displayEmoji: String { emoji ?? "🔒" }
     var isAdmin: Bool { myRole == "admin" }
-    
-    var resolvedType: ChallengeType {
-        ChallengeType(rawValue: challengeType) ?? .steps
-    }
     
     var todayProgressPercentage: Double {
         guard dailyTarget > 0 else { return 0 }
@@ -468,7 +455,7 @@ class PrivateChallengeService: ObservableObject {
                 // so stale yesterday progress doesn't appear as today's progress
                 if !isCacheFromToday && !cached.isEmpty {
                     #if DEBUG
-                    print("🌙 [PRIVATE] Cache is from previous day — zeroing out today's progress")
+                    AppLogger.debug("Private challenge cache is from previous day — zeroing out today's progress", category: .social)
                     #endif
                     for i in cached.indices {
                         cached[i].myTodayProgress = 0
@@ -476,7 +463,7 @@ class PrivateChallengeService: ObservableObject {
                 }
                 self.myChallenges = cached
                 #if DEBUG
-                print("✅ [PRIVATE] Loaded \(cached.count) cached private challenges")
+                AppLogger.info("Successfully loaded \(cached.count) cached private challenges", category: .social)
                 #endif
             }
         }
@@ -484,7 +471,7 @@ class PrivateChallengeService: ObservableObject {
             if let cached = try? JSONDecoder().decode([PrivateChallengeInvite].self, from: data) {
                 self.pendingInvites = cached
                 #if DEBUG
-                print("✅ [PRIVATE] Loaded \(cached.count) cached private invites")
+                AppLogger.info("Successfully loaded \(cached.count) cached private invites", category: .social)
                 #endif
             }
         }
@@ -514,7 +501,7 @@ class PrivateChallengeService: ObservableObject {
         let now = Date()
         if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
             #if DEBUG
-            print("⏭️ [PRIVATE] Skipping refresh — last was \(Int(now.timeIntervalSince(last)))s ago")
+            AppLogger.debug("Skipping private refresh — last was \(Int(now.timeIntervalSince(last)))s ago", category: .social)
             #endif
             return
         }
@@ -527,7 +514,7 @@ class PrivateChallengeService: ObservableObject {
         cacheData()
         
         #if DEBUG
-        print("✅ [PRIVATE] Full refresh completed")
+        AppLogger.info("Successfully completed private challenge full refresh", category: .social)
         #endif
     }
     
@@ -562,10 +549,10 @@ class PrivateChallengeService: ObservableObject {
             }
             
             #if DEBUG
-            print("✅ [PRIVATE] Fetched \(result.count) private challenges")
+            AppLogger.info("Successfully fetched \(result.count) private challenges", category: .social)
             #endif
         } catch {
-            print("❌ [PRIVATE] Error fetching my challenges: \(error)")
+            AppLogger.error("Error fetching my private challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -591,10 +578,10 @@ class PrivateChallengeService: ObservableObject {
             }
             
             #if DEBUG
-            print("✅ [PRIVATE] Fetched \(result.count) pending invites")
+            AppLogger.info("Successfully fetched \(result.count) pending invites", category: .social)
             #endif
         } catch {
-            print("❌ [PRIVATE] Error fetching invites: \(error)")
+            AppLogger.error("Error fetching private invites: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -646,13 +633,13 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Created private challenge: \(id)")
+            AppLogger.info("Successfully created private challenge: \(id)", category: .social)
             #endif
             await fetchMyChallenges()
             HapticManager.notification(.success)
             return id
         } catch {
-            print("❌ [PRIVATE] Error creating challenge: \(error)")
+            AppLogger.error("Error creating private challenge: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
             return nil
         }
@@ -676,12 +663,12 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Invited user \(userId) to \(challengeId)")
+            AppLogger.info("Successfully invited user \(userId) to \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             return inviteId
         } catch {
-            print("❌ [PRIVATE] Error inviting user: \(error)")
+            AppLogger.error("Error inviting user to private challenge: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
             return nil
         }
@@ -705,11 +692,11 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("🔒 [PRIVATE] Lookup by code: found \(results.count) result(s)")
+            AppLogger.debug("Private challenge lookup by code: found \(results.count) result(s)", category: .social)
             #endif
             return results.first
         } catch {
-            print("❌ [PRIVATE] Error looking up challenge by code: \(error)")
+            AppLogger.error("Error looking up private challenge by code: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -728,7 +715,7 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("🔒 [PRIVATE] Joined private challenge via code: \(challengeId)")
+            AppLogger.info("Successfully joined private challenge via code: \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             
@@ -736,7 +723,7 @@ class PrivateChallengeService: ObservableObject {
             cacheData()
             return challengeId
         } catch {
-            print("❌ [PRIVATE] Error joining by code: \(error)")
+            AppLogger.error("Error joining private challenge by code: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -760,7 +747,7 @@ class PrivateChallengeService: ObservableObject {
             pendingInvites.removeAll { $0.inviteId == inviteId }
             
             #if DEBUG
-            print("✅ [PRIVATE] Accepted invite \(inviteId) → challenge \(challengeId)")
+            AppLogger.info("Successfully accepted invite \(inviteId) → challenge \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             
@@ -769,7 +756,7 @@ class PrivateChallengeService: ObservableObject {
             cacheData()
             return challengeId
         } catch {
-            print("❌ [PRIVATE] Error accepting invite: \(error)")
+            AppLogger.error("Error accepting private invite: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
             return nil
         }
@@ -794,11 +781,11 @@ class PrivateChallengeService: ObservableObject {
             cacheData()
             
             #if DEBUG
-            print("✅ [PRIVATE] Declined invite \(inviteId)")
+            AppLogger.info("Successfully declined invite \(inviteId)", category: .social)
             #endif
             return true
         } catch {
-            print("❌ [PRIVATE] Error declining invite: \(error)")
+            AppLogger.error("Error declining private invite: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -822,11 +809,11 @@ class PrivateChallengeService: ObservableObject {
             cacheData()
             
             #if DEBUG
-            print("✅ [PRIVATE] Left private challenge \(challengeId)")
+            AppLogger.info("Successfully left private challenge \(challengeId)", category: .social)
             #endif
             return true
         } catch {
-            print("❌ [PRIVATE] Error leaving challenge: \(error)")
+            AppLogger.error("Error leaving private challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -849,12 +836,12 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Removed member \(userId) from \(challengeId)")
+            AppLogger.info("Successfully removed member \(userId) from \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             return true
         } catch {
-            print("❌ [PRIVATE] Error removing member: \(error)")
+            AppLogger.error("Error removing member from private challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -901,13 +888,13 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Updated challenge \(challengeId)")
+            AppLogger.info("Successfully updated private challenge \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
             return true
         } catch {
-            print("❌ [PRIVATE] Error updating challenge: \(error)")
+            AppLogger.error("Error updating private challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -930,12 +917,12 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Promoted \(userId) to admin")
+            AppLogger.info("Successfully promoted \(userId) to admin", category: .social)
             #endif
             HapticManager.notification(.success)
             return true
         } catch {
-            print("❌ [PRIVATE] Error promoting: \(error)")
+            AppLogger.error("Error promoting to admin: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -956,11 +943,11 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             #if DEBUG
-            print("✅ [PRIVATE] Demoted \(userId) from admin")
+            AppLogger.info("Successfully demoted \(userId) from admin", category: .social)
             #endif
             return true
         } catch {
-            print("❌ [PRIVATE] Error demoting: \(error)")
+            AppLogger.error("Error demoting from admin: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -984,12 +971,12 @@ class PrivateChallengeService: ObservableObject {
             cacheData()
             
             #if DEBUG
-            print("✅ [PRIVATE] Ended challenge \(challengeId)")
+            AppLogger.info("Successfully ended private challenge \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
             return true
         } catch {
-            print("❌ [PRIVATE] Error ending challenge: \(error)")
+            AppLogger.error("Error ending private challenge: \(error.localizedDescription)", category: .social)
             return false
         }
     }
@@ -1018,7 +1005,7 @@ class PrivateChallengeService: ObservableObject {
                     .value
                 
                 #if DEBUG
-                print("✅ [PRIVATE] Logged progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))")
+                AppLogger.info("Successfully logged private progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))", category: .social)
                 #endif
                 return true
             } catch {
@@ -1027,10 +1014,10 @@ class PrivateChallengeService: ObservableObject {
                     // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections
                     // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                    print("⚠️ [PRIVATE] log_private_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...")
+                    AppLogger.warning("log_private_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    print("❌ [PRIVATE] Error logging progress: \(error)")
+                    AppLogger.error("Error logging private challenge progress: \(error.localizedDescription)", category: .social)
                     return false
                 }
             }
@@ -1057,7 +1044,7 @@ class PrivateChallengeService: ObservableObject {
             
             return results.first
         } catch {
-            print("❌ [PRIVATE] Error fetching detail: \(error)")
+            AppLogger.error("Error fetching private challenge detail: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1083,7 +1070,7 @@ class PrivateChallengeService: ObservableObject {
             
             return messageId
         } catch {
-            print("❌ [PRIVATE] Error sending message: \(error)")
+            AppLogger.error("Error sending private challenge message: \(error.localizedDescription)", category: .social)
             return nil
         }
     }
@@ -1109,7 +1096,7 @@ class PrivateChallengeService: ObservableObject {
             
             return messages
         } catch {
-            print("❌ [PRIVATE] Error fetching messages: \(error)")
+            AppLogger.error("Error fetching private challenge messages: \(error.localizedDescription)", category: .social)
             return []
         }
     }
@@ -1123,7 +1110,7 @@ class PrivateChallengeService: ObservableObject {
         // channel triggers "You cannot call postgresChange after joining the channel" warning
         // and silently breaks the subscription.
         if realtimeChannel != nil {
-            print("⏭️ [PRIVATE] Already subscribed to real-time updates — skipping")
+            AppLogger.debug("Already subscribed to private real-time updates — skipping", category: .social)
             return
         }
         
@@ -1174,56 +1161,56 @@ class PrivateChallengeService: ObservableObject {
         // Handle member changes → instant UI refresh
         Task {
             for await _ in memberInserts {
-                print("📡 [PRIVATE-RT] New member joined")
+                AppLogger.debug("Realtime: new private member joined", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in memberUpdates {
-                print("📡 [PRIVATE-RT] Member updated")
+                AppLogger.debug("Realtime: private member updated", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in progressInserts {
-                print("📡 [PRIVATE-RT] New progress logged")
+                AppLogger.debug("Realtime: new private progress logged", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in progressUpdates {
-                print("📡 [PRIVATE-RT] Progress updated")
+                AppLogger.debug("Realtime: private progress updated", category: .social)
                 await refreshAfterRealtimeUpdate()
             }
         }
         
         Task {
             for await _ in inviteInserts {
-                print("📡 [PRIVATE-RT] New invite received")
+                AppLogger.debug("Realtime: new private invite received", category: .social)
                 await fetchPendingInvites()
             }
         }
         
         Task {
             for await _ in chatInserts {
-                print("📡 [PRIVATE-RT] New chat message")
+                AppLogger.debug("Realtime: new private chat message", category: .social)
                 await fetchMyChallenges() // Update last_chat_message preview
             }
         }
         
         await channel.subscribe()
         realtimeChannel = channel
-        print("📡 [PRIVATE] Subscribed to real-time updates")
+        AppLogger.info("Successfully subscribed to private real-time updates", category: .social)
     }
     
     func unsubscribeFromRealtimeUpdates() async {
         if let channel = realtimeChannel {
             await channel.unsubscribe()
             realtimeChannel = nil
-            print("📡 [PRIVATE] Unsubscribed from real-time updates")
+            AppLogger.debug("Unsubscribed from private real-time updates", category: .social)
         }
     }
     
@@ -1246,7 +1233,7 @@ class PrivateChallengeService: ObservableObject {
         let matching = myChallenges.filter { $0.resolvedType == type }
         guard !matching.isEmpty else { return }
         
-        print("⚡ [PRIVATE] Quick sync \(type.rawValue): \(value) to \(matching.count) private challenge(s) (allowDecrease: \(allowDecrease))")
+        AppLogger.debug("Quick sync \(type.rawValue): \(value) to \(matching.count) private challenge(s) (allowDecrease: \(allowDecrease))", category: .social)
         
         for challenge in matching {
             var adjustedValue = value
@@ -1273,15 +1260,14 @@ class PrivateChallengeService: ObservableObject {
     func syncAllTrackingToPrivateChallenges() async {
         guard !myChallenges.isEmpty else { return }
         
-        // Ensure MealService has today's data (not stale yesterday meals)
-        MealService.shared.ensureFreshForToday()
+        let progress = await gatherCurrentProgress()
         
         #if DEBUG
-        print("🔄 [PRIVATE] Syncing tracking data to \(myChallenges.count) private challenges...")
+        AppLogger.debug("Syncing tracking data to \(myChallenges.count) private challenges...", category: .social)
         #endif
         
         for (index, challenge) in myChallenges.enumerated() {
-            let progressValue = await calculateProgress(for: challenge)
+            let progressValue = resolveProgress(for: challenge, from: progress)
             
             // For "recalculable" types (protein, hydration, calories) the local value
             // is authoritative — it's freshly computed from today's meals/logs.
@@ -1312,54 +1298,22 @@ class PrivateChallengeService: ObservableObject {
         cacheData()
         
         #if DEBUG
-        print("✅ [PRIVATE] Private challenge sync complete")
+        AppLogger.info("Successfully completed private challenge sync", category: .social)
         #endif
     }
     
-    /// Calculate progress from HealthKit/services for a private challenge
-    private func calculateProgress(for challenge: PrivateChallenge) async -> Int {
-        let healthKit = HealthKitService.shared
-        let healthKitManager = HealthKitManager.shared
-        
+    private func resolveProgress(for challenge: PrivateChallenge, from data: ChallengeProgressData) -> Int {
         switch challenge.challengeType {
-        case "steps":
-            let steps = healthKitManager.todaySteps > 0 ? healthKitManager.todaySteps : healthKit.todaySteps
-            return steps
-        case "walk":
-            if challenge.targetUnit == "minutes" {
-                return healthKit.recentWorkouts
-                    .filter { $0.workoutType == .walking && Calendar.current.isDateInToday($0.startDate) }
-                    .reduce(0) { $0 + $1.durationMinutes }
-            }
-            return 0
-        case "run":
-            if challenge.targetUnit == "minutes" {
-                return healthKit.recentWorkouts
-                    .filter { $0.workoutType == .running && Calendar.current.isDateInToday($0.startDate) }
-                    .reduce(0) { $0 + $1.durationMinutes }
-            }
-            return 0
-        case "lift", "workout_streak":
-            return 0
-        case "active_minutes":
-            return healthKit.todayActiveMinutes
-        case "hydrate":
-            let totalMl = HydrationService.shared.todayTotal
-            if challenge.targetUnit.lowercased() == "oz" {
-                return Int(Double(totalMl) / 29.5735)
-            }
-            return totalMl
-        case "protein":
-            return MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
-        case "calories":
-            let hkCal = healthKit.todayCalories
-            let mealCal = MealService.shared.todaysMeals.reduce(0) { $0 + $1.calories }
-            return max(hkCal, mealCal)
-        case "sleep":
-            let sleepHours = healthKit.lastNightSleep ?? 0
-            return Int(sleepHours * 60)
-        default:
-            return 0
+        case "steps":       return data.steps
+        case "walk":        return challenge.targetUnit == "minutes" ? data.walkMinutesToday : 0
+        case "run":         return challenge.targetUnit == "minutes" ? data.runMinutesToday : 0
+        case "lift", "workout_streak": return 0
+        case "active_minutes": return data.activeMinutes
+        case "hydrate":     return data.hydrationInUnit(challenge.targetUnit)
+        case "protein":     return data.protein
+        case "calories":    return max(data.calories, data.mealCalories)
+        case "sleep":       return data.sleepMinutes
+        default:            return 0
         }
     }
     

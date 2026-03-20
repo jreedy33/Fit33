@@ -216,9 +216,50 @@ final class ExercisePopularityService {
     
     /// Get top exercises for a specific category/muscle group
     func getTopExercises(for category: String, count: Int = 10) -> [String] {
-        // This would filter by category - for now return overall top
-        return getTopExercises(count: count)
+        guard !category.isEmpty else {
+            return getTopExercises(count: count)
+        }
+        
+        let categoryLower = category.lowercased()
+        let categoryExercises = exerciseCategoryMap.filter { $0.value == categoryLower }
+        let matchingNames = Set(categoryExercises.map { $0.key })
+        
+        return popularityCache
+            .filter { matchingNames.contains($0.key) }
+            .sorted { $0.value > $1.value }
+            .prefix(count)
+            .map { $0.key }
     }
+    
+    private let exerciseCategoryMap: [String: String] = [
+        "barbell bench press": "chest", "flat bench press": "chest", "bench press": "chest",
+        "incline bench press": "chest", "incline dumbbell press": "chest", "decline bench press": "chest",
+        "dumbbell chest press": "chest", "dumbbell bench press": "chest", "cable crossover": "chest",
+        "fly": "chest", "chest fly": "chest", "dumbbell fly": "chest", "cable fly": "chest",
+        "machine chest press": "chest", "close grip bench press": "chest",
+        "barbell squat": "legs", "back squat": "legs", "squat": "legs", "front squat": "legs",
+        "leg press": "legs", "leg extension": "legs", "leg curl": "legs", "hamstring curl": "legs",
+        "romanian deadlift": "legs", "rdl": "legs", "lunge": "legs", "lunges": "legs",
+        "walking lunge": "legs", "hip thrust": "legs", "barbell hip thrust": "legs",
+        "goblet squat": "legs", "sumo deadlift": "legs", "bulgarian split squat": "legs",
+        "step up": "legs", "step ups": "legs", "calf raise": "legs", "standing calf raise": "legs",
+        "pull up": "back", "pull-up": "back", "pullup": "back", "lat pulldown": "back",
+        "barbell row": "back", "bent over row": "back", "cable row": "back", "seated row": "back",
+        "chin up": "back", "chin-up": "back", "chinup": "back", "deadlift": "back",
+        "conventional deadlift": "back", "good morning": "back", "reverse fly": "back",
+        "rear delt fly": "back", "face pull": "back", "cable face pull": "back",
+        "shoulder press": "shoulders", "overhead press": "shoulders", "military press": "shoulders",
+        "lateral raise": "shoulders", "side lateral raise": "shoulders", "arnold press": "shoulders",
+        "upright row": "shoulders", "shrug": "shoulders", "dumbbell shrug": "shoulders",
+        "dumbbell curl": "arms", "bicep curl": "arms", "hammer curl": "arms",
+        "preacher curl": "arms", "cable curl": "arms", "cable bicep curl": "arms",
+        "concentration curl": "arms", "incline curl": "arms", "incline dumbbell curl": "arms",
+        "ez bar curl": "arms", "tricep pushdown": "arms", "triceps pushdown": "arms",
+        "cable pushdown": "arms", "skull crusher": "arms", "lying tricep extension": "arms",
+        "dip": "arms", "dips": "arms", "tricep dip": "arms",
+        "push up": "chest", "push-up": "chest", "pushup": "chest",
+        "plank": "core", "crunch": "core", "crunches": "core",
+    ]
     
     /// Read personal usage count directly from UserDefaults (thread-safe, no MainActor needed)
     private func personalUsageCount(for exerciseName: String) -> Int {

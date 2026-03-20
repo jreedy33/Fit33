@@ -37,9 +37,7 @@ import WebKit
 final class RequestDeduplicationService {
     static let shared = RequestDeduplicationService()
     
-    // Track in-flight requests by key
     private var inFlightRequests: [String: Task<Any, Error>] = [:]
-    private var requestLock = NSLock()
     
     // Cache recent results with TTL
     private var resultCache: [String: CachedResult] = [:]
@@ -54,11 +52,17 @@ final class RequestDeduplicationService {
         }
     }
     
+    private var cleanupTimer: Timer?
+    
     private init() {
-        // Clean cache periodically
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.cleanExpiredCache()
         }
+    }
+    
+    deinit {
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
     }
     
     /// Execute a request with deduplication
@@ -74,10 +78,7 @@ final class RequestDeduplicationService {
             return value
         }
         
-        // Check if request is already in-flight
-        requestLock.lock()
         if let existingTask = inFlightRequests[key] {
-            requestLock.unlock()
             print("⚡️ [DEDUP] Reusing in-flight request for '\(key)'")
             let existingResult = try await existingTask.value
             guard let typedResult = existingResult as? T else {
@@ -87,57 +88,40 @@ final class RequestDeduplicationService {
             return typedResult
         }
         
-        // Create new task
         let task = Task<Any, Error> {
             try await operation()
         }
         inFlightRequests[key] = task
-        requestLock.unlock()
         
         do {
             let rawResult = try await task.value
             guard let result = rawResult as? T else {
-                requestLock.lock()
                 inFlightRequests.removeValue(forKey: key)
-                requestLock.unlock()
                 throw NSError(domain: "RequestDeduplication", code: -1,
                     userInfo: [NSLocalizedDescriptionKey: "Type mismatch for request '\(key)'"])
             }
             
-            // Cache the result
-            requestLock.lock()
             resultCache[key] = CachedResult(value: result, timestamp: Date())
             inFlightRequests.removeValue(forKey: key)
-            requestLock.unlock()
             
             return result
         } catch {
-            requestLock.lock()
             inFlightRequests.removeValue(forKey: key)
-            requestLock.unlock()
             throw error
         }
     }
     
-    /// Invalidate cache for a specific key
     func invalidateCache(for key: String) {
-        requestLock.lock()
         resultCache.removeValue(forKey: key)
-        requestLock.unlock()
     }
     
-    /// Invalidate all caches
     func invalidateAllCaches() {
-        requestLock.lock()
         resultCache.removeAll()
-        requestLock.unlock()
         print("🗑️ [DEDUP] All caches invalidated")
     }
     
     private func cleanExpiredCache() {
-        requestLock.lock()
         resultCache = resultCache.filter { $0.value.isValid }
-        requestLock.unlock()
     }
 }
 
@@ -396,17 +380,7 @@ final class MemoryPressureHandler {
     }
     
     private func getMemoryUsageMB() -> Double {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        
-        guard result == KERN_SUCCESS else { return 0 }
-        return Double(info.resident_size) / 1024 / 1024
+        SystemMetrics.getMemoryUsageMB()
     }
 }
 
@@ -857,36 +831,7 @@ final class CPUProtection {
     }
     
     private func measureCPU() -> Double {
-        var threadList: thread_act_array_t?
-        var threadCount = mach_msg_type_number_t()
-        
-        guard task_threads(mach_task_self_, &threadList, &threadCount) == KERN_SUCCESS,
-              let threads = threadList else {
-            return 0
-        }
-        
-        var totalCPU: Double = 0
-        
-        for i in 0..<Int(threadCount) {
-            var info = thread_basic_info()
-            var infoCount = mach_msg_type_number_t(THREAD_INFO_MAX)
-            
-            let result = withUnsafeMutablePointer(to: &info) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) {
-                    thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &infoCount)
-                }
-            }
-            
-            if result == KERN_SUCCESS && info.flags & TH_FLAGS_IDLE == 0 {
-                totalCPU += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100
-            }
-        }
-        
-        // Deallocate thread list
-        let size = vm_size_t(Int(threadCount) * MemoryLayout<thread_t>.size)
-        vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threads), size)
-        
-        return totalCPU
+        SystemMetrics.getCPUUsage()
     }
 }
 

@@ -362,7 +362,7 @@ struct ReactionPickerSheet: View {
         } label: {
             HStack(spacing: 8) {
                 Text(preset.emoji)
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                 
                 Text(preset.text)
                     .font(.caption)
@@ -486,7 +486,7 @@ struct ReactionPickerSheet: View {
                     .foregroundColor(.white.opacity(0.8))
                     .italic()
             }
-            .padding(32)
+            .padding(Spacing.xl)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
@@ -538,7 +538,7 @@ struct ReactionFeedView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             if isLoading {
                 HStack {
@@ -590,7 +590,7 @@ struct ReactionFeedView: View {
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .fill(Color.cardBackground)
@@ -626,14 +626,14 @@ struct ReactionFeedView: View {
                     }
                     
                     Text(reaction.timeAgo)
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary.opacity(0.7))
                 }
                 
                 // Reaction bubble
                 HStack(spacing: 6) {
                     Text(reaction.reactionEmoji)
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                     Text(reaction.reactionText)
                         .font(.caption)
                         .fontWeight(.medium)
@@ -693,7 +693,7 @@ struct ReactionQuickButton: View {
                 if let reaction = latestReaction, !reaction.isMine {
                     // Show incoming reaction as a teaser
                     Text(reaction.reactionEmoji)
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                     Text(reaction.reactionText)
                         .font(.caption2)
                         .fontWeight(.semibold)
@@ -701,7 +701,7 @@ struct ReactionQuickButton: View {
                         .lineLimit(1)
                 } else {
                     Image(systemName: isCompetition ? "flame.fill" : "bolt.heart.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundStyle(
                             LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
                         )

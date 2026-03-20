@@ -54,7 +54,7 @@ struct NativeAdContentView: View {
                             .frame(width: 40, height: 40)
                         
                         Image(systemName: "megaphone.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.orange)
                     }
                 }
@@ -295,7 +295,7 @@ struct WorkoutNativeAdContent: View {
                             .fill(Color.orange.opacity(0.2))
                             .frame(width: 36, height: 36)
                         Image(systemName: "megaphone.fill")
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                             .foregroundColor(.orange)
                     }
                 }

@@ -161,7 +161,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                 showingDeleteConfirmation = true
             }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
                     .padding(6)
                     .background(Color.secondary.opacity(0.1))
@@ -301,7 +301,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                         HStack(spacing: 6) {
                             ForEach(topMuscleGroups, id: \.self) { muscle in
                                 Text(muscle)
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(.ds_caption)
                                     .foregroundColor(muscleAccentColor)
                                     .padding(.horizontal, Spacing.xs)
                                     .padding(.vertical, 3)
@@ -337,7 +337,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                         }
                     }) {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                             .padding(6)
                             .background(Color.secondary.opacity(0.1))
@@ -380,7 +380,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 }
             }
             .padding(.vertical, Spacing.xs)
@@ -400,7 +400,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                             .tint(.primary)
                     } else {
                         Image(systemName: "bookmark")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text("Save")
                         .font(.caption)
@@ -575,7 +575,7 @@ struct ReceivedWorkoutPreviewContainer: View {
                     if pendingWorkouts.count > 1 {
                         HStack(spacing: 6) {
                             Image(systemName: "tray.full.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
                             Text("\(pendingWorkouts.count - 1) more workout\(pendingWorkouts.count > 2 ? "s" : "") waiting")
                                 .font(.caption)

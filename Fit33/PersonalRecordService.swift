@@ -378,13 +378,13 @@ struct PRIndicatorBadge: View {
         if prCount > 0 {
             HStack(spacing: 4) {
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                 Text(prCount == 1 ? "PR!" : "\(prCount) PRs!")
                     .font(.system(size: 10, weight: .bold))
             }
             .foregroundColor(.white)
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(

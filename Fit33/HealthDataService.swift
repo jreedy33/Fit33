@@ -15,6 +15,13 @@ import SwiftUI
 final class HealthDataService: ObservableObject {
     static let shared = HealthDataService()
     
+    private static let iso8601 = ISO8601DateFormatter()
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    
     // MARK: - Published Properties
     
     @Published var isLoading = false
@@ -57,13 +64,13 @@ final class HealthDataService: ObservableObject {
         // Throttle: Skip if already syncing or synced recently
         if !force {
             if isSyncing {
-                print("⏭️ [HEALTH] Skipping sync - already in progress")
+                AppLogger.debug("Skipping health sync - already in progress", category: .health)
                 return
             }
             
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
-                print("⏭️ [HEALTH] Skipping full sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago")
+                AppLogger.debug("Skipping full health sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .health)
                 // Even when throttled, do a quick HealthKit workout sync to catch new external workouts
                 // This is lightweight: just re-fetches workouts from HealthKit and persists any new ones
                 if HealthKitService.shared.isAuthorized {
@@ -115,7 +122,7 @@ final class HealthDataService: ObservableObject {
         isLoading = false
         isSyncing = false
         
-        print("✅ [HEALTH] Full health data sync complete")
+        AppLogger.info("Full health data sync complete", category: .health)
     }
     
     // MARK: - Challenge Integration
@@ -132,11 +139,11 @@ final class HealthDataService: ObservableObject {
         
         // Skip if no active challenges at all
         guard has1v1 || hasCommunity || hasPrivate else {
-            print("📊 [CHALLENGES] No active challenges to sync")
+            AppLogger.debug("No active challenges to sync", category: .health)
             return
         }
         
-        print("🏆 [CHALLENGES] Syncing all health sources to \(challengeService.activeChallenges.count) 1v1 + \(communityService.myChallenges.count) community + \(privateService.myChallenges.count) private challenges...")
+        AppLogger.debug("Syncing all health sources to \(challengeService.activeChallenges.count) 1v1 + \(communityService.myChallenges.count) community + \(privateService.myChallenges.count) private challenges", category: .health)
         
         // HealthKit already syncs via syncHealthKitData -> HealthKitService.syncAllData
         // But let's ensure comprehensive sync from all sources
@@ -164,7 +171,7 @@ final class HealthDataService: ObservableObject {
             await privateService.syncAllTrackingToPrivateChallenges()
         }
         
-        print("✅ [CHALLENGES] All health sources synced to challenges (1v1 + community + private)")
+        AppLogger.info("All health sources synced to challenges (1v1 + community + private)", category: .health)
     }
     
     /// Sync Fitbit activities to challenges
@@ -194,7 +201,7 @@ final class HealthDataService: ObservableObject {
             }
         }
         
-        print("✅ [FITBIT] Synced activity data to challenges")
+        AppLogger.info("Fitbit activity data synced to challenges", category: .health)
     }
     
     // MARK: - Fitbit Data Sync
@@ -228,7 +235,7 @@ final class HealthDataService: ObservableObject {
         
         // 🔄 AUTO-SYNC: Fetch latest activities from Strava API
         // This pulls any new runs/rides since last sync
-        print("🔄 [STRAVA] Auto-syncing activities from Strava...")
+        AppLogger.debug("Auto-syncing activities from Strava", category: .health)
         await StravaService.shared.syncActivities(daysBack: 7) // Last 7 days for efficiency
         
         // Now aggregate the synced activities for daily summary
@@ -253,7 +260,7 @@ final class HealthDataService: ObservableObject {
                 activeMinutes: totalActiveMinutes
             )
             
-            print("✅ [STRAVA] Synced \(todayActivities.count) activities from today")
+            AppLogger.info("Strava synced \(todayActivities.count) activities from today", category: .health)
         }
     }
     
@@ -275,7 +282,7 @@ final class HealthDataService: ObservableObject {
     private func syncHealthKitWorkoutsOnly() async {
         guard HealthKitService.shared.isAuthorized else { return }
         
-        print("🏃 [HEALTH] Quick workout-only sync (full sync throttled)...")
+        AppLogger.debug("Quick workout-only sync (full sync throttled)", category: .health)
         
         // Force HealthKit to re-fetch recent workouts (bypasses HealthKitService throttle)
         await HealthKitService.shared.syncAllData(force: true)
@@ -306,6 +313,9 @@ final class HealthDataService: ObservableObject {
         // Save workouts (Nike Run Club runs, Apple Watch workouts, etc.)
         var savedCount = 0
         for workout in healthKit.recentWorkouts {
+            // Skip Fit33's own workouts read back from HealthKit
+            if workout.isFromFit33 { continue }
+            
             // Only save workouts from today/recent (7 days)
             if calendar.isDate(workout.startDate, inSameDayAs: today) ||
                workout.startDate > calendar.date(byAdding: .day, value: -7, to: today)! {
@@ -319,7 +329,7 @@ final class HealthDataService: ObservableObject {
             await saveSleepFromHealthKit(hours: sleepHours)
         }
         
-        print("✅ [HEALTH] HealthKit data persisted to Supabase (steps: \(healthKit.todaySteps), workouts saved: \(savedCount)/\(healthKit.recentWorkouts.count))")
+        AppLogger.info("HealthKit data persisted to Supabase (steps: \(healthKit.todaySteps), workouts saved: \(savedCount)/\(healthKit.recentWorkouts.count))", category: .health)
         
         // Notify dashboard to reload cardio workouts so external workouts appear in Recent Activity
         if savedCount > 0 {
@@ -332,7 +342,7 @@ final class HealthDataService: ObservableObject {
         
         var insert = DailyActivityInsert(
             userId: userId.uuidString,
-            date: ISO8601DateFormatter().string(from: date),
+            date: Self.iso8601.string(from: date),
             steps: steps,
             caloriesBurned: calories,
             caloriesActive: calories,
@@ -347,9 +357,9 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert, onConflict: "user_id,date")
                 .execute()
             
-            print("✅ [HEALTH] Saved daily activity from HealthKit")
+            AppLogger.info("Saved daily activity from HealthKit", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to save HealthKit activity: \(error)")
+            AppLogger.error("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -390,8 +400,8 @@ final class HealthDataService: ObservableObject {
             durationSeconds: Int(workout.duration),
             distanceMeters: workout.distance ?? 0,
             caloriesBurned: Int(workout.calories ?? 0),
-            startedAt: ISO8601DateFormatter().string(from: workout.startDate),
-            completedAt: ISO8601DateFormatter().string(from: workout.endDate),
+            startedAt: Self.iso8601.string(from: workout.startDate),
+            completedAt: Self.iso8601.string(from: workout.endDate),
             source: "healthkit",
             externalId: workout.id.uuidString
         )
@@ -401,12 +411,12 @@ final class HealthDataService: ObservableObject {
                 .from("cardio_workouts")
                 .upsert(insert, onConflict: "user_id,source,external_id")
                 .execute()
-            print("✅ [HEALTH] Saved HealthKit workout: \(sourceName) \(workoutType) (\(Int(workout.duration / 60))m)")
+            AppLogger.info("Saved HealthKit workout: \(sourceName) \(workoutType) (\(Int(workout.duration / 60))m)", category: .health)
         } catch {
             // Silently handle duplicates (already exists in DB)
             if !error.localizedDescription.contains("duplicate") &&
                !error.localizedDescription.contains("conflict") {
-                print("❌ [HEALTH] Failed to save HealthKit workout (\(sourceName) \(workoutType)): \(error)")
+                AppLogger.error("Failed to save HealthKit workout (\(sourceName) \(workoutType)): \(error.localizedDescription)", category: .health)
             }
         }
     }
@@ -415,7 +425,7 @@ final class HealthDataService: ObservableObject {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
-        let dateStr = ISO8601DateFormatter().string(from: yesterday)
+        let dateStr = Self.iso8601.string(from: yesterday)
         
         let insert = HealthKitSleepInsert(
             userId: userId.uuidString,
@@ -431,7 +441,7 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert)
                 .execute()
         } catch {
-            print("❌ [HEALTH] Failed to save HealthKit sleep: \(error)")
+            AppLogger.error("Failed to save HealthKit sleep: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -442,7 +452,7 @@ final class HealthDataService: ObservableObject {
         
         let insert = DailyActivityInsert(
             userId: userId.uuidString,
-            date: ISO8601DateFormatter().string(from: Date()),
+            date: Self.iso8601.string(from: Date()),
             steps: fitbitSummary.steps,
             caloriesBurned: fitbitSummary.caloriesOut,
             caloriesActive: fitbitSummary.activityCalories ?? 0,
@@ -461,18 +471,16 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert, onConflict: "user_id,date")
                 .execute()
             
-            print("✅ [HEALTH] Saved daily activity from \(source)")
+            AppLogger.info("Saved daily activity from \(source)", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to save daily activity: \(error)")
+            AppLogger.error("Failed to save daily activity: \(error.localizedDescription)", category: .health)
         }
     }
     
     private func updateDailyActivityFromStrava(date: Date, calories: Int, distance: Double, activeMinutes: Int) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = dateFormatter.string(from: date)
+        let dateStr = Self.dayFormatter.string(from: date)
         
         // First, try to get existing record
         do {
@@ -487,11 +495,11 @@ final class HealthDataService: ObservableObject {
             if let current = existing.first {
                 // Update with Strava data (add to existing)
                 let update: [String: AnyEncodable] = [
-                    "calories_burned": AnyEncodable(max(current.caloriesBurned, current.caloriesBurned + calories)),
-                    "distance_meters": AnyEncodable(max(current.distanceMeters, current.distanceMeters + distance)),
-                    "very_active_minutes": AnyEncodable(max(current.veryActiveMinutes, current.veryActiveMinutes + activeMinutes)),
+                    "calories_burned": AnyEncodable(max(current.caloriesBurned, calories)),
+                    "distance_meters": AnyEncodable(max(current.distanceMeters, distance)),
+                    "very_active_minutes": AnyEncodable(max(current.veryActiveMinutes, activeMinutes)),
                     "sources": AnyEncodable(Array(Set(current.sources + ["strava"]))),
-                    "updated_at": AnyEncodable(ISO8601DateFormatter().string(from: Date()))
+                    "updated_at": AnyEncodable(Self.iso8601.string(from: Date()))
                 ]
                 
                 try await SupabaseManager.shared.supabaseClient
@@ -518,9 +526,9 @@ final class HealthDataService: ObservableObject {
                     .execute()
             }
             
-            print("✅ [HEALTH] Updated daily activity with Strava data")
+            AppLogger.info("Updated daily activity with Strava data", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to update Strava activity: \(error)")
+            AppLogger.error("Failed to update Strava activity: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -549,18 +557,16 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert, onConflict: "user_id,source,external_id")
                 .execute()
             
-            print("✅ [HEALTH] Saved sleep log from \(source)")
+            AppLogger.info("Saved sleep log from \(source)", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to save sleep log: \(error)")
+            AppLogger.error("Failed to save sleep log: \(error.localizedDescription)", category: .health)
         }
     }
     
     private func saveHeartRateData(from heartRate: FitbitHeartRateData, date: Date, source: String) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = dateFormatter.string(from: date)
+        let dateStr = Self.dayFormatter.string(from: date)
         
         // Extract zone data
         var outOfRangeMinutes = 0, fatBurnMinutes = 0, cardioMinutes = 0, peakMinutes = 0
@@ -619,9 +625,9 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert, onConflict: "user_id,date,source")
                 .execute()
             
-            print("✅ [HEALTH] Saved heart rate data from \(source)")
+            AppLogger.info("Saved heart rate data from \(source)", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to save heart rate: \(error)")
+            AppLogger.error("Failed to save heart rate: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -634,9 +640,6 @@ final class HealthDataService: ObservableObject {
         let today = Date()
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: today)!
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
         // ⚡️ Sequential with 150ms gaps to avoid flooding URLSession during startup.
         // These are display-only queries — not critical for challenge sync.
         
@@ -646,17 +649,17 @@ final class HealthDataService: ObservableObject {
                 .from("daily_activity_summary")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("date", value: dateFormatter.string(from: weekAgo))
+                .gte("date", value: Self.dayFormatter.string(from: weekAgo))
                 .order("date", ascending: false)
                 .execute()
                 .value
             
             weeklyActivityData = activities
-            todaySummary = activities.first { calendar.isDateInToday(dateFormatter.date(from: $0.date) ?? Date()) }
+            todaySummary = activities.first { calendar.isDateInToday(Self.dayFormatter.date(from: $0.date) ?? Date()) }
             
-            print("✅ [HEALTH] Fetched \(activities.count) days of activity data")
+            AppLogger.info("Fetched \(activities.count) days of activity data", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to fetch activity data: \(error)")
+            AppLogger.error("Failed to fetch activity data: \(error.localizedDescription)", category: .health)
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -667,7 +670,7 @@ final class HealthDataService: ObservableObject {
                 .from("sleep_logs")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("date_of_sleep", value: dateFormatter.string(from: weekAgo))
+                .gte("date_of_sleep", value: Self.dayFormatter.string(from: weekAgo))
                 .order("date_of_sleep", ascending: false)
                 .execute()
                 .value
@@ -675,9 +678,9 @@ final class HealthDataService: ObservableObject {
             recentSleepLogs = sleepLogs
             calculateSleepStats()
             
-            print("✅ [HEALTH] Fetched \(sleepLogs.count) sleep logs")
+            AppLogger.info("Fetched \(sleepLogs.count) sleep logs", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to fetch sleep data: \(error)")
+            AppLogger.error("Failed to fetch sleep data: \(error.localizedDescription)", category: .health)
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -688,18 +691,18 @@ final class HealthDataService: ObservableObject {
                 .from("heart_rate_daily")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("date", value: dateFormatter.string(from: weekAgo))
+                .gte("date", value: Self.dayFormatter.string(from: weekAgo))
                 .order("date", ascending: false)
                 .execute()
                 .value
             
             weeklyHeartRateData = heartRates
-            todayHeartRate = heartRates.first { calendar.isDateInToday(dateFormatter.date(from: $0.date) ?? Date()) }
+            todayHeartRate = heartRates.first { calendar.isDateInToday(Self.dayFormatter.date(from: $0.date) ?? Date()) }
             calculateHeartRateTrend()
             
-            print("✅ [HEALTH] Fetched \(heartRates.count) days of heart rate data")
+            AppLogger.info("Fetched \(heartRates.count) days of heart rate data", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to fetch heart rate data: \(error)")
+            AppLogger.error("Failed to fetch heart rate data: \(error.localizedDescription)", category: .health)
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -719,7 +722,7 @@ final class HealthDataService: ObservableObject {
                 .from("cardio_workouts")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("completed_at", value: ISO8601DateFormatter().string(from: startOfWeek))
+                .gte("completed_at", value: Self.iso8601.string(from: startOfWeek))
                 .execute()
                 .value
             
@@ -727,9 +730,9 @@ final class HealthDataService: ObservableObject {
             weeklyCardioMinutes = workouts.reduce(0) { $0 + (($1.durationSeconds ?? 0) / 60) }
             weeklyCaloriesBurned = workouts.reduce(0) { $0 + Int($1.caloriesBurned ?? 0) }
             
-            print("✅ [HEALTH] Weekly workouts: \(weeklyWorkoutCount), minutes: \(weeklyCardioMinutes)")
+            AppLogger.info("Weekly workouts: \(weeklyWorkoutCount), minutes: \(weeklyCardioMinutes)", category: .health)
         } catch {
-            print("❌ [HEALTH] Failed to fetch workout aggregates: \(error)")
+            AppLogger.error("Failed to fetch workout aggregates: \(error.localizedDescription)", category: .health)
         }
     }
     

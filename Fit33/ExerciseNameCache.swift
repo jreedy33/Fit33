@@ -63,14 +63,6 @@ class ExerciseNameCache {
     }
     
     private func saveToDisk() {
-        // Limit cache size to prevent unbounded growth (keep last 500 entries)
-        if memoryCache.count > 500 {
-            let keysToRemove = Array(memoryCache.keys.prefix(memoryCache.count - 500))
-            for key in keysToRemove {
-                memoryCache.removeValue(forKey: key)
-            }
-        }
-        
         UserDefaults.standard.set(memoryCache, forKey: cacheKey)
     }
     

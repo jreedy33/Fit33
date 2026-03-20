@@ -159,7 +159,7 @@ struct CardioWorkoutDetailView: View {
                     .frame(width: 48, height: 48)
                 
                 Image(systemName: activityInfo.icon)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(
                             colors: accentGradient,
@@ -189,7 +189,7 @@ struct CardioWorkoutDetailView: View {
                     }
                     .foregroundColor(.green)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(Color.green.opacity(0.12))
@@ -224,10 +224,10 @@ struct CardioWorkoutDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "clock.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text(formatDuration(cardioWorkout.durationSeconds))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Duration")
@@ -244,10 +244,10 @@ struct CardioWorkoutDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text(formatDistance(cardioWorkout.distanceMeters))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Distance")
@@ -264,10 +264,10 @@ struct CardioWorkoutDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "flame.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.orange)
                         Text("\(Int(cardioWorkout.caloriesBurned))")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Calories")
@@ -284,10 +284,10 @@ struct CardioWorkoutDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "speedometer")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.purple)
                         Text(formatPace(cardioWorkout.averagePace))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("/km")
@@ -344,7 +344,7 @@ struct CardioWorkoutDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "target")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(cardioWorkout.goalAchieved ? .green : accentColor)
                 Text("Goal Progress")
                     .font(.headline)
@@ -437,7 +437,7 @@ struct CardioWorkoutDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.orange)
                 Text("Performance Highlights")
                     .font(.headline)
@@ -498,7 +498,7 @@ struct CardioWorkoutDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(accentColor)
                 Text("Detailed Stats")
                     .font(.headline)
@@ -530,7 +530,7 @@ struct CardioWorkoutDetailView: View {
     private func detailStatCell(title: String, value: String, icon: String, color: Color) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundColor(color)
             
             Text(value)
@@ -556,7 +556,7 @@ struct CardioWorkoutDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.blue)
                 Text("Equipment Used")
                     .font(.headline)
@@ -580,7 +580,7 @@ struct CardioWorkoutDetailView: View {
                 Spacer()
                 
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundColor(.blue)
                     .padding(10)
                     .background(

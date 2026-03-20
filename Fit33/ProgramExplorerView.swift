@@ -228,7 +228,7 @@ struct ProgramExplorerView: View {
                     }
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
         }
     }
     
@@ -254,7 +254,7 @@ struct ProgramExplorerView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
     }
@@ -385,7 +385,7 @@ struct ProgramRecommendedCard: View {
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(Capsule().fill(.orange))
                     }
                 }
@@ -506,7 +506,7 @@ struct ProgramTile: View {
                     }
                     .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
             .padding(10)
             .background(Color(.systemBackground))
@@ -569,7 +569,7 @@ struct ProgramDetailFullView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(.primary)
                 }
             }
@@ -642,7 +642,7 @@ struct ProgramDetailFullView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Capsule().fill(.white.opacity(0.3)))
                 }
                 

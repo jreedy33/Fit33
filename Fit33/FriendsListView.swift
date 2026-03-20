@@ -68,14 +68,14 @@ struct FriendsListView: View {
                 Button(action: { showingReceivedWorkouts = true }) {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: "tray.full.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.blue)
                         
                         if friendService.unreadWorkoutCount > 0 {
                             Text("\(friendService.unreadWorkoutCount)")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.white)
-                                .padding(4)
+                                .padding(Spacing.xxs)
                                 .background(Circle().fill(Color.red))
                                 .offset(x: 8, y: -8)
                         }
@@ -298,7 +298,7 @@ struct FriendsListView: View {
             
             Spacer()
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     // MARK: - From Your Contacts Section
@@ -308,7 +308,7 @@ struct FriendsListView: View {
             // Section header
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.rectangle.stack.fill")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.green, .teal],
@@ -352,7 +352,7 @@ struct FriendsListView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
         .padding(.bottom, 16)
@@ -529,7 +529,7 @@ struct FriendsListView: View {
                 }
                 .font(.headline)
                 .foregroundColor(.white)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(
@@ -670,7 +670,7 @@ struct FriendsListView: View {
                 // QR Code button (replaces separate Scan QR / My Code buttons)
                 Button(action: { showingQROptions = true }) {
                     Image(systemName: "qrcode.viewfinder")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                         .frame(width: 46, height: 46)
                         .background(
@@ -860,7 +860,7 @@ struct FriendsListView: View {
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: "person.crop.rectangle.stack.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                     Text("Connect Contacts")
                         .font(.headline)
                 }
@@ -890,7 +890,7 @@ struct FriendsListView: View {
             .foregroundColor(.secondary.opacity(0.7))
             .padding(.top, 4)
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, Spacing.lg)
         .padding(.horizontal, Spacing.md)
         .sleekCard(cornerRadius: 24, accentColor: .green)
         .padding(.horizontal, Spacing.md)
@@ -1009,7 +1009,7 @@ struct FriendsListView: View {
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "gear.badge")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                         Text("Enable in Settings")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -1082,7 +1082,7 @@ struct SuggestedFriendCard: View {
                 // "In your contacts" label — blue
                 HStack(spacing: 4) {
                     Image(systemName: "person.crop.rectangle.stack")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("In your contacts")
                         .font(.caption2)
                 }
@@ -1134,7 +1134,7 @@ struct SuggestedFriendCard: View {
         if friend.isFriend {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text("Friends")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -1155,7 +1155,7 @@ struct SuggestedFriendCard: View {
             Button(action: { onRespondToRequest?() }) {
                 HStack(spacing: 4) {
                     Image(systemName: "bell.badge")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text("Respond")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -1180,7 +1180,7 @@ struct SuggestedFriendCard: View {
                             .tint(.white)
                     } else {
                         Image(systemName: "person.badge.plus")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                     }
                     Text("Add")
                         .font(.caption)
@@ -1317,7 +1317,7 @@ struct FriendCard: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary.opacity(0.5))
             }
             .padding(Spacing.md)
@@ -1384,7 +1384,7 @@ struct FriendRequestCard: View {
             HStack(spacing: 8) {
                 Button(action: { declineRequest() }) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.red)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.red.opacity(0.15)))
@@ -1393,7 +1393,7 @@ struct FriendRequestCard: View {
                 
                 Button(action: { acceptRequest() }) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.green)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.green.opacity(0.15)))
@@ -1508,7 +1508,7 @@ struct SentFriendRequestCard: View {
             Button(action: { showCancelConfirmation = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "xmark.circle")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                     Text("Unsend")
                         .font(.system(size: 13, weight: .medium))
                 }
@@ -1634,7 +1634,7 @@ struct UserSearchResultCard: View {
             // Already friends
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text("Friends")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -1657,7 +1657,7 @@ struct UserSearchResultCard: View {
             Button(action: { onRespondToRequest?() }) {
                 HStack(spacing: 4) {
                     Image(systemName: "bell.badge")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text("Respond")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -1687,7 +1687,7 @@ struct UserSearchResultCard: View {
                             .tint(.white)
                     } else {
                         Image(systemName: "person.badge.plus")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                         Text("Add")
                             .font(.caption)
                             .fontWeight(.semibold)
@@ -1758,7 +1758,7 @@ struct ContactFriendChip: View {
                     Image(systemName: "person.crop.rectangle.stack.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(4)
+                        .padding(Spacing.xxs)
                         .background(Circle().fill(Color.green))
                         .offset(x: 20, y: 20)
                 }
@@ -1848,7 +1848,7 @@ struct RankedFriendCard: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary.opacity(0.5))
             }
             .padding(Spacing.md)

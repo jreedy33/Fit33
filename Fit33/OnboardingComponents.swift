@@ -197,7 +197,7 @@ struct OnboardingSelectionCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                 }
                 
@@ -317,7 +317,7 @@ struct OnboardingWideCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                 }
                 
@@ -374,7 +374,7 @@ struct OnboardingNavBar: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                         Text("Back")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -394,7 +394,7 @@ struct OnboardingNavBar: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                 }
                 .foregroundStyle(
                     continueEnabled
@@ -467,7 +467,7 @@ struct OnboardingQuestionHeader: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
 }
 

@@ -296,7 +296,7 @@ struct BugReportView: View {
                                 .frame(width: 16, height: 16)
                             
                             Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(.white)
                         }
                     }

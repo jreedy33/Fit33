@@ -32,8 +32,6 @@ struct MealContext {
     let proteinTarget: Int
     let carbTarget: Int
     let fatTarget: Int
-    let hasUpcomingWorkout: Bool
-    let justFinishedWorkout: Bool
     let fitnessGoal: String
     
     var caloriesRemaining: Int { max(0, calorieTarget - caloriesEaten) }
@@ -88,6 +86,35 @@ class ContextualMealEngine: ObservableObject {
     
     private init() {}
     
+    private func computeNutritionTargets() -> (calories: Int, protein: Int, carbs: Int, fat: Int, goal: String) {
+        guard let user = UserManager.shared.currentUser else {
+            return (calories: 2200, protein: 160, carbs: 250, fat: 70, goal: "maintain")
+        }
+        
+        let weightKg = Double(user.weight)
+        let goal = (user.fitnessGoal ?? "maintain").lowercased()
+        
+        guard weightKg > 0 else {
+            return (calories: 2200, protein: 160, carbs: 250, fat: 70, goal: goal)
+        }
+        
+        let baseCalories: Double
+        if goal.contains("lose") || goal.contains("cut") {
+            baseCalories = weightKg * 26
+        } else if goal.contains("bulk") || goal.contains("gain") || goal.contains("muscle") {
+            baseCalories = weightKg * 35
+        } else {
+            baseCalories = weightKg * 30
+        }
+        
+        let calories = Int(baseCalories)
+        let protein = Int(weightKg * 2.0)
+        let fat = Int(baseCalories * 0.25 / 9.0)
+        let carbs = Int((baseCalories - Double(protein) * 4.0 - Double(fat) * 9.0) / 4.0)
+        
+        return (calories: calories, protein: protein, carbs: max(carbs, 100), fat: fat, goal: goal)
+    }
+    
     func refresh() {
         let ctx = buildContext()
         self.context = ctx
@@ -113,11 +140,7 @@ class ContextualMealEngine: ObservableObject {
         
         let summary = MealService.shared.getDailySummary(for: now)
         
-        // Default targets based on a ~2000 cal diet; in production, pull from UserManager
-        let calorieTarget = 2200
-        let proteinTarget = 160
-        let carbTarget = 250
-        let fatTarget = 70
+        let targets = computeNutritionTargets()
         
         return MealContext(
             timeOfDay: timeOfDay,
@@ -125,13 +148,11 @@ class ContextualMealEngine: ObservableObject {
             proteinEaten: summary.protein,
             carbsEaten: summary.carbs,
             fatEaten: summary.fat,
-            calorieTarget: calorieTarget,
-            proteinTarget: proteinTarget,
-            carbTarget: carbTarget,
-            fatTarget: fatTarget,
-            hasUpcomingWorkout: false,
-            justFinishedWorkout: false,
-            fitnessGoal: "maintain"
+            calorieTarget: targets.calories,
+            proteinTarget: targets.protein,
+            carbTarget: targets.carbs,
+            fatTarget: targets.fat,
+            fitnessGoal: targets.goal
         )
     }
     
@@ -139,26 +160,6 @@ class ContextualMealEngine: ObservableObject {
     
     private func generateSuggestions(context: MealContext) -> [MealSuggestion] {
         var suggestions: [MealSuggestion] = []
-        
-        // Pre-workout suggestion
-        if context.hasUpcomingWorkout {
-            suggestions.append(MealSuggestion(
-                name: "Pre-Workout Snack",
-                reason: "Fuel your upcoming workout with quick carbs",
-                calories: 250, protein: 10, carbs: 40, fat: 6,
-                mealType: "snacks", source: .general, priority: 0
-            ))
-        }
-        
-        // Post-workout suggestion
-        if context.justFinishedWorkout {
-            suggestions.append(MealSuggestion(
-                name: "Post-Workout Protein",
-                reason: "Maximize recovery with protein within 2 hours",
-                calories: 350, protein: 40, carbs: 30, fat: 8,
-                mealType: "snacks", source: .general, priority: 0
-            ))
-        }
         
         // Macro-gap based suggestions
         let gap = context.biggestMacroGap

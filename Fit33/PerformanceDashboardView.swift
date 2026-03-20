@@ -183,7 +183,7 @@ struct PerformanceDashboardView: View {
                     .frame(width: 50, height: 50)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             
@@ -235,7 +235,7 @@ struct PerformanceDashboardView: View {
     private func summaryItem(label: String, value: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.ds_stat)
                 .foregroundColor(.primary)
             Text(label)
                 .font(.caption)
@@ -400,7 +400,7 @@ struct PerformanceDashboardView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(issue.severity == .critical ? Color.red : Color.orange)
                 .cornerRadius(6)
         }

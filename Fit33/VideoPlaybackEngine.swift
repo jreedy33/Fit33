@@ -139,9 +139,7 @@ final class VideoPlaybackEngine: ObservableObject {
             self?.syncWithCoreDataFavorites()
         }
         
-        #if DEBUG
-        print("🎬 VideoPlaybackEngine initialized")
-        #endif
+        AppLogger.debug("VideoPlaybackEngine initialized", category: .general)
     }
     
     // MARK: - 🚀 PUBLIC API: Get Instant Player
@@ -162,11 +160,7 @@ final class VideoPlaybackEngine: ObservableObject {
         if let cached = hotCache[key] {
             // ✅ VALIDATE: Ensure cached video matches current gender preference
             if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
-                #if DEBUG
-                print("🔄 HOT cache INVALID (wrong gender): \(exerciseName)")
-                print("   Cached: \(cached.filename)")
-                print("   Expected: \(expected)")
-                #endif
+                AppLogger.debug("HOT cache invalid (wrong gender): \(exerciseName), cached: \(cached.filename), expected: \(expected)", category: .general)
                 // Remove invalid cache entry and create new player
                 hotCache.removeValue(forKey: key)
                 guard let url = getVideoURL(for: key, videoFilename: videoFilename) else { return nil }
@@ -181,9 +175,7 @@ final class VideoPlaybackEngine: ObservableObject {
                 cached.player.play()
             }
             
-            #if DEBUG
-            print("⚡ HOT cache hit: \(exerciseName)")
-            #endif
+            AppLogger.debug("HOT cache hit: \(exerciseName)", category: .general)
             return (cached.player, cached.looper)
         }
         
@@ -191,11 +183,7 @@ final class VideoPlaybackEngine: ObservableObject {
         if let cached = warmCache[key] {
             // ✅ VALIDATE: Ensure cached video matches current gender preference
             if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
-                #if DEBUG
-                print("🔄 WARM cache INVALID (wrong gender): \(exerciseName)")
-                print("   Cached: \(cached.filename)")
-                print("   Expected: \(expected)")
-                #endif
+                AppLogger.debug("WARM cache invalid (wrong gender): \(exerciseName), cached: \(cached.filename), expected: \(expected)", category: .general)
                 // Remove invalid cache entry asynchronously (thread-safe)
                 cacheQueue.async(flags: .barrier) { [weak self] in
                     self?.warmCache.removeValue(forKey: key)
@@ -217,23 +205,17 @@ final class VideoPlaybackEngine: ObservableObject {
                 cached.player.play()
             }
             
-            #if DEBUG
-            print("🌡️ WARM cache hit: \(exerciseName)")
-            #endif
+            AppLogger.debug("WARM cache hit: \(exerciseName)", category: .general)
             return (cached.player, cached.looper)
         }
         
         // 3. Create new player with instant-start optimization
         guard let url = getVideoURL(for: key, videoFilename: videoFilename) else {
-            #if DEBUG
-            print("❌ No video URL for: \(exerciseName)")
-            #endif
+            AppLogger.warning("No video URL for: \(exerciseName)", category: .general)
             return nil
         }
         
-        #if DEBUG
-        print("🆕 Creating player: \(exerciseName)")
-        #endif
+        AppLogger.debug("Creating player: \(exerciseName)", category: .general)
         
         return createInstantStartPlayerWithLooper(url: url, exerciseName: key, filename: expectedFilename ?? videoFilename ?? "")
     }
@@ -253,11 +235,7 @@ final class VideoPlaybackEngine: ObservableObject {
         if let cached = hotCache[key] {
             // ✅ VALIDATE: Ensure cached video matches current gender preference
             if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
-                #if DEBUG
-                print("🔄 HOT cache INVALID (wrong gender): \(exerciseName)")
-                print("   Cached: \(cached.filename)")
-                print("   Expected: \(expected)")
-                #endif
+                AppLogger.debug("HOT cache invalid for getPlayer (wrong gender): \(exerciseName), cached: \(cached.filename), expected: \(expected)", category: .general)
                 // Remove invalid cache entry and create new player
                 hotCache.removeValue(forKey: key)
                 guard let url = getVideoURL(for: key, videoFilename: videoFilename) else { return nil }
@@ -267,10 +245,7 @@ final class VideoPlaybackEngine: ObservableObject {
             hotCache[key]?.lastAccessed = Date()
             cached.player.seek(to: .zero)
             cached.player.play()
-            #if DEBUG
-            print("⚡ HOT cache hit: \(exerciseName)")
-            print("🎬 [LOOPER-ENGINE] Returning cached player with looper status: \(cached.looper.status.rawValue)")
-            #endif
+            AppLogger.debug("HOT cache hit for getPlayer: \(exerciseName), looper status: \(cached.looper.status.rawValue)", category: .general)
             return cached.player
         }
         
@@ -278,11 +253,7 @@ final class VideoPlaybackEngine: ObservableObject {
         if let cached = warmCache[key] {
             // ✅ VALIDATE: Ensure cached video matches current gender preference
             if let expected = expectedFilename, !expected.isEmpty, cached.filename != expected {
-                #if DEBUG
-                print("🔄 WARM cache INVALID (wrong gender): \(exerciseName)")
-                print("   Cached: \(cached.filename)")
-                print("   Expected: \(expected)")
-                #endif
+                AppLogger.debug("WARM cache invalid for getPlayer (wrong gender): \(exerciseName), cached: \(cached.filename), expected: \(expected)", category: .general)
                 // Remove invalid cache entry asynchronously (thread-safe)
                 cacheQueue.async(flags: .barrier) { [weak self] in
                     self?.warmCache.removeValue(forKey: key)
@@ -299,23 +270,17 @@ final class VideoPlaybackEngine: ObservableObject {
             updateWarmCacheLRU(key)
             cached.player.seek(to: .zero)
             cached.player.play()
-            #if DEBUG
-            print("🌡️ WARM cache hit: \(exerciseName)")
-            #endif
+            AppLogger.debug("WARM cache hit for getPlayer: \(exerciseName)", category: .general)
             return cached.player
         }
         
         // 3. Create new player with instant-start optimization
         guard let url = getVideoURL(for: key, videoFilename: videoFilename) else {
-            #if DEBUG
-            print("❌ No video URL for: \(exerciseName)")
-            #endif
+            AppLogger.warning("No video URL for getPlayer: \(exerciseName)", category: .general)
             return nil
         }
         
-        #if DEBUG
-        print("🆕 Creating player: \(exerciseName)")
-        #endif
+        AppLogger.debug("Creating player via getPlayer: \(exerciseName)", category: .general)
         
         return createInstantStartPlayer(url: url, exerciseName: key, filename: expectedFilename ?? videoFilename ?? "")
     }
@@ -425,9 +390,7 @@ final class VideoPlaybackEngine: ObservableObject {
             self.warmCache.removeAll()
             self.warmCacheOrder.removeAll()
             
-            #if DEBUG
-            print("🧹 All video caches cleared")
-            #endif
+            AppLogger.debug("All video caches cleared", category: .general)
         }
     }
     
@@ -443,9 +406,7 @@ final class VideoPlaybackEngine: ObservableObject {
             self.warmCache.removeAll()
             self.warmCacheOrder.removeAll()
             
-            #if DEBUG
-            print("📉 Warm cache cleared, keeping \(self.hotCache.count) hot items")
-            #endif
+            AppLogger.debug("Warm cache cleared, keeping \(self.hotCache.count) hot items", category: .general)
         }
     }
     
@@ -500,9 +461,7 @@ final class VideoPlaybackEngine: ObservableObject {
                 // Protect actively playing videos from cache cleanup
                 if cached.player.timeControlStatus == .playing {
                     protectedCount += 1
-                    #if DEBUG
-                    print("🛡️ [VIDEO] Protecting active video from cleanup: \(key)")
-                    #endif
+                    AppLogger.debug("Protecting active video from cleanup: \(key)", category: .general)
                     continue
                 }
                 
@@ -514,9 +473,7 @@ final class VideoPlaybackEngine: ObservableObject {
             // Remove from order list as well
             self.warmCacheOrder = self.warmCacheOrder.filter { self.warmCache.keys.contains($0) }
             
-            #if DEBUG
-            print("🧹 [VIDEO] Cleared \(clearedCount) warm cache entries, protected \(protectedCount) active videos")
-            #endif
+            AppLogger.debug("Cleared \(clearedCount) warm cache entries, protected \(protectedCount) active videos", category: .general)
         }
     }
     
@@ -549,9 +506,7 @@ final class VideoPlaybackEngine: ObservableObject {
                 }
             }
             
-            #if DEBUG
-            print("📉 [VIDEO] Reduced hot cache from \(keysToRemove.count + self.hotCache.count) to \(self.hotCache.count)")
-            #endif
+            AppLogger.debug("Reduced hot cache from \(keysToRemove.count + self.hotCache.count) to \(self.hotCache.count)", category: .general)
         }
     }
     
@@ -562,24 +517,18 @@ final class VideoPlaybackEngine: ObservableObject {
         activePrefetches.removeAll()
         prefetchLock.unlock()
         
-        #if DEBUG
-        print("⏸️ [VIDEO] Prefetching paused")
-        #endif
+        AppLogger.debug("Video prefetching paused", category: .general)
     }
     
     /// Resume prefetching (after heavy work completes)
     func resumePrefetching() {
         // Don't resume if heavy work is still in progress
         if HeavyWorkSentinel.shared.isHeavyWorkInProgress {
-            #if DEBUG
-            print("⏸️ [VIDEO] Prefetch resume skipped - heavy work still in progress")
-            #endif
+            AppLogger.debug("Prefetch resume skipped - heavy work still in progress", category: .general)
             return
         }
         
-        #if DEBUG
-        print("▶️ [VIDEO] Prefetching resumed")
-        #endif
+        AppLogger.debug("Video prefetching resumed", category: .general)
         
         // Re-warm favorites if needed
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -604,12 +553,12 @@ final class VideoPlaybackEngine: ObservableObject {
         // Setup looping queue player
         let queuePlayer = AVQueuePlayer(playerItem: playerItem)
         let looper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
-        print("🎬 [LOOPER-ENGINE] ✅ Created AVPlayerLooper for: \(exerciseName), status: \(looper.status.rawValue)")
+        AppLogger.info("Created AVPlayerLooper for: \(exerciseName), status: \(looper.status.rawValue)", category: .general)
         
         // YouTube-style: Start playing IMMEDIATELY, don't wait for buffer
         queuePlayer.automaticallyWaitsToMinimizeStalling = false
         queuePlayer.play()
-        print("🎬 [LOOPER-ENGINE] Player playing for: \(exerciseName)")
+        AppLogger.debug("Player playing for: \(exerciseName)", category: .general)
         
         // Cache the player
         let cached = CachedVideo(
@@ -646,12 +595,12 @@ final class VideoPlaybackEngine: ObservableObject {
         // Setup looping queue player
         let queuePlayer = AVQueuePlayer(playerItem: playerItem)
         let looper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
-        print("🎬 [LOOPER-ENGINE] ✅ Created AVPlayerLooper for: \(exerciseName), status: \(looper.status.rawValue)")
+        AppLogger.info("Created AVPlayerLooper via getPlayer for: \(exerciseName), status: \(looper.status.rawValue)", category: .general)
         
         // YouTube-style: Start playing IMMEDIATELY, don't wait for buffer
         queuePlayer.automaticallyWaitsToMinimizeStalling = false
         queuePlayer.play()
-        print("🎬 [LOOPER-ENGINE] Player playing for: \(exerciseName)")
+        AppLogger.debug("Player playing via getPlayer for: \(exerciseName)", category: .general)
         
         // Cache the player
         let cached = CachedVideo(
@@ -741,9 +690,7 @@ final class VideoPlaybackEngine: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 self?.cleanupPlayer(cached.player, looper: cached.looper)
             }
-            #if DEBUG
-            print("🗑️ Evicted from HOT: \(key)")
-            #endif
+            AppLogger.debug("Evicted from HOT cache: \(key)", category: .general)
         }
     }
     
@@ -756,9 +703,7 @@ final class VideoPlaybackEngine: ObservableObject {
                 self?.cleanupPlayer(cached.player, looper: cached.looper)
             }
             warmCacheOrder.removeAll { $0 == key }
-            #if DEBUG
-            print("🗑️ Evicted from WARM: \(key)")
-            #endif
+            AppLogger.debug("Evicted from WARM cache: \(key)", category: .general)
         }
     }
     
@@ -853,9 +798,7 @@ final class VideoPlaybackEngine: ObservableObject {
             self.activePrefetches.remove(job.exerciseName)
             self.prefetchLock.unlock()
             
-            #if DEBUG
-            print("📥 Prefetched: \(job.exerciseName) (priority: \(job.priority))")
-            #endif
+            AppLogger.debug("Prefetched: \(job.exerciseName) (priority: \(job.priority))", category: .general)
             
             // Process next in queue
             self.prefetchQueue_bg.async {
@@ -919,18 +862,15 @@ final class VideoPlaybackEngine: ObservableObject {
     // what VideoStreamingService already does. Now just marks as loaded and relies on
     // getVideoFilename() which already falls back to VideoStreamingService and GenderFilterService.
     private func loadVideoMappingsAsync() {
-        // Wait for VideoStreamingService to finish loading, then mark ourselves as ready
-        mappingQueue.async { [weak self] in
-            // Give VideoStreamingService time to load (it's the canonical source)
-            Thread.sleep(forTimeInterval: 3.0)
-            
-            Task { @MainActor in
+        VideoStreamingService.shared.$videosLoaded
+            .filter { $0 }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
                 self?.mappingsLoaded = true
-                #if DEBUG
-                print("🎬 [VideoPlaybackEngine] Using VideoStreamingService mappings (no duplicate fetch)")
-                #endif
+                AppLogger.debug("VideoPlaybackEngine using VideoStreamingService mappings (no duplicate fetch)", category: .general)
             }
-        }
+            .store(in: &cancellables)
     }
     
     // MARK: - Private: Favorites & Recent Persistence
@@ -963,9 +903,7 @@ final class VideoPlaybackEngine: ObservableObject {
             favoriteExercises = updated
             saveFavorites()
             
-            #if DEBUG
-            print("🔄 Synced \(coreDataFavorites.count) Core Data favorites -> \(favoriteExercises.count) total video favorites")
-            #endif
+            AppLogger.debug("Synced \(coreDataFavorites.count) Core Data favorites -> \(favoriteExercises.count) total video favorites", category: .general)
         }
     }
     
@@ -995,9 +933,7 @@ final class VideoPlaybackEngine: ObservableObject {
             (lastPreWarmTime != nil && Date().timeIntervalSince(lastPreWarmTime!) < preWarmCooldown)
         if shouldSkip {
             prefetchLock.unlock()
-            #if DEBUG
-            print("⏭️ [VIDEO] Skipping duplicate pre-warm (cooldown or in progress)")
-            #endif
+            AppLogger.debug("Skipping duplicate pre-warm (cooldown or in progress)", category: .general)
             return
         }
         isPreWarmingInProgress = true
@@ -1019,18 +955,14 @@ final class VideoPlaybackEngine: ObservableObject {
             prefetchLock.lock()
             isPreWarmingInProgress = false
             prefetchLock.unlock()
-            #if DEBUG
-            print("⏭️ [VIDEO] Skipping pre-warm - heavy work in progress")
-            #endif
+            AppLogger.debug("Skipping pre-warm - heavy work in progress", category: .general)
             return
         }
         
         // ⚡️ MEMORY FIX: Only pre-warm the 2 most recently used favorites (was ALL favorites)
         let limitedFavorites = Array(favoriteExercises.prefix(2))
         
-        #if DEBUG
-        print("🔥 Pre-warming \(limitedFavorites.count) of \(favoriteExercises.count) favorites (capped at 2)...")
-        #endif
+        AppLogger.debug("Pre-warming \(limitedFavorites.count) of \(favoriteExercises.count) favorites (capped at 2)", category: .general)
         
         for favorite in limitedFavorites {
             queuePrefetch(exerciseName: favorite, priority: .favorite)
@@ -1053,9 +985,7 @@ final class VideoPlaybackEngine: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
         } catch {
-            #if DEBUG
-            print("⚠️ Audio session config failed: \(error)")
-            #endif
+            AppLogger.warning("Audio session config failed: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -1130,7 +1060,7 @@ struct InstantVideoPlayerView: View {
                 .foregroundColor(categoryColor.opacity(0.5))
             
             Text("Video Coming Soon")
-                .font(.system(size: 14, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
     }

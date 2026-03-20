@@ -178,7 +178,7 @@ struct RecipeBrowserView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 12)
@@ -196,7 +196,7 @@ struct RecipeBrowserView: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.bottom, 8)
     }
     
@@ -226,8 +226,8 @@ struct RecipeBrowserView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
@@ -255,23 +255,23 @@ struct RecipeBrowserView: View {
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
                             .background(Color.green)
-                            .cornerRadius(8)
+                            .cornerRadius(CornerRadius.sm)
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : .white)
                     .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
             )
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Filter Chips
@@ -313,9 +313,9 @@ struct RecipeBrowserView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Recipe Grid
@@ -340,8 +340,8 @@ struct RecipeBrowserView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             
             // Load more button
             if viewModel.hasMoreResults {
@@ -359,7 +359,7 @@ struct RecipeBrowserView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.md)
             }
         }
         .refreshable {
@@ -407,10 +407,10 @@ struct RecipeBrowserView: View {
                 Label("Try Again", systemImage: "arrow.clockwise")
                     .font(.headline)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.sm)
                     .background(Color.orange)
-                    .cornerRadius(12)
+                    .cornerRadius(CornerRadius.md)
             }
             
             Spacer()
@@ -824,7 +824,7 @@ struct RecipeFilterChip: View {
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundColor(isSelected ? .white : color)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     Capsule()
                         .fill(isSelected ? color : color.opacity(0.15))
@@ -926,13 +926,13 @@ struct PremiumRecipeGridCard: View {
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(Color.black.opacity(0.6))
                     )
-                    .padding(8)
+                    .padding(Spacing.xs)
                 }
             }
             .clipShape(
@@ -963,11 +963,11 @@ struct PremiumRecipeGridCard: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Spacing.sm)
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                .fill(Color.cardBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -1025,7 +1025,7 @@ struct PremiumRecipeGridCard: View {
                         .frame(width: 38, height: 38)
                     
                     Image(systemName: "crown.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.yellow, .orange],
@@ -1121,13 +1121,13 @@ struct RecipeGridCard: View {
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(Color.black.opacity(0.6))
                         )
-                        .padding(8)
+                        .padding(Spacing.xs)
                     }
                 }
                 .clipShape(
@@ -1158,11 +1158,11 @@ struct RecipeGridCard: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(Spacing.sm)
             }
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark ? Color(white: 0.12) : .white)
+                    .fill(Color.cardBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)

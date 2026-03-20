@@ -254,7 +254,7 @@ struct GroupChallengeDetailView: View {
             // Rank or check
             if isAccountability {
                 Text(completedToday ? "✅" : "⬜")
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
             } else {
                 ZStack {
                     Circle()
@@ -369,7 +369,7 @@ struct GroupChallengeDetailView: View {
     private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundColor(color)
             
             Text(value)
@@ -410,10 +410,10 @@ struct GroupChallengeDetailView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.orange)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Capsule().fill(Color.orange.opacity(0.15)))
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
             }
         }
         .padding(20)
@@ -441,7 +441,7 @@ struct GroupChallengeDetailView: View {
                             .tint(.white)
                     } else {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text("Leave Challenge")
                         .font(.subheadline)
@@ -464,7 +464,7 @@ struct GroupChallengeDetailView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                         Text("Cancel Challenge for Everyone")
                             .font(.subheadline)
                             .fontWeight(.semibold)

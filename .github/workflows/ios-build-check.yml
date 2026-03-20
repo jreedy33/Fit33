@@ -1,0 +1,38 @@
+name: iOS Build Check
+
+on:
+  push:
+    branches: [main]
+    paths: ['Fit33/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Clean build
+        run: |
+          xcodebuild clean build \
+            -project Fit33.xcodeproj \
+            -scheme Fit33 \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tail -20
+
+      - name: Check warnings
+        run: |
+          xcodebuild build \
+            -project Fit33.xcodeproj \
+            -scheme Fit33 \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | grep -c "warning:" || echo "0 warnings"

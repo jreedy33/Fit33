@@ -125,7 +125,7 @@ struct HealthInsightsView: View {
                 .fontWeight(.medium)
         }
         .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .background(color.opacity(0.15))
         .cornerRadius(CornerRadius.sm)
     }
@@ -211,7 +211,7 @@ struct HealthInsightsView: View {
                 }
                 
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             .frame(width: 50, height: 50)
@@ -551,7 +551,7 @@ struct HealthInsightsView: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             

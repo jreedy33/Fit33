@@ -153,7 +153,7 @@ struct DataDownloadView: View {
             Text("SELECT DATA")
                 .font(.caption.bold())
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 8) {
                 ForEach(DataCategory.allCases) { category in
@@ -180,7 +180,7 @@ struct DataDownloadView: View {
                         .fill(category.color.opacity(0.15))
                         .frame(width: 36, height: 36)
                     Image(systemName: category.icon)
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(category.color)
                 }
                 
@@ -205,7 +205,7 @@ struct DataDownloadView: View {
             Text("DATE RANGE")
                 .font(.caption.bold())
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             // Quick presets - scrollable chips
             ScrollView(.horizontal, showsIndicators: false) {
@@ -214,7 +214,7 @@ struct DataDownloadView: View {
                         datePresetChip(preset)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
             
             // Custom date pickers (only show when custom is selected)
@@ -283,7 +283,7 @@ struct DataDownloadView: View {
             Text("FILE FORMAT")
                 .font(.caption.bold())
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             HStack(spacing: 12) {
                 ForEach(ExportFormat.allCases) { format in

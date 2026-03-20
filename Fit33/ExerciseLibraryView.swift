@@ -31,6 +31,7 @@ struct ExerciseLibraryView: View {
     
     // ⚡️ INSTANT SEARCH: Simple in-memory search for zero-lag typing
     @State private var searchResultsCache: [String: [Exercise]] = [:]
+    @State private var searchDebounceTask: Task<Void, Never>?
     
     enum ExerciseFilterType: String, CaseIterable {
         case recommended = "Recommended"
@@ -39,7 +40,7 @@ struct ExerciseLibraryView: View {
         case strength = "Strength"
         case cardio = "Cardio"
         case plyometrics = "Plyometrics"
-        case stretching = "Stretching"
+        case stretching = "Stretch"
         case all = "All Exercises"
     }
     
@@ -93,220 +94,6 @@ struct ExerciseLibraryView: View {
         }
     }
     
-    // Comprehensive muscle group matching with ALL nicknames/shortnames/aliases
-    // Handles official names, anatomical terms, slang, and common abbreviations
-    private func isExerciseForMuscleGroup(_ exercise: Exercise, muscleGroup: String) -> Bool {
-        let exerciseName = exercise.name?.lowercased() ?? ""
-        let exerciseMuscleGroups = (exercise.muscleGroups as? [String])?.map { $0.lowercased() } ?? []
-        let category = exercise.category?.lowercased() ?? ""
-        
-        // Helper: Check if any string contains any of the aliases
-        func matchesAny(_ text: String, aliases: [String]) -> Bool {
-            aliases.contains { text.contains($0) }
-        }
-        
-        func muscleGroupsContainAny(_ aliases: [String]) -> Bool {
-            exerciseMuscleGroups.contains { group in
-                aliases.contains { alias in group.contains(alias) }
-            }
-        }
-        
-        // Helper to check if exercise is a fly/flye movement
-        let isFlyMovement = exerciseName.contains("fly") || exerciseName.contains("flye") || 
-                           exerciseName.contains("pec deck") || exerciseName.contains("crossover")
-        
-        switch muscleGroup {
-        // ═══════════════════════════════════════════════════════════════════════
-        // CHEST
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Upper Chest":
-            let isIncline = exerciseName.contains("incline") && !exerciseName.contains("decline")
-            let isLowToHigh = exerciseName.contains("low to high") || exerciseName.contains("low-to-high")
-            if isFlyMovement && isIncline { return true }
-            return isIncline || isLowToHigh ||
-                   matchesAny(exerciseName, aliases: ["landmine press", "reverse grip bench"]) ||
-                   muscleGroupsContainAny(["upper pec", "upper chest", "clavicular"])
-                   
-        case "Lower Chest":
-            let isDecline = exerciseName.contains("decline") && !exerciseName.contains("incline")
-            let isHighToLow = exerciseName.contains("high to low") || exerciseName.contains("high-to-low")
-            let isDip = exerciseName.contains("dip") && !exerciseName.contains("hip")
-            if isFlyMovement && isDecline { return true }
-            return isDecline || isHighToLow || isDip ||
-                   muscleGroupsContainAny(["lower pec", "lower chest", "sternal"])
-                   
-        case "Inner Chest":
-            return matchesAny(exerciseName, aliases: ["close grip", "close-grip", "squeeze", "diamond", "crossover", "cross over", "svend"]) ||
-                   muscleGroupsContainAny(["inner pec", "inner chest", "medial pec"])
-                   
-        case "Outer Chest":
-            return isFlyMovement ||
-                   matchesAny(exerciseName, aliases: ["wide grip", "wide-grip"]) ||
-                   muscleGroupsContainAny(["outer pec", "outer chest", "lateral pec"])
-                   
-        case "Chest", "Pecs", "Pectorals":
-            let chestAliases = ["pec", "chest", "bench press", "push up", "pushup"]
-            return category == "chest" ||
-                   matchesAny(exerciseName, aliases: chestAliases) ||
-                   muscleGroupsContainAny(chestAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // BACK
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Lats", "Latissimus", "Wings":
-            let latAliases = ["lat", "latissimus", "wing", "pulldown", "pull down", "pull-down", "chin up", "chinup", "chin-up", "pull up", "pullup", "pull-up"]
-            return matchesAny(exerciseName, aliases: latAliases) ||
-                   muscleGroupsContainAny(["lat", "latissimus"])
-                   
-        case "Traps", "Trapezius":
-            let trapAliases = ["trap", "trapezius", "shrug", "upright row"]
-            return matchesAny(exerciseName, aliases: trapAliases) ||
-                   muscleGroupsContainAny(["trap"])
-                   
-        case "Rhomboids", "Upper Back", "Mid Back":
-            let rhomboidAliases = ["rhomboid", "upper back", "mid back", "middle back", "row", "face pull", "rear delt"]
-            return matchesAny(exerciseName, aliases: rhomboidAliases) ||
-                   muscleGroupsContainAny(["rhomboid", "upper back", "mid back"])
-                   
-        case "Lower Back", "Erectors", "Lumbar":
-            let lowerBackAliases = ["lower back", "erector", "lumbar", "deadlift", "hyperextension", "back extension", "good morning", "superman"]
-            return matchesAny(exerciseName, aliases: lowerBackAliases) ||
-                   muscleGroupsContainAny(["lower back", "erector", "lumbar", "spinae"])
-                   
-        case "Back":
-            let backAliases = ["lat", "trap", "rhomboid", "erector", "back", "row", "pull"]
-            return category == "back" ||
-                   muscleGroupsContainAny(backAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // SHOULDERS / DELTS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Front Delts", "Anterior Delts", "Front Shoulders":
-            let frontDeltAliases = ["front raise", "military press", "overhead press", "shoulder press", "arnold press", "push press", "front delt", "anterior delt"]
-            let isPress = exerciseName.contains("press") && !exerciseName.contains("bench") && !exerciseName.contains("leg") && !exerciseName.contains("chest")
-            return matchesAny(exerciseName, aliases: frontDeltAliases) || isPress ||
-                   muscleGroupsContainAny(["front delt", "anterior delt"])
-                   
-        case "Side Delts", "Lateral Delts", "Middle Delts", "Medial Delts":
-            let sideDeltAliases = ["lateral raise", "side raise", "side delt", "lateral delt", "upright row", "lu raise", "y raise"]
-            return matchesAny(exerciseName, aliases: sideDeltAliases) ||
-                   muscleGroupsContainAny(["lateral delt", "side delt", "medial delt", "middle delt"])
-                   
-        case "Rear Delts", "Posterior Delts", "Back Delts":
-            let rearDeltAliases = ["rear delt", "posterior delt", "reverse fly", "reverse flye", "face pull", "bent over fly", "bent over raise", "rear lateral"]
-            return matchesAny(exerciseName, aliases: rearDeltAliases) ||
-                   muscleGroupsContainAny(["rear delt", "posterior delt"])
-                   
-        case "Shoulders", "Delts", "Deltoids":
-            let shoulderAliases = ["delt", "shoulder", "raise", "press"]
-            return category == "shoulders" ||
-                   muscleGroupsContainAny(shoulderAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // ARMS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Biceps", "Bicep", "Bis":
-            let bicepAliases = ["bicep", "curl", "chin up", "chinup", "chin-up", "preacher", "hammer", "concentration"]
-            return matchesAny(exerciseName, aliases: bicepAliases) ||
-                   muscleGroupsContainAny(["bicep", "brachialis"])
-                   
-        case "Triceps", "Tricep", "Tris":
-            let tricepAliases = ["tricep", "extension", "pushdown", "push down", "push-down", "skull crusher", "skullcrusher", "close grip", "diamond push", "kickback", "dip"]
-            return matchesAny(exerciseName, aliases: tricepAliases) ||
-                   muscleGroupsContainAny(["tricep", "anconeus"])
-                   
-        case "Forearms", "Forearm", "Wrists":
-            let forearmAliases = ["forearm", "wrist", "grip", "farmer", "reverse curl", "hammer curl", "brachioradialis"]
-            return matchesAny(exerciseName, aliases: forearmAliases) ||
-                   muscleGroupsContainAny(["forearm", "brachioradialis", "wrist"])
-                   
-        case "Arms":
-            let armAliases = ["bicep", "tricep", "forearm", "curl", "extension", "pushdown"]
-            return category == "arms" ||
-                   muscleGroupsContainAny(armAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // LEGS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Quads", "Quadriceps", "Thighs", "Front Thighs":
-            let quadAliases = ["quad", "squat", "lunge", "leg press", "leg extension", "step up", "step-up", "front squat", "goblet", "sissy", "split squat", "hack squat", "bulgarian", "vastus", "rectus femoris"]
-            return matchesAny(exerciseName, aliases: quadAliases) ||
-                   muscleGroupsContainAny(["quad", "vastus", "rectus femoris"])
-                   
-        case "Hamstrings", "Hams", "Hammies", "Back Thighs":
-            let hamstringAliases = ["hamstring", "ham", "leg curl", "romanian", "rdl", "stiff leg", "stiff-leg", "good morning", "nordic", "glute ham", "biceps femoris", "semitendinosus"]
-            return matchesAny(exerciseName, aliases: hamstringAliases) ||
-                   muscleGroupsContainAny(["hamstring", "biceps femoris", "semitendinosus", "semimembranosus"])
-                   
-        case "Glutes", "Glute", "Gluteus", "Butt", "Booty":
-            let gluteAliases = ["glute", "gluteus", "hip thrust", "hip-thrust", "glute bridge", "kickback", "donkey kick", "fire hydrant", "sumo", "frog pump", "clamshell", "maximus", "medius", "minimus"]
-            return matchesAny(exerciseName, aliases: gluteAliases) ||
-                   muscleGroupsContainAny(["glute", "gluteus"])
-                   
-        case "Calves", "Calf":
-            let calfAliases = ["calf", "calve", "gastrocnemius", "soleus", "heel raise", "toe raise", "calf raise", "tibialis"]
-            return matchesAny(exerciseName, aliases: calfAliases) ||
-                   muscleGroupsContainAny(["calf", "calve", "gastrocnemius", "soleus"])
-                   
-        case "Adductors", "Inner Thighs":
-            let adductorAliases = ["adduct", "inner thigh", "copenhagen", "sumo", "groin"]
-            return matchesAny(exerciseName, aliases: adductorAliases) ||
-                   muscleGroupsContainAny(["adduct", "inner thigh", "groin"])
-                   
-        case "Hip Flexors", "Iliopsoas", "Psoas":
-            let hipFlexorAliases = ["hip flexor", "psoas", "iliopsoas", "leg raise", "knee raise", "hanging raise", "flutter kick", "bicycle"]
-            return matchesAny(exerciseName, aliases: hipFlexorAliases) ||
-                   muscleGroupsContainAny(["hip flexor", "psoas", "iliopsoas"])
-                   
-        case "Legs":
-            let legAliases = ["quad", "hamstring", "glute", "calf", "leg", "squat", "lunge"]
-            return category == "legs" ||
-                   muscleGroupsContainAny(legAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // CORE / ABS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Abs", "Abdominals", "Six Pack", "Rectus Abdominis":
-            let absAliases = ["ab", "crunch", "sit up", "situp", "sit-up", "leg raise", "plank", "v-up", "vup", "hollow", "dead bug", "rectus abdominis", "six pack"]
-            return matchesAny(exerciseName, aliases: absAliases) ||
-                   muscleGroupsContainAny(["ab", "rectus abdominis"]) ||
-                   category == "core"
-                   
-        case "Upper Abs":
-            let upperAbsAliases = ["crunch", "sit up", "situp", "sit-up", "upper ab"]
-            return matchesAny(exerciseName, aliases: upperAbsAliases) ||
-                   muscleGroupsContainAny(["upper ab"])
-                   
-        case "Lower Abs":
-            let lowerAbsAliases = ["leg raise", "knee raise", "reverse crunch", "hanging raise", "flutter", "scissor", "lower ab"]
-            return matchesAny(exerciseName, aliases: lowerAbsAliases) ||
-                   muscleGroupsContainAny(["lower ab"])
-                   
-        case "Obliques", "Oblique", "Love Handles", "Side Abs":
-            let obliqueAliases = ["oblique", "side bend", "russian twist", "woodchop", "wood chop", "bicycle", "windshield wiper", "side plank", "pallof"]
-            return matchesAny(exerciseName, aliases: obliqueAliases) ||
-                   muscleGroupsContainAny(["oblique"])
-                   
-        case "Core":
-            let coreAliases = ["ab", "oblique", "plank", "crunch", "core", "hollow", "dead bug"]
-            return category == "core" ||
-                   muscleGroupsContainAny(coreAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // SPECIAL
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Rotator Cuff", "Rotators":
-            let rotatorAliases = ["rotator", "external rotation", "internal rotation", "cuban", "face pull", "infraspinatus", "supraspinatus", "subscapularis", "teres minor"]
-            return matchesAny(exerciseName, aliases: rotatorAliases) ||
-                   muscleGroupsContainAny(["rotator", "infraspinatus", "supraspinatus"])
-                   
-        default:
-            // Generic fallback: try direct match on muscle group name
-            let target = muscleGroup.lowercased()
-            return exerciseMuscleGroups.contains { $0.contains(target) } ||
-                   exerciseName.contains(target)
-        }
-    }
     // Updated equipment types for 7000+ exercise library
     private let equipmentTypes = ExerciseFilterService.allEquipment
     
@@ -371,7 +158,8 @@ struct ExerciseLibraryView: View {
         // If filters changed, rebuild pre-filtered cache
         if filterKey != lastFilterKey {
             lastFilterKey = filterKey
-            searchResultsCache.removeAll() // Invalidate search cache
+            searchResultsCache.removeAll()
+            SmartExerciseSearchService.shared.invalidateCache()
             
             // ⚡️ INSTANT: For default "Recommended" with no extra filters, use the pre-computed list
             // This was built at startup by TabPreloader — zero work here, just pointer assignment
@@ -410,9 +198,9 @@ struct ExerciseLibraryView: View {
             }
             
             // Ultra-fast search - no heavy processing
-            let results = ultraFastSearch(query: searchKey, in: preFilteredExercises)
+            let results = SmartExerciseSearchService.shared.searchExercisesUltraFast(query: searchKey, in: preFilteredExercises)
             searchResultsCache[searchKey] = results
-                cachedFilteredExercises = results
+            cachedFilteredExercises = results
             
             #if DEBUG
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
@@ -423,251 +211,6 @@ struct ExerciseLibraryView: View {
         
         // No search text - just show pre-filtered results
         cachedFilteredExercises = preFilteredExercises
-    }
-    
-    /// Ultra-fast search - O(n) with word-order-independent matching
-    private func ultraFastSearch(query: String, in exercises: [Exercise]) -> [Exercise] {
-        guard !query.isEmpty else { return exercises }
-        
-        let queryLower = query.lowercased()
-        
-        // Split query into words and correct typos for each
-        let queryWords = queryLower.split(separator: " ").map { correctCommonTypos(String($0)) }
-        let isMultiWord = queryWords.count > 1
-        
-        // Get keyword variations for single-word queries
-        let variations = isMultiWord ? [queryLower] : getQuickVariations(queryLower)
-        
-        // Build corrected query for direct substring matching
-        let correctedQuery = queryWords.joined(separator: " ")
-        
-        // Priority buckets (highest to lowest):
-        // 1. exactMatches: name equals query exactly
-        // 2. startsWithPhraseMatches: name STARTS with the exact phrase (e.g., "front raise" → "Front Raise (Dumbbell)")
-        // 3. containsPhraseMatches: name CONTAINS the exact phrase (e.g., "front raise" → "Seated Front Raise")
-        // 4. allWordsMatches: all words found but not as contiguous phrase (e.g., "front raise" → "Front Lat Raise")
-        var exactMatches: [Exercise] = []
-        var startsWithPhraseMatches: [Exercise] = []
-        var containsPhraseMatches: [Exercise] = []
-        var allWordsMatches: [Exercise] = []
-        
-        for exercise in exercises {
-            guard let name = exercise.name?.lowercased() else { continue }
-            
-            var matched = false
-            
-            // SINGLE-WORD: Use variation matching for typo tolerance
-            if !isMultiWord {
-                for variation in variations {
-                    if name == variation {
-                        exactMatches.append(exercise)
-                        matched = true
-                        break
-                    } else if name.hasPrefix(variation) {
-                        startsWithPhraseMatches.append(exercise)
-                        matched = true
-                        break
-                    } else if name.contains(variation) {
-                        containsPhraseMatches.append(exercise)
-                        matched = true
-                        break
-                    }
-                }
-            }
-            
-            // MULTI-WORD: Check for exact phrase match first (preserves word order)
-            if !matched && isMultiWord {
-                if name == correctedQuery {
-                    exactMatches.append(exercise)
-                    matched = true
-                } else if name.hasPrefix(correctedQuery) {
-                    // Name STARTS with the exact phrase - highest priority
-                    startsWithPhraseMatches.append(exercise)
-                    matched = true
-                } else if name.contains(correctedQuery) {
-                    // Name CONTAINS the exact phrase - second priority
-                    containsPhraseMatches.append(exercise)
-                    matched = true
-                }
-            }
-            
-            // MULTI-WORD: Word-order-independent matching (lowest priority)
-            if !matched && isMultiWord {
-                let allWordsFound = queryWords.allSatisfy { word in
-                    let wordVariations = getQuickVariations(word)
-                    return wordVariations.contains { variation in name.contains(variation) }
-                }
-                if allWordsFound {
-                    allWordsMatches.append(exercise)
-                }
-            }
-        }
-        
-        // Return in priority order: exact phrase ordering is prioritized
-        return exactMatches + startsWithPhraseMatches + containsPhraseMatches + allWordsMatches
-    }
-    
-    /// Quick keyword variations with typo correction and singular/plural - minimal overhead
-    private func getQuickVariations(_ query: String) -> [String] {
-        // First, correct common typos
-        let corrected = correctCommonTypos(query)
-        var variations = corrected == query ? [query] : [query, corrected]
-        
-        // Add singular/plural and spelling variations
-        let baseWord = corrected
-        switch baseWord {
-        // Fly variations
-        case "fly": variations += ["flye", "flyes", "flies"]
-        case "flye": variations += ["fly", "flyes", "flies"]
-        case "flyes", "flies": variations += ["fly", "flye"]
-        
-        // Curl variations (singular/plural)
-        case "curl": variations += ["curls"]
-        case "curls": variations += ["curl"]
-        
-        // Press variations
-        case "press": variations += ["presses"]
-        case "presses": variations += ["press"]
-        
-        // Row variations
-        case "row": variations += ["rows"]
-        case "rows": variations += ["row"]
-        
-        // Raise variations
-        case "raise": variations += ["raises"]
-        case "raises": variations += ["raise"]
-        
-        // Bicep/Tricep variations (singular/plural)
-        case "bicep": variations += ["biceps"]
-        case "biceps": variations += ["bicep"]
-        case "tricep": variations += ["triceps"]
-        case "triceps": variations += ["tricep"]
-        
-        // Pulldown/Pushdown variations
-        case "pulldown": variations += ["pull-down", "pull down", "pulldowns"]
-        case "pushdown": variations += ["push-down", "push down", "pushdowns"]
-        
-        // Equipment variations
-        case "dumbbell": variations += ["dumbell", "dumbells", "dumbbells"]
-        case "dumbbells": variations += ["dumbbell", "dumbell"]
-        case "barbell": variations += ["barbel", "barbells"]
-        case "barbells": variations += ["barbell", "barbel"]
-        
-        // Extension variations
-        case "extension": variations += ["extensions"]
-        case "extensions": variations += ["extension"]
-        
-        // Squat variations
-        case "squat": variations += ["squats"]
-        case "squats": variations += ["squat"]
-        
-        // Lunge variations
-        case "lunge": variations += ["lunges"]
-        case "lunges": variations += ["lunge"]
-        
-        // Deadlift variations
-        case "deadlift": variations += ["deadlifts"]
-        case "deadlifts": variations += ["deadlift"]
-        
-        // Shrug variations
-        case "shrug": variations += ["shrugs"]
-        case "shrugs": variations += ["shrug"]
-        
-        // Crunch variations
-        case "crunch": variations += ["crunches"]
-        case "crunches": variations += ["crunch"]
-        
-        // Dip variations
-        case "dip": variations += ["dips"]
-        case "dips": variations += ["dip"]
-        
-        // Pullup/Pushup variations
-        case "pullup", "pull up": variations += ["pullups", "pull ups", "pull-up", "pull-ups"]
-        case "pushup", "push up": variations += ["pushups", "push ups", "push-up", "push-ups"]
-        case "chinup", "chin up": variations += ["chinups", "chin ups", "chin-up", "chin-ups"]
-        
-        default:
-            // Generic: if ends in 's', try without; if doesn't, try with 's'
-            if baseWord.hasSuffix("s") && baseWord.count > 3 {
-                variations.append(String(baseWord.dropLast()))
-            } else if !baseWord.hasSuffix("s") && baseWord.count > 2 {
-                variations.append(baseWord + "s")
-            }
-        }
-        
-        return variations
-    }
-    
-    /// Fast typo correction for common misspellings
-    private func correctCommonTypos(_ query: String) -> String {
-        // Only do EXACT matches - no substring replacement which causes bugs
-        // e.g., "decline" was becoming "declinee" because it contains "declin"
-        let typoMap: [String: String] = [
-            // Equipment typos
-            "dumbell": "dumbbell",
-            "dumbel": "dumbbell", 
-            "dumble": "dumbbell",
-            "dumbells": "dumbbells",
-            "dumbels": "dumbbells",
-            "barbel": "barbell",
-            "barble": "barbell",
-            "kettleball": "kettlebell",
-            "kettlebel": "kettlebell",
-            "cabel": "cable",
-            "cabels": "cables",
-            "machien": "machine",
-            "mashine": "machine",
-            
-            // Exercise type typos
-            "flye": "fly",
-            "flyes": "flies",
-            "pres": "press",
-            "presss": "press",
-            "curle": "curl",
-            "rwo": "row",
-            "sqaut": "squat",
-            "sqat": "squat",
-            "squatt": "squat",
-            "deadlif": "deadlift",
-            "dedlift": "deadlift",
-            "extention": "extension",
-            "extenstion": "extension",
-            "pullup": "pull up",
-            "pushup": "push up",
-            "chinup": "chin up",
-            
-            // Muscle group typos
-            "bycep": "bicep",
-            "byceps": "biceps",
-            "bicept": "bicep",
-            "trycep": "tricep",
-            "tryceps": "triceps",
-            "tricept": "tricep",
-            "sholder": "shoulder",
-            "sholders": "shoulders",
-            "shouder": "shoulder",
-            "hamstring": "hamstrings",
-            "hammstring": "hamstrings",
-            "calfs": "calves",
-            "quatricep": "quadricep",
-            "glute": "glutes",
-            
-            // Other common typos
-            "inclin": "incline",
-            "inclien": "incline",
-            "declin": "decline",
-            "declien": "decline",
-            "laterl": "lateral",
-            "latral": "lateral",
-            "revers": "reverse",
-            "reverese": "reverse",
-            "bensh": "bench",
-            "banch": "bench",
-            "benc": "bench"
-        ]
-        
-        // Only return correction for EXACT match
-        return typoMap[query] ?? query
     }
     
     // ⚡️ OPTIMIZED: Fast recommended filter using precomputed Set lookup
@@ -770,7 +313,7 @@ struct ExerciseLibraryView: View {
         if !selectedEquipmentItems.isEmpty {
             filtered = filtered.filter { exercise in
                 selectedEquipmentItems.contains { equipmentItem in
-                    exerciseMatchesEquipmentLib(exercise, selectedEquipment: equipmentItem)
+                    ExerciseFilterService.exerciseMatchesEquipment(exercise, selectedEquipment: equipmentItem)
                 }
             }
         }
@@ -779,7 +322,7 @@ struct ExerciseLibraryView: View {
         if !selectedMuscleGroups.isEmpty {
             filtered = filtered.filter { exercise in
                 selectedMuscleGroups.contains { muscleGroup in
-                    isExerciseForMuscleGroup(exercise, muscleGroup: muscleGroup)
+                    ExerciseFilterService.isExerciseForMuscleGroup(exercise, muscleGroup: muscleGroup)
                 }
             }
         }
@@ -790,82 +333,6 @@ struct ExerciseLibraryView: View {
     // Legacy computed property for backwards compatibility (use cachedFilteredExercises instead)
     var filteredExercises: [Exercise] {
         cachedFilteredExercises
-    }
-    
-    // MARK: - Equipment Matching
-    /// Comprehensive equipment matching with normalization
-    private func exerciseMatchesEquipmentLib(_ exercise: Exercise, selectedEquipment: String) -> Bool {
-        let exerciseEquipment = exercise.equipment?.lowercased() ?? ""
-        let targetEquipment = selectedEquipment.lowercased()
-        let exerciseName = exercise.name?.lowercased() ?? ""
-        
-        // Direct match
-        if exerciseEquipment == targetEquipment { return true }
-        
-        // Normalize and compare
-        let normalizedExercise = ExerciseFilterService.normalizeEquipment(exercise.equipment)
-        if normalizedExercise == selectedEquipment { return true }
-        
-        // Handle compound equipment (comma-separated)
-        let equipmentParts = exerciseEquipment.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        
-        switch targetEquipment {
-        case "dumbbells":
-            return exerciseEquipment.contains("dumbbell") || exerciseName.contains("dumbbell") ||
-                   equipmentParts.contains { $0.contains("dumbbell") }
-        case "barbell":
-            let isBarbell = exerciseEquipment.contains("barbell") || exerciseName.contains("barbell") ||
-                           exerciseEquipment.contains("ez bar") || exerciseEquipment.contains("trap bar") ||
-                           equipmentParts.contains { $0.contains("barbell") }
-            return isBarbell && !exerciseEquipment.contains("smith")
-        case "cables":
-            return exerciseEquipment.contains("cable") || exerciseName.contains("cable") ||
-                   equipmentParts.contains { $0.contains("cable") }
-        case "machines":
-            // IMPORTANT: Check cables and smith FIRST to exclude them
-            let isCable = exerciseEquipment.contains("cable") || exerciseName.contains("cable")
-            if isCable { return false }
-            
-            let isSmith = exerciseEquipment.contains("smith")
-            if isSmith { return false }
-            
-            // Any machine or lever equipment
-            let isMachine = exerciseEquipment.contains("machine") ||
-                           exerciseEquipment.contains("lever") ||
-                           equipmentParts.contains { $0.contains("machine") || $0.contains("lever") }
-            
-            return isMachine
-        case "bodyweight":
-            return exerciseEquipment.isEmpty || exerciseEquipment.contains("bodyweight") ||
-                   exerciseEquipment == "body weight"
-        case "kettlebell":
-            return exerciseEquipment.contains("kettlebell") || exerciseName.contains("kettlebell") ||
-                   equipmentParts.contains { $0.contains("kettlebell") }
-        case "resistance bands", "bands":
-            return exerciseEquipment.contains("band") || exerciseName.contains("band") ||
-                   equipmentParts.contains { $0.contains("band") }
-        case "bench":
-            return exerciseEquipment.contains("bench") || equipmentParts.contains { $0.contains("bench") }
-        case "smith machine":
-            return exerciseEquipment.contains("smith") || exerciseName.contains("smith")
-        case "trx/rings":
-            return exerciseEquipment.contains("trx") || exerciseEquipment.contains("ring") ||
-                   exerciseEquipment.contains("suspension") || exerciseName.contains("trx") ||
-                   equipmentParts.contains { $0.contains("trx") || $0.contains("ring") || $0.contains("suspension") }
-        case "stability ball":
-            return exerciseEquipment.contains("stability ball") || exerciseEquipment.contains("swiss ball") ||
-                   exerciseName.contains("stability ball")
-        case "medicine ball":
-            return exerciseEquipment.contains("medicine ball") || exerciseName.contains("medicine ball")
-        case "pull-up bar":
-            return exerciseEquipment.contains("pull-up bar") || exerciseEquipment.contains("pullup") ||
-                   exerciseName.contains("pull up") || exerciseName.contains("pull-up") ||
-                   exerciseName.contains("chin up") || exerciseName.contains("chin-up")
-        default:
-            // Fallback: check if equipment contains target or vice versa
-            return exerciseEquipment.contains(targetEquipment) || targetEquipment.contains(exerciseEquipment) ||
-                   equipmentParts.contains { $0.contains(targetEquipment) || targetEquipment.contains($0) }
-        }
     }
     
     var body: some View {
@@ -915,9 +382,9 @@ struct ExerciseLibraryView: View {
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                     .simultaneousGesture(TapGesture().onEnded {
-                                        // ⚡️ Track exercise selection for dynamic popularity ranking
                                         if let name = exercise.name {
                                             ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
+                                            VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
                                         }
                                     })
                                     // 🚀 Smart prefetch: preload video when exercise becomes visible
@@ -992,6 +459,12 @@ struct ExerciseLibraryView: View {
                 // ⚡️ HIGH-PERFORMANCE: Initialize filter cache immediately
                 updateFilteredExercises()
                 
+                // Pre-generate poster frames for visible exercises (background, limited concurrency)
+                let visibleNames = filteredExercises.prefix(20).compactMap { $0.name }
+                if !visibleNames.isEmpty {
+                    VideoThumbnailService.shared.preGeneratePosterFrames(for: visibleNames)
+                }
+                
                 // Log screen appearance with unique ID
                 SessionLogManager.shared.logScreen(.exerciseLibrary, metadata: [
                     "exercise_count": exercises.count,
@@ -1016,8 +489,17 @@ struct ExerciseLibraryView: View {
             }
             // ⚡️ HIGH-PERFORMANCE: Instant filter updates with state caching
             .onChange(of: searchText) { _, newValue in
-                updateFilteredExercises()
                 ViewStateCache.shared.exerciseLibraryState.searchText = newValue
+                searchDebounceTask?.cancel()
+                if searchText.isEmpty {
+                    updateFilteredExercises()
+                } else {
+                    searchDebounceTask = Task {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        guard !Task.isCancelled else { return }
+                        updateFilteredExercises()
+                    }
+                }
             }
             .onChange(of: selectedCategories) { _, newValue in 
                 lastFilterKey = ""
@@ -1092,7 +574,7 @@ struct ExerciseLibraryView: View {
     private var customHeaderView: some View {
         HStack {
             Text("Exercises")
-                .font(.system(size: 42, weight: .bold))
+                .font(.ds_displayLarge)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.blue, Color.blue, Color.cyan.opacity(0.8)],
@@ -1127,7 +609,7 @@ struct ExerciseLibraryView: View {
                 HStack {
                     HStack(spacing: 6) {
                         Image(systemName: "dumbbell.fill")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.blue)
                         Text("\(filteredExercises.count.formatted()) exercises")
                             .font(.subheadline)
@@ -1157,12 +639,12 @@ struct ExerciseLibraryView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: filterIcon)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                             Text(exerciseFilter.rawValue)
                                 .font(.caption)
                                 .fontWeight(.medium)
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.ds_caption).fontWeight(.semibold)
                         }
                         .foregroundColor(exerciseFilter == .all ? .secondary : filterColor)
                         .padding(.horizontal, 10)
@@ -1177,7 +659,7 @@ struct ExerciseLibraryView: View {
                 // ⚡️ SNAPPY SEARCH: Instant response search bar
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                     
                     TextField("Search exercises...", text: $searchText)
@@ -1200,7 +682,7 @@ struct ExerciseLibraryView: View {
                             isSearchFocused = false // Also dismiss keyboard when clearing
                         }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -1389,258 +871,14 @@ struct ExerciseLibraryView: View {
 }
 
 struct CompactExerciseRowContent: View {
-    @Environment(\.colorScheme) private var colorScheme
     let exercise: Exercise
     var showChevron: Bool = false
-    
+
     var body: some View {
-        HStack(spacing: 12) {
-            // Compact exercise icon with vibrant gradient
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: categoryGradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 40, height: 40)
-                
-                if exercise.category?.lowercased() == "core" {
-                    CoreIcon(size: 22, color: .white)
-                } else {
-                    Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                }
-            }
-            
-            // Exercise details
-            VStack(alignment: .leading, spacing: 2) {
-                Text(exercise.displayName)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                HStack(spacing: 8) {
-                    if let category = exercise.category {
-                        Text(category)
-                            .font(.caption)
-                            .foregroundColor(categoryColor)
-                            .fontWeight(.medium)
-                    }
-                    
-                    if let equipment = exercise.equipment {
-                        Text("•")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        
-                        Text(equipment)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-            }
-            
-            Spacer()
-            
-            // Favorite star indicator
-            if exercise.isFavorite {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.yellow)
-            }
-            
-            // Chevron inside the card
-            if showChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 16)
-    }
-    
-    private var categoryColor: Color {
-        switch exercise.category?.lowercased() {
-        case "chest": return .purple
-        case "back": return .blue
-        case "legs": return .green
-        case "shoulders": return .orange
-        case "arms": return .purple
-        case "core": return .yellow
-        case "full body": return .pink
-        default: return .gray
-        }
-    }
-    
-    // Exact gradients matching the Workout tab style
-    private var categoryGradient: [Color] {
-        switch exercise.category?.lowercased() {
-        case "chest":
-            // Pink/Magenta (like Auto Workout)
-            return [Color.purple, Color.pink]
-        case "back":
-            // Blue/Cyan (like Custom Workout)
-            return [Color.blue, Color.cyan]
-        case "legs":
-            // Green/Teal (like Training Programs)
-            return [Color.green, Color.teal]
-        case "shoulders":
-            // Orange/Yellow (like Favorites)
-            return [Color.orange, Color.yellow]
-        case "arms":
-            // Purple/Indigo (same style)
-            return [Color.purple, Color.indigo]
-        case "core":
-            // Yellow/Orange (inverted Favorites style)
-            return [Color.yellow, Color.orange]
-        case "full body":
-            // Pink/Red (same style)
-            return [Color.pink, Color.red]
-        default:
-            return [Color.gray, Color.gray.opacity(0.7)]
-        }
-    }
-    
-    private var categoryIcon: String {
-        // Check if this is a custom exercise with custom icon
-        if let instructions = exercise.instructions,
-           instructions.contains("[CUSTOM_EXERCISE|ICON:"),
-           let iconRange = instructions.range(of: #"\[CUSTOM_EXERCISE\|ICON:([^\]]+)\]"#, options: .regularExpression),
-           let iconName = instructions[iconRange].split(separator: ":").last?.replacingOccurrences(of: "]", with: "") {
-            return String(iconName)
-        }
-        
-        // First, check for specific exercise patterns
-        if let exerciseName = exercise.name?.lowercased() {
-            
-            // Dumbbell exercises
-            if exerciseName.contains("dumbbell") {
-                return "dumbbell.fill"
-            }
-            
-            // Barbell exercises  
-            else if exerciseName.contains("barbell") {
-                return "figure.strengthtraining.traditional"
-            }
-            
-            // Cable exercises
-            else if exerciseName.contains("cable") {
-                return "dot.radiowaves.left.and.right"
-            }
-            
-            // Push-up variations
-            else if exerciseName.contains("push") && exerciseName.contains("up") {
-                return "figure.strengthtraining.traditional"
-            }
-            
-            // Pull-up variations  
-            else if exerciseName.contains("pull") && (exerciseName.contains("up") || exerciseName.contains("chin")) {
-                return "figure.climbing"
-            }
-            
-            // Squat variations
-            else if exerciseName.contains("squat") {
-                return "figure.squat"
-            }
-            
-            // Lunge variations
-            else if exerciseName.contains("lunge") {
-                return "figure.walk"
-            }
-            
-            // Hip thrust variations
-            else if exerciseName.contains("thrust") || exerciseName.contains("bridge") {
-                return "figure.strengthtraining.functional"
-            }
-            
-            // Deadlift variations
-            else if exerciseName.contains("deadlift") {
-                return "figure.strengthtraining.functional"
-            }
-            
-            // Curl variations (bicep/tricep)
-            else if exerciseName.contains("curl") {
-                return "figure.arms.open"
-            }
-            
-            // Press variations (shoulder/chest)
-            else if exerciseName.contains("press") && !exerciseName.contains("leg") {
-                return "arrow.up.circle.fill"
-            }
-            
-            // Row variations
-            else if exerciseName.contains("row") {
-                return "arrow.left.and.right.circle.fill"
-            }
-            
-            // Fly variations
-            else if exerciseName.contains("fly") || exerciseName.contains("flye") {
-                return "arrow.up.left.and.arrow.down.right.circle.fill"
-            }
-            
-            // Raise variations (lateral, front)
-            else if exerciseName.contains("raise") {
-                return "arrow.up.circle"
-            }
-            
-            // Shrug variations
-            else if exerciseName.contains("shrug") {
-                return "arrow.up.and.down.circle.fill"
-            }
-            
-            // Plank variations
-            else if exerciseName.contains("plank") {
-                return "figure.core.training"
-            }
-            
-            // Running/cardio
-            else if exerciseName.contains("run") || exerciseName.contains("jog") {
-                return "figure.run"
-            }
-            
-            // Jump exercises
-            else if exerciseName.contains("jump") {
-                return "figure.jumprope"
-            }
-        }
-        
-        // Fallback to equipment-based icons
-        if let equipment = exercise.equipment?.lowercased() {
-            switch equipment {
-            case "dumbbells":
-                return "dumbbell.fill"
-            case "barbell":
-                return "figure.strengthtraining.traditional"
-            case "cables":
-                return "dot.radiowaves.left.and.right"
-            case "machines":
-                return "gearshape.fill"
-            case "bodyweight":
-                return "figure.strengthtraining.traditional"
-            default:
-                break
-            }
-        }
-        
-        // Final fallback to category icons
-        switch exercise.category?.lowercased() {
-        case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.climbing" 
-        case "legs": return "figure.squat"
-        case "shoulders": return "arrow.up.circle.fill"
-        case "arms": return "dumbbell.fill"
-        case "core": return "figure.core.training"
-        case "full body": return "figure.mixed.cardio"
-        default: return "dumbbell.fill"
-        }
+        ExerciseCardRow(
+            exercise: exercise,
+            showChevron: showChevron
+        )
     }
 }
 
@@ -1705,7 +943,7 @@ struct ExerciseTypeChip: View {
         Button(action: { HapticManager.selectionChanged(); onTap() }) {
             HStack(spacing: 4) {
                 Image(systemName: exerciseType.icon)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.ds_caption).fontWeight(.semibold)
                 Text(exerciseType.rawValue)
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -1773,6 +1011,11 @@ struct MultiSelectFilterChip: View {
     var body: some View {
         Button(action: {
             HapticManager.selectionChanged()
+            if text != "All" && !selectedItems.contains(text) {
+                selectedItems.insert(text)
+            } else if text == "All" {
+                selectedItems = []
+            }
             showingDropdown = true
         }) {
             Text(text)
@@ -1828,7 +1071,7 @@ struct MultiSelectDropdownContent: View {
                         
                         if selectedItems.isEmpty {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                                 .foregroundColor(accentColor)
                         }
                     }
@@ -1860,7 +1103,7 @@ struct MultiSelectDropdownContent: View {
                             
                             if selectedItems.contains(option) {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.ds_labelMedium)
                                     .foregroundColor(accentColor)
                             }
                         }

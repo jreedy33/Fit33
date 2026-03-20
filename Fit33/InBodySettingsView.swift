@@ -164,7 +164,7 @@ struct InBodySettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                         Text("Connected")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -197,7 +197,7 @@ struct InBodySettingsView: View {
                 .foregroundColor(.red)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     // MARK: - Disconnected View
@@ -239,7 +239,7 @@ struct InBodySettingsView: View {
                 .cornerRadius(10)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     // MARK: - Latest Scan View
@@ -301,7 +301,7 @@ struct InBodySettingsView: View {
         VStack(spacing: 6) {
             Image(systemName: icon)
                 .foregroundColor(color)
-                .font(.system(size: 18))
+                .font(.ds_heading3)
             
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
@@ -388,7 +388,7 @@ struct InBodySettingsView: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private func legendItem(color: Color, label: String) -> some View {
@@ -442,7 +442,7 @@ struct InBodySettingsView: View {
                     .foregroundColor(scoreColor(score))
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     // MARK: - About View
@@ -487,7 +487,7 @@ struct InBodySettingsView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private func integrationBullet(_ text: String) -> some View {
@@ -706,7 +706,7 @@ struct BodyCompositionHistoryView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
             }
         }
         .navigationTitle("Scan History")

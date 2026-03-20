@@ -24,7 +24,7 @@ struct HealthyRecipesCarousel: View {
             // Section Header (OUTSIDE the card - matches other sections)
             HStack {
                 Image(systemName: "fork.knife.circle.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.orange, .red],
@@ -54,7 +54,7 @@ struct HealthyRecipesCarousel: View {
                     .foregroundColor(.orange)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Content Card
             VStack(alignment: .leading, spacing: 8) {
@@ -62,7 +62,7 @@ struct HealthyRecipesCarousel: View {
                 Text(subtitleText)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Spacing.md)
                 
                 if (spoonacularService.isLoading || preferenceService.isLoadingRecommendations) && displayedRecipes.isEmpty {
                     loadingView
@@ -186,8 +186,8 @@ struct HealthyRecipesCarousel: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
         }
     }
     
@@ -276,8 +276,8 @@ struct HealthyRecipesCarousel: View {
                     RecipeCardSkeleton()
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
         }
     }
     
@@ -301,10 +301,10 @@ struct HealthyRecipesCarousel: View {
                 Label("Try Again", systemImage: "arrow.clockwise")
                     .font(.subheadline)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(Color.orange)
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
             }
         }
         .frame(maxWidth: .infinity)
@@ -330,10 +330,10 @@ struct HealthyRecipesCarousel: View {
                 Label("Load Recipes", systemImage: "arrow.down.circle")
                     .font(.subheadline)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
                     .background(Color.mint)
-                    .cornerRadius(8)
+                    .cornerRadius(CornerRadius.sm)
             }
         }
         .frame(maxWidth: .infinity)
@@ -497,8 +497,8 @@ struct PremiumRecipeCard: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule()
                         .fill(Color.black.opacity(0.5))
@@ -507,7 +507,7 @@ struct PremiumRecipeCard: View {
                                 .fill(.ultraThinMaterial)
                         )
                 )
-                .padding(8)
+                .padding(Spacing.xs)
             }
             .frame(width: 180, height: 120)
             .clipShape(
@@ -537,7 +537,7 @@ struct PremiumRecipeCard: View {
                     RecipeMacroBadge(value: recipe.fat, label: "F", color: .purple)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 10)
             .frame(width: 180, alignment: .leading)
         }
@@ -606,7 +606,7 @@ struct PremiumRecipeCard: View {
                         .frame(width: 46, height: 46)
                     
                     Image(systemName: "crown.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.yellow, .orange],
@@ -625,7 +625,7 @@ struct PremiumRecipeCard: View {
                         .fontWeight(.bold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
@@ -718,8 +718,8 @@ struct RecipeCard: View {
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(Color.black.opacity(0.5))
@@ -728,7 +728,7 @@ struct RecipeCard: View {
                                     .fill(.ultraThinMaterial)
                             )
                     )
-                    .padding(8)
+                    .padding(Spacing.xs)
                 }
                 .frame(width: 180, height: 120)
                 .clipShape(
@@ -758,7 +758,7 @@ struct RecipeCard: View {
                         RecipeMacroBadge(value: recipe.fat, label: "F", color: .purple)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 10)
                 .frame(width: 180, alignment: .leading)
             }
@@ -852,7 +852,7 @@ struct RecipeCardSkeleton: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 10)
         }
         .frame(width: 180)

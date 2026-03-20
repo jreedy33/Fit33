@@ -78,7 +78,7 @@ struct QRCodeScannerView: View {
             // Close button
             Button(action: { dismiss() }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(.black.opacity(0.5)))
@@ -100,7 +100,7 @@ struct QRCodeScannerView: View {
                 torchOn.toggle()
             }) {
                 Image(systemName: torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(torchOn ? .yellow : .white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(.black.opacity(0.5)))
@@ -167,7 +167,7 @@ struct QRCodeScannerView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "qrcode.viewfinder")
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                 Text("Point at a friend's QR code")
                     .font(.subheadline)
             }
@@ -178,7 +178,7 @@ struct QRCodeScannerView: View {
                 .foregroundColor(.white.opacity(0.7))
         }
         .padding(.vertical, Spacing.md)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
         .background(
             Capsule()
                 .fill(.black.opacity(0.6))
@@ -379,7 +379,7 @@ private struct ScannedUserSheet: View {
                 
                 Spacer()
             }
-            .padding(24)
+            .padding(Spacing.lg)
             .navigationTitle("User Found")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -410,9 +410,9 @@ private struct ScannedUserSheet: View {
             // Status badge
             if user.isAlreadyFriend {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
                     .foregroundColor(.green)
-                    .background(Circle().fill(.white).padding(2))
+                    .background(Circle().fill(.white).padding(Spacing.xxxs))
                     .offset(x: 35, y: 35)
             }
         }
@@ -577,7 +577,7 @@ private struct InfoTag: View {
             .fontWeight(.medium)
             .foregroundColor(color)
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(color.opacity(0.15))

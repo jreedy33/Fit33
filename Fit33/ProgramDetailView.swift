@@ -152,7 +152,7 @@ struct SmartProgramOverviewView: View {
                         .frame(width: 52, height: 52)
                     
                     Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
             }
@@ -304,7 +304,7 @@ struct SmartProgramOverviewView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
     }
@@ -364,7 +364,7 @@ struct ProgramOverviewStatCard: View {
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(color)
             }
             
@@ -444,7 +444,7 @@ struct WeekProgressRow: View {
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
 }
 
@@ -490,18 +490,18 @@ struct DayCard: View {
                             .foregroundColor(color)
                     } else if day.exercises.isEmpty {
                         Image(systemName: "moon.fill")
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.gray)
                     } else {
                         Text("\(day.exercises.count)")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(isToday ? color : .secondary)
                     }
                 }
                 
                 // Day name
                 Text(day.name.split(separator: " ").first.map(String.init) ?? day.name)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -572,7 +572,7 @@ struct UpcomingWorkoutRow: View {
             Spacer()
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .padding(10)

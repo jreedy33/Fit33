@@ -161,7 +161,7 @@ struct FriendRowButton: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary)
             }
             .padding(Spacing.sm)

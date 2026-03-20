@@ -352,13 +352,13 @@ struct DashboardView: View {
                             break
                         }
                     }
-                    print("📜 [DASHBOARD] Scrolled to widget: \(widgetId)")
+                    AppLogger.debug("[DASHBOARD] Scrolled to widget: \(widgetId)", category: .ui)
                 }
                 }
                 .refreshable {
-                    // STEP 1: Sync latest HealthKit data (steps, workouts, etc.)
-                    // This will also call syncHealthKitDataToChallenges() internally
-                    await HealthKitService.shared.syncAllData(force: true)
+                    // STEP 1: Sync ALL connected health sources (HealthKit, Strava, Fitbit)
+                    // force: true bypasses 5-minute throttle since user explicitly pulled to refresh
+                    await HealthDataService.shared.syncAllHealthData(force: true)
                     
                     // STEP 2: Fetch ALL challenge types from database (parallel for speed)
                     async let r1: () = ChallengeService.shared.fetchPendingInvites()
@@ -476,19 +476,20 @@ struct DashboardView: View {
             guard let route = route else { return }
             // Small delay to ensure NavigationStack is ready after tab switch
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                if route.hasPrefix("ChallengeDetail:") {
+                if route == "ChallengeCreation" {
+                    showingChallengeCreation = true
+                } else if route.hasPrefix("ChallengeDetail:") {
                     let idStr = String(route.dropFirst("ChallengeDetail:".count))
-                    // Look up 1v1 challenge
                     if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
                         dashboardNavPath.append(challenge)
-                        print("🏆 [DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)")
+                        AppLogger.debug("[DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)", category: .ui)
                     }
                     // Look up group challenge
                     else if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
                         dashboardNavPath.append(groupChallenge)
-                        print("🏆 [DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)")
+                        AppLogger.debug("[DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)", category: .ui)
                     } else {
-                        print("⚠️ [DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard")
+                        AppLogger.warning("[DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard", category: .ui)
                     }
                 }
                 deepLinkManager.pendingDashboardRoute = nil
@@ -532,10 +533,10 @@ struct DashboardView: View {
             // 🎯 SMART CAROUSEL DEFAULT: Active Program (page 1) if user has one, otherwise Custom/Auto (page 0)
             if activeSmartProgramForWidget != nil {
                 selectedWorkoutPage = 1 // Show active program
-                print("📱 [CAROUSEL] Defaulting to Active Program (page 1)")
+                AppLogger.debug("[CAROUSEL] Defaulting to Active Program (page 1)", category: .ui)
             } else {
                 selectedWorkoutPage = 0 // Show Custom/Auto buttons
-                print("📱 [CAROUSEL] Defaulting to Custom/Auto (page 0)")
+                AppLogger.debug("[CAROUSEL] Defaulting to Custom/Auto (page 0)", category: .ui)
             }
             
             // Mark user as welcomed after first visit (delayed slightly to show "Welcome to Fit33" first)
@@ -545,7 +546,7 @@ struct DashboardView: View {
                     // Delay marking as welcomed so they see "Welcome to Fit33" on first load
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         UserDefaults.standard.set(true, forKey: welcomeKey)
-                        print("👋 [WELCOME] User marked as welcomed - will show 'Welcome back' next time")
+                        AppLogger.debug("[WELCOME] User marked as welcomed - will show 'Welcome back' next time", category: .ui)
                     }
                 }
             }
@@ -565,11 +566,11 @@ struct DashboardView: View {
                                     // User already has phone verified, mark as seen
                                     userHasVerifiedPhone = true
                                     hasSeenPhonePrompt = true
-                                    print("📱 [PHONE PROMPT] User already has phone verified, skipping prompt")
+                                    AppLogger.debug("[PHONE PROMPT] User already has phone verified, skipping prompt", category: .ui)
                                 } else {
                                     // Show the prompt
                                     showPhoneVerificationPrompt = true
-                                    print("📱 [PHONE PROMPT] Showing phone verification prompt to existing user")
+                                    AppLogger.debug("[PHONE PROMPT] Showing phone verification prompt to existing user", category: .ui)
                                 }
                             }
                         }
@@ -669,7 +670,7 @@ struct DashboardView: View {
                     let dayChanged = lastRefreshDay < today
                     
                     if dayChanged {
-                        print("🌙 [CHALLENGES] Day changed! Auto-refreshing for new day...")
+                        AppLogger.debug("[CHALLENGES] Day changed! Auto-refreshing for new day...", category: .ui)
                     }
                     
                     // ⚠️ Reload hydration + meal data BEFORE HealthKit sync.
@@ -683,7 +684,7 @@ struct DashboardView: View {
                     await HealthKitService.shared.syncAllData(force: true)
                     
                     // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to ALL challenge types
-                    print("🔄 [DASHBOARD] Universal challenge sync on foreground...")
+                    AppLogger.debug("[DASHBOARD] Universal challenge sync on foreground...", category: .ui)
                     async let challengeSync: () = ChallengeService.shared.syncAllTrackingToChallenges()
                     async let communitySync: () = CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
                     async let privateSync: () = PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
@@ -696,13 +697,13 @@ struct DashboardView: View {
                     async let p4: () = CommunityChallengeService.shared.refreshAll(force: false)
                     async let p5: () = PrivateChallengeService.shared.refreshAll(force: false)
                     _ = await (p1, p2, p3, p4, p5)
-                    print("✅ [DASHBOARD] All challenge data refreshed (1v1 + community + private)")
+                    AppLogger.info("[DASHBOARD] All challenge data refreshed (1v1 + community + private)", category: .ui)
                     
                     // Update last refresh date
                     lastChallengeRefreshDate = Date()
                     
                     if dayChanged {
-                        print("🌙 [CHALLENGES] Midnight sync complete - today's progress reset to 0")
+                        AppLogger.info("[CHALLENGES] Midnight sync complete - today's progress reset to 0", category: .ui)
                     }
                     
                     // Refresh daily quests (force on day change to get new quests)
@@ -745,7 +746,7 @@ struct DashboardView: View {
         
         // Get user ID from Supabase auth
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("📊 [DASHBOARD] No user ID for recommendation")
+            AppLogger.debug("[DASHBOARD] No user ID for recommendation", category: .ui)
             return
         }
         
@@ -759,7 +760,7 @@ struct DashboardView: View {
         
         self.personalizedRecommendation = recommendation
         self.isLoadingRecommendation = false
-        print("💡 [DASHBOARD] Loaded recommendation: \(recommendation.message)")
+        AppLogger.debug("[DASHBOARD] Loaded recommendation: \(recommendation.message)", category: .ui)
     }
     
     // ⚡️ PERFORMANCE: Throttle cardio fetches — multiple triggers (HealthKit, Strava, notifications)
@@ -785,13 +786,10 @@ struct DashboardView: View {
             await MainActor.run {
                 self.recentCardioWorkouts = cardioWorkouts
                 self.totalCardioWorkoutCount = allTimeCount
-                print("🏃 [DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts (\(allTimeCount) total all-time)")
-                for workout in cardioWorkouts {
-                    print("   └─ \(workout.activityType): \(workout.completedAt)")
-                }
+                AppLogger.debug("[DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts (\(allTimeCount) total all-time)", category: .ui)
             }
         } catch {
-            print("⚠️ [DASHBOARD] Failed to load cardio workouts: \(error)")
+            AppLogger.warning("[DASHBOARD] Failed to load cardio workouts: \(error.localizedDescription)", category: .ui)
         }
     }
     
@@ -831,7 +829,7 @@ struct DashboardView: View {
                             }
                         }
                     } catch {
-                        print("⚠️ [DASHBOARD] Failed to download profile photo: \(error)")
+                        AppLogger.warning("[DASHBOARD] Failed to download profile photo: \(error.localizedDescription)", category: .ui)
                     }
                 }
             } else {
@@ -842,7 +840,7 @@ struct DashboardView: View {
                 }
             }
         } catch {
-            print("⚠️ [DASHBOARD] Failed to load profile photo: \(error)")
+            AppLogger.warning("[DASHBOARD] Failed to load profile photo: \(error.localizedDescription)", category: .ui)
         }
     }
     
@@ -916,7 +914,7 @@ struct DashboardView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.top, 28)
                     .padding(.bottom, 20)
                     
@@ -958,7 +956,7 @@ struct DashboardView: View {
                                 Spacer()
                                 
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 22))
+                                    .font(.ds_heading2)
                                     .foregroundColor(.white.opacity(0.8))
                             }
                             .foregroundColor(.white)
@@ -1076,7 +1074,7 @@ struct DashboardView: View {
                 )
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.15), radius: 30, x: 0, y: 15)
                 .shadow(color: accentColor.opacity(0.15), radius: 20, x: 0, y: 10)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .scaleEffect(showingProgramConflictAlert ? 1 : 0.9)
                 .opacity(showingProgramConflictAlert ? 1 : 0)
             }
@@ -1118,7 +1116,7 @@ struct DashboardView: View {
                     showingWidgetSettings = true
                 }) {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                 }
@@ -1163,17 +1161,17 @@ struct DashboardView: View {
                                             .clipShape(Circle())
                                     case .failure(_), .empty:
                                         Image(systemName: "person.fill")
-                                            .font(.system(size: 16, weight: .semibold))
+                                            .font(.ds_labelLarge)
                                             .foregroundColor(.white)
                                     @unknown default:
                                         Image(systemName: "person.fill")
-                                            .font(.system(size: 16, weight: .semibold))
+                                            .font(.ds_labelLarge)
                                             .foregroundColor(.white)
                                     }
                                 }
                             } else {
                                 Image(systemName: "person.fill")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.ds_labelLarge)
                                     .foregroundColor(.white)
                             }
                         }
@@ -1188,7 +1186,7 @@ struct DashboardView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: workoutManager.isWorkoutActive)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     // MARK: - Notification Permission Banner
@@ -1212,7 +1210,7 @@ struct DashboardView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: "bell.badge.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 }
                 
@@ -1271,7 +1269,7 @@ struct DashboardView: View {
             }) {
                 HStack(spacing: 8) {
                     Image(systemName: "bell.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                     Text("Enable Notifications")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -1951,7 +1949,7 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
             }
             .padding(Spacing.md)
             .background(
@@ -2077,7 +2075,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             ZStack {
                 // Clean gradient background matching WorkoutTabView exactly
@@ -2197,7 +2195,7 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             ZStack {
                 // Outer container - darker to let inner cards pop (matches Recent Activity)
@@ -2566,7 +2564,7 @@ struct DashboardView: View {
                             .shadow(color: programColor.opacity(0.3), radius: 6, x: 0, y: 3)
                         
                         Image(systemName: program.icon)
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                     
@@ -2600,7 +2598,7 @@ struct DashboardView: View {
                     // View all button - placeholder for GeneratedProgram (would need adapter)
                     NavigationLink(value: DashboardRoute.programDetailsPlaceholder) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -2967,7 +2965,7 @@ struct DashboardView: View {
                                     }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     } else if let activeChallenge = activeChallenges.first {
                         // Single active 1v1 challenge (no swiping needed)
                         activeChallengeDetailWidget(challenge: activeChallenge)
@@ -3028,7 +3026,7 @@ struct DashboardView: View {
                                     }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     }
                 }
                 // Reset to first page when data changes
@@ -3085,12 +3083,12 @@ struct DashboardView: View {
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         Text(challengeType.emoji)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                     }
                     
                     HStack(spacing: 4) {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                         Text("Sent to \(challenge.opponentName?.components(separatedBy: " ").first ?? "friend")")
                             .font(.caption)
@@ -3233,13 +3231,13 @@ struct DashboardView: View {
         ) {
             Button("Cancel Challenge", role: .destructive) {
                 Task {
-                    print("🗑️ [DASHBOARD] Cancel challenge button tapped in confirmation dialog")
+                    AppLogger.debug("[DASHBOARD] Cancel challenge button tapped in confirmation dialog", category: .ui)
                     let success = await ChallengeService.shared.cancelPendingChallenge(challengeId: challenge.challengeId)
                     if success {
-                        print("✅ [DASHBOARD] Challenge cancelled successfully")
+                        AppLogger.info("[DASHBOARD] Challenge cancelled successfully", category: .ui)
                         HapticManager.notification(.success)
                     } else {
-                        print("❌ [DASHBOARD] Cancel failed - refreshing to check if challenge is now active")
+                        AppLogger.error("[DASHBOARD] Cancel failed - refreshing to check if challenge is now active", category: .ui)
                         // Challenge might have just been accepted - refresh all lists
                         await ChallengeService.shared.fetchPendingSentChallenges()
                         await ChallengeService.shared.fetchActiveChallenges()
@@ -3332,7 +3330,7 @@ struct DashboardView: View {
                                 }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 }
                 .onChange(of: widgetCount) { oldCount, newCount in
                     // Reset to valid page if widgets were removed
@@ -3380,7 +3378,7 @@ struct DashboardView: View {
                             .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
                             .frame(width: 36, height: 36)
                         Text(resolvedType.emoji)
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                     }
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -3413,7 +3411,7 @@ struct DashboardView: View {
                         .font(.ds_bodyRegular)
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -3427,7 +3425,7 @@ struct DashboardView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 
                 if isAccountability {
                     accountabilityProgressSection(challenge: challenge, challengeColor: typeColor, typeGradient: typeGradient)
@@ -3531,7 +3529,7 @@ struct DashboardView: View {
                 // Live progress value for "my" side
                 HStack(spacing: 4) {
                     Text(myDone ? "✅" : "⬜")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text(resolver.formattedProgress(for: challenge))
                         .font(.caption2)
                         .fontWeight(.bold)
@@ -3542,7 +3540,7 @@ struct DashboardView: View {
                         .foregroundColor(.secondary)
                     
                     Text(oppDone ? "✅" : "⬜")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text(opponentFirst)
                         .font(.caption2)
                         .foregroundColor(oppDone ? .green : .secondary)
@@ -3583,7 +3581,7 @@ struct DashboardView: View {
                 
                 if myDone && oppDone {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.green)
                 } else {
                     Text("\(Int(livePercent * 100))%")
@@ -3647,7 +3645,7 @@ struct DashboardView: View {
                     }
                     
                     Text(resolver.formatValue(myLiveToday, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(amWinningNow ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -3660,7 +3658,7 @@ struct DashboardView: View {
             // VS divider with score diff
             VStack(spacing: 2) {
                 Text("⚔️")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                 
                 if myLiveToday != oppToday {
                     let diff = abs(myLiveToday - oppToday)
@@ -3693,7 +3691,7 @@ struct DashboardView: View {
                     }
                     
                     Text(resolver.formatValue(oppToday, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(!amWinningNow && oppToday > 0 ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -3795,7 +3793,7 @@ struct DashboardView: View {
                             .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
                             .frame(width: 36, height: 36)
                         Text(resolvedType.emoji)
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                     }
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -3848,7 +3846,7 @@ struct DashboardView: View {
                         .font(.ds_bodyRegular)
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -3862,7 +3860,7 @@ struct DashboardView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: isPending ? [challengeColor, .teal] : accentGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 
                 if isPending {
                     // PENDING: Show acceptance status + nudge buttons with "vs" between
@@ -3872,7 +3870,7 @@ struct DashboardView: View {
                         ForEach(Array(membersArray.enumerated()), id: \.element.id) { index, member in
                             if index > 0 {
                                 Text("vs")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.ds_caption).fontWeight(.semibold)
                                     .foregroundColor(.secondary)
                                     .frame(minWidth: 20)
                             }
@@ -3882,13 +3880,13 @@ struct DashboardView: View {
                                 
                                 if member.isAccepted {
                                     Text("✅")
-                                        .font(.system(size: 12))
+                                        .font(.ds_bodySmall)
                                 } else if member.isPending && member.userId != currentUserId {
                                     // Nudge button for pending members (not yourself)
                                     let nudgeKey = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
                                     if UserDefaults.standard.bool(forKey: nudgeKey) {
                                         Text("⏳")
-                                            .font(.system(size: 12))
+                                            .font(.ds_bodySmall)
                                     } else {
                                         Button {
                                             nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
@@ -3897,14 +3895,14 @@ struct DashboardView: View {
                                                 .font(.system(size: 9, weight: .semibold))
                                                 .foregroundColor(.white)
                                                 .padding(.horizontal, Spacing.xs)
-                                                .padding(.vertical, 4)
+                                                .padding(.vertical, Spacing.xxs)
                                                 .background(Capsule().fill(Color.teal.opacity(0.7)))
                                         }
                                         .buttonStyle(PlainButtonStyle())
                                     }
                                 } else {
                                     Text("⏳")
-                                        .font(.system(size: 12))
+                                        .font(.ds_bodySmall)
                                 }
                                 
                                 Text(member.userId == currentUserId ? "You" : String(member.firstName.prefix(6)))
@@ -3965,7 +3963,7 @@ struct DashboardView: View {
                                     }
                                     
                                     Text(formatChallengeProgress(displayProgress, unit: challenge.targetUnit))
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                                         .foregroundColor(isLeader ? .green : .primary)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.7)
@@ -4201,7 +4199,7 @@ struct DashboardView: View {
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: template.category.icon)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                     
@@ -4335,16 +4333,16 @@ struct DashboardView: View {
                     user.phoneNumber = phoneNumber
                     try? viewContext.save()
                 }
-                print("📱 [PHONE PROMPT] Phone saved successfully: \(phoneNumber)")
+                AppLogger.info("[PHONE PROMPT] Phone saved successfully: \(phoneNumber)", category: .ui)
             } catch {
-                print("❌ [PHONE PROMPT] Failed to save phone: \(error)")
+                AppLogger.error("[PHONE PROMPT] Failed to save phone: \(error.localizedDescription)", category: .ui)
             }
         }
     }
     
     private func handlePhoneVerificationSkip() {
         hasSeenPhonePrompt = true
-        print("📱 [PHONE PROMPT] User skipped phone verification")
+        AppLogger.debug("[PHONE PROMPT] User skipped phone verification", category: .ui)
     }
     
     // MARK: - Get Started Challenge Widget - "Challenge a Friend!" entry point
@@ -4362,7 +4360,7 @@ struct DashboardView: View {
                             .frame(width: 48, height: 48)
                         
                         Text("🏆")
-                            .font(.system(size: 22))
+                            .font(.ds_heading2)
                     }
                     
                     VStack(alignment: .leading, spacing: 3) {
@@ -4379,7 +4377,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, Spacing.md)
@@ -4601,7 +4599,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -4626,7 +4624,7 @@ struct DashboardView: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(programColor)
                         .frame(width: 4)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     
                     HStack(spacing: 12) {
                         // Program details
@@ -4640,7 +4638,7 @@ struct DashboardView: View {
                                 Image(systemName: template.category.icon)
                                     .font(.ds_caption)
                                     .foregroundColor(.white)
-                                    .padding(4)
+                                    .padding(Spacing.xxs)
                                     .background(
                                         Circle()
                                             .fill(programColor)
@@ -4808,7 +4806,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -4821,7 +4819,7 @@ struct DashboardView: View {
                 // Completed state - "Great work!" message
                 HStack(spacing: 12) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundColor(.green)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -4882,7 +4880,7 @@ struct DashboardView: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(programColor)
                             .frame(width: 4)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                         
                         HStack(spacing: 12) {
                             // Workout info
@@ -4963,7 +4961,7 @@ struct DashboardView: View {
                 // All days completed
                 VStack(spacing: 8) {
                     Image(systemName: "trophy.fill")
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundColor(.yellow)
                     
                     Text("Program Complete! 🎉")
@@ -5073,7 +5071,7 @@ struct DashboardView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -5099,7 +5097,7 @@ struct DashboardView: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(programColor)
                             .frame(width: 4)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                         
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -5183,7 +5181,7 @@ struct DashboardView: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(programColor)
                             .frame(width: 4)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                         
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -5389,7 +5387,7 @@ struct DashboardView: View {
                             .shadow(color: programColor.opacity(0.3), radius: 6, x: 0, y: 3)
                         
                         Image(systemName: "figure.strengthtraining.traditional")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                     
@@ -5423,7 +5421,7 @@ struct DashboardView: View {
                     // View all button
                     NavigationLink(value: DashboardRoute.smartProgramOverview(programId: program.id)) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -6239,7 +6237,7 @@ struct RecentWorkoutCard: View {
                 "workout_name": smartWorkoutName
             ])
         } catch {
-            print("❌ Error saving favorite status: \(error)")
+            AppLogger.error("Error saving favorite status: \(error.localizedDescription)", category: .ui)
             // Revert on error
             isFavorite.toggle()
         }
@@ -6248,6 +6246,24 @@ struct RecentWorkoutCard: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             isProcessing = false
         }
+    }
+    
+    private func strengthStatColumn(icon: String, iconColor: Color, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(iconColor)
+                Text(value)
+                    .font(.subheadline).fontWeight(.bold).fontDesign(.rounded)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
     
     var body: some View {
@@ -6271,7 +6287,7 @@ struct RecentWorkoutCard: View {
                         
                         // Gradient checkmark floating inside
                         Image(systemName: "checkmark")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: workoutGradient,
@@ -6311,7 +6327,7 @@ struct RecentWorkoutCard: View {
                     .padding(.trailing, 8)
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
                 
@@ -6320,81 +6336,19 @@ struct RecentWorkoutCard: View {
                 
                 // Bottom section - Stats
                 HStack(spacing: 0) {
-                    // Duration
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(workoutGradient[0])
-                            Text(formatDuration(workout.duration))
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                        }
-                        Text("Duration")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
+                    strengthStatColumn(icon: "clock.fill", iconColor: workoutGradient[0], value: formatDuration(workout.duration), label: "Duration")
                     
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 35)
+                    Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
                     
-                    // Exercises
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "figure.strengthtraining.traditional")
-                                .font(.system(size: 12))
-                                .foregroundColor(workoutGradient[0])
-                            Text("\(exerciseCount)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                        }
-                        Text("Exercises")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
+                    strengthStatColumn(icon: "figure.strengthtraining.traditional", iconColor: workoutGradient[0], value: "\(exerciseCount)", label: "Exercises")
                     
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 35)
+                    Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
                     
-                    // Sets
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "repeat")
-                                .font(.system(size: 12))
-                                .foregroundColor(workoutGradient[0])
-                            Text("\(totalSets)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                        }
-                        Text("Sets")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
+                    strengthStatColumn(icon: "repeat", iconColor: workoutGradient[0], value: "\(totalSets)", label: "Sets")
                     
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 35)
+                    Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
                     
-                    // XP
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.orange)
-                            Text("+\(Int(workout.xpEarned))")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                        }
-                        Text("XP")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
+                    strengthStatColumn(icon: "star.fill", iconColor: .orange, value: "+\(Int(workout.xpEarned))", label: "XP")
                 }
                 
                 // Muscle tags (if available)
@@ -6406,7 +6360,7 @@ struct RecentWorkoutCard: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(workoutGradient[0])
                                 .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(
                                     Capsule()
                                         .fill(workoutGradient[0].opacity(0.12))
@@ -6502,13 +6456,13 @@ struct RecentWorkoutCard: View {
         if let reaction = matchingReactions.first {
             HStack(spacing: 3) {
                 Text(reaction.emoji)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 Text("\(reaction.senderFirstName) sent you \(reaction.emoji)")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.primary)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(.ultraThinMaterial)
@@ -6707,22 +6661,142 @@ struct RecentCardioWorkoutCard: View {
         }
     }
     
-    // Format distance
+    private var usesMetric: Bool {
+        Locale.current.measurementSystem == .metric
+    }
+    
+    // Format distance in locale-appropriate units
     private func formatDistance(_ meters: Double) -> String {
-        let km = meters / 1000
-        if km < 1 {
-            return String(format: "%.0fm", meters)
+        if usesMetric {
+            let km = meters / 1000
+            if km < 1 {
+                return String(format: "%.0fm", meters)
+            }
+            return String(format: "%.1fkm", km)
         } else {
-            return String(format: "%.2fkm", km)
+            let miles = meters / 1609.344
+            if miles < 0.1 {
+                let feet = meters * 3.28084
+                return String(format: "%.0fft", feet)
+            }
+            return String(format: "%.1fmi", miles)
         }
     }
     
-    // Format pace
+    private var distanceLabel: String {
+        usesMetric ? "Distance" : "Distance"
+    }
+    
+    private var paceLabel: String {
+        usesMetric ? "/km" : "/mi"
+    }
+    
+    // Format pace in locale-appropriate units
     private func formatPace(_ pace: Double?) -> String {
         guard let pace = pace, pace > 0 else { return "--" }
-        let minutes = Int(pace)
-        let seconds = Int((pace - Double(minutes)) * 60)
+        let paceValue = usesMetric ? pace : pace * 1.60934
+        let minutes = Int(paceValue)
+        let seconds = Int((paceValue - Double(minutes)) * 60)
         return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    private var isFromHealthKit: Bool {
+        cardioWorkout.source == "healthkit"
+    }
+    
+    private var sourceDisplayName: String {
+        if cardioWorkout.isFromStrava { return "Strava" }
+        if isFromHealthKit {
+            if let name = cardioWorkout.workoutName {
+                if name.contains("Nike") { return "Nike Run Club" }
+                if name.contains("Apple") { return "Apple Watch" }
+                if name.contains("Peloton") { return "Peloton" }
+            }
+            return "Health"
+        }
+        return "Cardio"
+    }
+    
+    @ViewBuilder
+    private var sourceBadge: some View {
+        if cardioWorkout.isFromStrava {
+            HStack(spacing: 3) {
+                Image(systemName: "figure.run")
+                    .font(.system(size: 9, weight: .bold))
+                Text("Strava")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            )
+        } else if isFromHealthKit {
+            HStack(spacing: 3) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text(sourceDisplayName)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.red.opacity(0.9), Color.pink.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            )
+        } else {
+            Text("Cardio")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundColor(activityInfo.color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(activityInfo.color.opacity(0.15))
+                )
+        }
+    }
+    
+    private func cardioStatColumn(icon: String, iconColor: Color, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(iconColor)
+                Text(value)
+                    .font(.subheadline).fontWeight(.bold).fontDesign(.rounded)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var statDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 35)
     }
     
     var body: some View {
@@ -6744,7 +6818,7 @@ struct RecentCardioWorkoutCard: View {
                             .frame(width: 52, height: 52)
                         
                         Image(systemName: activityInfo.icon)
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [activityInfo.color, activityInfo.color.opacity(0.7)],
@@ -6757,46 +6831,14 @@ struct RecentCardioWorkoutCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         // Activity name with source badge (Strava or Cardio)
                         HStack(spacing: 8) {
-                            Text(cardioWorkout.isFromStrava ? (cardioWorkout.workoutName ?? activityInfo.name) : activityInfo.name)
+                            Text(cardioWorkout.isFromStrava ? (cardioWorkout.workoutName ?? activityInfo.name) : (isFromHealthKit ? activityInfo.name : activityInfo.name))
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
                             
-                            // Source badge - Strava (orange) or Cardio (activity color)
-                            if cardioWorkout.isFromStrava {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "figure.run")
-                                        .font(.system(size: 9, weight: .bold))
-                                    Text("Strava")
-                                        .font(.caption2)
-                                        .fontWeight(.bold)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Capsule()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                )
-                            } else {
-                                Text("Cardio")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(activityInfo.color)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        Capsule()
-                                            .fill(activityInfo.color.opacity(0.15))
-                                    )
-                            }
+                            // Source badge
+                            sourceBadge
                         }
                         
                         // Date with relative time
@@ -6810,13 +6852,13 @@ struct RecentCardioWorkoutCard: View {
                     // Goal achieved badge
                     if cardioWorkout.goalAchieved {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.green)
                             .padding(.trailing, 8)
                     }
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary.opacity(0.5))
                     }
                 
@@ -6825,81 +6867,39 @@ struct RecentCardioWorkoutCard: View {
                 
                     // Bottom section - Cardio Stats
                     HStack(spacing: 0) {
-                        // Duration
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(activityInfo.color)
-                                Text(formatDuration(cardioWorkout.durationSeconds))
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Duration")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
+                        cardioStatColumn(
+                            icon: "clock.fill",
+                            iconColor: activityInfo.color,
+                            value: formatDuration(cardioWorkout.durationSeconds),
+                            label: "Duration"
+                        )
                         
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
+                        statDivider
                         
-                        // Distance
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(activityInfo.color)
-                                Text(formatDistance(cardioWorkout.distanceMeters))
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Distance")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
+                        cardioStatColumn(
+                            icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
+                            iconColor: activityInfo.color,
+                            value: formatDistance(cardioWorkout.distanceMeters),
+                            label: distanceLabel
+                        )
                         
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
+                        statDivider
                         
-                        // Calories
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "flame.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.orange)
-                                Text("\(Int(cardioWorkout.caloriesBurned))")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Calories")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
+                        cardioStatColumn(
+                            icon: "flame.fill",
+                            iconColor: .orange,
+                            value: "\(Int(cardioWorkout.caloriesBurned))",
+                            label: "Calories"
+                        )
                         
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
+                        statDivider
                         
-                        // Pace
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "speedometer")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.purple)
-                                Text(formatPace(cardioWorkout.averagePace))
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                            }
-                            Text("/km")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
+                        cardioStatColumn(
+                            icon: "speedometer",
+                            iconColor: .purple,
+                            value: formatPace(cardioWorkout.averagePace),
+                            label: paceLabel
+                        )
                     }
                 
                     // Heart rate tag (if available)
@@ -6914,7 +6914,7 @@ struct RecentCardioWorkoutCard: View {
                             }
                             .foregroundColor(.red)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(Color.red.opacity(0.12))
@@ -7105,52 +7105,72 @@ struct WorkoutHistoryFullView: View {
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
         predicate: NSPredicate(format: "isCompleted == true"),
-        animation: .none)  // Disable animation for faster scroll
+        animation: .none)
     private var allWorkouts: FetchedResults<Workout>
     
     @StateObject private var adManager = AdManager.shared
+    @State private var cardioWorkouts: [CardioWorkoutDTO] = []
     
-    // Group workouts by date
-    private var groupedWorkouts: [(Date, [Workout])] {
+    enum HistoryItem: Identifiable {
+        case strength(Workout)
+        case cardio(CardioWorkoutDTO)
+        
+        var id: String {
+            switch self {
+            case .strength(let w): return "s-\(w.objectID.uriRepresentation().absoluteString)"
+            case .cardio(let c): return "c-\(c.id)"
+            }
+        }
+        
+        var date: Date {
+            switch self {
+            case .strength(let w): return w.date ?? Date.distantPast
+            case .cardio(let c): return ISO8601Parser.parse(c.completedAt, fallback: Date.distantPast)
+            }
+        }
+    }
+    
+    private var groupedItems: [(Date, [HistoryItem])] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: allWorkouts) { workout in
-            calendar.startOfDay(for: workout.date ?? Date())
+        var items: [HistoryItem] = allWorkouts.map { .strength($0) }
+        items.append(contentsOf: cardioWorkouts.map { .cardio($0) })
+        
+        let grouped = Dictionary(grouping: items) { item in
+            calendar.startOfDay(for: item.date)
         }
         return grouped.sorted { $0.key > $1.key }
     }
     
-    // Stats
-    private var totalWorkouts: Int { allWorkouts.count }
+    private var totalWorkouts: Int { allWorkouts.count + cardioWorkouts.count }
     private var totalExercises: Int {
         allWorkouts.reduce(0) { $0 + (($1.exercises?.count) ?? 0) }
     }
     private var totalDuration: TimeInterval {
-        allWorkouts.reduce(0.0) { $0 + Double($1.duration) }
+        let strengthTime = allWorkouts.reduce(0.0) { $0 + Double($1.duration) }
+        let cardioTime = cardioWorkouts.reduce(0.0) { $0 + Double($1.durationSeconds) }
+        return strengthTime + cardioTime
     }
     
     var body: some View {
         ZStack {
-            // Background
             AdaptiveGradient.home(for: colorScheme)
                 .ignoresSafeArea()
             
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 24) {
-                    // Stats summary
                     statsHeader
                         .padding(.horizontal, 20)
                         .padding(.top, 8)
                     
-                    // Workout list
-                    if groupedWorkouts.isEmpty {
+                    if groupedItems.isEmpty {
                         emptyStateView
                             .padding(.horizontal, 20)
                     } else {
                         LazyVStack(spacing: 20) {
-                            ForEach(Array(groupedWorkouts.enumerated()), id: \.offset) { _, dayGroup in
-                                WorkoutHistoryDaySectionWithAds(
+                            ForEach(Array(groupedItems.enumerated()), id: \.offset) { _, dayGroup in
+                                WorkoutHistoryDaySectionCombined(
                                     date: dayGroup.0,
-                                    workouts: dayGroup.1,
+                                    items: dayGroup.1,
                                     showAds: adManager.adsEnabled
                                 )
                                 .padding(.horizontal, 20)
@@ -7163,6 +7183,18 @@ struct WorkoutHistoryFullView: View {
         }
         .navigationTitle("Workout History")
         .navigationBarTitleDisplayMode(.large)
+        .task {
+            await loadCardioWorkouts()
+        }
+    }
+    
+    private func loadCardioWorkouts() async {
+        do {
+            let workouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 100)
+            await MainActor.run { self.cardioWorkouts = workouts }
+        } catch {
+            AppLogger.warning("Failed to load cardio history: \(error.localizedDescription)", category: .ui)
+        }
     }
     
     // MARK: - Stats Header
@@ -7238,10 +7270,10 @@ struct HistoryStatPill: View {
         VStack(spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.primary)
             }
             Text(label)
@@ -7316,7 +7348,7 @@ struct WorkoutHistoryDaySectionWithAds: View {
                     .font(.caption)
                     .foregroundColor(.secondary.opacity(0.7))
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Workout cards with ads inserted
             VStack(spacing: 12) {
@@ -7330,6 +7362,63 @@ struct WorkoutHistoryDaySectionWithAds: View {
                         if workoutIndex < workouts.count {
                             RecentWorkoutCard(workout: workouts[workoutIndex])
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Combined Workout History Day Section (strength + cardio)
+struct WorkoutHistoryDaySectionCombined: View {
+    let date: Date
+    let items: [WorkoutHistoryFullView.HistoryItem]
+    let showAds: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var displayDate: String {
+        if Calendar.current.isDateInToday(date) {
+            return "Today"
+        } else if Calendar.current.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE, MMMM d"
+            return formatter.string(from: date)
+        }
+    }
+    
+    private var sortedItems: [WorkoutHistoryFullView.HistoryItem] {
+        items.sorted { $0.date > $1.date }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(displayDate)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("\(items.count) workout\(items.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, Spacing.xxs)
+            
+            VStack(spacing: 12) {
+                ForEach(Array(sortedItems.enumerated()), id: \.element.id) { index, item in
+                    if showAds && index > 0 && index % 3 == 0 {
+                        NativeAdCardView()
+                    }
+                    
+                    switch item {
+                    case .strength(let workout):
+                        RecentWorkoutCard(workout: workout)
+                    case .cardio(let cardio):
+                        RecentCardioWorkoutCard(cardioWorkout: cardio)
                     }
                 }
             }
@@ -7370,7 +7459,7 @@ struct WorkoutHistoryDaySection: View {
                     .font(.caption)
                     .foregroundColor(.secondary.opacity(0.7))
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Workout cards - using same style as home page
             VStack(spacing: 12) {
@@ -7536,7 +7625,7 @@ struct StreakInfoSheet: View {
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: "pencil.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                     Text("Edit Streak")
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -7900,11 +7989,11 @@ struct EditStreakSheet: View {
                     do {
                         try await SupabaseManager.shared.syncCoreDataProfile(from: user)
                     } catch {
-                        print("❌ Failed to sync streak to cloud: \(error)")
+                        AppLogger.error("Failed to sync streak to cloud: \(error.localizedDescription)", category: .ui)
                     }
                 }
             } catch {
-                print("❌ Failed to save streak: \(error)")
+                AppLogger.error("Failed to save streak: \(error.localizedDescription)", category: .ui)
             }
         }
         
@@ -7927,7 +8016,7 @@ struct WorkoutDetailBadge: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(color)
             }
             
@@ -7997,7 +8086,7 @@ struct DashboardWeightWidget: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dailyResetCompleted)) { _ in
             // 🌙 Daily reset completed - refresh all dashboard data
-            print("🌙 [DASHBOARD] Daily reset notification received - refreshing data")
+            AppLogger.debug("[DASHBOARD] Daily reset notification received - refreshing data", category: .ui)
             Task {
                 await ChallengeService.shared.fetchActiveChallenges()
                 await HydrationService.shared.loadTodayData()
@@ -8021,14 +8110,14 @@ struct DashboardWeightWidget: View {
                         .font(.ds_caption)
                         .tracking(1)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.black.opacity(0.8))
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [.blue, .purple],
+                                colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -8366,26 +8455,24 @@ struct WeightInputSheet: View {
     
     private func saveWeight() {
         guard let weight = Double(weightInput) else {
-            print("❌ [Widget] Invalid weight input: '\(weightInput)'")
+            AppLogger.error("[Widget] Invalid weight input: '\(weightInput)'", category: .ui)
             return
         }
         
-        print("💾 [Widget] Saving weight: \(weight) \(weightService.usesLbs ? "lbs" : "kg")")
+        AppLogger.debug("[Widget] Saving weight: \(weight) \(weightService.usesLbs ? "lbs" : "kg")", category: .ui)
         HapticManager.success()
         
         Task {
             let success = await weightService.logWeight(weight)
             if success {
-                print("✅ [Widget] Weight saved successfully")
-                print("✅ [Widget] todayLog is now: \(weightService.todayLog != nil ? "SET" : "NIL")")
-                print("✅ [Widget] hasLoggedToday: \(weightService.hasLoggedToday)")
+                AppLogger.info("[Widget] Weight saved successfully, todayLog: \(weightService.todayLog != nil ? "SET" : "NIL"), hasLoggedToday: \(weightService.hasLoggedToday)", category: .ui)
                 // Small delay to ensure UI updates propagate
                 try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
             } else {
-                print("❌ [Widget] Failed to save weight to cloud")
+                AppLogger.error("[Widget] Failed to save weight to cloud", category: .ui)
             }
             await MainActor.run {
-                print("🚪 [Widget] Dismissing sheet, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")")
+                AppLogger.debug("[Widget] Dismissing sheet, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")", category: .ui)
                 dismiss()
             }
         }
@@ -8675,7 +8762,7 @@ struct HydrationQuickAddSheet: View {
                         .cornerRadius(CornerRadius.sm)
                 }
             }
-            .padding(4)
+            .padding(Spacing.xxs)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.92))
@@ -8834,7 +8921,7 @@ struct WidgetSettingsSheet: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, Spacing.lg)
                             .padding(.bottom, 24)
                             .lineLimit(2)
                     } else {
@@ -8854,7 +8941,7 @@ struct WidgetSettingsSheet: View {
                                     .foregroundColor(.orange)
                             }
                         }
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.bottom, 24)
                     }
                     
@@ -8989,14 +9076,14 @@ struct WidgetSettingsSheet: View {
                                     .font(.system(size: 9, weight: .bold))
                                     .tracking(0.5)
                             }
-                            .foregroundColor(.white)
+                            .foregroundColor(.black.opacity(0.8))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule()
                                     .fill(
                                         LinearGradient(
-                                            colors: [.blue, .purple],
+                                            colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
                                             startPoint: .leading,
                                             endPoint: .trailing
                                         )
@@ -9015,7 +9102,7 @@ struct WidgetSettingsSheet: View {
                 // Show lock icon for free users or checkbox for premium users
                 if !premiumManager.isPremiumUser {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(.secondary)
                 } else {
                     // Checkbox for premium users
@@ -9030,7 +9117,7 @@ struct WidgetSettingsSheet: View {
                         
                         if isSelected.wrappedValue {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(.white)
                         }
                     }
@@ -9087,12 +9174,12 @@ struct WidgetSettingsSheet: View {
                         .frame(width: 44, height: 44)
                     
                     Text("🏆")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                     
                     // Lock overlay for free users
                     if !premiumManager.isPremiumUser {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.white)
                             .background(
                                 Circle()
@@ -9118,13 +9205,13 @@ struct WidgetSettingsSheet: View {
                                     .foregroundColor(.yellow)
                                 Text("PRO")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(.yellow)
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule()
-                                    .fill(Color.orange.opacity(0.15))
+                                    .fill(Color.yellow.opacity(0.15))
                             )
                         }
                     }
@@ -9144,7 +9231,7 @@ struct WidgetSettingsSheet: View {
                             .frame(width: 28, height: 28)
                         
                         Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                 } else {
@@ -9155,7 +9242,7 @@ struct WidgetSettingsSheet: View {
                             .frame(width: 28, height: 28)
                         
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
@@ -9209,13 +9296,13 @@ struct WidgetSettingsSheet: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: "star.fill")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                     
                     // Lock overlay for free users
                     if !premiumManager.isPremiumUser {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.white)
                             .background(
                                 Circle()
@@ -9241,13 +9328,13 @@ struct WidgetSettingsSheet: View {
                                     .foregroundColor(.yellow)
                                 Text("PRO")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.yellow)
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule()
-                                    .fill(Color.green.opacity(0.15))
+                                    .fill(Color.yellow.opacity(0.15))
                             )
                         }
                     }
@@ -9267,7 +9354,7 @@ struct WidgetSettingsSheet: View {
                             .frame(width: 28, height: 28)
                         
                         Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                 } else {
@@ -9278,7 +9365,7 @@ struct WidgetSettingsSheet: View {
                             .frame(width: 28, height: 28)
                         
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }

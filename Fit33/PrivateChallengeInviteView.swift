@@ -62,7 +62,7 @@ struct PrivateChallengeInviteView: View {
                                 .font(.caption)
                                 .foregroundColor(.green)
                                 .padding(.horizontal, Spacing.sm)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(Capsule().fill(Color.green.opacity(0.15)))
                         }
                     }
@@ -72,7 +72,7 @@ struct PrivateChallengeInviteView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.white.opacity(0.5))
-                            .font(.system(size: 16))
+                            .font(.ds_bodyRegular)
                         
                         TextField("Search friends", text: $searchText)
                             .font(.body)
@@ -178,7 +178,7 @@ struct PrivateChallengeInviteView: View {
                             .tint(.white)
                     } else {
                         Image(systemName: isInvited ? "checkmark" : (hasError ? "exclamationmark.triangle" : "plus"))
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                     }
                     Text(isInvited ? "Sent" : (hasError ? "Error" : "Invite"))
                         .font(.subheadline)

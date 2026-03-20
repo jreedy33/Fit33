@@ -250,14 +250,16 @@ class StrengthProfileRecommendationEngine {
         exerciseName: String,
         user: User,
         numberOfSets: Int,
-        context: NSManagedObjectContext
+        context: NSManagedObjectContext,
+        programWeek: Int? = nil
     ) -> [SmartRecommendation] {
         
         // FIRST: Try to get progressive recommendations based on workout history
         let progressiveSets = ProgressiveWorkoutIntelligence.shared.generateProgressiveSets(
             for: exerciseName,
             targetSetCount: numberOfSets,
-            context: context
+            context: context,
+            programWeek: programWeek
         )
         
         // If we have progressive recommendations, use them!

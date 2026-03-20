@@ -87,7 +87,7 @@ struct ExistingUserPhonePrompt: View {
                         
                         Spacer(minLength: 40)
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -124,7 +124,7 @@ struct ExistingUserPhonePrompt: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text(selectedCountryCode.flag)
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                         Text(selectedCountryCode.rawValue)
                             .font(.system(size: 14, weight: .semibold, design: .monospaced))
                             .foregroundColor(.primary)
@@ -144,7 +144,7 @@ struct ExistingUserPhonePrompt: View {
                 TextField("(555) 123-4567", text: $phoneNumber)
                     .keyboardType(.phonePad)
                     .textContentType(.telephoneNumber)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(

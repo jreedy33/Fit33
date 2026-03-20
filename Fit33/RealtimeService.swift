@@ -243,7 +243,7 @@ class RealtimeService: ObservableObject {
     func connect() async {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [REALTIME] Cannot connect - not authenticated")
+            AppLogger.warning("Cannot connect - not authenticated", category: .network)
             return
         }
         
@@ -251,11 +251,11 @@ class RealtimeService: ObservableObject {
         // Without this, calling connect() twice (e.g. from .task + .active scenePhase)
         // creates duplicate channels, causing "postgresChange after joining" warnings.
         if isConnected || friendshipsChannel != nil {
-            print("🔄 [REALTIME] Cleaning up existing channels before reconnecting...")
+            AppLogger.debug("Cleaning up existing channels before reconnecting...", category: .network)
             await disconnect()
         }
         
-        print("🔄 [REALTIME] Connecting to realtime channels...")
+        AppLogger.debug("Connecting to realtime channels...", category: .network)
         
         // Subscribe to all relevant channels
         await subscribeFriendships(userId: userId)
@@ -273,14 +273,14 @@ class RealtimeService: ObservableObject {
         
         isConnected = true
         connectionError = nil
-        print("✅ [REALTIME] Connected to all channels")
+        AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
                         details: "✅ All 9 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed + auto-tracked refresh timer")
     }
     
     /// Disconnect from all realtime channels
     func disconnect() async {
-        print("🔌 [REALTIME] Disconnecting from channels...")
+        AppLogger.debug("Disconnecting from channels...", category: .network)
         
         if let channel = friendshipsChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
@@ -334,7 +334,7 @@ class RealtimeService: ObservableObject {
         friendActivityFeedChannel = nil
         
         isConnected = false
-        print("✅ [REALTIME] Disconnected from all channels")
+        AppLogger.info("Disconnected from all channels", category: .network)
     }
     
     // MARK: - Friend Activity Feed Subscription
@@ -352,7 +352,7 @@ class RealtimeService: ObservableObject {
         
         Task {
             for await _ in insertions {
-                print("📰 [REALTIME] New friend activity feed item!")
+                AppLogger.debug("New friend activity feed item!", category: .network)
                 logRealtimeEvent(type: "INSERT", source: "friend_activity_feed",
                                 details: "New activity in feed — refreshing")
                 await ActivityFeedService.shared.fetchFeed()
@@ -363,7 +363,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         friendActivityFeedChannel = channel
         
-        print("📡 [REALTIME] Subscribed to friend_activity_feed for user \(userId)")
+        AppLogger.debug("Subscribed to friend_activity_feed for user \(userId)", category: .network)
     }
     
     // MARK: - Friend Requests Subscription
@@ -419,7 +419,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         friendshipsChannel = channel
         
-        print("📡 [REALTIME] Subscribed to friendships for user \(userId)")
+        AppLogger.debug("Subscribed to friendships for user \(userId)", category: .network)
     }
     
     private func handleFriendshipInsert(_ action: InsertAction) async {
@@ -427,7 +427,7 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]),
               status == "pending" else { return }
         
-        print("🔔 [REALTIME] New friend request received!")
+        AppLogger.debug("New friend request received!", category: .network)
         
         let payload = FriendRequestPayload(
             friendshipId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
@@ -452,7 +452,7 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]) else { return }
         
         if status == "accepted" {
-            print("🎉 [REALTIME] Friend request accepted!")
+            AppLogger.info("Friend request accepted!", category: .network)
             
             let payload = FriendRequestPayload(
                 friendshipId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
@@ -499,13 +499,13 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         sharedWorkoutsChannel = channel
         
-        print("📡 [REALTIME] Subscribed to shared_workouts for user \(userId)")
+        AppLogger.debug("Subscribed to shared_workouts for user \(userId)", category: .network)
     }
     
     private func handleSharedWorkoutInsert(_ action: InsertAction) async {
         let record = action.record
         
-        print("💪 [REALTIME] New workout shared!")
+        AppLogger.debug("New workout shared!", category: .network)
         
         let payload = SharedWorkoutPayload(
             workoutId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
@@ -592,7 +592,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         challengesChannel = channel
         
-        print("📡 [REALTIME] Subscribed to challenges for user \(userId)")
+        AppLogger.debug("Subscribed to challenges for user \(userId)", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "challenges",
                         details: "✅ Listening on challenge_participants (INSERT+UPDATE) + group_challenges (UPDATE)")
     }
@@ -602,7 +602,7 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]),
               status == "pending" else { return }
         
-        print("🏆 [REALTIME] New challenge invite!")
+        AppLogger.debug("New challenge invite!", category: .network)
         logRealtimeEvent(type: "CHALLENGE_INVITE", source: "challenge_participants", details: "New challenge invite received")
         
         let payload = ChallengePayload(
@@ -632,21 +632,21 @@ class RealtimeService: ObservableObject {
         let totalProgress = jsonInt(record["total_progress"]) ?? 0
         let oldTotalProgress = jsonInt(oldRecord["total_progress"]) ?? 0
         
-        print("🔔 [REALTIME] MY challenge participant: status \(oldStatus) → \(newStatus), progress \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))")
+        AppLogger.debug("MY challenge participant: status \(oldStatus) → \(newStatus), progress \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))", category: .network)
         logRealtimeEvent(type: "MY_PARTICIPANT", source: "challenge_participants",
                         details: "status: \(oldStatus)→\(newStatus), progress: \(oldTotalProgress)→\(totalProgress), challenge: \(challengeId.prefix(8))")
         
         if oldStatus == "pending" && newStatus == "accepted" {
-            print("✅ [REALTIME] I accepted a challenge - refreshing all lists (1v1 + group)")
+            AppLogger.info("I accepted a challenge - refreshing all lists (1v1 + group)", category: .network)
             await ChallengeService.shared.fetchPendingInvites()  // Remove from pending
             await throttledChallengeFetch()  // Add to active (1v1 + group) — throttled
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
-            print("❌ [REALTIME] I declined a challenge")
+            AppLogger.debug("I declined a challenge", category: .network)
             await ChallengeService.shared.fetchPendingInvites()
         } else if totalProgress != oldTotalProgress {
             // My progress was confirmed in DB — refresh group challenges to show DB-backed values
-            print("📊 [REALTIME] My own progress confirmed in DB: \(totalProgress) — refreshing")
+            AppLogger.debug("My own progress confirmed in DB: \(totalProgress) — refreshing", category: .network)
             await throttledChallengeFetch()
         }
     }
@@ -665,25 +665,25 @@ class RealtimeService: ObservableObject {
         // Skip if it's my own update (already handled by handleParticipantStatusChange)
         guard participantUserId != userId.uuidString else { return }
         
-        print("🔔 [REALTIME] OPPONENT challenge participant: \(oldStatus) → \(newStatus), progress: \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))")
+        AppLogger.debug("OPPONENT challenge participant: \(oldStatus) → \(newStatus), progress: \(oldTotalProgress) → \(totalProgress) (challenge: \(challengeId))", category: .network)
         logRealtimeEvent(type: "OPPONENT_PARTICIPANT", source: "challenge_participants",
                         details: "user: \(participantUserId.prefix(8)), status: \(oldStatus)→\(newStatus), progress: \(oldTotalProgress)→\(totalProgress), challenge: \(challengeId.prefix(8))")
         
         if oldStatus == "pending" && newStatus == "accepted" {
-            print("✅ [REALTIME] Opponent ACCEPTED my challenge - moving from sent → active (1v1 + group)")
+            AppLogger.info("Opponent ACCEPTED my challenge - moving from sent → active (1v1 + group)", category: .network)
             logRealtimeEvent(type: "OPPONENT_ACCEPTED", source: "challenge_participants",
                             details: "✅ Opponent accepted! Refreshing all lists...")
             await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from sent
             await throttledChallengeFetch()  // Add to active (1v1 + group)
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
-            print("❌ [REALTIME] Opponent DECLINED my challenge - removing from sent")
+            AppLogger.debug("Opponent DECLINED my challenge - removing from sent", category: .network)
             logRealtimeEvent(type: "OPPONENT_DECLINED", source: "challenge_participants",
                             details: "Opponent declined challenge \(challengeId.prefix(8))")
             await ChallengeService.shared.fetchPendingSentChallenges()
         } else if totalProgress != oldTotalProgress {
             // Opponent's progress changed (they logged new steps/hydration/etc.)
-            print("📊 [REALTIME] Opponent progress changed: \(oldTotalProgress) → \(totalProgress) - refreshing all challenges")
+            AppLogger.debug("Opponent progress changed: \(oldTotalProgress) → \(totalProgress) - refreshing all challenges", category: .network)
             logRealtimeEvent(type: "OPPONENT_PROGRESS", source: "challenge_participants",
                             details: "🔥 Progress: \(oldTotalProgress)→\(totalProgress) for challenge \(challengeId.prefix(8))")
             await throttledChallengeFetch()
@@ -692,7 +692,7 @@ class RealtimeService: ObservableObject {
             // This catches cases where oldRecord is empty (REPLICA IDENTITY not FULL)
             let hasOldData = !oldRecord.isEmpty
             if !hasOldData {
-                print("⚠️ [REALTIME] No old record data — REPLICA IDENTITY may not be FULL. Refreshing defensively.")
+                AppLogger.warning("No old record data — REPLICA IDENTITY may not be FULL. Refreshing defensively.", category: .network)
                 logRealtimeEvent(type: "OPPONENT_UPDATE_NO_OLD", source: "challenge_participants",
                                 details: "⚠️ No old record data — refreshing defensively. newProgress=\(totalProgress)")
                 await throttledChallengeFetch()
@@ -704,7 +704,7 @@ class RealtimeService: ObservableObject {
         let record = action.record
         
         guard let participantUserId = jsonString(record["user_id"]) else {
-            print("⚠️ [REALTIME] handleChallengeProgress: missing user_id. Keys: \(record.keys.joined(separator: ", "))")
+            AppLogger.warning("handleChallengeProgress: missing user_id. Keys: \(record.keys.joined(separator: ", "))", category: .network)
             logRealtimeEvent(type: "CHALLENGE_PROGRESS", source: "challenge_participants", details: "❌ Missing user_id in record", isError: true)
             return
         }
@@ -742,7 +742,7 @@ class RealtimeService: ObservableObject {
         let status = jsonString(record["status"]) ?? ""
         
         #if DEBUG
-        print("🔔 [REALTIME] Challenge status: \(challengeId.prefix(8)) → \(status)")
+        AppLogger.debug("Challenge status: \(challengeId.prefix(8)) → \(status)", category: .network)
         #endif
         logRealtimeEvent(type: "CHALLENGE_STATUS", source: "group_challenges", details: "Challenge \(challengeId.prefix(8)) → \(status)")
         
@@ -753,7 +753,7 @@ class RealtimeService: ObservableObject {
         await ChallengeService.shared.fetchPendingInvites()
         
         #if DEBUG
-        print("✅ [REALTIME] Challenge data refreshed after status change")
+        AppLogger.info("Challenge data refreshed after status change", category: .network)
         #endif
     }
     
@@ -797,7 +797,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         dailyProgressChannel = channel
         
-        print("📡 [REALTIME] Subscribed to daily progress updates")
+        AppLogger.debug("Subscribed to daily progress updates", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "challenge_daily_progress",
                         details: "✅ Listening for INSERT + UPDATE on challenge_daily_progress (all rows)")
     }
@@ -807,27 +807,27 @@ class RealtimeService: ObservableObject {
         // AnyJSON wraps values in enum cases (.string, .integer, .double, etc.)
         // Direct `as? String` / `as? Int` FAILS on AnyJSON — must use jsonString/jsonInt helpers.
         guard let record = record else {
-            print("⚠️ [REALTIME] handleDailyProgressChange: nil record")
+            AppLogger.warning("handleDailyProgressChange: nil record", category: .network)
             logRealtimeEvent(type: "DAILY_PROGRESS", source: "challenge_daily_progress", details: "❌ nil record", isError: true)
             return
         }
         
         guard let recordUserId = jsonString(record["user_id"]) else {
-            print("⚠️ [REALTIME] handleDailyProgressChange: missing user_id. Keys: \(record.keys.joined(separator: ", ")), types: \(record.map { "\($0.key)=\(type(of: $0.value))" }.joined(separator: ", "))")
+            AppLogger.warning("handleDailyProgressChange: missing user_id. Keys: \(record.keys.joined(separator: ", ")), types: \(record.map { "\($0.key)=\(type(of: $0.value))" }.joined(separator: ", "))", category: .network)
             logRealtimeEvent(type: "DAILY_PROGRESS", source: "challenge_daily_progress", details: "❌ Missing user_id. Keys: \(record.keys.joined(separator: ", "))", isError: true)
             return
         }
         
         guard let challengeIdString = jsonString(record["challenge_id"]),
               let challengeId = UUID(uuidString: challengeIdString) else {
-            print("⚠️ [REALTIME] handleDailyProgressChange: missing/invalid challenge_id")
+            AppLogger.warning("handleDailyProgressChange: missing/invalid challenge_id", category: .network)
             logRealtimeEvent(type: "DAILY_PROGRESS", source: "challenge_daily_progress", details: "❌ Missing challenge_id", isError: true)
             return
         }
         
         // Use jsonInt for safe extraction — this was the ROOT BUG
         guard let progressValue = jsonInt(record["progress_value"]) else {
-            print("⚠️ [REALTIME] handleDailyProgressChange: cannot parse progress_value. Raw: \(String(describing: record["progress_value"])), type: \(type(of: record["progress_value"] as Any))")
+            AppLogger.warning("handleDailyProgressChange: cannot parse progress_value. Raw: \(String(describing: record["progress_value"])), type: \(type(of: record["progress_value"] as Any))", category: .network)
             logRealtimeEvent(type: "DAILY_PROGRESS", source: "challenge_daily_progress",
                             details: "❌ Cannot parse progress_value: \(String(describing: record["progress_value"]))", isError: true)
             return
@@ -851,7 +851,7 @@ class RealtimeService: ObservableObject {
         
         let timestamp = Date()
         #if DEBUG
-        print("🎯 [REALTIME] Opponent daily progress: \(recordUserId.prefix(8)) → \(progressValue) (hit: \(targetHit)) challenge: \(challengeIdString.prefix(8))")
+        AppLogger.debug("Opponent daily progress: \(recordUserId.prefix(8)) → \(progressValue) (hit: \(targetHit)) challenge: \(challengeIdString.prefix(8))", category: .network)
         #endif
         
         logRealtimeEvent(type: "🔥 OPPONENT_DAILY_PROGRESS", source: "challenge_daily_progress",
@@ -919,7 +919,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         privateChallengeChannel = channel
         
-        print("📡 [REALTIME] Subscribed to private_challenge_daily_progress updates")
+        AppLogger.debug("Subscribed to private_challenge_daily_progress updates", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "private_challenge_daily_progress",
                         details: "✅ Listening for INSERT + UPDATE on private_challenge_daily_progress")
     }
@@ -942,7 +942,7 @@ class RealtimeService: ObservableObject {
             return
         }
         
-        print("📊 [REALTIME] Private challenge member progress: \(recordUserId.prefix(8)) → \(progressValue) (challenge: \(challengeId.prefix(8)), type: \(challengeType ?? "?"), manual: \(isManual))")
+        AppLogger.debug("Private challenge member progress: \(recordUserId.prefix(8)) → \(progressValue) (challenge: \(challengeId.prefix(8)), type: \(challengeType ?? "?"), manual: \(isManual))", category: .network)
         logRealtimeEvent(type: "🔥 PRIVATE_MEMBER_PROGRESS", source: "private_challenge_daily_progress",
                         details: "⚡️ Member \(recordUserId.prefix(8)) → \(progressValue), challenge: \(challengeId.prefix(8)), manual: \(isManual)")
         
@@ -997,14 +997,14 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         communityChallengeChannel = channel
         
-        print("📡 [REALTIME] Subscribed to community_challenge_daily_progress updates")
+        AppLogger.debug("Subscribed to community_challenge_daily_progress updates", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "community_challenge_daily_progress",
                         details: "✅ Listening for INSERT + UPDATE on community_challenge_daily_progress")
     }
     
     private func handleCommunityChallengeProgressChange(_ record: [String: AnyJSON]?, userId: UUID) async {
         guard let record = record else {
-            print("⚠️ [REALTIME] Community progress event with nil record")
+            AppLogger.warning("Community progress event with nil record", category: .network)
             return
         }
         
@@ -1020,7 +1020,7 @@ class RealtimeService: ObservableObject {
         // 2 events (insert + update) that cascade into redundant fetchMyChallenges() calls.
         if isOwnUpdate {
             #if DEBUG
-            print("📡 [REALTIME] 🌍 Community progress (OWN) — skipping refresh for \(challengeId.prefix(8))")
+            AppLogger.debug("Community progress (OWN) — skipping refresh for \(challengeId.prefix(8))", category: .network)
             #endif
             logRealtimeEvent(type: "OWN_COMMUNITY_PROGRESS", source: "community_challenge_daily_progress",
                             details: "✅ Own community progress confirmed: \(progressValue), challenge: \(challengeId.prefix(8)) — SKIPPED refresh")
@@ -1031,11 +1031,7 @@ class RealtimeService: ObservableObject {
         let isManual = Self.isManualInputType(challengeType)
         
         #if DEBUG
-        print("📡 [REALTIME] 🌍 COMMUNITY PROGRESS EVENT RECEIVED")
-        print("   └─ user: \(recordUserId.prefix(8))... (OTHER)")
-        print("   └─ challenge: \(challengeId.prefix(8))...")
-        print("   └─ value: \(progressValue)")
-        print("   └─ type: \(challengeType ?? "unknown"), manual: \(isManual)")
+        AppLogger.debug("COMMUNITY PROGRESS — user: \(recordUserId.prefix(8)), challenge: \(challengeId.prefix(8)), value: \(progressValue), type: \(challengeType ?? "unknown"), manual: \(isManual)", category: .network)
         #endif
         
         logRealtimeEvent(type: "🌍 COMMUNITY_MEMBER_PROGRESS", source: "community_challenge_daily_progress",
@@ -1049,9 +1045,9 @@ class RealtimeService: ObservableObject {
             communityProgressDebounceTask = Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s debounce
                 guard !Task.isCancelled else { return }
-                print("🔄 [REALTIME] Community manual input (debounced) — refreshing community challenges")
+                AppLogger.debug("Community manual input (debounced) — refreshing community challenges", category: .network)
                 await throttledCommunityFetch()
-                print("✅ [REALTIME] Community challenges refreshed after member progress update")
+                AppLogger.info("Community challenges refreshed after member progress update", category: .network)
             }
         }
         // Auto-tracked challenges (steps, active_minutes): skip immediate refresh.
@@ -1097,7 +1093,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         communityParticipantsChannel = channel
         
-        print("📡 [REALTIME] Subscribed to community_challenge_participants (join/leave)")
+        AppLogger.debug("Subscribed to community_challenge_participants (join/leave)", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "community_challenge_participants",
                         details: "✅ Listening for INSERT + UPDATE on community_challenge_participants")
     }
@@ -1109,7 +1105,7 @@ class RealtimeService: ObservableObject {
         let challengeId = jsonString(record["challenge_id"]) ?? ""
         let isOwnJoin = recordUserId == userId.uuidString
         
-        print("🌍 [REALTIME] Community participant \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))")
+        AppLogger.debug("Community participant \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))", category: .network)
         logRealtimeEvent(type: "COMMUNITY_PARTICIPANT_\(type)", source: "community_challenge_participants",
                         details: "\(isOwnJoin ? "You" : "Member \(recordUserId.prefix(8))") \(type.lowercased()) community challenge \(challengeId.prefix(8))")
         
@@ -1159,7 +1155,7 @@ class RealtimeService: ObservableObject {
         await channel.subscribe()
         privateMembersChannel = channel
         
-        print("📡 [REALTIME] Subscribed to private_challenge_members (join/leave)")
+        AppLogger.debug("Subscribed to private_challenge_members (join/leave)", category: .network)
         logRealtimeEvent(type: "SUBSCRIBED", source: "private_challenge_members",
                         details: "✅ Listening for INSERT + UPDATE on private_challenge_members")
     }
@@ -1171,7 +1167,7 @@ class RealtimeService: ObservableObject {
         let challengeId = jsonString(record["challenge_id"]) ?? ""
         let isOwnJoin = recordUserId == userId.uuidString
         
-        print("🔒 [REALTIME] Private member \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))")
+        AppLogger.debug("Private member \(type): user \(recordUserId.prefix(8)) in challenge \(challengeId.prefix(8))", category: .network)
         logRealtimeEvent(type: "PRIVATE_MEMBER_\(type)", source: "private_challenge_members",
                         details: "\(isOwnJoin ? "You" : "Member \(recordUserId.prefix(8))") \(type.lowercased()) private challenge \(challengeId.prefix(8))")
         
@@ -1218,7 +1214,7 @@ class RealtimeService: ObservableObject {
                 let hasPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
                 
                 if (hasCommunity && communityStale) || (hasPrivate && privateStale) {
-                    print("🔄 [REALTIME] Cadence refresh for community/private challenges (every \(Self.autoTrackedRefreshInterval / 1_000_000_000)s)")
+                    AppLogger.debug("Cadence refresh for community/private challenges (every \(Self.autoTrackedRefreshInterval / 1_000_000_000)s)", category: .network)
                     
                     if hasCommunity && communityStale {
                         lastCommunityFetchTime = Date()
@@ -1302,7 +1298,7 @@ extension RealtimeService {
                 // Refresh immediately so the UI shows the request instantly
                 await FriendService.shared.fetchPendingRequests()
                 NotificationManager.shared.updateBadgeCount()
-                print("📡 [REALTIME] Friend request data refreshed from realtime callback")
+                AppLogger.debug("Friend request data refreshed from realtime callback", category: .network)
                 // NOTE: No local notification here — the push notification from Supabase
                 // handles the user-facing alert. Sending both would cause duplicates.
             }
@@ -1312,7 +1308,7 @@ extension RealtimeService {
         onFriendRequestAccepted = { _ in
             Task { @MainActor in
                 await FriendService.shared.fetchFriends()
-                print("📡 [REALTIME] Friends list refreshed after acceptance")
+                AppLogger.debug("Friends list refreshed after acceptance", category: .network)
             }
         }
         
@@ -1321,7 +1317,7 @@ extension RealtimeService {
             Task { @MainActor in
                 await FriendService.shared.loadReceivedWorkouts()
                 NotificationManager.shared.updateBadgeCount()
-                print("📡 [REALTIME] Received workouts refreshed from realtime")
+                AppLogger.debug("Received workouts refreshed from realtime", category: .network)
             }
         }
         
@@ -1331,11 +1327,11 @@ extension RealtimeService {
                 await ChallengeService.shared.fetchPendingInvites()
                 await ChallengeService.shared.fetchActiveGroupChallenges()
                 NotificationManager.shared.updateBadgeCount()
-                print("📡 [REALTIME] Challenge invites refreshed from realtime")
+                AppLogger.debug("Challenge invites refreshed from realtime", category: .network)
             }
         }
         
-        print("✅ [REALTIME] Default callbacks configured")
+        AppLogger.info("Default callbacks configured", category: .network)
     }
     
     /// Fetch a user's display name
@@ -1358,7 +1354,7 @@ extension RealtimeService {
                 return profile.name ?? profile.username ?? "Someone"
             }
         } catch {
-            print("⚠️ [REALTIME] Error fetching user name: \(error)")
+            AppLogger.warning("Error fetching user name: \(error.localizedDescription)", category: .network)
         }
         
         return "Someone"

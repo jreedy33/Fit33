@@ -373,6 +373,17 @@ Every list/collection that can be empty must show:
 
 ---
 
+## Logic Audit Updates (March 2026)
+
+### New Responsibilities
+- iPad responsive layout specifications (AGENT-07) — define breakpoints, sidebar behavior, and multi-column layouts for iPad
+- Animation performance: specify animation parameters but defer to Quality & Performance Agent for performance budget validation
+
+### Key Notes
+- Brand name is "Fit33" everywhere (not "GoFit") — update any design specs that reference old brand name
+
+---
+
 ## Checklist: Before Shipping Any New Screen
 
 - [ ] Uses `AnimatedOrbBackground` (correct variant for the tab context)
@@ -404,3 +415,25 @@ Every list/collection that can be empty must show:
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 12 (design tokens), 13 (components library)
+
+---
+
+## 2026-03-19: Rest Timer Countdown Glow
+
+### Visual Spec
+The rest timer is now a **countdown glow** that traces the `ExerciseCard` border instead of an inline progress bar.
+
+- **Color**: Electric blue — `Color(red: 0.0, green: 0.7, blue: 1.0)` (close to `.cyan`)
+- **Stroke**: `lineWidth: 3`, `lineCap: .round`
+- **Glow Layers**: Two shadows — `Color.cyan.opacity(0.8), radius: 8` (inner) and `Color.cyan.opacity(0.4), radius: 16` (outer)
+- **Animation**: `.linear(duration: 1.0)` synced to 1-second timer ticks for smooth drainage
+- **Shape**: `RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)` matching the card
+- **Behavior**: Full border lit at timer start → glow drains clockwise → fully gone when rest period ends
+
+### Timer Badge in Header
+When the timer is active, a small countdown badge appears in the exercise header (between the title and the action icons):
+- Font: `.system(.caption, design: .monospaced)`, `.semibold`
+- Color: Electric blue text on `electricBlue.opacity(0.15)` capsule background
+
+### Fallback
+When no timer is active and the card is focused (`isActiveCard`), the existing blue-purple gradient stroke (lineWidth 2.5) is shown.

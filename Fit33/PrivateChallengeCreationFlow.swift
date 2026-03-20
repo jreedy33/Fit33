@@ -190,7 +190,7 @@ struct PrivateChallengeCreationFlow: View {
             if currentStep != .naming {
                 Button(action: { goBack() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
                         .frame(width: 52, height: 52)
                         .background(Circle().fill(.ultraThinMaterial))
@@ -296,7 +296,7 @@ struct PrivateChallengeCreationFlow: View {
                                 selectedEmoji = emoji
                             }) {
                                 Text(emoji)
-                                    .font(.system(size: 28))
+                                    .font(.ds_heading1)
                                     .frame(width: 44, height: 44)
                                     .background(
                                         Circle()
@@ -314,7 +314,7 @@ struct PrivateChallengeCreationFlow: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Spacing.xxs)
                 }
             }
             
@@ -642,7 +642,7 @@ struct PrivateChallengeCreationFlow: View {
                                 
                                 Button(action: { toggleFriend(friend) }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 14))
+                                        .font(.ds_bodySmall)
                                         .foregroundColor(.white.opacity(0.6))
                                 }
                             }
@@ -700,7 +700,7 @@ struct PrivateChallengeCreationFlow: View {
                         .foregroundColor(.white.opacity(0.4))
                         .multilineTextAlignment(.center)
                 }
-                .padding(.vertical, 24)
+                .padding(.vertical, Spacing.lg)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(filteredFriends) { friend in
@@ -743,11 +743,11 @@ struct PrivateChallengeCreationFlow: View {
                 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                 } else {
                     Image(systemName: "plus.circle")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.white.opacity(0.4))
                 }
             }
@@ -812,14 +812,14 @@ struct PrivateChallengeCreationFlow: View {
                     // "Private" badge
                     HStack(spacing: 4) {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                         Text("Private Challenge")
                             .font(.caption2)
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.purple)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule().fill(Color.purple.opacity(0.15))
                     )

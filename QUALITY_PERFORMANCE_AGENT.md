@@ -291,6 +291,59 @@ do {
 
 ---
 
+## Logic Audit Learnings
+
+### Ownership from Logic Audit (March 2026)
+- BUG-04: PerformanceMonitor renamed to DebugPerformanceMonitor in DEBUG builds (FIXED)
+- BUG-05: InsightType/InsightCategory disambiguated (SmartInsight prefixed) (FIXED)
+- PERF-01 through PERF-07: All performance issues (FIXED)
+- DUP-14: SystemMetrics utility extracted (FIXED)
+- DUP-18: DateFormatter/ISO8601DateFormatter shared instances (FIXED)
+
+### Key Rules Established
+- DateFormatters MUST be `static let`, never computed properties
+- `@unchecked Sendable` classes with mutable state MUST use locks (NSLock or OSAllocatedUnfairLock)
+- `@MainActor` classes do NOT need NSLock — actor isolation handles synchronization
+- `SystemMetrics.swift` is the single source for memory/CPU measurement
+- Quality & Performance is sole authority on measuring/optimizing performance
+- Quality & Performance owns the error handling standard definition
+- Replace exercise flow regression test: filter reset, fresh sets, UI re-render, historical data load with cancellation
+- Accessibility: GO button in Build Workout must have dynamic `.accessibilityLabel`, replace flow must be VoiceOver navigable
+- All `Task.detached` in ActiveWorkoutView MUST be tracked in `initTasks` and cancelled on disappear
+
+### Files Added/Owned
+- `Fit33/SystemMetrics.swift` — shared memory/CPU metrics utility
+- `Fit33Tests/LogicAuditTests.swift` — audit verification test suite
+- `scripts/logic_audit_verify.py` — static analysis audit script
+
+### Active Workout Performance Benchmarks (March 2026)
+
+| Metric | Verified Value | Status |
+|--------|---------------|--------|
+| Warmup data application | <1ms (synchronous) | PASSING |
+| Set initialization (batch) | ~2-5ms | PASSING |
+| Smart rec generation | Background task, non-blocking | PASSING |
+| Scroll performance | LazyVStack, only visible cards rendered | PASSING |
+| Keyboard dismiss | `.scrollDismissesKeyboard(.immediately)` | PASSING |
+| Input debounce | 150ms | PASSING |
+| Timer during ads | Runs in background, no time lost | PASSING |
+
+### Race Condition Awareness
+- `syncSetsWithPreviousData()` must check if user has started typing before overwriting — guard: only replace sets where `isCompleted == false` AND `weight == 0` AND `reps == 0`
+- `loadHistoricalDataForExercise` runs asynchronously after shuffle — if user rapidly shuffles multiple times, older loads could overwrite newer exercise data. Tasks must be tracked in `initTasks` and cancelled when a new shuffle starts.
+- Progressive overload computation runs on background task with `Task.yield()` between exercises — verify it does not block UI thread
+
+### Future: Swap Latency Benchmarking
+- `ExerciseSwapService` currently queries Core Data on every shuffle tap — measure actual latency
+- Compare against pre-computed swap graph approach (built at workout start)
+- Target: shuffle response < 50ms from tap to new exercise card rendering
+
+### Reopened Items
+- Force unwrap tracking: 118 across 29 files (was marked DONE incorrectly)
+- Architecture/DI patterns (A-1: 40+ singletons, A-2: 8 files over 100KB)
+
+---
+
 ## Quick Reference: Files You Own
 
 | File | Purpose |
@@ -306,7 +359,8 @@ do {
 | `TabPreloadingSystem.swift` | Tab preload optimization |
 | All `*View.swift` files | Accessibility audit |
 | All `*Service.swift` files | Error handling audit |
-| `Fit33Tests/` (to be created) | XCTest infrastructure |
+| `Fit33/ActiveWorkoutTests.swift` | Active workout test suite (16 tests) |
+| `Fit33Tests/` | XCTest infrastructure |
 
 ---
 
@@ -336,3 +390,63 @@ Before every release, run:
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 15 (test suite), 17 (validation checklist)
+
+---
+
+## Video Loading Performance (March 2026)
+
+### Architecture
+The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total AVPlayers) managed by `VideoPlaybackEngine`. Poster frames (~30KB JPEG) cached by `VideoThumbnailService` provide instant visual feedback. CDN pre-warming via HEAD request establishes DNS+TLS to Cloudflare R2.
+
+### Memory Constraints (Hard Caps)
+- Max 5 AVPlayers alive at once (hot cache: 2 favorites, warm cache: 3 recent)
+- Each AVPlayer consumes ~20-50MB via iOS XPC video process
+- Poster frames: ~30KB each (memory + disk cached) — negligible
+- Scroll-based video prefetching is DISABLED (`prefetchVisibleExercise` is a no-op) due to memory pressure
+
+### Optimizations Implemented
+1. **Tap-time prefetch**: `ExerciseLibraryView` `simultaneousGesture` triggers `VideoPlaybackEngine.shared.priorityPrefetch()` during navigation animation (~200-300ms head start)
+2. **KVO-based crossfade**: `RemoteVideoPlayerManager.isReadyToDisplay` replaces hardcoded 50ms timer — crossfade occurs only when player has renderable content (2s timeout fallback)
+3. **Reactive mapping readiness**: `VideoPlaybackEngine.loadVideoMappingsAsync()` observes `VideoStreamingService.$videosLoaded` via Combine instead of `Thread.sleep(3.0)` — eliminates startup dead zone
+4. **Background poster pre-generation**: `VideoThumbnailService.preGeneratePosterFrames(for:)` generates poster frames for first 20 visible exercises on library appear (3 concurrent max)
+5. **CDN pre-warm retry**: `prewarmCDNConnection()` uses `URLSession.shared` (shared connection pool with AVFoundation) with exponential backoff retry (up to 3 attempts)
+
+### Performance Targets
+| Metric | Target |
+|--------|--------|
+| Tap to first visual (poster/video) | <50ms for exercises with cached poster |
+| Tap to video playing | <300ms WiFi, <500ms LTE |
+| Cache hit rate | ~40%+ (with tap-prefetch head start) |
+| Blank frame occurrences | 0 (KVO-based crossfade) |
+
+### Files Owned (Video Performance)
+- `VideoPlaybackEngine.swift` — multi-tier cache, player lifecycle, memory caps
+- `VideoThumbnailService.swift` — poster frame cache, CDN pre-warming
+- `VideoPreloadManager.swift` — scroll prefetch (DISABLED)
+- `VideoStreamingService.swift` — `RemoteVideoPlayerManager` readiness observation
+
+### 2026-03-19: Active Workout Settings Panel — Performance & Safety Notes
+
+**Idle Timer Rule**: `UIApplication.shared.isIdleTimerDisabled` is set to `true` on `ActiveWorkoutView.onAppear` (when `keepScreenOn` setting is enabled) and MUST be reset to `false` on `.onDisappear`. This prevents battery drain if the user leaves the workout view. The toggle in the settings panel also live-updates the idle timer via `.onChange`.
+
+**Overlay Performance**: The settings panel uses a ZStack overlay with `.zIndex(100)`. The panel does NOT cause layout recalculation of the exercise list behind it because:
+1. It's an overlay, not inserted into the ScrollView hierarchy
+2. The backdrop uses a simple `Color.black.opacity(0.4)` — no material blur (which would be expensive over a scrolling list)
+3. Panel content is a separate struct with its own @AppStorage bindings, not reaching into parent state
+
+**@AppStorage binding count**: 7 new @AppStorage properties. These are UserDefaults reads which are cached by the system — negligible performance impact. No redraws triggered unless the value actually changes.
+
+### 2026-03-19: Rest Timer Countdown Glow — Performance Notes
+
+**Timer Promotion Benefit**: Previously each `SetRowView` created its own `@StateObject private var restTimer = RestTimer()`. Now a single `@StateObject private var cardRestTimer = RestTimer()` lives on `ExerciseCard` and is passed as `@ObservedObject` to `SetRowView`s. This eliminates redundant `ObservableObject` allocations — only one `RestTimer` per exercise card instead of one per set row.
+
+**Animation Performance**: The countdown glow uses `RoundedRectangle.trim(from:to:)` with `.stroke()` and two `.shadow()` modifiers. Key considerations:
+- `.shadow()` on a `.trim()`-ed stroke is GPU-composited — acceptable for a single card at a time (only one card has an active timer)
+- `.linear(duration: 1.0)` animation is driven by Core Animation, not main thread — smooth even during scrolling
+- The `RestTimer` still ticks every 1 second via `Timer.scheduledTimer` — each tick triggers a SwiftUI state update that re-evaluates the trim value. The `.animation(.linear(duration: 1.0))` modifier smoothly interpolates between ticks
+
+**No Regression Risk**: The inline progress bar (GeometryReader + gradient fill) was removed, eliminating a per-set GeometryReader. The card-level trim overlay is lighter weight.
+
+### 2026-03-19: Premium Default Change
+
+**PremiumManager.isPremiumUser** default changed from `false` to `true`. Both the property initializer and the `UserDefaults` fallback in `init()` now default to `true`. This means first launch shows all features. StoreKit's `updateFromStoreKit(hasSubscription:)` still overrides this when subscription status is confirmed.

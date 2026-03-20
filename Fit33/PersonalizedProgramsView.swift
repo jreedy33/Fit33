@@ -96,7 +96,7 @@ struct PersonalizedProgramsView: View {
             HStack {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.green)
                     Text("Active Program")
                         .font(.subheadline)
@@ -247,7 +247,7 @@ struct PersonalizedProgramsView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.green)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(Color.green.opacity(0.15))
                     .cornerRadius(CornerRadius.sm)
             }
@@ -345,7 +345,7 @@ struct TopMatchCard: View {
                         .shadow(color: program.template.category.color.opacity(0.3), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: program.template.category.icon)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -377,7 +377,7 @@ struct TopMatchCard: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary)
             }
             
@@ -460,7 +460,7 @@ struct ProgressiveSeriesRow: View {
             if let first = programs.first {
                 HStack(spacing: 8) {
                     Image(systemName: first.template.category.icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(first.template.category.color)
                     
                     Text(first.template.category.rawValue + " Series")
@@ -580,11 +580,11 @@ struct SeriesLevelCard: View {
                 // Status icon
                 if program.isCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.green)
                 } else if !program.isUnlocked {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.gray)
                 }
             }
@@ -607,7 +607,7 @@ struct SeriesLevelCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("\(program.template.totalDays) days")
                         .font(.caption2)
                 }
@@ -615,7 +615,7 @@ struct SeriesLevelCard: View {
                 
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("~\(program.template.estimatedMinutesPerDay) min")
                         .font(.caption2)
                 }
@@ -673,7 +673,7 @@ struct ProgramCard: View {
                 
                 if program.isCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(.green)
                 }
             }
@@ -692,7 +692,7 @@ struct ProgramCard: View {
                 .fontWeight(.semibold)
                 .foregroundColor(difficultyColor(program.template.difficulty))
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule()
                         .fill(difficultyColor(program.template.difficulty).opacity(0.15))
@@ -702,7 +702,7 @@ struct ProgramCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(program.template.category.color)
                     Text("\(program.template.totalDays) days")
                         .font(.caption2)
@@ -711,7 +711,7 @@ struct ProgramCard: View {
                 
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(program.template.category.color)
                     Text("~\(program.template.estimatedMinutesPerDay) min")
                         .font(.caption2)
@@ -759,7 +759,7 @@ struct ProgramTag: View {
             .fontWeight(.medium)
             .foregroundColor(color)
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(color.opacity(0.15))
             .cornerRadius(6)
     }
@@ -993,7 +993,7 @@ struct ProgramStatItem: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
                 .foregroundColor(.secondary)
             
             Text(value)
@@ -1025,7 +1025,7 @@ struct DayPreviewRow: View {
                 
                 if day.isRestDay {
                     Image(systemName: "moon.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.gray)
                 } else {
                     Text("\(day.dayNumber)")

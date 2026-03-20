@@ -156,7 +156,7 @@ struct ChallengeSetupView: View {
                                 .font(.headline)
                                 .foregroundColor(.primary)
                         }
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, Spacing.xxs)
                         
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                             ForEach(uniqueFeaturedTemplates, id: \.id) { template in
@@ -182,7 +182,7 @@ struct ChallengeSetupView: View {
                                     .font(.headline)
                                     .foregroundColor(.primary)
                             }
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Spacing.xxs)
                             
                             VStack(spacing: 8) {
                                 ForEach(typeTemplates, id: \.id) { template in
@@ -226,7 +226,7 @@ struct ChallengeSetupView: View {
                         .shadow(color: .purple.opacity(0.5), radius: 8, x: 0, y: 4)
                     
                     Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -244,7 +244,7 @@ struct ChallengeSetupView: View {
                 Spacer()
                 
                 Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.purple, .pink],
@@ -398,7 +398,7 @@ struct ChallengeSetupView: View {
                     Text("Challenge Type")
                         .font(.headline)
                         .foregroundColor(.primary)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, Spacing.xxs)
                     
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -417,7 +417,7 @@ struct ChallengeSetupView: View {
                                                 .frame(width: 56, height: 56)
                                             
                                             Image(systemName: type.icon)
-                                                .font(.system(size: 22))
+                                                .font(.ds_heading2)
                                                 .foregroundColor(selectedType == type ? .white : .gray)
                                         }
                                         
@@ -431,7 +431,7 @@ struct ChallengeSetupView: View {
                                 .buttonStyle(PlainButtonStyle())
                             }
                         }
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, Spacing.xxs)
                     }
                 }
                 
@@ -449,7 +449,7 @@ struct ChallengeSetupView: View {
                                 .fill(Color(.systemGray6))
                         )
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 
                 // Daily Target
                 VStack(alignment: .leading, spacing: 8) {
@@ -490,7 +490,7 @@ struct ChallengeSetupView: View {
                             .fill(Color.cardBackground)
                     )
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 
                 // Duration
                 VStack(alignment: .leading, spacing: 12) {
@@ -518,7 +518,7 @@ struct ChallengeSetupView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 
                 // Start Date
                 VStack(alignment: .leading, spacing: 8) {
@@ -530,7 +530,7 @@ struct ChallengeSetupView: View {
                         .datePickerStyle(.compact)
                         .labelsHidden()
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 
                 // Preview Card
                 challengePreviewCard
@@ -551,7 +551,7 @@ struct ChallengeSetupView: View {
             Text("Preview")
                 .font(.headline)
                 .foregroundColor(.primary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 16) {
                 HStack(spacing: 12) {
@@ -567,7 +567,7 @@ struct ChallengeSetupView: View {
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: selectedType.icon)
-                            .font(.system(size: 22))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                     
@@ -652,7 +652,7 @@ struct ChallengeSetupView: View {
                     .font(.subheadline)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, 14)
                     .background(
                         Capsule()
@@ -1003,7 +1003,7 @@ struct TemplateRow: View {
                         .shadow(color: type.color.opacity(0.3), radius: 4, x: 0, y: 2)
                     
                     Text(template.displayEmoji)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1027,7 +1027,7 @@ struct TemplateRow: View {
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(type.color.opacity(0.1))
@@ -1035,7 +1035,7 @@ struct TemplateRow: View {
                 
                 // Selection indicator
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         isSelected 
                             ? AnyShapeStyle(LinearGradient(colors: type.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))

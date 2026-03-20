@@ -44,17 +44,6 @@ final class VideoThumbnailService {
     
     private let r2BaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
     private var isConnectionWarmed = false
-    private var warmingTask: URLSessionDataTask?
-    
-    /// Dedicated session for pre-warming (short timeouts, minimal resources)
-    private let warmingSession: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 3
-        config.timeoutIntervalForResource = 5
-        config.httpMaximumConnectionsPerHost = 2
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }()
     
     // MARK: - Background Processing
     
@@ -234,46 +223,65 @@ final class VideoThumbnailService {
         }
     }
     
-    // MARK: - 🌐 CDN Connection Pre-warming
+    /// Batch pre-generate poster frames for exercises that don't have one yet.
+    /// Limited to `maxConcurrent` simultaneous generations to avoid network/CPU pressure.
+    func preGeneratePosterFrames(for exerciseNames: [String], maxConcurrent: Int = 3) {
+        let uncached = exerciseNames.filter { !hasPosterFrame(for: $0) }
+        guard !uncached.isEmpty else { return }
+        
+        let semaphore = DispatchSemaphore(value: maxConcurrent)
+        
+        for name in uncached.prefix(20) {
+            thumbnailQueue.async { [weak self] in
+                semaphore.wait()
+                defer { semaphore.signal() }
+                
+                guard let url = VideoStreamingService.shared.getVideoURL(for: name) else { return }
+                self?.generatePosterFrame(exerciseName: name, videoURL: url)
+            }
+        }
+    }
     
-    /// Pre-warm the Cloudflare R2 connection (DNS + TLS handshake)
-    /// One HEAD request warms the connection for ALL subsequent video requests
-    /// HTTP/2 multiplexing means a single connection serves all videos
+    // MARK: - CDN Connection Pre-warming
+    
     func prewarmCDNConnection() {
         guard !isConnectionWarmed else { return }
-        
-        // Send a tiny HEAD request to any valid path on the CDN
-        // This establishes: DNS resolution → TCP connection → TLS handshake
-        // Total cost: ~1KB network, ~100-200ms time, saves 100-300ms per video later
         guard let url = URL(string: r2BaseURL) else { return }
         
+        attemptCDNPrewarm(url: url, attempt: 1)
+    }
+    
+    private func attemptCDNPrewarm(url: URL, attempt: Int) {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         request.timeoutInterval = 3
         
-        warmingTask = warmingSession.dataTask(with: request) { [weak self] _, response, _ in
-            self?.isConnectionWarmed = true
-            if let httpResponse = response as? HTTPURLResponse {
+        // Use URLSession.shared so the warmed connection pool is reused by AVFoundation
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode < 500 {
+                self?.isConnectionWarmed = true
                 #if DEBUG
-                print("🌐 [THUMBNAIL] CDN connection pre-warmed (status: \(httpResponse.statusCode))")
+                print("🌐 [THUMBNAIL] CDN connection pre-warmed (status: \(httpResponse.statusCode), attempt: \(attempt))")
                 #endif
+            } else if attempt < 3 {
+                let delay = pow(2.0, Double(attempt - 1))
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay) {
+                    self?.attemptCDNPrewarm(url: url, attempt: attempt + 1)
+                }
+            } else {
+                self?.isConnectionWarmed = true
+                AppLogger.warning("CDN pre-warm failed after \(attempt) attempts", category: .network)
             }
-        }
-        warmingTask?.resume()
+        }.resume()
     }
     
-    /// Pre-warm connection for specific video URLs (call for visible exercises)
-    /// This resolves the specific video URL path while reusing the existing connection
     func prewarmVideoURLs(_ urls: [URL]) {
-        // Only warm first 3 to avoid unnecessary network
         for url in urls.prefix(3) {
             var request = URLRequest(url: url)
             request.httpMethod = "HEAD"
             request.timeoutInterval = 2
             
-            warmingSession.dataTask(with: request) { _, _, _ in
-                // Don't care about response — just warming the connection path
-            }.resume()
+            URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
         }
     }
     

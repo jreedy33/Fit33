@@ -147,7 +147,7 @@ struct CloudProgramScheduleView: View {
                         .shadow(color: programColor.opacity(0.2), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: program.program.icon)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -218,7 +218,7 @@ struct CloudProgramScheduleView: View {
                     .foregroundColor(programColor)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Grid layout for day tiles
             LazyVGrid(columns: [
@@ -301,11 +301,11 @@ struct CloudDayTile: View {
                         .foregroundColor(.white)
                 } else if !isUnlocked {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 } else if isRestDay {
                     Image(systemName: "moon.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 } else {
                     VStack(spacing: 1) {
@@ -313,7 +313,7 @@ struct CloudDayTile: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.white.opacity(0.9))
                         Text("\(day)")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                 }
@@ -321,7 +321,7 @@ struct CloudDayTile: View {
                 // Swap indicator
                 if hasSwap {
                     Image(systemName: "arrow.left.arrow.right.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.orange)
                         .background(Circle().fill(.white).frame(width: 14, height: 14))
                         .offset(x: 18, y: -18)
@@ -775,7 +775,7 @@ struct CloudWorkoutPreviewView: View {
                         }
                         .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Spacing.xxs)
                     
                     VStack(spacing: 10) {
                         ForEach(Array(generatedExercises.enumerated()), id: \.offset) { index, exercise in
@@ -1026,7 +1026,7 @@ struct SwappableExerciseCard: View {
                     .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.white)
             }
             
@@ -1058,7 +1058,7 @@ struct SwappableExerciseCard: View {
             
             // Chevron (matching exercise library style)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)
@@ -1207,7 +1207,7 @@ struct SwappableExerciseCardWithActions: View {
                             .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                         
                         Image(systemName: categoryIcon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white)
                     }
                     
@@ -1239,7 +1239,7 @@ struct SwappableExerciseCardWithActions: View {
                     
                     // Info indicator
                     Image(systemName: "info.circle")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
             }
@@ -1248,7 +1248,7 @@ struct SwappableExerciseCardWithActions: View {
             // Swap button (separate tap target)
             Button(action: onTapSwap) {
                 Image(systemName: "arrow.triangle.swap")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundColor(categoryColor)
                     .padding(Spacing.xs)
                     .background(
@@ -1359,9 +1359,9 @@ struct ExerciseDataDetailSheet: View {
                                 // Category Badge
                                 HStack(spacing: 6) {
                                     Image(systemName: categoryIcon)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.ds_labelMedium)
                                     Text(exerciseData.category)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.ds_labelMedium)
                                 }
                                 .foregroundColor(.white)
                                 .padding(.horizontal, Spacing.sm)
@@ -1378,7 +1378,7 @@ struct ExerciseDataDetailSheet: View {
                                 // Equipment Badge
                                 HStack(spacing: 6) {
                                     Image(systemName: "dumbbell.fill")
-                                        .font(.system(size: 12))
+                                        .font(.ds_bodySmall)
                                     Text(exerciseData.equipment)
                                         .font(.system(size: 13, weight: .medium))
                                 }
@@ -1420,7 +1420,7 @@ struct ExerciseDataDetailSheet: View {
                         } else if !exerciseData.instructions.isEmpty {
                             sectionCard(title: "Instructions", icon: "text.alignleft") {
                                 Text(exerciseData.instructions)
-                                    .font(.system(size: 15))
+                                    .font(.ds_bodyMedium)
                                     .foregroundColor(.secondary)
                                     .lineSpacing(4)
                             }
@@ -1499,7 +1499,7 @@ struct ExerciseDataDetailSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
                 
                 Text(title)
@@ -1540,12 +1540,12 @@ struct ExerciseDataDetailSheet: View {
                     .frame(width: 26, height: 26)
                 
                 Text("\(number)")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(categoryColor)
             }
             
             Text(text)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1743,7 +1743,7 @@ struct ExerciseSwapView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                 }
                 .foregroundColor(.blue)
                 .padding(.horizontal, Spacing.sm)
@@ -1784,7 +1784,7 @@ struct ExerciseSwapView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: iconForCategory(currentExercise.category))
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(programColor)
                 }
                 
@@ -1996,7 +1996,7 @@ struct SwapExerciseCard: View {
                         .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
                 
@@ -2028,7 +2028,7 @@ struct SwapExerciseCard: View {
                 
                 // Chevron (matching exercise library style)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, Spacing.md)

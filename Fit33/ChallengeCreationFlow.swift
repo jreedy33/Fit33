@@ -267,7 +267,7 @@ struct ChallengeCreationFlow: View {
                 }
             }) {
                 Image(systemName: currentStep > 1 ? "chevron.left" : "xmark")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.ds_heading3).fontWeight(.semibold)
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
@@ -1231,7 +1231,7 @@ struct CustomTargetCard: View {
                                             .fontWeight(hydrationUnit == unit ? .bold : .regular)
                                             .foregroundColor(hydrationUnit == unit ? .white : .white.opacity(0.5))
                                             .padding(.horizontal, Spacing.xs)
-                                            .padding(.vertical, 4)
+                                            .padding(.vertical, Spacing.xxs)
                                             .background(
                                                 Capsule()
                                                     .fill(hydrationUnit == unit ? Color.white.opacity(0.2) : Color.clear)
@@ -1638,7 +1638,7 @@ struct GradientButton: View {
                         .scaleEffect(0.9)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                     
                     Text(title)
                         .font(.headline)

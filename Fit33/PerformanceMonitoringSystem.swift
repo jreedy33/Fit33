@@ -399,18 +399,7 @@ final class MemoryTracker {
     }
     
     private func updateMemory() {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        
-        let kerr = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        
-        if kerr == KERN_SUCCESS {
-            currentMemoryMB = Double(info.resident_size) / 1024.0 / 1024.0
-        }
+        currentMemoryMB = SystemMetrics.getMemoryUsageMB()
     }
 }
 
@@ -439,39 +428,7 @@ final class CPUTracker {
     }
     
     private func updateCPU() {
-        var threadsList: thread_act_array_t?
-        var threadsCount = mach_msg_type_number_t(0)
-        
-        let kr = task_threads(mach_task_self_, &threadsList, &threadsCount)
-        
-        guard kr == KERN_SUCCESS, let threads = threadsList else {
-            return
-        }
-        
-        var totalCPU: Double = 0
-        
-        for index in 0..<Int(threadsCount) {
-            var threadInfo = thread_basic_info()
-            var threadInfoCount = mach_msg_type_number_t(THREAD_INFO_MAX)
-            
-            let result = withUnsafeMutablePointer(to: &threadInfo) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                    thread_info(threads[index], thread_flavor_t(THREAD_BASIC_INFO), $0, &threadInfoCount)
-                }
-            }
-            
-            if result == KERN_SUCCESS {
-                if threadInfo.flags != TH_FLAGS_IDLE {
-                    totalCPU += (Double(threadInfo.cpu_usage) / Double(TH_USAGE_SCALE)) * 100.0
-                }
-            }
-        }
-        
-        // Deallocate the threads array
-        let size = vm_size_t(Int(threadsCount) * MemoryLayout<thread_t>.stride)
-        _ = vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threads), size)
-        
-        currentCPUPercent = totalCPU
+        currentCPUPercent = SystemMetrics.getCPUUsage()
     }
 }
 

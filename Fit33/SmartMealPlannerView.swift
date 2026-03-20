@@ -276,7 +276,7 @@ struct SmartMealPlannerView: View {
                                     .foregroundColor(selectedDayIndex == index ? .white.opacity(0.8) : .secondary)
                                 
                                 Text(day.dateLabel)
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(selectedDayIndex == index ? .white : .primary)
                                 
                                 // Calorie indicator dot
@@ -388,7 +388,7 @@ struct SmartMealPlannerView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(iconColor)
                     .frame(width: 32, height: 32)
                     .background(iconColor.opacity(0.15))
@@ -417,7 +417,7 @@ struct SmartMealPlannerView: View {
     private var personalizationBadge: some View {
         HStack(spacing: 10) {
             Image(systemName: "brain.head.profile")
-                .font(.system(size: 18))
+                .font(.ds_heading3)
                 .foregroundColor(.purple)
             
             VStack(alignment: .leading, spacing: 2) {
@@ -587,7 +587,7 @@ struct PlanMealCard: View {
                         .shadow(color: meal.mealSlot.gradient[0].opacity(0.3), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: meal.mealSlot.icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 }
                 
@@ -901,7 +901,7 @@ struct PlanMealDetailSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(Capsule().fill(Color.green.opacity(0.1)))
             }
             

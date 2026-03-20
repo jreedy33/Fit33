@@ -135,7 +135,7 @@ struct FoodSearchView: View {
                     .frame(width: 44, height: 44)
                     .overlay(
                         Image(systemName: mealTypeIcon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(mealTypeColor)
                     )
                 
@@ -163,7 +163,7 @@ struct FoodSearchView: View {
             // Modern Search Bar with glow effect
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(mealTypeColor)
                 
                 TextField("Search USDA database...", text: $searchText)
@@ -195,7 +195,7 @@ struct FoodSearchView: View {
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -352,7 +352,7 @@ struct FoodSearchView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.xl)
             }
             
             Button(action: {
@@ -451,7 +451,7 @@ struct FoodSearchView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(
                                     Capsule()
                                         .fill(Color.green)
@@ -591,7 +591,7 @@ struct FoodSearchView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.xl)
             }
             
             VStack(spacing: 8) {
@@ -619,7 +619,7 @@ struct FoodSearchView: View {
                     }
                 }
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Spacing.xl)
             
             Spacer()
         }
@@ -707,7 +707,7 @@ struct FoodSearchResultRow: View {
                     .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 Text(getFoodEmoji(for: food))
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
             
             // Food details
@@ -743,13 +743,13 @@ struct FoodSearchResultRow: View {
             // Favorite star indicator
             if isFavorite {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.yellow)
             }
             
             // Chevron inside the card
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)
@@ -912,7 +912,7 @@ struct QuickAccessFoodRow: View {
                     .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 Text(getFoodEmoji(for: food))
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
             
             // Food details
@@ -948,13 +948,13 @@ struct QuickAccessFoodRow: View {
             // Favorite star indicator
             if isFavorite {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.yellow)
             }
             
             // Chevron inside the card
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)
@@ -1313,7 +1313,7 @@ struct AddFoodActionTile: View {
                         .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                 }
                 

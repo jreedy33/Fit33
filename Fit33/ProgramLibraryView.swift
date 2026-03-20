@@ -60,7 +60,7 @@ struct ProgramLibraryView: View {
                     .shadow(color: .purple.opacity(0.2), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: "calendar.badge.checkmark")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -90,7 +90,7 @@ struct ProgramLibraryView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.primary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {

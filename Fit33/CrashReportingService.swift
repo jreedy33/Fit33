@@ -652,15 +652,8 @@ final class CrashReportingService {
     }
     
     private func getMemoryUsageMB() -> Double? {
-        var taskInfo = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size) / 4
-        let result = withUnsafeMutablePointer(to: &taskInfo) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return nil }
-        return Double(taskInfo.phys_footprint) / 1_048_576.0
+        let mb = SystemMetrics.getMemoryUsageMB()
+        return mb > 0 ? mb : nil
     }
     
     private func getFreeMemoryMB() -> Double? {

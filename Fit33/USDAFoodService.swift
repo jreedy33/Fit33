@@ -289,7 +289,7 @@ class USDAFoodService: ObservableObject {
     private var localFoods: [ProcessedFoodItem] = []
     
     private init() {
-        print("🎯 [USDA] Initializing USDAFoodService")
+        AppLogger.debug("Initializing USDAFoodService", category: .nutrition)
         
         // Load local common foods database
         loadLocalFoods()
@@ -297,33 +297,33 @@ class USDAFoodService: ObservableObject {
         // Subscribe to cloud service updates
         cloudService.$recentFoods
             .map { foods in
-                print("🔄 [USDA] Converting \(foods.count) recent foods")
+                AppLogger.debug("Converting \(foods.count) recent foods", category: .nutrition)
                 return foods.map { $0.toProcessedFoodItem() }
             }
             .assign(to: &$recentFoods)
         
         cloudService.$favoriteFoods
             .map { foods in
-                print("🔄 [USDA] Converting \(foods.count) favorite foods")
+                AppLogger.debug("Converting \(foods.count) favorite foods", category: .nutrition)
                 return foods.map { $0.toProcessedFoodItem() }
             }
             .assign(to: &$favoriteFoods)
         
         cloudService.$popularFoods
             .map { foods in
-                print("🔄 [USDA] Converting \(foods.count) popular foods")
+                AppLogger.debug("Converting \(foods.count) popular foods", category: .nutrition)
                 return foods.map { $0.toProcessedFoodItem() }
             }
             .assign(to: &$popularFoods)
         
         cloudService.$frequentFoods
             .map { foods in
-                print("🔄 [USDA] Converting \(foods.count) frequent foods")
+                AppLogger.debug("Converting \(foods.count) frequent foods", category: .nutrition)
                 return foods.map { $0.toProcessedFoodItem() }
             }
             .assign(to: &$frequentFoods)
         
-        print("✅ [USDA] USDAFoodService initialized with \(localFoods.count) local foods")
+        AppLogger.info("Successfully initialized USDAFoodService with \(localFoods.count) local foods", category: .nutrition)
     }
     
     // MARK: - Local Foods Database (for instant search)
@@ -881,10 +881,10 @@ class USDAFoodService: ObservableObject {
     // MARK: - Public Methods
     
     func searchFoods(query: String, pageNumber: Int = 1, pageSize: Int = 25) {
-        print("🎯 [USDAFoodService] searchFoods() called with query: '\(query)'")
+        AppLogger.debug("searchFoods() called with query: '\(query)'", category: .nutrition)
         
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            print("⚠️ [USDAFoodService] Query is empty, returning")
+            AppLogger.warning("Search query is empty, returning", category: .nutrition)
             searchResults = []
             return
         }
@@ -896,7 +896,7 @@ class USDAFoodService: ObservableObject {
         
         // Always show local results immediately if we have them
         if !localResults.isEmpty {
-            print("⚡️ [USDA] Found \(localResults.count) local results instantly")
+            AppLogger.debug("Found \(localResults.count) local results instantly", category: .nutrition)
             self.searchResults = localResults
         }
         
@@ -980,15 +980,15 @@ class USDAFoodService: ObservableObject {
                 let mergedResults = frequentResults + hardcodedResults + favoriteResults + cloudOnlyResults
                 
                 self.searchResults = mergedResults
-                print("✅ [USDA] Final: \(mergedResults.count) results (frequent: \(frequentResults.count), hardcoded: \(hardcodedResults.count), favorites: \(favoriteResults.count), cloud: \(cloudOnlyResults.count))")
+                AppLogger.info("Successfully merged \(mergedResults.count) results (frequent: \(frequentResults.count), hardcoded: \(hardcodedResults.count), favorites: \(favoriteResults.count), cloud: \(cloudOnlyResults.count))", category: .nutrition)
                 
                 self.isSearching = false
             } catch {
-                print("❌ Cloud search error: \(error)")
+                AppLogger.error("Cloud search error: \(error.localizedDescription)", category: .nutrition)
                 
                 // If cloud fails but we have local results, keep showing them
                 if !localResults.isEmpty {
-                    print("⚠️ [USDA] Using local results only due to cloud error")
+                    AppLogger.warning("Using local results only due to cloud error", category: .nutrition)
                     self.searchResults = localResults
                     self.isSearching = false
                 } else {
@@ -1041,7 +1041,7 @@ class USDAFoodService: ObservableObject {
                 try await cloudService.addToFavorites(foodItemId: foodItemId)
             }
         } catch {
-            print("❌ Error toggling favorite: \(error)")
+            AppLogger.error("Error toggling favorite: \(error.localizedDescription)", category: .nutrition)
         }
     }
     
@@ -1066,29 +1066,22 @@ class USDAFoodService: ObservableObject {
     
     /// Rank search results intelligently based on query and food properties
     private func rankSearchResults(_ foods: [ProcessedFoodItem], query: String) -> [ProcessedFoodItem] {
-        print("🎯 [RANK] Starting to rank \(foods.count) foods")
+        AppLogger.debug("Starting to rank \(foods.count) foods", category: .nutrition)
         
         guard !foods.isEmpty else {
-            print("⚠️ [RANK] No foods to rank, returning empty array")
+            AppLogger.warning("No foods to rank, returning empty array", category: .nutrition)
             return []
         }
         
         let normalizedQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        print("🔄 [RANK] Normalized query: '\(normalizedQuery)'")
-        
-        print("🔄 [RANK] Starting sort...")
+        AppLogger.verbose("Ranking normalized query: '\(normalizedQuery)'", category: .nutrition)
         let sorted = foods.sorted { food1, food2 in
             let score1 = calculateRelevanceScore(food: food1, query: normalizedQuery)
             let score2 = calculateRelevanceScore(food: food2, query: normalizedQuery)
             return score1 < score2 // Lower score = better match
         }
         
-        print("✅ [RANK] Sort complete! Top 5:")
-        for (i, food) in sorted.prefix(5).enumerated() {
-            let isGeneric = food.brandName?.isEmpty ?? true
-            let score = calculateRelevanceScore(food: food, query: normalizedQuery)
-            print("  \(i+1). \(food.name) - Generic: \(isGeneric), dataType: \(food.dataType ?? "?"), score: \(score)")
-        }
+        AppLogger.debug("Rank sort complete, top result: \(sorted.first?.name ?? "none")", category: .nutrition)
         
         return sorted
     }
@@ -1334,11 +1327,7 @@ class USDAFoodService: ObservableObject {
             
             // Debug: Print first 10 items to see what's happening
             if foods.firstIndex(where: { $0.fdcId == item.fdcId }) ?? 0 < 10 {
-                print("🔍 Item: \(item.description)")
-                print("   dataType: \(item.dataType)")
-                print("   brandName: \(brandName.isEmpty ? "NONE" : brandName)")
-                print("   brandOwner: \(brandOwner.isEmpty ? "NONE" : brandOwner)")
-                print("   isGeneric: \(isGeneric)")
+                AppLogger.verbose("Item: \(item.description), dataType: \(item.dataType), brand: \(brandName.isEmpty ? "NONE" : brandName), isGeneric: \(isGeneric)", category: .nutrition)
             }
             
             return isGeneric
@@ -1381,7 +1370,7 @@ class USDAFoodService: ObservableObject {
             
             // Debug: Print scoring for first few items
             if foods.firstIndex(where: { $0.fdcId == item.fdcId }) ?? 0 < 10 {
-                print("   brandScore: \(score) (hasBrand: \(hasBrand), isBrandQuery: \(isBrandQuery))")
+                AppLogger.verbose("brandScore: \(score) (hasBrand: \(hasBrand), isBrandQuery: \(isBrandQuery))", category: .nutrition)
             }
             
             return score
@@ -1432,10 +1421,9 @@ class USDAFoodService: ObservableObject {
             return (brandScore, junk, tier, category, affinity, wholeFood, complexity, exactMatch, originalIndex)
         }
 
-        print("🔍 Total foods returned by API: \(foods.count)")
         let genericCount = foods.filter { isGenericItem($0) }.count
         let brandedCount = foods.count - genericCount
-        print("🔍 Generic items: \(genericCount), Branded items: \(brandedCount)")
+        AppLogger.debug("Total foods from API: \(foods.count) (generic: \(genericCount), branded: \(brandedCount))", category: .nutrition)
         
         let rankedFoods = foods.enumerated()
             .sorted { lhs, rhs in
@@ -1455,11 +1443,7 @@ class USDAFoodService: ObservableObject {
             }
             .map { $0.element }
         
-        print("🔍 After sorting, first 5 items:")
-        for (index, food) in rankedFoods.prefix(5).enumerated() {
-            let isGen = isGenericItem(food)
-            print("   \(index + 1). \(food.description) - Generic: \(isGen)")
-        }
+        AppLogger.verbose("After sorting, top result: \(rankedFoods.first?.description ?? "none")", category: .nutrition)
         
         var uniqueIDs = Set<Int>()
         
@@ -1619,7 +1603,7 @@ class USDAFoodService: ObservableObject {
     private func handleSearchError(_ message: String) {
         searchError = message
         searchResults = []
-        print("USDA API Error: \(message)")
+        AppLogger.error("USDA API Error: \(message)", category: .nutrition)
     }
 }
 

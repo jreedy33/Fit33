@@ -44,7 +44,7 @@ struct RecoveryDayView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { stopAndDismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                 }
             }
@@ -85,7 +85,7 @@ struct RecoveryDayView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.teal)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(Capsule().fill(Color.teal.opacity(0.12)))
                         }
                     }
@@ -121,7 +121,7 @@ struct RecoveryDayView: View {
                     .fill(Color.teal.opacity(0.12))
                     .frame(width: 36, height: 36)
                 Image(systemName: exercise.sfSymbol)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.teal)
             }
             
@@ -382,7 +382,7 @@ struct RecoveryDayDashboardWidget: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "leaf.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.teal)
                     Text("Recovery Day")
                         .font(.subheadline)
@@ -390,7 +390,7 @@ struct RecoveryDayDashboardWidget: View {
                         .foregroundColor(.primary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 

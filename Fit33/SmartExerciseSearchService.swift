@@ -14,6 +14,16 @@ import CoreData
 final class SmartExerciseSearchService: ObservableObject {
     static let shared = SmartExerciseSearchService()
     
+    // MARK: - Prefix-Aware Search Cache
+    private var lastSearchQuery: String = ""
+    private var lastSearchResults: [Exercise] = []
+    
+    /// Clear the prefix cache (call when the pre-filtered exercise set changes)
+    func invalidateCache() {
+        lastSearchQuery = ""
+        lastSearchResults = []
+    }
+    
     // MARK: - Constants for Scoring
     
     // ⚡️ SNAPPY SEARCH: Aggressive exact-match prioritization
@@ -143,7 +153,16 @@ final class SmartExerciseSearchService: ObservableObject {
         "standng": "standing",
         "stading": "standing",
         "lieing": "lying",
-        "lyeing": "lying"
+        "lyeing": "lying",
+        
+        // Merged from view-level dictionaries
+        "barble": "barbell",
+        "quatricep": "quadricep",
+        "bensh": "bench",
+        "banch": "bench",
+        "benc": "bench"
+        // NOTE: "glute" → "glutes" intentionally EXCLUDED — breaks singular name matching
+        // NOTE: "hamstring" → "hamstrings" intentionally EXCLUDED — breaks singular name matching
     ]
     
     // User behavior scores (personalization)
@@ -364,6 +383,192 @@ final class SmartExerciseSearchService: ObservableObject {
         return scoredResults.map { $0.exercise }
     }
     
+    // MARK: - Unified Ultra-Fast Search (Used by all views)
+    
+    /// Ultra-fast search that combines speed with intelligence.
+    /// Searches name + category + equipment + muscleGroups + nickname.
+    /// Per-word typo correction upfront. Multi-word variation generation.
+    /// Priority bucket sort: exact > startsWith > contains > allWords > secondary field.
+    /// Designed for <5ms on 7,000 exercises.
+    func searchExercisesUltraFast(
+        query: String,
+        in exercises: [Exercise],
+        userBehavior: UserBehaviorProfile? = nil
+    ) -> [Exercise] {
+        guard !query.isEmpty else {
+            invalidateCache()
+            return exercises
+        }
+        
+        let queryLower = query.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        // For 1-2 char queries, use simple prefix matching (no typo correction overhead)
+        if queryLower.count <= 2 {
+            invalidateCache()
+            return fastPrefixSearch(queryLower, in: exercises)
+        }
+        
+        // Prefix-aware cache: if new query extends the previous query, search within cached results
+        if !lastSearchQuery.isEmpty && queryLower.hasPrefix(lastSearchQuery) && !lastSearchResults.isEmpty {
+            let narrowed = searchExercisesUltraFastCore(query: queryLower, in: lastSearchResults, userBehavior: userBehavior)
+            lastSearchQuery = queryLower
+            lastSearchResults = narrowed
+            return narrowed
+        }
+        
+        let results = searchExercisesUltraFastCore(query: queryLower, in: exercises, userBehavior: userBehavior)
+        lastSearchQuery = queryLower
+        lastSearchResults = results
+        return results
+    }
+    
+    /// Core search implementation (called by both main path and prefix-cache path)
+    private func searchExercisesUltraFastCore(
+        query: String,
+        in exercises: [Exercise],
+        userBehavior: UserBehaviorProfile?
+    ) -> [Exercise] {
+        let rawWords = query.split(separator: " ").map { String($0) }
+        let correctedWords = rawWords.map { word -> String in
+            typoCorrections[word] ?? word
+        }
+        let correctedQuery = correctedWords.joined(separator: " ")
+        let isMultiWord = correctedWords.count > 1
+        
+        let wordVariationSets: [[String]]
+        if isMultiWord {
+            wordVariationSets = correctedWords.map { getKeywordVariations($0) }
+        } else {
+            wordVariationSets = [getKeywordVariations(correctedQuery)]
+        }
+        let singleWordVariations = isMultiWord ? [correctedQuery] : wordVariationSets[0]
+        
+        var exactMatches: [(Exercise, Double)] = []
+        var startsWithMatches: [(Exercise, Double)] = []
+        var containsMatches: [(Exercise, Double)] = []
+        var allWordsMatches: [(Exercise, Double)] = []
+        var secondaryMatches: [(Exercise, Double)] = []
+        
+        let hasUserBehavior = userBehavior != nil
+        
+        for exercise in exercises {
+            let name = (exercise.name ?? "").lowercased()
+            guard !name.isEmpty else { continue }
+            
+            var personalScore: Double = 0
+            if hasUserBehavior {
+                personalScore = personalBoost(for: exercise, name: name, userBehavior: userBehavior!)
+            }
+            
+            var matched = false
+            
+            if !isMultiWord {
+                for variation in singleWordVariations {
+                    if name == variation {
+                        exactMatches.append((exercise, personalScore))
+                        matched = true
+                        break
+                    } else if name.hasPrefix(variation) {
+                        startsWithMatches.append((exercise, personalScore))
+                        matched = true
+                        break
+                    } else if name.contains(variation) {
+                        containsMatches.append((exercise, personalScore))
+                        matched = true
+                        break
+                    }
+                }
+                
+                if !matched {
+                    let nickname = ExerciseNicknameService.shared.displayName(for: exercise).lowercased()
+                    if nickname != name {
+                        for variation in singleWordVariations {
+                            if nickname == variation {
+                                exactMatches.append((exercise, personalScore + 50))
+                                matched = true
+                                break
+                            } else if nickname.hasPrefix(variation) {
+                                startsWithMatches.append((exercise, personalScore + 25))
+                                matched = true
+                                break
+                            } else if nickname.contains(variation) {
+                                containsMatches.append((exercise, personalScore + 10))
+                                matched = true
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if !matched && isMultiWord {
+                if name == correctedQuery {
+                    exactMatches.append((exercise, personalScore))
+                    matched = true
+                } else if name.hasPrefix(correctedQuery) {
+                    startsWithMatches.append((exercise, personalScore))
+                    matched = true
+                } else if name.contains(correctedQuery) {
+                    containsMatches.append((exercise, personalScore))
+                    matched = true
+                }
+            }
+            
+            if !matched && isMultiWord {
+                let allWordsFound = wordVariationSets.allSatisfy { variations in
+                    variations.contains { name.contains($0) }
+                }
+                if allWordsFound {
+                    allWordsMatches.append((exercise, personalScore))
+                    matched = true
+                }
+            }
+            
+            if !matched {
+                let category = (exercise.category ?? "").lowercased()
+                let muscles = (exercise.muscleGroups as? [String])?.joined(separator: " ").lowercased() ?? ""
+                let equipment = (exercise.equipment ?? "").lowercased()
+                
+                let searchTerms = isMultiWord ? [correctedQuery] + correctedWords : singleWordVariations
+                
+                for term in searchTerms {
+                    if category.contains(term) || muscles.contains(term) {
+                        secondaryMatches.append((exercise, personalScore))
+                        matched = true
+                        break
+                    } else if equipment.contains(term) {
+                        secondaryMatches.append((exercise, personalScore - 10))
+                        matched = true
+                        break
+                    }
+                }
+            }
+        }
+        
+        let sortByScore: ((Exercise, Double), (Exercise, Double)) -> Bool = { $0.1 > $1.1 }
+        exactMatches.sort(by: sortByScore)
+        startsWithMatches.sort(by: sortByScore)
+        containsMatches.sort(by: sortByScore)
+        allWordsMatches.sort(by: sortByScore)
+        secondaryMatches.sort(by: sortByScore)
+        
+        return (exactMatches + startsWithMatches + containsMatches + allWordsMatches + secondaryMatches)
+            .map { $0.0 }
+    }
+    
+    /// Lightweight personal boost score (no heavy scoring, just key signals)
+    private func personalBoost(for exercise: Exercise, name: String, userBehavior: UserBehaviorProfile) -> Double {
+        var score: Double = 0
+        if exercise.isFavorite { score += 100 }
+        let count = userBehavior.completionCount(for: name)
+        if count >= 10 { score += 50 }
+        else if count >= 5 { score += 30 }
+        else if count >= 1 { score += 15 }
+        if userBehavior.explicitlySelectedExercises.contains(name) { score += 40 }
+        if exercise.popularityScore > 50 { score += 20 }
+        return score
+    }
+    
     // ⚡️ ULTRA-FAST: Simple prefix/contains search for 1-2 character queries
     private func fastPrefixSearch(_ query: String, in exercises: [Exercise]) -> [Exercise] {
         var exactStarts: [Exercise] = []
@@ -451,9 +656,30 @@ final class SmartExerciseSearchService: ObservableObject {
             variations += ["shrugs"]
         case "plank":
             variations += ["planks"]
+        case "bicep":
+            variations += ["biceps"]
+        case "biceps":
+            variations += ["bicep"]
+        case "tricep":
+            variations += ["triceps"]
+        case "triceps":
+            variations += ["tricep"]
+        case "pullup", "pull up":
+            variations += ["pullups", "pull ups", "pull-up", "pull-ups"]
+        case "pushup", "push up":
+            variations += ["pushups", "push ups", "push-up", "push-ups"]
+        case "chinup", "chin up":
+            variations += ["chinups", "chin ups", "chin-up", "chin-ups"]
+        case "dumbbell":
+            variations += ["dumbbells"]
+        case "dumbbells":
+            variations += ["dumbbell"]
+        case "barbell":
+            variations += ["barbells"]
         default:
-            // Add plural form if it's a common pattern
-            if !lower.hasSuffix("s") {
+            if lower.hasSuffix("s") && lower.count > 3 {
+                variations.append(String(lower.dropLast()))
+            } else if !lower.hasSuffix("s") && lower.count > 2 {
                 variations.append(lower + "s")
             }
         }
@@ -981,13 +1207,7 @@ final class SmartExerciseSearchService: ObservableObject {
     
     /// Normalize equipment name for common exercise lookup
     private func normalizeEquipmentForCommonLookup(_ equipment: String) -> String {
-        let lowered = equipment.lowercased()
-        if lowered.contains("dumbbell") { return "dumbbell" }
-        if lowered.contains("barbell") || lowered.contains("ez bar") { return "barbell" }
-        if lowered.contains("cable") { return "cable" }
-        if lowered.contains("machine") || lowered.contains("lever") { return "machine" }
-        if lowered.contains("body") || lowered == "none" { return "bodyweight" }
-        return lowered
+        ExerciseFilterService.normalizeEquipment(equipment)
     }
     
     /// Get similarity ratio between two strings (0.0 - 1.0)

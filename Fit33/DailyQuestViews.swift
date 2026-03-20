@@ -60,7 +60,7 @@ struct DailyQuestsWidget: View {
             if questService.questStreak > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "flame.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.orange)
                     Text("\(questService.questStreak)")
                         .font(.caption)
@@ -68,7 +68,7 @@ struct DailyQuestsWidget: View {
                         .foregroundColor(.orange)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule()
                         .fill(Color.orange.opacity(0.15))
@@ -87,7 +87,7 @@ struct DailyQuestsWidget: View {
             if allDone {
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundStyle(
                             LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
                         )
@@ -97,8 +97,8 @@ struct DailyQuestsWidget: View {
                             LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
                         )
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule()
                         .fill(Color.yellow.opacity(0.15))
@@ -198,14 +198,14 @@ struct DailyQuestsWidget: View {
                         .animation(.spring(response: 0.5), value: quest.progress)
                     
                     Text(quest.categoryEmoji)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                 }
             }
             
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(quest.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(quest.isCompleted ? .secondary : .primary)
                         .strikethrough(quest.isCompleted, color: .secondary.opacity(0.5))
                         .lineLimit(1)
@@ -295,9 +295,9 @@ struct DailyQuestsWidget: View {
              .hitStepGoal, .walk10kSteps:
             dl.pendingDestination = .stepTracker
             
-        // Social / challenge quests → friends tab
+        // Social / challenge quests
         case .sendChallenge, .start1v1Challenge, .startFirstChallenge:
-            dl.pendingDestination = .challenges
+            dl.pendingDestination = .challengeCreation
             
         case .reactToWorkout, .addFriend, .inviteFriend:
             dl.pendingDestination = .friends
@@ -445,7 +445,7 @@ struct DailyQuestsWidget: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule().fill(
                         adManager.isRewardedAdReady
@@ -521,7 +521,7 @@ struct DailyQuestsWidget: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 11, weight: .bold))
                     Text("Watch Video \(quest.currentValue + 1)/\(quest.targetValue)")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
@@ -576,13 +576,13 @@ struct DailyQuestsWidget: View {
                     .animation(.spring(response: 0.5), value: questService.overallProgress)
                 
                 Text(questService.allComplete ? "🎁" : "🎯")
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
             }
             
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text("Daily Bonus")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(questService.allComplete ? .primary : .secondary)
                     
                     Spacer()
@@ -618,7 +618,7 @@ struct DailyQuestsWidget: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(24)
+        .padding(Spacing.lg)
         .sleekCard(cornerRadius: 24, accentColor: .orange)
     }
     
@@ -691,7 +691,7 @@ struct QuestCompletionCelebration: View {
                             .frame(width: 32, height: 32)
                         
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                     
@@ -898,13 +898,13 @@ private struct AdQuestPreviewCard: View {
                             .foregroundColor(.white)
                     } else {
                         Image(systemName: quest.icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(quest.categoryColor)
                     }
                 }
                 
                 Text(quest.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(quest.isCompleted ? .secondary : .primary)
                     .strikethrough(quest.isCompleted, color: .secondary.opacity(0.5))
                 
@@ -930,12 +930,12 @@ private struct AdQuestPreviewCard: View {
             if !quest.isCompleted {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(quest.description)
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                     
                     if quest.isAppTracked {
                         Text("📱 App Tracked")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.ds_caption).fontWeight(.semibold)
                             .foregroundColor(.cyan)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(Color.cyan.opacity(0.1)))
@@ -954,7 +954,7 @@ private struct AdQuestPreviewCard: View {
                                 Image(systemName: "play.fill")
                                     .font(.system(size: 11, weight: .bold))
                                 Text("Watch Video \(quest.currentValue + 1)/\(quest.targetValue)")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, 14).padding(.vertical, Spacing.xs)

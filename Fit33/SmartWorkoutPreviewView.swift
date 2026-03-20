@@ -118,7 +118,7 @@ struct SmartWorkoutPreviewView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Color.secondary.opacity(0.1))
                         .clipShape(Capsule())
                 }
@@ -320,7 +320,7 @@ struct SmartExercisePreviewRow: View {
                     .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.white)
             }
             
@@ -356,7 +356,7 @@ struct SmartExercisePreviewRow: View {
             // Rest time badge
             HStack(spacing: 4) {
                 Image(systemName: "timer")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                 Text("\(exercise.restSeconds)s")
                     .font(.caption)
             }

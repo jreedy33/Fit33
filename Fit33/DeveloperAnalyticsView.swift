@@ -481,7 +481,7 @@ struct AnalyticsStatRow: View {
                 .fontWeight(.semibold)
                 .foregroundColor(.primary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
 }
 

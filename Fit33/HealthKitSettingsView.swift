@@ -127,7 +127,7 @@ struct HealthKitSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.green)
                     Text("Connected")
                         .font(.subheadline)
@@ -153,7 +153,7 @@ struct HealthKitSettingsView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .red))
                 } else {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.red)
                 }
             }
@@ -260,7 +260,7 @@ struct HealthKitSettingsView: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             
@@ -306,7 +306,7 @@ struct HealthKitSettingsView: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                     .foregroundColor(color)
             }
             
@@ -353,7 +353,7 @@ struct HealthKitSettingsView: View {
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: workout.workoutIcon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(workoutColor(for: workout))
             }
             
@@ -439,7 +439,7 @@ struct HealthKitSettingsView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 } else {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                 }
                 Text(healthKit.isLoading ? "Syncing..." : "Sync Now")
                     .fontWeight(.semibold)

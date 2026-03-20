@@ -124,7 +124,7 @@ struct WorkoutTabView: View {
                 
             // These destinations are handled by ContentView + DashboardView/FriendsTabView
             // Don't handle or clear them here — let the correct tab consume them
-            case .friends, .friendRequests, .challenges, .challengeInvite, .challengeDetail:
+            case .friends, .friendRequests, .challenges, .challengeCreation, .challengeInvite, .challengeDetail:
                 break  // Handled by ContentView → FriendsTabView / DashboardView
             case .communityChallenge:
                 break  // Handled by ContentView (join sheet)
@@ -289,7 +289,29 @@ struct WorkoutHomeView: View {
     // Cardio workouts for combined goal tracking (includes Strava activities)
     @State private var cardioWorkoutsThisWeek: [CardioWorkoutDTO] = []
     
+    private var topFadeOverlay: some View {
+        VStack(spacing: 0) {
+            let fadeColor = colorScheme == .dark
+                ? Color(red: 0.06, green: 0.06, blue: 0.06)
+                : Color.white
+            fadeColor.frame(height: 30)
+            LinearGradient(
+                stops: [
+                    .init(color: fadeColor, location: 0),
+                    .init(color: fadeColor.opacity(0.6), location: 0.4),
+                    .init(color: fadeColor.opacity(0), location: 1.0)
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 50)
+            .allowsHitTesting(false)
+            Spacer()
+        }
+        .ignoresSafeArea(.all, edges: .top)
+    }
+    
     var body: some View {
+        ZStack {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 Color.clear.frame(height: 0).id("top")
@@ -345,6 +367,8 @@ struct WorkoutHomeView: View {
             .onChange(of: scrollToTopTrigger) { _, _ in
                 scrollProxy.scrollTo("top", anchor: .top)
             }
+        }
+        topFadeOverlay
         }
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {
@@ -434,7 +458,7 @@ struct WorkoutHomeView: View {
                         Spacer(minLength: 0)
                         
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                     .padding(Spacing.sm)
@@ -491,7 +515,7 @@ struct WorkoutHomeView: View {
                         Spacer(minLength: 0)
                         
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary)
                     }
                     .padding(Spacing.sm)
@@ -619,7 +643,7 @@ struct WorkoutHomeView: View {
                     )
                     .font(.title3)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Program card
             VStack(spacing: 0) {
@@ -768,7 +792,7 @@ struct WorkoutHomeView: View {
                         .foregroundStyle(.blue)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Program cards
             ScrollView(.horizontal, showsIndicators: false) {
@@ -783,7 +807,7 @@ struct WorkoutHomeView: View {
                         .frame(width: 260)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
     }
@@ -815,7 +839,7 @@ struct WorkoutHomeView: View {
                     )
                     .font(.title3)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // The card itself
             SmartInsightsCard(
@@ -872,7 +896,7 @@ struct WorkoutHomeView: View {
                     )
                     .font(.title3)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
@@ -887,8 +911,8 @@ struct WorkoutHomeView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 4)
+                .padding(.horizontal, Spacing.xxs)
+                .padding(.vertical, Spacing.xxs)
             }
         }
     }
@@ -1238,7 +1262,7 @@ struct WorkoutHomeView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             ZStack {
                 // Clean gradient background matching EnhancedStatCard
@@ -1641,7 +1665,7 @@ struct SmartProgramWidget: View {
                     .font(.title3)
                     .foregroundColor(.yellow)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Widget Card
             if isLoading {
@@ -1998,7 +2022,7 @@ struct ProgramSuggestionCard: View {
                         }
                         .foregroundColor(program.primaryColor)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(program.primaryColor.opacity(0.12))
                         .cornerRadius(CornerRadius.md)
                         
@@ -2070,7 +2094,7 @@ struct ProgramSuggestionCard: View {
                         .font(.caption)
                         .fontWeight(.bold)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(program.secondaryColor.opacity(0.15))
                         .foregroundColor(program.secondaryColor)
                         .cornerRadius(CornerRadius.sm)
@@ -2089,7 +2113,7 @@ struct ProgramSuggestionCard: View {
                             .font(.title3)
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, 14)
                     .background(
                         LinearGradient(
@@ -2104,7 +2128,7 @@ struct ProgramSuggestionCard: View {
                     Spacer()
                 }
             }
-            .padding(24)
+            .padding(Spacing.lg)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(.ultraThinMaterial)
@@ -2297,7 +2321,7 @@ struct EmptyRecentActivityCard: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(32)
+        .padding(Spacing.xl)
         .background(Color.cardBackground)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.lg)
@@ -2397,7 +2421,7 @@ struct NextGoalCard: View {
                         .rotationEffect(.degrees(-90))
                     
                     Image(systemName: goal.icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(
                             LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -2406,7 +2430,7 @@ struct NextGoalCard: View {
                 // Title & subtitle
                 VStack(spacing: 3) {
                     Text(goal.title)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -2428,7 +2452,7 @@ struct NextGoalCard: View {
                     }
                     .foregroundColor(gradientColors[0])
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(gradientColors[0].opacity(0.15))
@@ -2515,7 +2539,7 @@ struct EmptyNextGoalsCard: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -2523,7 +2547,7 @@ struct EmptyNextGoalsCard: View {
             
             VStack(spacing: 3) {
                 Text("All Done!")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(.primary)
                 
                 Text("Goals complete")
@@ -2541,7 +2565,7 @@ struct EmptyNextGoalsCard: View {
             }
             .foregroundColor(.green)
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(Color.green.opacity(0.15))
@@ -2612,6 +2636,7 @@ struct FloatingGoButton: View {
     let action: () -> Void
     var primaryColor: Color = Color(red: 0.2, green: 0.7, blue: 0.3)
     var secondaryColor: Color = Color(red: 0.15, green: 0.55, blue: 0.85)
+    var accessibilityText: String = "Start workout"
     
     @State private var isPressed = false
     @State private var pulseAnimation = false
@@ -2676,6 +2701,8 @@ struct FloatingGoButton: View {
                     }
                 }
         )
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -2952,7 +2979,7 @@ struct ProgressStatItem: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                     .foregroundColor(color)
                 Text(value)
                     .font(.ds_statSmall)
@@ -3435,7 +3462,7 @@ struct SmartInsightsCard: View {
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: "calendar.badge.clock")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(scoreColor)
                     }
                     
@@ -3569,7 +3596,7 @@ struct TrainingInsightRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: insight.icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundColor(insight.color)
                 .frame(width: 20)
             
@@ -3593,11 +3620,11 @@ struct InsightChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: insight.icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundColor(tint)
             
             Text(cleanInsightText(insight.text))
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.primary)
                 .lineLimit(1)
         }
@@ -3680,7 +3707,7 @@ struct QuickTrainingStat: View {
                     .font(.ds_caption)
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.primary)
             }
             Text(label)

@@ -629,7 +629,7 @@ struct StretchSplashView: View {
                 
                 VStack(spacing: 12) {
                     Text("Stretch Mode")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.ds_displayMedium)
                         .foregroundColor(.white)
                     
                     Text("What area would you like to stretch?")
@@ -726,7 +726,7 @@ struct StretchAreaCard: View {
                         .frame(width: 40, height: 40)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? .white : .white.opacity(0.6))
                 }
                 

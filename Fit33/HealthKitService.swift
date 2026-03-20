@@ -139,13 +139,13 @@ final class HealthKitService: ObservableObject {
                 HealthKitManager.shared.isAuthorized = true
             }
             
-            print("✅ [HEALTHKIT] Authorization granted")
+            AppLogger.info("HealthKit authorization granted", category: .health)
             
             // Sync data after authorization
             await syncAllData(force: true)
             
         } catch {
-            print("❌ [HEALTHKIT] Authorization failed: \(error)")
+            AppLogger.error("HealthKit authorization failed: \(error.localizedDescription)", category: .health)
             throw HealthKitServiceError.authorizationFailed(error)
         }
     }
@@ -170,7 +170,7 @@ final class HealthKitService: ObservableObject {
         
         UserDefaults.standard.removeObject(forKey: "healthkit_last_sync")
         
-        print("🔌 [HEALTHKIT] Disconnected")
+        AppLogger.info("HealthKit disconnected", category: .health)
     }
     
     // MARK: - Sync All Data
@@ -182,13 +182,13 @@ final class HealthKitService: ObservableObject {
         // Throttle
         if !force {
             if isSyncing {
-                print("⏭️ [HEALTHKIT] Skipping sync - already in progress")
+                AppLogger.debug("Skipping HealthKit sync - already in progress", category: .health)
                 return
             }
             
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
-                print("⏭️ [HEALTHKIT] Skipping sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago")
+                AppLogger.debug("Skipping HealthKit sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .health)
                 return
             }
         }
@@ -208,7 +208,7 @@ final class HealthKitService: ObservableObject {
         isLoading = false
         isSyncing = false
         
-        print("✅ [HEALTHKIT] Full sync complete")
+        AppLogger.info("HealthKit full sync complete", category: .health)
         
         // Persist HealthKit workouts & activity to Supabase (cardio_workouts + daily_activity_summary)
         // This ensures "Sync Now" saves data to the database so it appears in Recent Activity
@@ -245,7 +245,7 @@ final class HealthKitService: ObservableObject {
             await MainActor.run { todayDistance = distance }
         }
         
-        print("✅ [HEALTHKIT] Today: \(todaySteps) steps, \(todayCalories) cal, \(String(format: "%.1f", todayDistance/1000)) km")
+        AppLogger.info("HealthKit today: \(todaySteps) steps, \(todayCalories) cal, \(String(format: "%.1f", todayDistance/1000)) km", category: .health)
     }
     
     // MARK: - Sync Recent Workouts
@@ -276,7 +276,10 @@ final class HealthKitService: ObservableObject {
             
             let workouts = samples.compactMap { sample -> HealthKitWorkout? in
                 guard let workout = sample as? HKWorkout else { return nil }
-                return HealthKitWorkout(from: workout)
+                let hkWorkout = HealthKitWorkout(from: workout)
+                // Skip workouts that Fit33 wrote to HealthKit — avoids duplicates
+                if hkWorkout.isFromFit33 { return nil }
+                return hkWorkout
             }
             
             await MainActor.run {
@@ -289,10 +292,10 @@ final class HealthKitService: ObservableObject {
                 todayActiveMinutes = weekWorkouts.reduce(0) { $0 + $1.durationMinutes }
             }
             
-            print("✅ [HEALTHKIT] Synced \(workouts.count) workouts")
+            AppLogger.info("HealthKit synced \(workouts.count) workouts", category: .health)
             
         } catch {
-            print("❌ [HEALTHKIT] Failed to fetch workouts: \(error)")
+            AppLogger.error("Failed to fetch HealthKit workouts: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -320,7 +323,7 @@ final class HealthKitService: ObservableObject {
         }
         
         if let rhr = restingHeartRate {
-            print("✅ [HEALTHKIT] Resting HR: \(rhr) bpm")
+            AppLogger.info("HealthKit resting HR: \(rhr) bpm", category: .health)
         }
     }
     
@@ -375,11 +378,11 @@ final class HealthKitService: ObservableObject {
             }
             
             if sleepHours > 0 {
-                print("✅ [HEALTHKIT] Last night sleep: \(String(format: "%.1f", sleepHours)) hours")
+                AppLogger.info("HealthKit last night sleep: \(String(format: "%.1f", sleepHours)) hours", category: .health)
             }
             
         } catch {
-            print("❌ [HEALTHKIT] Failed to fetch sleep: \(error)")
+            AppLogger.error("Failed to fetch HealthKit sleep: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -562,7 +565,7 @@ final class HealthKitService: ObservableObject {
             try await healthStore.addSamples(samples, to: workout)
         }
         
-        print("✅ [HEALTHKIT] Saved workout to HealthKit")
+        AppLogger.info("Saved workout to HealthKit", category: .health)
     }
 }
 
@@ -644,9 +647,15 @@ struct HealthKitWorkout: Identifiable {
     
     /// Check if this workout is from Apple Watch/Fitness
     var isFromApple: Bool {
-        sourceName.lowercased().contains("apple") || 
+        sourceName.lowercased().contains("apple") ||
         sourceBundle?.contains("com.apple") == true ||
         sourceName == "Watch"
+    }
+    
+    /// Check if this workout originated from Fit33 itself (written to HealthKit, then read back)
+    var isFromFit33: Bool {
+        sourceBundle?.contains("com.fit33") == true ||
+        sourceName.lowercased().contains("fit33")
     }
     
     init(from hkWorkout: HKWorkout) {

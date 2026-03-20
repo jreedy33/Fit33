@@ -95,7 +95,7 @@ struct MyQRCodeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .fill(colorScheme == .dark ? Color(.systemGray6) : .white)
@@ -281,7 +281,7 @@ private struct InstructionRow: View {
             
             // Icon
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
                 .foregroundColor(.blue)
                 .frame(width: 24)
             

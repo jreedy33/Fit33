@@ -103,7 +103,7 @@ struct ProgramScheduleView: View {
                         .shadow(color: programColor.opacity(0.2), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -158,7 +158,7 @@ struct ProgramScheduleView: View {
             Text("Workout Schedule")
                 .font(.headline)
                 .fontWeight(.bold)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             // Grid layout for day tiles
             LazyVGrid(columns: [
@@ -283,11 +283,11 @@ struct DayTileContent: View {
                             .foregroundColor(.white)
                     } else if !isUnlocked {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(.white)
                     } else if isRestDay {
                         Image(systemName: "moon.fill")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(.white)
                     } else {
                         VStack(spacing: 1) {
@@ -295,7 +295,7 @@ struct DayTileContent: View {
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundColor(.white.opacity(0.9))
                             Text("\(day)")
-                                .font(.system(size: 20, weight: .bold))
+                                .font(.ds_heading2)
                                 .foregroundColor(.white)
                         }
                     }
@@ -533,7 +533,7 @@ struct WorkoutPreviewView: View {
             Text("Today's Exercises")
                 .font(.headline)
                 .fontWeight(.bold)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 10) {
                 ForEach(Array(generatedExercises.enumerated()), id: \.offset) { index, exercise in
@@ -697,7 +697,7 @@ struct CompactPillExerciseCard: View {
                     .frame(width: 36, height: 36)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
             }
             
@@ -731,7 +731,7 @@ struct CompactPillExerciseCard: View {
             
             // Chevron (matching exercise library style)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)

@@ -609,51 +609,23 @@ enum InBodyError: LocalizedError {
 
 extension InBodyService {
     
-    /// Get personalized insights based on body composition
+    /// Get personalized insights based on body composition.
+    /// Delegates to BodyCompositionTrackingService for the detailed typed insights,
+    /// then maps to simple display strings for InBody settings UI.
     func getBodyCompositionInsights() -> [String] {
-        guard let scan = latestScan else { return [] }
-        
-        var insights: [String] = []
-        
-        // Body fat insights
-        if let bf = scan.bodyFatPercentage {
-            if bf < 10 {
-                insights.append("⚠️ Very low body fat. Consider maintenance calories.")
-            } else if bf < 15 {
-                insights.append("💪 Athletic body fat range. Great for performance!")
-            } else if bf < 20 {
-                insights.append("✅ Healthy body fat range. Keep it up!")
-            } else if bf < 25 {
-                insights.append("📈 Good progress potential for body recomposition")
-            } else {
-                insights.append("🎯 Focus on fat loss while preserving muscle")
-            }
+        let typed = BodyCompositionTrackingService.shared.getInsights()
+        if typed.isEmpty {
+            return []
         }
-        
-        // Muscle mass insights
-        if let smm = scan.skeletalMuscleMassKg, let weight = Optional(scan.weightKg) {
-            let musclePercentage = (smm / weight) * 100
-            if musclePercentage > 45 {
-                insights.append("💪 Excellent muscle mass ratio!")
-            } else if musclePercentage > 40 {
-                insights.append("✅ Good muscle development")
-            } else {
-                insights.append("📈 Room for muscle growth - focus on progressive overload")
+        return typed.map { insight in
+            let prefix: String
+            switch insight.type {
+            case .warning: prefix = "⚠️"
+            case .success: prefix = "✅"
+            case .info:    prefix = "📈"
             }
+            return "\(prefix) \(insight.title): \(insight.message)"
         }
-        
-        // Visceral fat
-        if let vf = scan.visceralFatLevel {
-            if vf <= 9 {
-                insights.append("✅ Healthy visceral fat level")
-            } else if vf <= 14 {
-                insights.append("⚠️ Elevated visceral fat - prioritize cardio and nutrition")
-            } else {
-                insights.append("🚨 High visceral fat - consult a healthcare provider")
-            }
-        }
-        
-        return insights
     }
     
     /// Get recommended fitness goal based on body composition

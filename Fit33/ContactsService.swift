@@ -2,6 +2,7 @@ import Foundation
 import Contacts
 import SwiftUI
 import Supabase
+import CommonCrypto
 
 // MARK: - Contacts Service
 /// Manages contact access and finds friends from user's contact list
@@ -44,23 +45,23 @@ class ContactsService: ObservableObject {
     
     /// Request contact access permission
     func requestAccess() async -> Bool {
-        print("📇 [CONTACTS] requestAccess() called")
+        AppLogger.debug("requestAccess() called", category: .social)
         do {
             let granted = try await store.requestAccess(for: .contacts)
             checkAuthorizationStatus()
-            print("📇 [CONTACTS] Authorization status after request: \(authorizationStatus.rawValue)")
+            AppLogger.debug("Authorization status after request: \(authorizationStatus.rawValue)", category: .social)
             
             if granted {
-                print("✅ [CONTACTS] Access granted - now fetching contacts and finding friends...")
+                AppLogger.info("Access granted - now fetching contacts and finding friends...", category: .social)
                 await fetchContactsAndFindFriends()
-                print("✅ [CONTACTS] Fetch complete - suggestedFriends: \(suggestedFriends.count)")
+                AppLogger.info("Fetch complete - suggestedFriends: \(suggestedFriends.count)", category: .social)
             } else {
-                print("❌ [CONTACTS] Access denied by user")
+                AppLogger.error("Access denied by user", category: .social)
             }
             
             return granted
         } catch {
-            print("❌ [CONTACTS] Error requesting access: \(error)")
+            AppLogger.error("Error requesting access: \(error.localizedDescription)", category: .social)
             checkAuthorizationStatus()
             return false
         }
@@ -70,38 +71,35 @@ class ContactsService: ObservableObject {
     
     /// Fetch contacts and find matching app users
     func fetchContactsAndFindFriends() async {
-        print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
-        print("📇 [CONTACTS SERVICE] Starting fetchContactsAndFindFriends...")
+        AppLogger.debug("Starting fetchContactsAndFindFriends...", category: .social)
         
         guard canAccessContacts else {
-            print("⚠️ [CONTACTS SERVICE] No access to contacts - aborting")
-            print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
+            AppLogger.warning("No access to contacts - aborting", category: .social)
             return
         }
         
         isLoading = true
         defer { 
             isLoading = false
-            print("📇 [CONTACTS SERVICE] ════════════════════════════════════════════════")
         }
         
         // Step 1: Fetch contact emails and phone numbers from device
-        print("📇 [CONTACTS SERVICE] Step 1: Fetching contact info from device...")
+        AppLogger.debug("Step 1: Fetching contact info from device...", category: .social)
         await fetchContactInfo()
-        print("📇 [CONTACTS SERVICE] ✓ Fetched \(contactPhoneNumbers.count) phones, \(contactEmails.count) emails")
+        AppLogger.debug("Fetched \(contactPhoneNumbers.count) phones, \(contactEmails.count) emails", category: .social)
         
         // Step 2: Find matching users in the app database
-        print("📇 [CONTACTS SERVICE] Step 2: Finding matching Fit33 users...")
+        AppLogger.debug("Step 2: Finding matching Fit33 users...", category: .social)
         await findMatchingUsers()
-        print("📇 [CONTACTS SERVICE] ✓ Found \(suggestedFriends.count) Fit33 users in contacts")
+        AppLogger.debug("Found \(suggestedFriends.count) Fit33 users in contacts", category: .social)
         
         // Step 3: Sync contacts to database for "contact joined" notifications
-        print("📇 [CONTACTS SERVICE] Step 3: Syncing contacts to database...")
+        AppLogger.debug("Step 3: Syncing contacts to database...", category: .social)
         await syncContactsToDatabase()
-        print("📇 [CONTACTS SERVICE] ✓ Contacts synced for future notifications")
+        AppLogger.debug("Contacts synced for future notifications", category: .social)
         
         hasCheckedContacts = true
-        print("📇 [CONTACTS SERVICE] ✅ fetchContactsAndFindFriends complete!")
+        AppLogger.info("fetchContactsAndFindFriends complete!", category: .social)
     }
     
     private func fetchContactInfo() async {
@@ -154,7 +152,7 @@ class ContactsService: ObservableObject {
                         }
                     }
                 } catch {
-                    print("❌ [CONTACTS] Error fetching contacts: \(error)")
+                    AppLogger.error("Error fetching contacts: \(error.localizedDescription)", category: .social)
                 }
                 
                 continuation.resume(returning: (emails: Array(emails), phones: Array(phones)))
@@ -164,7 +162,7 @@ class ContactsService: ObservableObject {
         // Back on @MainActor — safe to update @Published properties
         contactEmails = result.emails
         contactPhoneNumbers = result.phones
-        print("📇 [CONTACTS] Found \(result.emails.count) emails and \(result.phones.count) phone numbers")
+        AppLogger.debug("Found \(result.emails.count) emails and \(result.phones.count) phone numbers", category: .social)
     }
     
     /// Normalize phone number to E.164 format where possible
@@ -187,7 +185,7 @@ class ContactsService: ObservableObject {
     
     private func findMatchingUsers() async {
         guard !contactEmails.isEmpty || !contactPhoneNumbers.isEmpty else {
-            print("⚠️ [CONTACTS] No contact emails or phone numbers to search")
+            AppLogger.warning("No contact emails or phone numbers to search", category: .social)
             return
         }
         
@@ -208,62 +206,34 @@ class ContactsService: ObservableObject {
             return "***"
         }
         
-        print("🔍 [CONTACTS] Searching for matching Fit33 users...")
-        print("   └─ Emails: \(contactEmails.count) (sample: \(sampleEmails.joined(separator: ", ")))")
-        print("   └─ Phone numbers: \(contactPhoneNumbers.count) (sample: \(samplePhones.joined(separator: ", ")))")
-        print("   └─ DEBUG: First 10 full normalized phones: \(Array(contactPhoneNumbers.prefix(10)))")
-        
-        // Check if Abbie or Nicholas might be in the list
-        let abbieNumbers = contactPhoneNumbers.filter { $0.contains("716") || $0.contains("585") }
-        print("   └─ DEBUG: Phone numbers with 716/585 area code: \(abbieNumbers.count)")
+        AppLogger.debug("Searching for matching Fit33 users... Emails: \(contactEmails.count) (sample: \(sampleEmails.joined(separator: ", "))), Phone numbers: \(contactPhoneNumbers.count) (sample: \(samplePhones.joined(separator: ", ")))", category: .social)
+        AppLogger.debug("First 10 full normalized phones: \(Array(contactPhoneNumbers.prefix(10)))", category: .social)
         
         // Use direct database query method - more reliable than RPC
-        print("🔍 [CONTACTS] Using direct database query for maximum reliability...")
+        AppLogger.debug("Using direct database query for maximum reliability...", category: .social)
         await findMatchingUsersDirect()
     }
     
-    /// Fallback: search by email only (for backwards compatibility)
-    private func findMatchingUsersByEmailOnly() async {
-        guard !contactEmails.isEmpty else {
-            print("⚠️ [CONTACTS] No contact emails to search")
-            return
+    private nonisolated func md5Hash(_ string: String) -> String {
+        let data = Data(string.utf8)
+        var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
+        data.withUnsafeBytes { ptr in
+            _ = CC_MD5(ptr.baseAddress, CC_LONG(data.count), &digest)
         }
-        
-        do {
-            let result: [SuggestedFriend] = try await SupabaseManager.shared.supabaseClient
-                .rpc("find_friends_from_contacts", params: ["contact_emails": contactEmails])
-                .execute()
-                .value
-            
-            suggestedFriends = result
-            print("✅ [CONTACTS] Found \(result.count) suggested friends from emails (fallback)")
-            
-            // Log found friends
-            for friend in result {
-                print("   👤 Found: \(friend.displayName) (\(friend.email ?? "no email"))")
-            }
-        } catch {
-            print("❌ [CONTACTS] Error finding matching users: \(error)")
-            suggestedFriends = []
-        }
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
-    
-    /// Direct database query fallback - matches both phone and email
+
     private func findMatchingUsersDirect() async {
-        print("🔍 [CONTACTS DIRECT] Querying database directly...")
+        AppLogger.debug("Querying via RPC with hashed phones...", category: .social)
         
         do {
-            // Get current user ID to exclude self
             guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-                print("⚠️ [CONTACTS DIRECT] No current user ID")
+                AppLogger.warning("No current user ID", category: .social)
                 return
             }
             
-            // Query for users where phone OR email matches our contacts
-            // This is a more flexible query that handles different phone formats
             var matchedUsers: [SuggestedFriend] = []
             
-            // Search by email
             if !contactEmails.isEmpty {
                 struct EmailMatch: Decodable {
                     let id: UUID
@@ -281,7 +251,6 @@ class ContactsService: ObservableObject {
                     .execute()
                     .value
                 
-                // Convert to SuggestedFriend
                 for match in emailResults {
                     let friend = SuggestedFriend(
                         userId: match.id,
@@ -298,140 +267,56 @@ class ContactsService: ObservableObject {
                     matchedUsers.append(friend)
                 }
                 
-                print("📧 [CONTACTS DIRECT] Found \(emailResults.count) matches by email")
+                AppLogger.debug("Found \(emailResults.count) matches by email", category: .social)
             }
             
-            // Search by phone - try multiple phone formats
             if !contactPhoneNumbers.isEmpty {
-                // Try exact last 10 digits match
-                print("📱 [CONTACTS DIRECT] Searching \(contactPhoneNumbers.count) phone numbers...")
+                AppLogger.debug("Hashing \(contactPhoneNumbers.count) phone numbers for server-side matching...", category: .social)
                 
-                // First, get count of ALL users in database for debugging
-                struct CountResult: Decodable {
-                    let count: Int?
-                }
+                let hashedPhones = contactPhoneNumbers.map { md5Hash($0) }
                 
-                let totalCount: CountResult = try await SupabaseManager.shared.supabaseClient
-                    .from("user_profiles")
-                    .select("*", head: false, count: .exact)
-                    .limit(1)
-                    .single()
-                    .execute()
-                    .value
-                
-                print("📱 [CONTACTS DIRECT] Total users in database: \(totalCount.count ?? 0)")
-                
-                // Get ALL users with phone numbers
-                struct UserProfile: Decodable {
+                struct PhoneMatch: Decodable {
                     let id: UUID
                     let name: String?
-                    let email: String?
                     let username: String?
                     let profile_photo_url: String?
-                    let phone_number: String?
                 }
                 
-                print("📱 [CONTACTS DIRECT] Fetching all user profiles from database...")
-                let allUsers: [UserProfile] = try await SupabaseManager.shared.supabaseClient
-                    .from("user_profiles")
-                    .select("id, name, email, username, profile_photo_url, phone_number")
-                    .neq("id", value: currentUserId.uuidString)
+                let phoneResults: [PhoneMatch] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("match_contacts_by_phone", params: ["phone_hashes": hashedPhones])
                     .execute()
                     .value
                 
-                print("📱 [CONTACTS DIRECT] Got \(allUsers.count) TOTAL users from database")
-                
-                // Filter to those with phone numbers
-                let usersWithPhones = allUsers.filter { $0.phone_number != nil && !$0.phone_number!.isEmpty }
-                print("📱 [CONTACTS DIRECT] \(usersWithPhones.count) users have phone_number populated")
-                
-                // Log users with phones for debugging
-                for (index, user) in usersWithPhones.prefix(10).enumerated() {
-                    if let phone = user.phone_number {
-                        let digits = phone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                        let last4 = String(digits.suffix(4))
-                        let userName = user.name ?? user.username ?? "Unknown"
-                        print("   📱 User \(index + 1): \(userName) - ends in ...\(last4)")
-                    }
+                for match in phoneResults {
+                    if match.id == currentUserId { continue }
+                    if matchedUsers.contains(where: { $0.userId == match.id }) { continue }
+                    
+                    let friend = SuggestedFriend(
+                        userId: match.id,
+                        name: match.name,
+                        email: nil,
+                        username: match.username,
+                        profilePhotoUrl: match.profile_photo_url,
+                        phoneNumber: nil,
+                        fitnessGoal: nil,
+                        isFriend: false,
+                        hasOutgoingRequest: false,
+                        hasIncomingRequest: false
+                    )
+                    matchedUsers.append(friend)
                 }
                 
-                // Check each user's phone against our contacts
-                for user in usersWithPhones {
-                    if let userPhone = user.phone_number {
-                        // Extract all digits from user's phone
-                        let userDigits = userPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                        
-                        var matched = false
-                        let userName = user.name ?? user.username ?? "Unknown"
-                        let userE164 = userPhone.trimmingCharacters(in: .whitespaces).hasPrefix("+") ? "+\(userDigits)" : userDigits
-                        
-                        // Strategy 1: E.164 exact match (e.g., +14161234567)
-                        if contactPhoneNumbers.contains(userE164) {
-                            matched = true
-                            print("   ✅ Phone match (E.164)! \(userName)")
-                        }
-                        
-                        // Strategy 2: Last 10 digits (backward-compatible US matching)
-                        if !matched && userDigits.count >= 10 {
-                            let userLast10 = String(userDigits.suffix(10))
-                            if contactPhoneNumbers.contains(userLast10) {
-                                matched = true
-                                print("   ✅ Phone match (last 10)! \(userName)")
-                            }
-                        }
-                        
-                        // Strategy 3: Full digits match
-                        if !matched && contactPhoneNumbers.contains(userDigits) {
-                            matched = true
-                            print("   ✅ Phone match (full digits)! \(userName)")
-                        }
-                        
-                        // Strategy 4: Contact has country code, user doesn't (or vice versa)
-                        if !matched {
-                            for contactPhone in contactPhoneNumbers {
-                                let contactDigits = contactPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                                if userDigits.hasSuffix(contactDigits) || contactDigits.hasSuffix(userDigits) {
-                                    if min(userDigits.count, contactDigits.count) >= 7 {
-                                        matched = true
-                                        print("   ✅ Phone match (suffix)! \(userName)")
-                                        break
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if matched {
-                            // Convert to SuggestedFriend and add
-                            let friend = SuggestedFriend(
-                                userId: user.id,
-                                name: user.name,
-                                email: user.email,
-                                username: user.username,
-                                profilePhotoUrl: user.profile_photo_url,
-                                phoneNumber: user.phone_number,
-                                fitnessGoal: nil,
-                                isFriend: false,
-                                hasOutgoingRequest: false,
-                                hasIncomingRequest: false
-                            )
-                            
-                            // Avoid duplicates
-                            if !matchedUsers.contains(where: { $0.userId == friend.userId }) {
-                                matchedUsers.append(friend)
-                            }
-                        }
-                    }
-                }
+                AppLogger.debug("Found \(phoneResults.count) matches by phone hash", category: .social)
             }
             
             suggestedFriends = matchedUsers
-            print("✅ [CONTACTS DIRECT] Total unique matches: \(matchedUsers.count)")
+            AppLogger.info("Total unique matches: \(matchedUsers.count)", category: .social)
             
             for friend in matchedUsers {
-                print("   👤 \(friend.displayName) (@\(friend.username ?? "no username"))")
+                AppLogger.debug("\(friend.displayName) (@\(friend.username ?? "no username"))", category: .social)
             }
         } catch {
-            print("❌ [CONTACTS DIRECT] Query failed: \(error)")
+            AppLogger.error("Query failed: \(error.localizedDescription)", category: .social)
             suggestedFriends = []
         }
     }
@@ -447,7 +332,7 @@ class ContactsService: ObservableObject {
     
     /// Fetch friends-of-friends with mutual friend counts
     func fetchPeopleYouMayKnow() async {
-        print("👥 [PYMK] Fetching people you may know...")
+        AppLogger.debug("Fetching people you may know...", category: .social)
         
         do {
             struct PYMKResult: Decodable {
@@ -487,7 +372,7 @@ class ContactsService: ObservableObject {
                 )
             }
             
-            print("✅ [PYMK] Found \(peopleYouMayKnow.count) people you may know")
+            AppLogger.info("Found \(peopleYouMayKnow.count) people you may know", category: .social)
             
             // Preload photos
             let photoEntries = peopleYouMayKnow.compactMap { friend -> (id: String, url: String?)? in
@@ -496,7 +381,7 @@ class ContactsService: ObservableObject {
             FriendPhotoCache.shared.preloadPhotos(for: photoEntries)
             
         } catch {
-            print("⚠️ [PYMK] Error fetching people you may know: \(error)")
+            AppLogger.warning("Error fetching people you may know: \(error.localizedDescription)", category: .social)
             // Non-fatal - just use contact suggestions
         }
     }
@@ -565,7 +450,7 @@ class ContactsService: ObservableObject {
     /// Sync contact emails to database for "contact joined" notifications
     func syncContactsToDatabase() async {
         guard canAccessContacts, !contactEmails.isEmpty else {
-            print("⚠️ [CONTACTS] Cannot sync - no access or no emails")
+            AppLogger.warning("Cannot sync - no access or no emails", category: .social)
             return
         }
         
@@ -581,12 +466,12 @@ class ContactsService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CONTACTS] Synced \(contactEmails.count) contacts to database")
+            AppLogger.info("Synced \(contactEmails.count) contacts to database", category: .social)
             
             // Check for any pending "contact joined" notifications
             await checkForContactJoinedNotifications()
         } catch {
-            print("❌ [CONTACTS] Error syncing contacts: \(error)")
+            AppLogger.error("Error syncing contacts: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -598,14 +483,14 @@ class ContactsService: ObservableObject {
                 .execute()
                 .value
             
-            print("📬 [CONTACTS] Found \(notifications.count) pending contact joined notifications")
+            AppLogger.debug("Found \(notifications.count) pending contact joined notifications", category: .social)
             
             // Send push notification for each
             for notification in notifications {
                 await sendContactJoinedPushNotification(notification)
             }
         } catch {
-            print("❌ [CONTACTS] Error checking contact notifications: \(error)")
+            AppLogger.error("Error checking contact notifications: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -628,9 +513,9 @@ class ContactsService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [CONTACTS] Marked notification sent for \(displayName)")
+            AppLogger.info("Marked notification sent for \(displayName)", category: .social)
         } catch {
-            print("❌ [CONTACTS] Error marking notification sent: \(error)")
+            AppLogger.error("Error marking notification sent: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -653,11 +538,11 @@ class ContactsService: ObservableObject {
     /// This notifies existing Fit33 users who have the new user in their contacts
     func notifyExistingUsersOfNewJoin() async {
         guard let newUserId = SupabaseManager.shared.currentUser?.id else {
-            print("❌ [CONTACTS] Cannot notify - no user ID")
+            AppLogger.error("Cannot notify - no user ID", category: .social)
             return
         }
         
-        print("📬 [CONTACTS] Notifying existing users that \(newUserId) joined Fit33...")
+        AppLogger.debug("Notifying existing users that \(newUserId) joined Fit33...", category: .social)
         
         do {
             // Call the edge function to queue push notifications
@@ -676,11 +561,10 @@ class ContactsService: ObservableObject {
                     )
                 )
             
-            print("✅ [CONTACTS] Notified \(response.notifications_queued) existing users")
-            print("   Message: \(response.message)")
+            AppLogger.info("Notified \(response.notifications_queued) existing users. Message: \(response.message)", category: .social)
             
         } catch {
-            print("❌ [CONTACTS] Error notifying existing users: \(error)")
+            AppLogger.error("Error notifying existing users: \(error.localizedDescription)", category: .social)
         }
     }
 }

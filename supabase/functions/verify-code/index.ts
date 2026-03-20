@@ -46,7 +46,8 @@ serve(async (req) => {
       formattedPhone = '+' + formattedPhone
     }
 
-    console.log(`🔐 Verifying code for: ${formattedPhone}`)
+    const redacted = formattedPhone.slice(0, -4).replace(/\d/g, '*') + formattedPhone.slice(-4)
+    console.log(`Verifying code for: ${redacted}`)
 
     // Verify code via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/VerificationCheck`
@@ -70,7 +71,7 @@ serve(async (req) => {
       throw new Error(twilioData.message || 'Verification failed')
     }
 
-    console.log(`📱 Verification status: ${twilioData.status}`)
+    console.log(`Verification status: ${twilioData.status}`)
 
     // Check if verification was successful
     if (twilioData.status !== 'approved') {
@@ -99,12 +100,14 @@ serve(async (req) => {
       const { data: { user } } = await supabase.auth.getUser(token)
       
       if (user) {
-        // Mark phone as verified in database
-        await supabase.rpc('confirm_phone_verification', {
+        const { error: rpcError } = await supabase.rpc('confirm_phone_verification', {
           p_phone_number: formattedPhone
         })
-        
-        console.log(`✅ Phone verified for user: ${user.id}`)
+        if (rpcError) {
+          console.error('RPC confirm_phone_verification failed:', rpcError.message)
+        } else {
+          console.log(`Phone verified for user: ${user.id}`)
+        }
       }
     }
 

@@ -25,7 +25,7 @@ class UserManager: ObservableObject {
     /// Reloads user state from Core Data - call after cloud sync
     func reloadCurrentUser() {
         loadCurrentUser()
-        print("🔄 UserManager reloaded - hasCompletedOnboarding: \(hasCompletedOnboarding)")
+        AppLogger.debug("UserManager reloaded - hasCompletedOnboarding: \(hasCompletedOnboarding)", category: .auth)
     }
     
     private func loadCurrentUser() {
@@ -34,11 +34,11 @@ class UserManager: ObservableObject {
         // To skip onboarding: Set environment variable SKIP_ONBOARDING = "YES"
         let shouldSkipOnboarding = ProcessInfo.processInfo.environment["SKIP_ONBOARDING"] == "YES"
         if shouldSkipOnboarding {
-            print("🚀 DEBUG: Skipping onboarding, creating test user")
+            AppLogger.debug("DEBUG: Skipping onboarding, creating test user", category: .auth)
             createDebugUserIfNeeded()
             return
         }
-        print("🔍 [DEBUG] Showing full auth + onboarding flow")
+        AppLogger.debug("[DEBUG] Showing full auth + onboarding flow", category: .auth)
         #endif
         
         let request: NSFetchRequest<User> = User.fetchRequest()
@@ -54,7 +54,7 @@ class UserManager: ObservableObject {
                     self.currentUser = user
                     self.hasCompletedOnboarding = user.hasCompletedOnboarding
                 } catch {
-                    print("⚠️ User data corrupted, deleting and requiring re-onboarding")
+                    AppLogger.warning("User data corrupted, deleting and requiring re-onboarding", category: .general)
                     viewContext.delete(user)
                     try? viewContext.save()
                     self.currentUser = nil
@@ -62,9 +62,9 @@ class UserManager: ObservableObject {
                 }
             }
         } catch {
-            print("Error fetching user: \(error)")
+            AppLogger.error("Error fetching user: \(error.localizedDescription)", category: .general)
             // If fetch fails completely, reset Core Data
-            print("⚠️ Core Data fetch failed, attempting cleanup...")
+            AppLogger.warning("Core Data fetch failed, attempting cleanup...", category: .general)
             PersistenceController.shared.deleteAll()
         }
     }
@@ -112,7 +112,7 @@ class UserManager: ObservableObject {
                 try viewContext.save()
                 self.currentUser = testUser
                 self.hasCompletedOnboarding = true
-                print("✅ Created debug test user (175cm/69in, 75kg/165lbs)")
+                AppLogger.info("Created debug test user (175cm/69in, 75kg/165lbs)", category: .auth)
                 
                 // Initialize exercises and sync to cloud
                 Task {
@@ -120,7 +120,7 @@ class UserManager: ObservableObject {
                     
                     // Sync debug user to cloud if authenticated
                     if SupabaseManager.shared.isAuthenticated {
-                        print("☁️ [DEBUG] Syncing debug user profile to cloud...")
+                        AppLogger.debug("[DEBUG] Syncing debug user profile to cloud...", category: .auth)
                         try? await syncProfileToCloud()
                     }
                 }
@@ -133,17 +133,17 @@ class UserManager: ObservableObject {
                 var needsSave = false
                 if existingUser.heightInches == 0 && existingUser.height > 0 {
                     existingUser.heightInches = Int16(Double(existingUser.height) / 2.54)
-                    print("📐 [DEBUG] Backfilled heightInches: \(existingUser.heightInches)")
+                    AppLogger.debug("[DEBUG] Backfilled heightInches: \(existingUser.heightInches)", category: .general)
                     needsSave = true
                 }
                 if existingUser.weightLbs == 0 && existingUser.weight > 0 {
                     existingUser.weightLbs = Double(existingUser.weight) * 2.20462
-                    print("⚖️ [DEBUG] Backfilled weightLbs: \(existingUser.weightLbs)")
+                    AppLogger.debug("[DEBUG] Backfilled weightLbs: \(existingUser.weightLbs)", category: .general)
                     needsSave = true
                 }
                 if existingUser.birthday == nil || existingUser.birthday?.isEmpty == true {
                     existingUser.birthday = "01/15/1999"
-                    print("🎂 [DEBUG] Backfilled birthday: \(existingUser.birthday ?? "")")
+                    AppLogger.debug("[DEBUG] Backfilled birthday: \(existingUser.birthday ?? "")", category: .general)
                     needsSave = true
                 }
                 
@@ -154,13 +154,13 @@ class UserManager: ObservableObject {
                 // Sync existing user to cloud (in case local data was updated)
                 Task {
                     if SupabaseManager.shared.isAuthenticated {
-                        print("☁️ [DEBUG] Syncing existing user profile to cloud...")
+                        AppLogger.debug("[DEBUG] Syncing existing user profile to cloud...", category: .auth)
                         try? await syncProfileToCloud()
                     }
                 }
             }
         } catch {
-            print("❌ Error creating debug user: \(error)")
+            AppLogger.error("Error creating debug user: \(error.localizedDescription)", category: .auth)
         }
     }
     #endif
@@ -169,29 +169,29 @@ class UserManager: ObservableObject {
         // Input validation - return early on invalid data
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, trimmedName.count <= 100 else {
-            print("❌ [ONBOARDING] Validation failed: name must be 1-100 characters")
+            AppLogger.error("[ONBOARDING] Validation failed: name must be 1-100 characters", category: .auth)
             return
         }
         guard (13...120).contains(age) else {
-            print("❌ [ONBOARDING] Validation failed: age must be 13-120")
+            AppLogger.error("[ONBOARDING] Validation failed: age must be 13-120", category: .auth)
             return
         }
         guard (1...300).contains(height) else {
-            print("❌ [ONBOARDING] Validation failed: height must be 1-300 cm")
+            AppLogger.error("[ONBOARDING] Validation failed: height must be 1-300 cm", category: .auth)
             return
         }
         guard (1...1000).contains(weight) else {
-            print("❌ [ONBOARDING] Validation failed: weight must be 1-1000 kg")
+            AppLogger.error("[ONBOARDING] Validation failed: weight must be 1-1000 kg", category: .auth)
             return
         }
         let validationInches = heightInches ?? Int16(Double(height) / 2.54)
         guard (1...120).contains(validationInches) else {
-            print("❌ [ONBOARDING] Validation failed: height must be 1-120 inches")
+            AppLogger.error("[ONBOARDING] Validation failed: height must be 1-120 inches", category: .auth)
             return
         }
         let lbs = weightLbs ?? Double(weight) * 2.20462
         guard (1...1000).contains(lbs) else {
-            print("❌ [ONBOARDING] Validation failed: weight must be 1-1000 lbs")
+            AppLogger.error("[ONBOARDING] Validation failed: weight must be 1-1000 lbs", category: .auth)
             return
         }
 
@@ -223,7 +223,7 @@ class UserManager: ObservableObject {
         // Calculate total inches from cm if not provided: cm / 2.54 = inches
         newUser.heightInches = heightInches ?? Int16(Double(height) / 2.54)
         
-        // Save to UserDefaults for backwards compatibility with existing nutrition code
+        // Cached in UserDefaults for backwards compatibility. Authoritative weight is in WeightTrackingService.
         UserDefaults.standard.set(Int(weight), forKey: "userWeight")
         UserDefaults.standard.set(Int(height), forKey: "userHeight")
         UserDefaults.standard.set(gender ?? "Prefer not to say", forKey: "userGender")
@@ -231,16 +231,13 @@ class UserManager: ObservableObject {
         let totalInches = heightInches ?? Int16(Double(height) / 2.54)
         let ft = totalInches / 12
         let inches = totalInches % 12
-        print("✅ [ONBOARDING] Created user:")
-        print("   Birthday: \(birthday ?? "not set"), Age: \(age)")
-        print("   Height: \(ft)'\(inches)\" = \(totalInches) inches (\(height)cm)")
-        print("   Weight: \(weightLbs ?? 0) lbs (\(weight)kg)")
+        AppLogger.info("[ONBOARDING] Created user: Birthday: \(birthday ?? "not set"), Age: \(age), Height: \(ft)'\(inches)\" = \(totalInches) inches (\(height)cm), Weight: \(weightLbs ?? 0) lbs (\(weight)kg)", category: .auth)
         
         do {
             try viewContext.save()
             self.currentUser = newUser
             self.hasCompletedOnboarding = true
-            print("✅ [ONBOARDING] User saved to Core Data")
+            AppLogger.info("[ONBOARDING] User saved to Core Data", category: .auth)
             
             // ALWAYS sync profile to cloud after creation
             Task {
@@ -249,24 +246,24 @@ class UserManager: ObservableObject {
                     await ExerciseLibraryService.shared.syncExercisesFromCloud()
                     
                     // Sync full profile to cloud immediately after onboarding
-                    print("☁️ [ONBOARDING] Syncing full profile to cloud...")
+                    AppLogger.debug("[ONBOARDING] Syncing full profile to cloud...", category: .auth)
                     do {
                         try await syncProfileToCloud()
-                        print("✅ [ONBOARDING] Profile synced to cloud successfully")
+                        AppLogger.info("[ONBOARDING] Profile synced to cloud successfully", category: .auth)
                     } catch {
-                        print("❌ [ONBOARDING] Failed to sync profile to cloud: \(error)")
-                        print("❌ [ONBOARDING] Will retry sync on next app launch")
+                        AppLogger.error("[ONBOARDING] Failed to sync profile to cloud: \(error.localizedDescription)", category: .auth)
+                        AppLogger.error("[ONBOARDING] Will retry sync on next app launch", category: .auth)
                     }
                     
                     // Mark onboarding as complete in cloud (important for social sign-in users)
                     do {
                         try await SupabaseManager.shared.markOnboardingComplete()
-                        print("☁️ [ONBOARDING] Onboarding status synced to cloud")
+                        AppLogger.info("[ONBOARDING] Onboarding status synced to cloud", category: .auth)
                     } catch {
-                        print("❌ [ONBOARDING] Failed to mark onboarding complete: \(error)")
+                        AppLogger.error("[ONBOARDING] Failed to mark onboarding complete: \(error.localizedDescription)", category: .auth)
                     }
                 } else {
-                    print("⚠️ [ONBOARDING] User not authenticated after signup - this is unexpected!")
+                    AppLogger.warning("[ONBOARDING] User not authenticated after signup - this is unexpected!", category: .auth)
                     // Fall back to local exercises if not authenticated
                     await MainActor.run {
                         ExerciseLibraryService.shared.initializeDefaultExercises()
@@ -274,7 +271,7 @@ class UserManager: ObservableObject {
                 }
             }
         } catch {
-            print("Error saving user: \(error)")
+            AppLogger.error("Error saving user: \(error.localizedDescription)", category: .auth)
         }
     }
     
@@ -284,7 +281,7 @@ class UserManager: ObservableObject {
         guard let user = currentUser else { return }
         guard supabaseManager.isAuthenticated else {
             #if DEBUG
-            print("ℹ️ User not authenticated, skipping cloud sync")
+            AppLogger.info("User not authenticated, skipping cloud sync", category: .auth)
             #endif
             return
         }
@@ -317,10 +314,10 @@ class UserManager: ObservableObject {
     /// Resets user state for sign-out
     /// Called when user signs out to ensure clean state for next user
     func resetForSignOut() {
-        print("🔐 UserManager: Resetting state for sign-out...")
+        AppLogger.info("UserManager: Resetting state for sign-out...", category: .auth)
         currentUser = nil
         hasCompletedOnboarding = false
-        print("🔐 UserManager: State reset complete")
+        AppLogger.info("UserManager: State reset complete", category: .auth)
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
@@ -353,17 +350,13 @@ class UserManager: ObservableObject {
         let maxAllowedGap = calculateMaxAllowedGap(daysPerWeek: availableDays)
         
         #if DEBUG
-        print("🔥 [STREAK] Checking streak:")
-        print("   └─ Days since last workout: \(daysSinceLastWorkout)")
-        print("   └─ User's available days/week: \(availableDays)")
-        print("   └─ Max allowed gap: \(maxAllowedGap) days")
-        print("   └─ Current streak: \(user.currentStreak)")
+        AppLogger.debug("[STREAK] Checking streak: days since last=\(daysSinceLastWorkout), available days/week=\(availableDays), max gap=\(maxAllowedGap), current streak=\(user.currentStreak)", category: .general)
         #endif
         
         if daysSinceLastWorkout == 0 {
             // Already worked out today - no change to streak
             #if DEBUG
-            print("   └─ Already worked out today, no streak change")
+            AppLogger.debug("[STREAK] Already worked out today, no streak change", category: .general)
             #endif
             return
         } else if daysSinceLastWorkout <= maxAllowedGap {
@@ -373,14 +366,14 @@ class UserManager: ObservableObject {
                 user.longestStreak = user.currentStreak
             }
             #if DEBUG
-            print("   └─ ✅ Within rest window (\(daysSinceLastWorkout) ≤ \(maxAllowedGap)) - streak now: \(user.currentStreak)")
+            AppLogger.info("[STREAK] Within rest window (\(daysSinceLastWorkout) ≤ \(maxAllowedGap)) - streak now: \(user.currentStreak)", category: .general)
             #endif
         } else {
             // Too many days off - streak broken
             let oldStreak = user.currentStreak
             user.currentStreak = 1
             #if DEBUG
-            print("   └─ ❌ Streak broken! (\(daysSinceLastWorkout) > \(maxAllowedGap)) - was \(oldStreak), now 1")
+            AppLogger.warning("[STREAK] Streak broken! (\(daysSinceLastWorkout) > \(maxAllowedGap)) - was \(oldStreak), now 1", category: .general)
             #endif
             
             // Log for analytics
@@ -409,7 +402,7 @@ class UserManager: ObservableObject {
             }
         } catch {
             #if DEBUG
-            print("Error updating streak: \(error)")
+            AppLogger.error("Error updating streak: \(error.localizedDescription)", category: .general)
             #endif
         }
     }
@@ -502,20 +495,23 @@ class UserManager: ObservableObject {
 
         #if DEBUG
         let daysSinceLastWorkout = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastWorkoutDate), to: today).day ?? 0
-        print("🔥 [STREAK CHECK] Daily streak check:")
-        print("   └─ Days since last workout: \(daysSinceLastWorkout)")
-        print("   └─ Days since effective date: \(daysSinceEffective) (shield: \(effectiveDate != lastWorkoutDate))")
-        print("   └─ Max allowed gap: \(maxAllowedGap) days")
-        print("   └─ Current streak: \(user.currentStreak)")
+        AppLogger.debug("[STREAK CHECK] Daily check: days since workout=\(daysSinceLastWorkout), days since effective=\(daysSinceEffective) (shield: \(effectiveDate != lastWorkoutDate)), max gap=\(maxAllowedGap), streak=\(user.currentStreak)", category: .general)
         #endif
 
         if daysSinceEffective > maxAllowedGap {
-            // Too many days off - streak broken
+            if StreakShieldService.shared.canUseShield,
+               StreakShieldService.shared.useShield() {
+                #if DEBUG
+                AppLogger.debug("[STREAK CHECK] Shield auto-used, streak preserved at \(user.currentStreak)", category: .general)
+                #endif
+                return
+            }
+
             let oldStreak = user.currentStreak
             user.currentStreak = 0
 
             #if DEBUG
-            print("   └─ ❌ Streak broken! (\(daysSinceEffective) > \(maxAllowedGap)) - was \(oldStreak), now 0")
+            AppLogger.warning("[STREAK CHECK] Streak broken! (\(daysSinceEffective) > \(maxAllowedGap)) - was \(oldStreak), now 0", category: .general)
             #endif
 
             SessionLogManager.shared.logStreakBroken(
@@ -529,12 +525,12 @@ class UserManager: ObservableObject {
                 scheduleDebouncedCloudSync()
             } catch {
                 #if DEBUG
-                print("Error saving streak break: \(error)")
+                AppLogger.error("Error saving streak break: \(error.localizedDescription)", category: .general)
                 #endif
             }
         } else {
             #if DEBUG
-            print("   └─ ✅ Streak safe (\(daysSinceEffective) ≤ \(maxAllowedGap))")
+            AppLogger.debug("[STREAK CHECK] Streak safe (\(daysSinceEffective) ≤ \(maxAllowedGap))", category: .general)
             #endif
         }
     }
@@ -560,7 +556,7 @@ class UserManager: ObservableObject {
             scheduleDebouncedCloudSync()
         } catch {
             #if DEBUG
-            print("Error adding XP: \(error)")
+            AppLogger.error("Error adding XP: \(error.localizedDescription)", category: .general)
             #endif
         }
     }
@@ -665,7 +661,7 @@ class UserManager: ObservableObject {
             }
         } catch {
             #if DEBUG
-            print("Error completing workout: \(error)")
+            AppLogger.error("Error completing workout: \(error.localizedDescription)", category: .general)
             #endif
         }
     }
@@ -724,7 +720,7 @@ class UserManager: ObservableObject {
         do {
             try viewContext.save()
         } catch {
-            print("Error awarding achievement: \(error)")
+            AppLogger.error("Error awarding achievement: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -752,7 +748,7 @@ class UserManager: ObservableObject {
                 }
             }
         } catch {
-            print("Error fetching recent muscle groups: \(error)")
+            AppLogger.error("Error fetching recent muscle groups: \(error.localizedDescription)", category: .general)
         }
         
         return muscleGroupCounts
@@ -770,23 +766,25 @@ class UserManager: ObservableObject {
 class PremiumManager: ObservableObject {
     static let shared = PremiumManager()
     
-    @Published var isPremiumUser: Bool = false {
+    @Published var isPremiumUser: Bool = true {
         didSet {
             UserDefaults.standard.set(isPremiumUser, forKey: "isPremiumUser")
         }
     }
     
     private init() {
-        // Defaults to false (free tier) until StoreKit confirms an active subscription.
-        // TestFlight uses Apple's Sandbox -- testers see the full purchase flow but are never charged real money.
-        self.isPremiumUser = UserDefaults.standard.object(forKey: "isPremiumUser") as? Bool ?? false
+        // Always start as premium — all features available.
+        // The Settings "Free User Mode" toggle can temporarily switch to free for testing,
+        // but every fresh launch resets to premium.
+        self.isPremiumUser = true
+        UserDefaults.standard.set(true, forKey: "isPremiumUser")
     }
     
     /// Called by StoreKitManager when entitlement status changes.
+    /// Currently a no-op: app always runs as premium.
+    /// Re-enable when subscription billing goes live.
     func updateFromStoreKit(hasSubscription: Bool) {
-        if isPremiumUser != hasSubscription {
-            isPremiumUser = hasSubscription
-        }
+        // No-op: premium is always true until billing is live
     }
     
     // MARK: - Premium Feature Checks
@@ -836,13 +834,13 @@ class PremiumManager: ObservableObject {
     /// Toggle premium status (for development only)
     func togglePremiumStatus() {
         isPremiumUser.toggle()
-        print("Premium status changed to: \(isPremiumUser ? "Premium" : "Free")")
+        AppLogger.debug("Premium status changed to: \(isPremiumUser ? "Premium" : "Free")", category: .general)
     }
     
     /// Force set premium status (for development only)
     func setPremiumStatus(_ premium: Bool) {
         isPremiumUser = premium
-        print("Premium status set to: \(isPremiumUser ? "Premium" : "Free")")
+        AppLogger.debug("Premium status set to: \(isPremiumUser ? "Premium" : "Free")", category: .general)
     }
     
     // MARK: - Feature Descriptions

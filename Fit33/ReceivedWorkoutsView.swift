@@ -255,7 +255,7 @@ struct ReceivedWorkoutCard: View {
                     statusBadge
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
                 
@@ -268,10 +268,10 @@ struct ReceivedWorkoutCard: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 4) {
                             Image(systemName: "clock.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(workoutGradient[0])
                             Text("\(estimatedMinutes)m")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                 .foregroundColor(.primary)
                         }
                         Text("Duration")
@@ -288,10 +288,10 @@ struct ReceivedWorkoutCard: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 4) {
                             Image(systemName: "figure.strengthtraining.traditional")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(workoutGradient[0])
                             Text("\(workout.exerciseCount)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                 .foregroundColor(.primary)
                         }
                         Text("Exercises")
@@ -308,10 +308,10 @@ struct ReceivedWorkoutCard: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 4) {
                             Image(systemName: "repeat")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(workoutGradient[0])
                             Text("\(totalSets)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                 .foregroundColor(.primary)
                         }
                         Text("Sets")
@@ -329,7 +329,7 @@ struct ReceivedWorkoutCard: View {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "text.bubble.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(.green)
                             }
                             Text("Message")
@@ -378,7 +378,7 @@ struct ReceivedWorkoutCard: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Capsule().fill(Color.blue))
         case "saved":
             // Show PRO badge for free users, Saved badge for premium users
@@ -392,7 +392,7 @@ struct ReceivedWorkoutCard: View {
                 }
                 .foregroundColor(.black.opacity(0.8))
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(
                     Capsule().fill(
                         LinearGradient(
@@ -405,14 +405,14 @@ struct ReceivedWorkoutCard: View {
             } else {
                 HStack(spacing: 4) {
                     Image(systemName: "bookmark.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                     Text("Saved")
                         .font(.caption2)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.green)
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Capsule().stroke(Color.green, lineWidth: 1))
             }
         default:
@@ -516,7 +516,7 @@ struct ReceivedWorkoutDetailView: View {
                     dismiss()
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                 }
             }
@@ -524,7 +524,7 @@ struct ReceivedWorkoutDetailView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: saveWorkout) {
                     Image(systemName: workout.status == "saved" ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(workout.status == "saved" ? .green : themeColor)
                 }
             }
@@ -600,7 +600,7 @@ struct ReceivedWorkoutDetailView: View {
                         .frame(width: 46, height: 46)
                 
                     Image(systemName: "bolt.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -679,7 +679,7 @@ struct ReceivedWorkoutDetailView: View {
         case "saved":
             HStack(spacing: 4) {
                 Image(systemName: "bookmark.fill")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                 Text("Saved")
                     .font(.caption2)
                     .fontWeight(.semibold)
@@ -699,7 +699,7 @@ struct ReceivedWorkoutDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "quote.bubble.fill")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(themeColor)
                 Text("Message from \(workout.senderName)")
                     .font(.caption)
@@ -738,7 +738,7 @@ struct ReceivedWorkoutDetailView: View {
                 }
                 .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 10) {
                 ForEach(Array(workout.exerciseNames.enumerated()), id: \.offset) { index, name in
@@ -923,7 +923,7 @@ struct ReceivedExerciseCard: View {
                         .frame(width: 36, height: 36)
                     
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(categoryColor)
                 }
                 
@@ -955,7 +955,7 @@ struct ReceivedExerciseCard: View {
                 
                 // Info icon
                 Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundColor(.secondary.opacity(0.5))
             }
             .padding(.horizontal, Spacing.md)

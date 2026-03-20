@@ -4,6 +4,7 @@ import Foundation
 // Intelligent system for finding exercise substitutions based on movement patterns,
 // muscle activation, equipment alternatives, and biomechanical similarity
 
+@MainActor
 final class SmartExercisePairingEngine {
     static let shared = SmartExercisePairingEngine()
     
@@ -64,84 +65,7 @@ final class SmartExercisePairingEngine {
         }
     }
     
-    // MARK: - Movement Pattern Classification
-    
-    enum MovementPattern: String, CaseIterable {
-        // Upper Body Push
-        case horizontalPush = "Horizontal Push"      // Bench press, push-ups
-        case verticalPush = "Vertical Push"          // Shoulder press, pike push-ups
-        case tricepExtension = "Tricep Extension"    // Skull crushers, pushdowns
-        
-        // Upper Body Pull
-        case horizontalPull = "Horizontal Pull"      // Rows
-        case verticalPull = "Vertical Pull"          // Pull-ups, lat pulldowns
-        case bicepCurl = "Bicep Curl"                // All curl variations
-        
-        // Lower Body
-        case squat = "Squat"                         // Squats, leg press
-        case hipHinge = "Hip Hinge"                  // Deadlifts, RDLs
-        case lunge = "Lunge"                         // Lunges, split squats
-        case legExtension = "Leg Extension"          // Quad isolation
-        case legCurl = "Leg Curl"                    // Hamstring isolation
-        case calfRaise = "Calf Raise"                // Calf work
-        case hipAbduction = "Hip Abduction"          // Glute work
-        case hipAdduction = "Hip Adduction"          // Inner thigh
-        
-        // Core
-        case spinalFlexion = "Spinal Flexion"        // Crunches, sit-ups
-        case spinalExtension = "Spinal Extension"    // Back extensions
-        case rotation = "Rotation"                   // Russian twists
-        case antiRotation = "Anti-Rotation"          // Pallof press
-        case plank = "Plank/Isometric"               // Planks
-        
-        // Shoulders
-        case lateralRaise = "Lateral Raise"          // Lateral raises, upright rows
-        case shrug = "Shrug"                         // Shrugs, trap work
-        
-        // Full Body / Compound
-        case olympicLift = "Olympic Lift"            // Cleans, snatches
-        case carry = "Carry"                         // Farmer's walks
-        case complexMovement = "Complex Movement"    // Burpees, etc.
-        
-        // Other
-        case isolation = "Isolation"                 // Single joint movements
-        case cardio = "Cardio"                       // Cardio movements
-        case stretch = "Stretch"                     // Flexibility
-        case unknown = "Unknown"
-        
-        var relatedPatterns: [MovementPattern] {
-            switch self {
-            case .horizontalPush: return [.verticalPush, .tricepExtension]
-            case .verticalPush: return [.horizontalPush, .tricepExtension]
-            case .tricepExtension: return [.horizontalPush, .verticalPush]
-            case .horizontalPull: return [.verticalPull, .bicepCurl]
-            case .verticalPull: return [.horizontalPull, .bicepCurl]
-            case .bicepCurl: return [.horizontalPull, .verticalPull]
-            case .squat: return [.lunge, .legExtension]
-            case .hipHinge: return [.squat, .legCurl]
-            case .lunge: return [.squat, .hipHinge]
-            case .legExtension: return [.squat, .lunge]
-            case .legCurl: return [.hipHinge]
-            case .calfRaise: return []
-            case .hipAbduction: return [.hipAdduction, .squat]
-            case .hipAdduction: return [.hipAbduction, .squat]
-            case .spinalFlexion: return [.plank, .rotation]
-            case .spinalExtension: return [.hipHinge]
-            case .rotation: return [.antiRotation, .spinalFlexion]
-            case .antiRotation: return [.rotation, .plank]
-            case .plank: return [.spinalFlexion, .antiRotation]
-            case .olympicLift: return [.hipHinge, .squat]
-            case .carry: return [.plank]
-            case .complexMovement: return [.squat, .horizontalPush]
-            case .lateralRaise: return [.verticalPush, .shrug]
-            case .shrug: return [.lateralRaise, .verticalPull]
-            case .isolation: return []
-            case .cardio: return []
-            case .stretch: return []
-            case .unknown: return []
-            }
-        }
-    }
+    // MovementPattern is defined in ExerciseTypes.swift
     
     // MARK: - Equipment Equivalency Groups
     
@@ -196,6 +120,26 @@ final class SmartExercisePairingEngine {
                 primary: "EZ Bar",
                 alternatives: ["Barbell", "Dumbbells", "Cables"],
                 qualityRating: ["Barbell": 95, "Dumbbells": 90, "Cables": 85]
+            ),
+            EquipmentGroup(
+                primary: "TRX/Rings",
+                alternatives: ["Bodyweight", "Cables", "Resistance Bands"],
+                qualityRating: ["Bodyweight": 85, "Cables": 80, "Resistance Bands": 75]
+            ),
+            EquipmentGroup(
+                primary: "Stability Ball",
+                alternatives: ["Bodyweight", "Dumbbells", "Resistance Bands"],
+                qualityRating: ["Bodyweight": 85, "Dumbbells": 80, "Resistance Bands": 75]
+            ),
+            EquipmentGroup(
+                primary: "Pull-Up Bar",
+                alternatives: ["Cables", "Resistance Bands", "TRX/Rings", "Bodyweight"],
+                qualityRating: ["Cables": 90, "Resistance Bands": 75, "TRX/Rings": 85, "Bodyweight": 70]
+            ),
+            EquipmentGroup(
+                primary: "Medicine Ball",
+                alternatives: ["Dumbbells", "Kettlebell", "Bodyweight"],
+                qualityRating: ["Dumbbells": 85, "Kettlebell": 80, "Bodyweight": 75]
             )
         ]
         
@@ -502,7 +446,7 @@ final class SmartExercisePairingEngine {
         }
         
         // Calves
-        if nameLower.contains("calf") || nameLower.contains("raise") && musclesLower.contains(where: { $0.contains("calf") }) {
+        if (nameLower.contains("calf") || nameLower.contains("raise")) && musclesLower.contains(where: { $0.contains("calf") }) {
             return .calfRaise
         }
         
@@ -818,6 +762,63 @@ final class SmartExercisePairingEngine {
         }
         
         return Array(pairings.prefix(limit))
+    }
+    
+    // MARK: - Alternative Exercise API (replaces AlternativeExerciseEngine)
+    
+    func getAlternatives(
+        for exercise: Exercise,
+        userEquipment: [String],
+        excludeIds: Set<UUID> = [],
+        maxResults: Int = 5
+    ) -> [ScoredAlternative] {
+        let pairings = findSubstitutes(for: exercise, limit: maxResults * 2, userEquipment: userEquipment)
+        
+        let filtered = pairings.filter { pairing in
+            guard let id = pairing.exercise.id else { return true }
+            return !excludeIds.contains(id)
+        }
+        
+        return Array(filtered.prefix(maxResults)).map { pairing in
+            ScoredAlternative(
+                exercise: pairing.exercise,
+                score: pairing.matchScore,
+                reasons: pairing.matchReasons.map(\.rawValue)
+            )
+        }
+    }
+    
+    func getBestAlternative(
+        for exercise: Exercise,
+        userEquipment: [String],
+        excludeIds: Set<UUID> = []
+    ) -> Exercise? {
+        let alternatives = getAlternatives(
+            for: exercise,
+            userEquipment: userEquipment,
+            excludeIds: excludeIds,
+            maxResults: 3
+        )
+        
+        guard !alternatives.isEmpty else { return nil }
+        
+        let topCandidates = Array(alternatives.prefix(3))
+        let weights = topCandidates.map { Double($0.score) }
+        let totalWeight = weights.reduce(0, +)
+        
+        if totalWeight == 0 { return alternatives.first?.exercise }
+        
+        let randomValue = Double.random(in: 0..<totalWeight)
+        var cumulative = 0.0
+        
+        for (index, weight) in weights.enumerated() {
+            cumulative += weight
+            if randomValue < cumulative {
+                return topCandidates[index].exercise
+            }
+        }
+        
+        return alternatives.first?.exercise
     }
     
     private func calculateMatchScore(source: ExerciseAnalysis, candidate: ExerciseAnalysis) -> (score: Int, reasons: [ExercisePairing.MatchReason]) {

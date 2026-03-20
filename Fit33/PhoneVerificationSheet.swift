@@ -86,7 +86,7 @@ struct PhoneVerificationSheet: View {
                     
                     Spacer()
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
             }
             } // Close ZStack
             .navigationBarTitleDisplayMode(.inline)
@@ -141,7 +141,7 @@ struct PhoneVerificationSheet: View {
                         // Selected state shows: Flag + Country Code
                         HStack(spacing: 6) {
                             Text(selectedCountryCode.flag)
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                             Text(selectedCountryCode.dialingCode)
                                 .font(.system(size: 14, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.primary)
@@ -173,11 +173,11 @@ struct PhoneVerificationSheet: View {
                         
                         if isPhoneNumberValid {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 20))
+                                .font(.ds_heading3)
                                 .foregroundColor(.blue)
                         }
                     }
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 14)
                     .background(
@@ -200,15 +200,15 @@ struct PhoneVerificationSheet: View {
                     HStack(spacing: 10) {
                         if sendCodeCountdown > 0 {
                             Image(systemName: "clock.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                             Text("Retry in \(sendCodeCountdown)s")
                         } else {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                             Text("Send Verification Code")
                         }
                     }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(canSend ? .white : .gray)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.md)
@@ -223,7 +223,7 @@ struct PhoneVerificationSheet: View {
             // Privacy Message
             HStack(spacing: 10) {
                 Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.blue.opacity(0.8))
                 
                 Text("Your number is private and will never be shared.")
@@ -246,7 +246,7 @@ struct PhoneVerificationSheet: View {
             // Phone number badge
             HStack(spacing: 8) {
                 Image(systemName: "phone.fill")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.blue)
                 Text("Code sent to \(formatInternationalNumber())")
                     .font(.subheadline.weight(.medium))
@@ -262,7 +262,7 @@ struct PhoneVerificationSheet: View {
             if attempts >= maxAttempts {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text("Last attempt - going back will lock this feature")
                         .font(.caption)
                 }
@@ -284,7 +284,7 @@ struct PhoneVerificationSheet: View {
                 .font(.system(size: 32, weight: .bold, design: .monospaced))
                 .tracking(12)  // Letter spacing for readability
                 .focused($focusedField, equals: .verificationCode)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, 18)
                 .background(
                     RoundedRectangle(cornerRadius: CornerRadius.lg)
@@ -316,7 +316,7 @@ struct PhoneVerificationSheet: View {
             if !verificationError.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text(verificationError)
                         .font(.caption)
                 }
@@ -339,7 +339,7 @@ struct PhoneVerificationSheet: View {
                 Button(action: goBack) {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                         Text("Change Number")
                     }
                     .font(.subheadline)

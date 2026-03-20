@@ -172,7 +172,7 @@ struct WorkoutCreationView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(
@@ -303,7 +303,7 @@ struct GeneratedExerciseCard: View {
                     .frame(width: 36, height: 36)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
             }
             
@@ -335,7 +335,7 @@ struct GeneratedExerciseCard: View {
             
             // Chevron
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)
@@ -387,7 +387,7 @@ struct CustomExerciseCard: View {
                     .frame(width: 36, height: 36)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
             }
             
@@ -421,7 +421,7 @@ struct CustomExerciseCard: View {
             Button(action: onRemove) {
                 Image(systemName: "minus.circle.fill")
                     .foregroundColor(.red)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
         }
         .padding(.horizontal, Spacing.md)

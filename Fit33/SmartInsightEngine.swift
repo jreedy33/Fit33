@@ -16,8 +16,8 @@ class SmartInsightEngine: ObservableObject {
     
     struct SmartInsight: Identifiable {
         let id = UUID()
-        let category: InsightCategory
-        let type: InsightType
+        let category: SmartInsightCategory
+        let type: SmartInsightType
         let icon: String
         let title: String
         let message: String
@@ -26,7 +26,7 @@ class SmartInsightEngine: ObservableObject {
         let actionable: Bool
         let celebratory: Bool
         
-        enum InsightCategory: String {
+        enum SmartInsightCategory: String {
             case nutrition = "Nutrition"
             case workout = "Workout"
             case hydration = "Hydration"
@@ -38,7 +38,7 @@ class SmartInsightEngine: ObservableObject {
             case motivation = "Motivation"
         }
         
-        enum InsightType: String {
+        enum SmartInsightType: String {
             case achievement   // Something accomplished
             case encouragement // Motivational
             case suggestion   // Actionable advice
@@ -719,15 +719,6 @@ class SmartInsightEngine: ObservableObject {
                 "💪 Another day of progress in the books. Rest well!",
             ].randomElement()!
         }
-    }
-    
-    // MARK: - Quick Insight Generators
-    
-    /// Generate a single impactful insight for notification or widget
-    func generateQuickInsight() -> SmartInsight? {
-        // This would pull live data and return the highest priority insight
-        // For now, return nil - will be populated by the view
-        return nil
     }
     
     /// Generate workout-specific insight

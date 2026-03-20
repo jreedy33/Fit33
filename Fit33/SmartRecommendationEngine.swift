@@ -165,31 +165,30 @@ class SmartRecommendationEngine {
         
         // Adjust for fitness goal
         switch profile.fitnessGoal {
-        case .strength:
+        case .gainStrength, .powerlifting:
             repRange = profile.experienceLevel == .beginner ? 6...10 : 3...6
-            restBetweenSets += 30 // More rest for strength
+            restBetweenSets += 30
             setsPerExercise = min(setsPerExercise + 1, 5)
             
-        case .hypertrophy:
+        case .buildMuscle, .bodybuilding:
             repRange = 8...12
             restBetweenSets = 60
             
-        case .endurance:
+        case .improveEndurance, .athletic:
             repRange = 15...20
             restBetweenSets = 45
             exerciseCount += 1
             
-        case .fatLoss:
+        case .loseWeight:
             repRange = 12...15
             restBetweenSets = 45
-            exerciseCount += 2 // More exercises, less rest
+            exerciseCount += 2
             
-        case .toning:
+        case .toneUp:
             repRange = 12...15
             restBetweenSets = 60
             
-        case .generalFitness:
-            // Keep defaults
+        case .generalFitness, .flexibility:
             break
         }
         
@@ -462,7 +461,7 @@ class SmartRecommendationEngine {
     
     // MARK: - Helper Functions
     
-    private func goalAlignmentScore(exercise: ExerciseData, goal: FitnessGoal) -> Double {
+    private func goalAlignmentScore(exercise: ExerciseData, goal: ProgramGoal) -> Double {
         let name = exercise.name.lowercased()
         let isCompound = name.contains("squat") || name.contains("deadlift") || name.contains("press") ||
                         name.contains("row") || name.contains("pull up") || name.contains("chin up")
@@ -471,17 +470,17 @@ class SmartRecommendationEngine {
         let isCardio = name.contains("jump") || name.contains("burpee") || name.contains("mountain climber")
         
         switch goal {
-        case .strength:
+        case .gainStrength, .powerlifting:
             return isCompound ? 50 : (isIsolation ? 10 : 20)
-        case .hypertrophy:
+        case .buildMuscle, .bodybuilding:
             return isCompound ? 40 : (isIsolation ? 35 : 25)
-        case .endurance:
+        case .improveEndurance, .athletic:
             return isCardio ? 50 : (isIsolation ? 20 : 30)
-        case .fatLoss:
+        case .loseWeight:
             return isCompound ? 45 : (isCardio ? 40 : 20)
-        case .toning:
+        case .toneUp:
             return isIsolation ? 40 : (isCompound ? 30 : 25)
-        case .generalFitness:
+        case .generalFitness, .flexibility:
             return isCompound ? 35 : 25
         }
     }
@@ -559,17 +558,17 @@ class SmartRecommendationEngine {
         }
         
         switch profile.fitnessGoal {
-        case .strength:
+        case .gainStrength, .powerlifting:
             return "Great for building strength"
-        case .hypertrophy:
+        case .buildMuscle, .bodybuilding:
             return "Optimal for muscle growth"
-        case .fatLoss:
+        case .loseWeight:
             return "High calorie burn"
-        case .endurance:
+        case .improveEndurance, .athletic:
             return "Builds endurance"
-        case .toning:
+        case .toneUp:
             return "Perfect for toning"
-        case .generalFitness:
+        case .generalFitness, .flexibility:
             return "Well-rounded exercise"
         }
     }
@@ -589,17 +588,17 @@ class SmartRecommendationEngine {
         
         // Goal-based tips
         switch profile.fitnessGoal {
-        case .strength:
+        case .gainStrength, .powerlifting:
             notes.append("🎯 Focus on heavy weight with longer rest periods (2-3 min)")
-        case .hypertrophy:
+        case .buildMuscle, .bodybuilding:
             notes.append("🎯 Aim for time under tension - 3 second negatives work great!")
-        case .fatLoss:
+        case .loseWeight:
             notes.append("🎯 Keep rest periods short (30-45s) for maximum calorie burn")
-        case .endurance:
+        case .improveEndurance, .athletic:
             notes.append("🎯 Higher reps with shorter rest builds endurance")
-        case .toning:
+        case .toneUp:
             notes.append("🎯 Moderate weight with controlled movements for definition")
-        case .generalFitness:
+        case .generalFitness, .flexibility:
             notes.append("🎯 Mix up your tempo and rest periods for balanced results")
         }
         
@@ -654,17 +653,23 @@ class UserProfileAnalyzer {
         
         switch goal.lowercased() {
         case "strength":
-            priority = ["Barbell": 10, "Dumbbells": 8, "Machines": 6, "Cables": 5, "Bodyweight": 3, "Resistance Bands": 2]
+            priority = ["Barbell": 10, "Dumbbells": 8, "Machines": 6, "Cables": 5, "Kettlebell": 4,
+                         "Bodyweight": 3, "Smith Machine": 3, "Resistance Bands": 2]
         case "bulk", "build muscle":
-            priority = ["Barbell": 10, "Dumbbells": 9, "Cables": 7, "Machines": 6, "Bodyweight": 4, "Resistance Bands": 3]
+            priority = ["Barbell": 10, "Dumbbells": 9, "Cables": 7, "Machines": 6, "Kettlebell": 5,
+                         "Smith Machine": 5, "Bodyweight": 4, "Resistance Bands": 3]
         case "cut", "fat loss":
-            priority = ["Bodyweight": 9, "Dumbbells": 8, "Cables": 7, "Machines": 6, "Resistance Bands": 5, "Barbell": 4]
+            priority = ["Bodyweight": 9, "Dumbbells": 8, "Cables": 7, "Kettlebell": 7, "Machines": 6,
+                         "Resistance Bands": 5, "TRX/Rings": 5, "Barbell": 4]
         case "tone":
-            priority = ["Dumbbells": 9, "Cables": 8, "Resistance Bands": 7, "Machines": 6, "Bodyweight": 5, "Barbell": 4]
+            priority = ["Dumbbells": 9, "Cables": 8, "Resistance Bands": 7, "Kettlebell": 7,
+                         "Machines": 6, "Bodyweight": 5, "TRX/Rings": 5, "Barbell": 4]
         case "cardio", "endurance":
-            priority = ["Bodyweight": 10, "Resistance Bands": 7, "Dumbbells": 5, "Cables": 4, "Machines": 3, "Barbell": 2]
+            priority = ["Bodyweight": 10, "Resistance Bands": 7, "Kettlebell": 6, "TRX/Rings": 6,
+                         "Dumbbells": 5, "Cables": 4, "Machines": 3, "Barbell": 2]
         default:
-            priority = ["Dumbbells": 8, "Barbell": 8, "Bodyweight": 7, "Cables": 6, "Machines": 5, "Resistance Bands": 4]
+            priority = ["Dumbbells": 8, "Barbell": 8, "Bodyweight": 7, "Cables": 6, "Kettlebell": 6,
+                         "Machines": 5, "Smith Machine": 5, "Resistance Bands": 4, "TRX/Rings": 4]
         }
         
         return equipment.sorted { equip1, equip2 in
@@ -685,21 +690,8 @@ class UserProfileAnalyzer {
         }
     }
     
-    private func parseFitnessGoal(_ goal: String) -> FitnessGoal {
-        switch goal.lowercased() {
-        case "strength", "get stronger":
-            return .strength
-        case "bulk", "build muscle", "muscle":
-            return .hypertrophy
-        case "cut", "lose weight", "fat loss":
-            return .fatLoss
-        case "tone", "toning", "define":
-            return .toning
-        case "cardio", "endurance":
-            return .endurance
-        default:
-            return .generalFitness
-        }
+    private func parseFitnessGoal(_ goal: String) -> ProgramGoal {
+        ProgramGoal.fromUserGoalString(goal)
     }
     
     private func parseGender(_ gender: String?) -> Gender {
@@ -730,106 +722,32 @@ class UserProfileAnalyzer {
 
 // MARK: - Muscle Recovery Tracker
 
+/// Delegates to ProgramMuscleRecoveryTracker (the authoritative singleton) and
+/// adapts its data into the MuscleRecoveryStatus format used by SmartRecommendationEngine.
 class MuscleRecoveryTracker {
     
-    // Standard recovery times in hours for each muscle group
-    private let recoveryTimes: [String: Double] = [
-        "chest": 48,
-        "back": 48,
-        "legs": 72,
-        "quads": 72,
-        "hamstrings": 72,
-        "glutes": 72,
-        "shoulders": 48,
-        "biceps": 48,
-        "triceps": 48,
-        "arms": 48,
-        "core": 24,
-        "abs": 24,
-        "calves": 48
-    ]
+    private let trackedMuscles = ["chest", "upper chest", "lower chest", "back", "lats",
+                                  "upper back", "quads", "hamstrings", "glutes", "calves",
+                                  "shoulders", "front delts", "side delts", "rear delts",
+                                  "biceps", "triceps", "forearms", "traps",
+                                  "core", "abs", "obliques", "lower back",
+                                  "hip flexors", "rotator cuff", "inner thighs", "neck"]
     
     func getRecoveryStatus(for user: User, context: NSManagedObjectContext) -> MuscleRecoveryStatus {
+        let tracker = ProgramMuscleRecoveryTracker.shared
         
-        // Fetch recent workouts (last 7 days)
-        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-        request.predicate = NSPredicate(format: "date >= %@ AND isCompleted == YES", sevenDaysAgo as NSDate)
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
-        
-        do {
-            let recentWorkouts = try context.fetch(request)
-            return calculateRecoveryStatus(from: recentWorkouts)
-        } catch {
-            print("⚠️ Error fetching workouts for recovery: \(error)")
-            return MuscleRecoveryStatus.fullyRecovered()
-        }
-    }
-    
-    private func calculateRecoveryStatus(from workouts: [Workout]) -> MuscleRecoveryStatus {
-        var muscleLastTrained: [String: Date] = [:]
-        var muscleVolume: [String: Int] = [:] // Total sets in last 7 days
-        
-        for workout in workouts {
-            guard let date = workout.date,
-                  let exercises = workout.exercises as? Set<WorkoutExercise> else { continue }
-            
-            for workoutExercise in exercises {
-                guard let exercise = workoutExercise.exercise,
-                      let muscles = exercise.muscleGroups as? [String] else { continue }
-                
-                let setCount = (workoutExercise.sets as? Set<WorkoutSet>)?.count ?? 0
-                
-                for muscle in muscles {
-                    let normalizedMuscle = muscle.lowercased()
-                    
-                    // Track most recent training date
-                    if muscleLastTrained[normalizedMuscle] == nil ||
-                       (muscleLastTrained[normalizedMuscle]! < date) {
-                        muscleLastTrained[normalizedMuscle] = date
-                    }
-                    
-                    // Track volume
-                    muscleVolume[normalizedMuscle, default: 0] += setCount
-                }
-            }
+        var readiness: [String: Double] = [:]
+        for muscle in trackedMuscles {
+            readiness[muscle] = min(1.0, tracker.getRecoveryPercentage(for: muscle) / 100.0)
         }
         
-        // Calculate readiness for each muscle (0.0 = not recovered, 1.0 = fully recovered)
-        var muscleReadiness: [String: Double] = [:]
-        let now = Date()
-        
-        for (muscle, lastDate) in muscleLastTrained {
-            let hoursSinceTraining = now.timeIntervalSince(lastDate) / 3600
-            let requiredRecovery = recoveryTimes[muscle] ?? 48
-            
-            // Factor in volume - more volume = more recovery needed
-            let volumeMultiplier = min(1.5, 1.0 + (Double(muscleVolume[muscle] ?? 0) / 30))
-            let adjustedRecovery = requiredRecovery * volumeMultiplier
-            
-            let readiness = min(1.0, hoursSinceTraining / adjustedRecovery)
-            muscleReadiness[muscle] = readiness
-        }
-        
-        // Add muscles that weren't trained (fully recovered)
-        for muscle in recoveryTimes.keys {
-            if muscleReadiness[muscle] == nil {
-                muscleReadiness[muscle] = 1.0
-            }
-        }
-        
-        // Determine least recently trained muscles
-        let leastRecent = muscleLastTrained
-            .sorted { $0.value < $1.value }
-            .map { $0.key }
-        
-        // Muscles never trained in last 7 days
-        let neverTrained = recoveryTimes.keys.filter { !muscleLastTrained.keys.contains($0) }
+        let sorted = readiness.sorted { $0.value < $1.value }
+        let leastRecent = sorted.map { $0.key }
         
         return MuscleRecoveryStatus(
-            muscleReadiness: muscleReadiness,
-            leastRecentlyTrained: Array(neverTrained) + leastRecent,
-            weeklyVolume: muscleVolume
+            muscleReadiness: readiness,
+            leastRecentlyTrained: leastRecent,
+            weeklyVolume: [:]
         )
     }
 }
@@ -1059,8 +977,9 @@ struct MuscleRecoveryStatus {
     
     static func fullyRecovered() -> MuscleRecoveryStatus {
         MuscleRecoveryStatus(
-            muscleReadiness: ["chest": 1, "back": 1, "legs": 1, "shoulders": 1, "arms": 1, "core": 1],
-            leastRecentlyTrained: ["chest", "back", "legs", "shoulders", "arms", "core"],
+            muscleReadiness: ["chest": 1, "back": 1, "quads": 1, "hamstrings": 1, "glutes": 1,
+                              "shoulders": 1, "biceps": 1, "triceps": 1, "core": 1, "calves": 1],
+            leastRecentlyTrained: ["chest", "back", "quads", "hamstrings", "shoulders", "core"],
             weeklyVolume: [:]
         )
     }
@@ -1133,14 +1052,7 @@ enum ExperienceLevel: String {
     case advanced = "Advanced"
 }
 
-enum FitnessGoal: String {
-    case strength = "Strength"
-    case hypertrophy = "Muscle Building"
-    case fatLoss = "Fat Loss"
-    case toning = "Toning"
-    case endurance = "Endurance"
-    case generalFitness = "General Fitness"
-}
+typealias FitnessGoal = ProgramGoal
 
 enum Gender: String {
     case male = "Male"

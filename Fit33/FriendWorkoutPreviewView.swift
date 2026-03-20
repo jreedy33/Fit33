@@ -82,7 +82,7 @@ struct FriendWorkoutPreviewView: View {
     private func statBubble(icon: String, value: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 18))
+                .font(.ds_heading3)
                 .foregroundColor(color)
             Text(value)
                 .font(.ds_labelMedium)

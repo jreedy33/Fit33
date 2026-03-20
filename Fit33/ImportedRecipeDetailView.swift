@@ -449,7 +449,7 @@ struct ImportedRecipeDetailView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(Color.blue.opacity(0.1))

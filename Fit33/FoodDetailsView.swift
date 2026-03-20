@@ -853,7 +853,7 @@ struct FoodDetailsView: View {
                     Button(action: goBack) {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.ds_labelLarge)
                             Text("Back")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
@@ -923,7 +923,7 @@ struct FoodDetailsView: View {
                         .frame(width: 56, height: 56)
                     
                     Text(foodEmoji)
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                 }
                 
                 // Food Info
@@ -1021,7 +1021,7 @@ struct FoodDetailsView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(selectedUnit.displayName)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.ds_labelLarge)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1096,7 +1096,7 @@ struct FoodDetailsView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(showDetailedNutrition ? 90 : 0))
                 }
@@ -1141,7 +1141,7 @@ struct FoodDetailsView: View {
                     .fontWeight(.bold)
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.md)
             .background(
                 Capsule()
@@ -1574,7 +1574,7 @@ struct CompactMacro: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(formatValue(value) + "g")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(color)
             Text(label)
                 .font(.system(size: 9))
@@ -1603,7 +1603,7 @@ struct CompactNutrientRow: View {
                 .foregroundColor(.secondary)
             Spacer()
             Text("\(formatValue(value))\(unit)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.ds_labelSmall)
                 .foregroundColor(.primary)
         }
         .padding(.vertical, 2)
@@ -1700,7 +1700,7 @@ struct NutrientRow: View {
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private func formatValue(_ val: Double) -> String {

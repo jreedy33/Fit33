@@ -345,12 +345,7 @@ final class EquipmentHierarchyService: @unchecked Sendable {
 
 // MARK: - Workout Location
 
-enum WorkoutLocation: String, CaseIterable, Sendable {
-    case gym
-    case home
-    case outdoor
-    case hybrid
-}
+typealias WorkoutLocation = ExerciseFilterService.WorkoutLocation
 
 // MARK: - Integration with Recommendation System
 

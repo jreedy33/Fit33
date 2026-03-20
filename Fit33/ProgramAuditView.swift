@@ -373,7 +373,7 @@ struct ProgramAuditView: View {
                             .lineLimit(1)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 
                 if index < 9 {
                     Divider()

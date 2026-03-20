@@ -38,9 +38,9 @@ struct AuthView: View {
                         Button(action: quickTestUser) {
                             HStack(spacing: 6) {
                                 Image(systemName: "bolt.fill")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                                 Text("Test User \(testUserCounter)")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.ds_labelMedium)
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.sm)
@@ -119,7 +119,7 @@ struct AuthView: View {
                         )
                         .background(Color.white.opacity(0.3))
                         .clipShape(Capsule())
-                        .padding(2)
+                        .padding(Spacing.xxxs)
                         
                         // Input Fields
                         VStack(spacing: 16) {
@@ -150,7 +150,7 @@ struct AuthView: View {
                         // Error Message
                         if showError {
                             Text(errorMessage)
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.red)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
@@ -166,7 +166,7 @@ struct AuthView: View {
                                     Text(isSignUp ? "Create Account" : "Sign In")
                                         .font(.system(size: 18, weight: .bold))
                                     Image(systemName: "arrow.right.circle.fill")
-                                        .font(.system(size: 20))
+                                        .font(.ds_heading3)
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -208,7 +208,7 @@ struct AuthView: View {
                                     )
                                 
                                 Text("Continue with Google")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.ds_labelLarge)
                                     .foregroundColor(.primary)
                             }
                             .frame(maxWidth: .infinity)
@@ -240,7 +240,7 @@ struct AuthView: View {
                             .shadow(color: Color.black.opacity(0.08), radius: 30, x: 0, y: 15)
                             .shadow(color: Color.blue.opacity(0.1), radius: 15, x: 0, y: 8)
                     )
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     
                     Spacer()
                 }
@@ -372,18 +372,18 @@ struct CustomTextField: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .font(.system(size: 18))
+                .font(.ds_heading3)
                 .frame(width: 24)
             
             if isSecure {
                 SecureField(placeholder, text: $text)
                     .textInputAutocapitalization(.never)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
             } else {
                 TextField(placeholder, text: $text)
                     .keyboardType(keyboardType)
                     .textInputAutocapitalization(autocapitalization)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
             }
         }
         .padding(.horizontal, 18)

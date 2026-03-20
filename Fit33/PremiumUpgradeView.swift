@@ -16,6 +16,7 @@ enum PremiumFeature: String, CaseIterable {
     case homescreenWidgets = "Homescreen Widgets"
     case savedWorkouts = "Saved Workouts"
     case saveSharedWorkouts = "Save Shared Workouts"
+    case removeAds = "Remove Ads"
     
     var icon: String {
         switch self {
@@ -32,6 +33,7 @@ enum PremiumFeature: String, CaseIterable {
         case .homescreenWidgets: return "square.grid.2x2.fill"
         case .savedWorkouts: return "bookmark.fill"
         case .saveSharedWorkouts: return "bookmark.fill"
+        case .removeAds: return "nosign"
         }
     }
     
@@ -50,6 +52,7 @@ enum PremiumFeature: String, CaseIterable {
         case .homescreenWidgets: return "Customize your dashboard"
         case .savedWorkouts: return "Start workouts shared by friends"
         case .saveSharedWorkouts: return "Save workouts from friends"
+        case .removeAds: return "Ad-free workout experience"
         }
     }
     
@@ -68,6 +71,7 @@ enum PremiumFeature: String, CaseIterable {
         case .homescreenWidgets: return .purple
         case .savedWorkouts: return .blue
         case .saveSharedWorkouts: return .blue
+        case .removeAds: return .yellow
         }
     }
     
@@ -86,6 +90,7 @@ enum PremiumFeature: String, CaseIterable {
         case .homescreenWidgets: return [.purple, .pink]
         case .savedWorkouts: return [.blue, .purple]
         case .saveSharedWorkouts: return [.blue, .purple]
+        case .removeAds: return [.yellow, .orange]
         }
     }
 }
@@ -168,7 +173,7 @@ struct PremiumUpgradeView: View {
                     Spacer()
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.white.opacity(0.6))
                             .frame(width: 32, height: 32)
                             .background(Circle().fill(Color.white.opacity(0.1)))
@@ -325,22 +330,19 @@ struct PremiumUpgradeView: View {
                     .font(.system(size: 17, weight: .black))
                     .tracking(2)
             }
-            .foregroundColor(.white)
+            .foregroundColor(.black.opacity(0.8))
             .padding(.horizontal, 22)
             .padding(.vertical, 9)
             .background(
                 Capsule()
                     .fill(
                         LinearGradient(
-                            colors: [
-                                Color(red: 0.35, green: 0.5, blue: 1.0),
-                                Color(red: 0.55, green: 0.35, blue: 1.0)
-                            ],
+                            colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
-                    .shadow(color: .blue.opacity(0.5), radius: 12, x: 0, y: 4)
+                    .shadow(color: .yellow.opacity(0.5), radius: 12, x: 0, y: 4)
             )
             
             Text("Unlock your full potential")
@@ -754,7 +756,7 @@ struct PremiumUpgradeView: View {
             }
             
             Text("Payment charged to Apple ID. Auto-renews until cancelled.")
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.white.opacity(0.25))
                 .multilineTextAlignment(.center)
         }
@@ -798,14 +800,14 @@ struct PremiumBadge: View {
                 .font(.caption2)
                 .fontWeight(.bold)
         }
-        .foregroundColor(.white)
+        .foregroundColor(.black.opacity(0.8))
         .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .background(
             Capsule()
                 .fill(
                     LinearGradient(
-                        colors: [.purple, .blue],
+                        colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
                         startPoint: .leading,
                         endPoint: .trailing
                     )

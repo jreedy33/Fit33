@@ -12,10 +12,6 @@ final class ExerciseDataProvider {
     
     // MARK: - Cached Data
     private var _exercises: [ExerciseData]?
-    private var _byMuscleGroup: [String: [ExerciseData]]?
-    private var _byEquipment: [String: [ExerciseData]]?
-    private var _byCategory: [String: [ExerciseData]]?
-    private var _byName: [String: ExerciseData]?
     
     private init() {}
     
@@ -27,86 +23,6 @@ final class ExerciseDataProvider {
         let loaded = loadExercisesFromBundle()
         _exercises = loaded
         return loaded
-    }
-    
-    // MARK: - Query Methods
-    
-    /// Get all exercises.
-    func getAllExercises() -> [ExerciseData] {
-        return exercises
-    }
-    
-    /// Get exercises for a specific muscle group (case-insensitive).
-    func getExercises(forMuscleGroup muscleGroup: String) -> [ExerciseData] {
-        if _byMuscleGroup == nil { buildMuscleGroupIndex() }
-        return _byMuscleGroup?[muscleGroup.lowercased()] ?? []
-    }
-    
-    /// Get exercises for a specific equipment type (case-insensitive).
-    func getExercises(forEquipment equipment: String) -> [ExerciseData] {
-        if _byEquipment == nil { buildEquipmentIndex() }
-        return _byEquipment?[equipment.lowercased()] ?? []
-    }
-    
-    /// Get exercises for a specific category (case-insensitive).
-    func getExercises(forCategory category: String) -> [ExerciseData] {
-        if _byCategory == nil { buildCategoryIndex() }
-        return _byCategory?[category.lowercased()] ?? []
-    }
-    
-    /// Find a specific exercise by exact name (case-insensitive).
-    func getExercise(byName name: String) -> ExerciseData? {
-        if _byName == nil { buildNameIndex() }
-        return _byName?[name.lowercased()]
-    }
-    
-    /// Search exercises by query string. Matches against name, category,
-    /// muscle groups, and equipment (case-insensitive).
-    func searchExercises(query: String) -> [ExerciseData] {
-        let q = query.lowercased()
-        return exercises.filter { exercise in
-            exercise.name.lowercased().contains(q) ||
-            exercise.category.lowercased().contains(q) ||
-            exercise.equipment.lowercased().contains(q) ||
-            exercise.primaryMuscle.lowercased().contains(q) ||
-            exercise.muscleGroups.contains(where: { $0.lowercased().contains(q) })
-        }
-    }
-    
-    // MARK: - Index Building (on-demand)
-    
-    private func buildMuscleGroupIndex() {
-        var index: [String: [ExerciseData]] = [:]
-        for exercise in exercises {
-            for muscle in exercise.muscleGroups {
-                index[muscle.lowercased(), default: []].append(exercise)
-            }
-        }
-        _byMuscleGroup = index
-    }
-    
-    private func buildEquipmentIndex() {
-        var index: [String: [ExerciseData]] = [:]
-        for exercise in exercises {
-            index[exercise.equipment.lowercased(), default: []].append(exercise)
-        }
-        _byEquipment = index
-    }
-    
-    private func buildCategoryIndex() {
-        var index: [String: [ExerciseData]] = [:]
-        for exercise in exercises {
-            index[exercise.category.lowercased(), default: []].append(exercise)
-        }
-        _byCategory = index
-    }
-    
-    private func buildNameIndex() {
-        var index: [String: ExerciseData] = [:]
-        for exercise in exercises {
-            index[exercise.name.lowercased()] = exercise
-        }
-        _byName = index
     }
     
     // MARK: - JSON Loading

@@ -127,7 +127,7 @@ struct ChallengeFlowStartView: View {
                     showingQRScanner = true
                 }) {
                     Image(systemName: "qrcode.viewfinder")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                         .frame(width: 48, height: 48)
                         .background(Color.white.opacity(0.1))
@@ -395,7 +395,7 @@ struct ChallengeFlowStartView: View {
                     goBack()
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
                         .frame(width: 52, height: 52)
                         .background(
@@ -625,7 +625,7 @@ struct ChallengeFlowStartView: View {
                             .scaleEffect(0.9)
                     } else {
                         Image(systemName: contactsService.permissionDenied ? "gear.badge" : "person.crop.rectangle.stack.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                         Text(contactsService.permissionDenied ? "Enable in Settings" : "Sync Contacts")
                             .font(.headline)
                     }
@@ -733,7 +733,7 @@ struct ChallengeFlowStartView: View {
                             
                             Button(action: { toggleFriendSelection(friend) }) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 14))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(.white.opacity(0.6))
                             }
                         }
@@ -765,7 +765,7 @@ struct ChallengeFlowStartView: View {
                         .font(.caption)
                         .foregroundColor(.green)
                         .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Capsule().fill(Color.green.opacity(0.15)))
                         .padding(.top, 4)
                 }
@@ -887,7 +887,7 @@ struct ChallengeFlowStartView: View {
                             Spacer()
                             if isGroupChallenge {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 22))
+                                    .font(.ds_heading2)
                                     .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                             }
                         }
@@ -908,7 +908,7 @@ struct ChallengeFlowStartView: View {
                                     Circle()
                                         .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                         .frame(width: 40, height: 40)
-                                        .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 14, weight: .bold)).foregroundColor(.white))
+                                        .overlay(Text(String(userName.prefix(1)).uppercased()).font(.ds_bodySmall).fontWeight(.bold).foregroundColor(.white))
                                         .overlay(Circle().stroke(Color.darkBackground, lineWidth: 2))
                                 }
                                 
@@ -993,7 +993,7 @@ struct ChallengeFlowStartView: View {
                             Spacer()
                             if !isGroupChallenge {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 22))
+                                    .font(.ds_heading2)
                                     .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
                             }
                         }
@@ -1139,7 +1139,7 @@ struct ChallengeFlowStartView: View {
                         Spacer()
                         
                         Image(systemName: "lock.shield.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.ds_heading3)
                             .foregroundColor(.purple)
                     }
                     .padding(Spacing.md)
@@ -1185,7 +1185,7 @@ struct ChallengeFlowStartView: View {
                         Spacer()
                         
                         Image(systemName: "globe.americas.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.ds_heading3)
                             .foregroundColor(.blue)
                     }
                     .padding(Spacing.md)
@@ -1341,7 +1341,7 @@ struct ChallengeFlowStartView: View {
                                 .shadow(color: isCustomDuration ? Color.blue.opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
                             
                             Text("✏️")
-                                .font(.system(size: 22))
+                                .font(.ds_heading2)
                         }
                         
                         VStack(alignment: .leading, spacing: 3) {
@@ -1378,7 +1378,7 @@ struct ChallengeFlowStartView: View {
                             }
                             
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 22))
+                                .font(.ds_heading2)
                                 .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
                     }
@@ -1539,7 +1539,7 @@ struct ChallengeFlowStartView: View {
                                         Circle()
                                             .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                             .frame(width: 36, height: 36)
-                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 12, weight: .bold)).foregroundColor(.white))
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.ds_bodySmall).fontWeight(.bold).foregroundColor(.white))
                                     }
                                     
                                     Text("vs")
@@ -1896,7 +1896,7 @@ struct ChallengeFlowStartView: View {
                             .tint(.white)
                     } else {
                         Image(systemName: isRequestSent ? "checkmark" : "plus")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                     }
                     Text(isRequestSent ? "Sent" : (isLoading ? "" : "Add"))
                         .font(.subheadline)
@@ -2009,7 +2009,7 @@ struct ChallengeFlowFriendCard: View {
                         .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
             }

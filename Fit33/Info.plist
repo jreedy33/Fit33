@@ -37,6 +37,8 @@
 	<string>public.app-category.healthcare-fitness</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Fit33 lets you control your music during workouts without leaving the app.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Fit33 uses Bluetooth to connect to gym equipment like treadmills, bikes, and rowing machines to sync your workout data in real-time.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

@@ -161,7 +161,7 @@ struct OptimizedExerciseRow: View {
                 .frame(width: 40, height: 40)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 )
             
@@ -209,8 +209,8 @@ struct OptimizedExerciseRow: View {
 // MARK: - Performance Monitoring (Debug Only)
 
 #if DEBUG
-final class PerformanceMonitor {
-    static let shared = PerformanceMonitor()
+final class DebugPerformanceMonitor {
+    static let shared = DebugPerformanceMonitor()
     
     private var frameDrops = 0
     private var lastFrameTime: CFTimeInterval = 0

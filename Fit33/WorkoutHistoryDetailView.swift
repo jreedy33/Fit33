@@ -197,7 +197,7 @@ struct WorkoutHistoryDetailView: View {
                                 .frame(width: 48, height: 48)
                             
                             Image(systemName: "checkmark")
-                                .font(.system(size: 20, weight: .bold))
+                                .font(.ds_heading2)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: accentGradient,
@@ -226,7 +226,7 @@ struct WorkoutHistoryDetailView: View {
                             }
                             .foregroundColor(accentGradient[0])
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(accentGradient[0].opacity(0.12))
@@ -264,7 +264,7 @@ struct WorkoutHistoryDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
                             Image(systemName: "note.text")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
                             Text("Workout Notes")
                                 .font(.subheadline)
@@ -350,10 +350,10 @@ struct WorkoutHistoryDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "clock.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text(formatDuration(workout.duration))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Duration")
@@ -370,10 +370,10 @@ struct WorkoutHistoryDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "figure.strengthtraining.traditional")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text("\(workoutExercises.count)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Exercises")
@@ -390,10 +390,10 @@ struct WorkoutHistoryDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "repeat")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text("\(totalSets)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Sets")
@@ -410,10 +410,10 @@ struct WorkoutHistoryDetailView: View {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "scalemass.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(accentColor)
                         Text(formatVolume(totalVolume))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
                     Text("Volume")
@@ -472,7 +472,7 @@ struct WorkoutHistoryDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(accentColor)
                 Text("Muscles Worked")
                     .font(.headline)
@@ -499,7 +499,7 @@ struct WorkoutHistoryDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.orange)
                 Text("Top Lifts")
                     .font(.headline)
@@ -543,7 +543,7 @@ struct WorkoutHistoryDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "list.bullet.rectangle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(accentColor)
                 Text("Exercises")
                     .font(.headline)
@@ -1022,7 +1022,7 @@ struct PremiumExerciseRow: View {
                     
                     // Chevron
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, Spacing.md)
@@ -1364,7 +1364,7 @@ struct RepeatWorkoutPreviewView: View {
                             }
                             .foregroundColor(.secondary)
                         }
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, Spacing.xxs)
                         
                         VStack(spacing: 10) {
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
@@ -1461,7 +1461,7 @@ struct RepeatWorkoutPreviewView: View {
                     .frame(width: 46, height: 46)
                 
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -1645,7 +1645,7 @@ struct RepeatExerciseCard: View {
             
             // Chevron
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, Spacing.md)

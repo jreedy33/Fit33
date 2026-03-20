@@ -299,7 +299,7 @@ struct QuickActionTile: View {
                         .shadow(color: gradient[0].opacity(0.4), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                 }
                 
@@ -704,7 +704,7 @@ struct MealPlanMealCard: View {
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: mealIcon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.white)
             }
             

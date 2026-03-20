@@ -3,7 +3,9 @@ import HealthKit
 import SwiftUI
 
 // MARK: - HealthKit Manager
-/// Manages all HealthKit interactions including step tracking with cloud sync
+/// Manages all HealthKit interactions including step tracking with cloud sync.
+/// Responsible for HealthKit authorization, data observation, and Supabase cloud sync.
+/// HealthKitService.swift handles local data reading/caching for UI display.
 class HealthKitManager: ObservableObject {
     static let shared = HealthKitManager()
     
@@ -22,7 +24,7 @@ class HealthKitManager: ObservableObject {
     @Published var saveWorkoutsToHealth: Bool {
         didSet {
             UserDefaults.standard.set(saveWorkoutsToHealth, forKey: "saveWorkoutsToHealth")
-            print("🍎 [HEALTHKIT] Save workouts to Health: \(saveWorkoutsToHealth)")
+            AppLogger.debug("Save workouts to Health: \(saveWorkoutsToHealth)", category: .health)
         }
     }
     
@@ -86,7 +88,7 @@ class HealthKitManager: ObservableObject {
                 UserDefaults.standard.set(true, forKey: "healthkit_authorized")
                 HealthKitService.shared.isAuthorized = true
             }
-            print("✅ HealthKit authorized for steps + workout writing")
+            AppLogger.info("HealthKit authorized for steps + workout writing", category: .health)
             
             // Update integration status in database
             await SupabaseManager.shared.updateIntegrationStatus(integration: "apple_health", isConnected: true)
@@ -103,7 +105,7 @@ class HealthKitManager: ObservableObject {
             // Also sync HealthKitService data
             await HealthKitService.shared.syncAllData(force: true)
         } catch {
-            print("❌ HealthKit authorization error: \(error)")
+            AppLogger.error("HealthKit authorization error: \(error.localizedDescription)", category: .health)
             throw error
         }
     }
@@ -137,7 +139,7 @@ class HealthKitManager: ObservableObject {
             totalEnergyBurned: caloriesBurned > 0 ? HKQuantity(unit: .kilocalorie(), doubleValue: caloriesBurned) : nil,
             totalDistance: nil,
             metadata: [
-                HKMetadataKeyWorkoutBrandName: "GoFit",
+                HKMetadataKeyWorkoutBrandName: "Fit33",
                 "WorkoutName": workoutName,
                 "ExerciseCount": exerciseCount
             ]
@@ -145,12 +147,7 @@ class HealthKitManager: ObservableObject {
         
         do {
             try await healthStore.save(workout)
-            print("✅ [HEALTHKIT] Workout saved to Apple Health!")
-            print("   📋 Name: \(workoutName)")
-            print("   ⏱️ Duration: \(Int(durationSeconds / 60)) minutes")
-            print("   🔥 Calories: \(Int(caloriesBurned)) kcal")
-            print("   💪 Exercises: \(exerciseCount)")
-            print("   🎯 Type: \(activityType.name)")
+            AppLogger.info("Workout saved to Apple Health: \(workoutName), \(Int(durationSeconds / 60))min, \(Int(caloriesBurned))kcal, \(exerciseCount) exercises, type: \(activityType.name)", category: .health)
             
             // Update UI for confirmation
             await MainActor.run {
@@ -165,7 +162,7 @@ class HealthKitManager: ObservableObject {
                 NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
             }
         } catch {
-            print("❌ [HEALTHKIT] Failed to save workout: \(error)")
+            AppLogger.error("Failed to save workout: \(error.localizedDescription)", category: .health)
             throw HealthKitError.saveFailed(error)
         }
     }
@@ -212,11 +209,7 @@ class HealthKitManager: ObservableObject {
                 }
             }
             
-            print("✅ [HEALTHKIT] Running workout saved to Apple Health!")
-            print("   🏃 Distance: \(String(format: "%.2f", distanceKm)) km")
-            print("   ⏱️ Duration: \(Int(durationSeconds / 60)) minutes")
-            print("   ⚡ Pace: \(paceString) /km")
-            print("   🔥 Calories: \(Int(caloriesBurned)) kcal")
+            AppLogger.info("Running workout saved to Apple Health: \(String(format: "%.2f", distanceKm))km, \(Int(durationSeconds / 60))min, pace \(paceString)/km, \(Int(caloriesBurned))kcal", category: .health)
             
             // Update UI for confirmation
             await MainActor.run {
@@ -230,7 +223,7 @@ class HealthKitManager: ObservableObject {
                 NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
             }
         } catch {
-            print("❌ [HEALTHKIT] Failed to save running workout: \(error)")
+            AppLogger.error("Failed to save running workout: \(error.localizedDescription)", category: .health)
             throw HealthKitError.saveFailed(error)
         }
     }
@@ -276,7 +269,7 @@ class HealthKitManager: ObservableObject {
         )
         
         // Log the detailed breakdown
-        print(result.summary)
+        AppLogger.debug("Calorie calculation: \(result.summary)", category: .health)
         
         return result
     }
@@ -366,7 +359,7 @@ class HealthKitManager: ObservableObject {
         // Create an observer query that fires whenever new step data is available
         let query = HKObserverQuery(sampleType: stepType, predicate: nil) { [weak self] query, completionHandler, error in
             if let error = error {
-                print("❌ Observer query error: \(error)")
+                AppLogger.error("Observer query error: \(error.localizedDescription)", category: .health)
                 completionHandler()
                 return
             }
@@ -381,7 +374,7 @@ class HealthKitManager: ObservableObject {
         }
         
         healthStore.execute(query)
-        print("✅ Started observing step changes")
+        AppLogger.info("Started observing step changes", category: .health)
         
         // Note: Background delivery requires special entitlements
         // The observer query above already provides real-time updates when app is active
@@ -397,12 +390,12 @@ class HealthKitManager: ObservableObject {
         
         let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
             if let error = error {
-                print("❌ [HEALTHKIT] Workout observer error: \(error)")
+                AppLogger.error("Workout observer error: \(error.localizedDescription)", category: .health)
                 completionHandler()
                 return
             }
             
-            print("🏋️ [HEALTHKIT] New workout detected in Apple Health — syncing to Recent Activity...")
+            AppLogger.info("New workout detected in Apple Health — syncing to Recent Activity", category: .health)
             
             Task {
                 // Sync HealthKit workouts and persist to Supabase (creates cardio_workouts records)
@@ -418,7 +411,7 @@ class HealthKitManager: ObservableObject {
         }
         
         healthStore.execute(query)
-        print("✅ Started observing workout changes (external apps)")
+        AppLogger.info("Started observing workout changes (external apps)", category: .health)
     }
     
     // MARK: - Fetch Step Data
@@ -437,7 +430,7 @@ class HealthKitManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ Error fetching today's steps: \(error)")
+                AppLogger.error("Error fetching today's steps: \(error.localizedDescription)", category: .health)
                 Task { await MainActor.run { self.isLoading = false } }
                 return
             }
@@ -479,7 +472,7 @@ class HealthKitManager: ObservableObject {
         query.initialResultsHandler = { [weak self] query, results, error in
             guard let self = self, let results = results else {
                 if let error = error {
-                    print("❌ Error fetching weekly steps: \(error)")
+                    AppLogger.error("Error fetching weekly steps: \(error.localizedDescription)", category: .health)
                 }
                 return
             }
@@ -514,7 +507,7 @@ class HealthKitManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ Error fetching monthly steps: \(error)")
+                AppLogger.error("Error fetching monthly steps: \(error.localizedDescription)", category: .health)
                 return
             }
             
@@ -537,7 +530,7 @@ class HealthKitManager: ObservableObject {
     /// Sync today's steps to Supabase cloud (with debounce to prevent rapid consecutive syncs)
     private func syncTodayStepsToCloud() async {
         guard supabaseManager.isAuthenticated else {
-            print("ℹ️ Not authenticated, skipping step sync to cloud")
+            AppLogger.debug("Not authenticated, skipping step sync to cloud", category: .health)
             return
         }
         
@@ -564,7 +557,7 @@ class HealthKitManager: ObservableObject {
                 steps: todaySteps,
                 goal: stepGoal
             )
-            print("✅ Synced \(todaySteps) steps to cloud")
+            AppLogger.info("Synced \(todaySteps) steps to cloud", category: .health)
             
             // 🧠 ADVANCED INTELLIGENCE: Track activity for recovery correlation
             // This helps recommend workouts based on previous day's activity
@@ -576,7 +569,7 @@ class HealthKitManager: ObservableObject {
                 )
             }
         } catch {
-            print("❌ Error syncing steps to cloud: \(error)")
+            AppLogger.error("Error syncing steps to cloud: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -587,9 +580,9 @@ class HealthKitManager: ObservableObject {
         // ⚡️ PERFORMANCE: Batch all steps into a single upsert instead of individual calls
         do {
             try await supabaseManager.batchSaveStepData(weeklySteps, goal: stepGoal)
-            print("✅ Synced \(weeklySteps.count) days of steps to cloud in single batch")
+            AppLogger.info("Synced \(weeklySteps.count) days of steps to cloud in single batch", category: .health)
         } catch {
-            print("❌ Error batch syncing weekly steps: \(error)")
+            AppLogger.error("Error batch syncing weekly steps: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -622,9 +615,9 @@ class HealthKitManager: ObservableObject {
         if supabaseManager.isAuthenticated {
             do {
                 try await supabaseManager.updateStepGoal(newGoal)
-                print("✅ Step goal updated to \(newGoal)")
+                AppLogger.info("Step goal updated to \(newGoal)", category: .health)
             } catch {
-                print("❌ Error updating step goal: \(error)")
+                AppLogger.error("Error updating step goal: \(error.localizedDescription)", category: .health)
             }
         }
     }
@@ -649,7 +642,7 @@ class HealthKitManager: ObservableObject {
                     UserDefaults.standard.set(cloudGoal, forKey: "dailyStepGoal")
                 }
             } catch {
-                print("❌ Error loading step goal from cloud: \(error)")
+                AppLogger.error("Error loading step goal from cloud: \(error.localizedDescription)", category: .health)
             }
         }
     }

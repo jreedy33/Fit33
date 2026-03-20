@@ -71,7 +71,7 @@ class DynamicProgramGenerator {
         let benefits: [String]
         let muscleGroupRotation: [MuscleGroupDay]  // Template for each day's focus
         var generatedDays: [GeneratedProgramDay]   // Actually generated workouts
-        let isActive: Bool
+        var isActive: Bool
         let createdAt: Date
         
         enum ProgramType: String, Codable, CaseIterable {

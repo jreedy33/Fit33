@@ -19,7 +19,15 @@ class VideoStreamingService: ObservableObject {
     
     // Legacy cache for backwards compatibility
     @Published private(set) var videoFilenameCache: [String: String] = [:]
-    @Published private(set) var videoURLCache: [String: URL] = [:]
+    @Published private(set) var videoURLCache: [String: URL] = [:] {
+        didSet {
+            if videoURLCache.count > 100 {
+                let sortedKeys = videoURLCache.keys.sorted()
+                let keysToRemove = sortedKeys.prefix(videoURLCache.count - 80)
+                for key in keysToRemove { videoURLCache.removeValue(forKey: key) }
+            }
+        }
+    }
     
     // Legacy hardcoded video mapping (fallback)
     private let videoMapping: [String: String]
@@ -46,9 +54,7 @@ class VideoStreamingService: ObservableObject {
             UserDefaults.standard.set(preferredVideoGender.rawValue, forKey: "preferredVideoGender")
             // Clear preloaded players since gender changed
             clearPreloadCache()
-            #if DEBUG
-            print("📹 Video gender preference set to: \(preferredVideoGender.rawValue)")
-            #endif
+            AppLogger.debug("Video gender preference set to: \(preferredVideoGender.rawValue)", category: .general)
         }
     }
     
@@ -144,9 +150,7 @@ class VideoStreamingService: ObservableObject {
             let newGender: VideoGender = userGender.lowercased().contains("female") ? .female : .male
             if preferredVideoGender != newGender {
                 preferredVideoGender = newGender
-                #if DEBUG
-                print("📹 Synced video gender from profile: \(newGender.rawValue)")
-                #endif
+                AppLogger.debug("Synced video gender from profile: \(newGender.rawValue)", category: .general)
             }
         }
     }
@@ -186,7 +190,7 @@ class VideoStreamingService: ObservableObject {
         
         if !genderVideoCache.isEmpty && cacheAge < Self.videoMappingSyncInterval {
             let hoursAgo = String(format: "%.1f", cacheAge / 3600)
-            print("⚡️ [VIDEO] Skipping mapping fetch — \(genderVideoCache.count) cached, fetched \(hoursAgo)h ago")
+            AppLogger.debug("Skipping video mapping fetch — \(genderVideoCache.count) cached, fetched \(hoursAgo)h ago", category: .general)
             return
         }
         
@@ -204,9 +208,7 @@ class VideoStreamingService: ObservableObject {
             var offset = 0
             var hasMoreData = true
             
-            #if DEBUG
-            print("📹 [VIDEO] Starting paginated fetch of video mappings...")
-            #endif
+            AppLogger.debug("Starting paginated fetch of video mappings", category: .general)
             
             while hasMoreData {
                 let response = try await SupabaseManager.shared.supabaseClient
@@ -220,9 +222,7 @@ class VideoStreamingService: ObservableObject {
                 let pageMappings = try decoder.decode([VideoMapping].self, from: response.data)
                 allMappings.append(contentsOf: pageMappings)
                 
-                #if DEBUG
-                print("📹 [VIDEO] Fetched \(pageMappings.count) mappings (total: \(allMappings.count))")
-                #endif
+                AppLogger.debug("Fetched \(pageMappings.count) video mappings (total: \(allMappings.count))", category: .general)
                 
                 if pageMappings.count < pageSize {
                     hasMoreData = false
@@ -277,18 +277,13 @@ class VideoStreamingService: ObservableObject {
                 // Record fetch timestamp so we can skip on next launch
                 UserDefaults.standard.set(Date(), forKey: "lastVideoMappingFetch")
                 
-                #if DEBUG
-                print("📹 Loaded \(mappings.count) video mappings from database")
-                print("📹 Gender-aware cache has \(self.genderVideoCache.count) exercises")
-                let bothGenders = self.genderVideoCache.values.filter { $0.hasBothGenders }.count
-                print("📹 \(bothGenders) exercises have both male & female videos")
-                #endif
+                AppLogger.info("Loaded \(mappings.count) video mappings from database, \(self.genderVideoCache.count) gender-aware, \(self.genderVideoCache.values.filter { $0.hasBothGenders }.count) with both genders", category: .general)
                 
                 // 🔄 Refresh GenderFilterService cache now that we have video mappings
                 GenderFilterService.shared.refreshCache()
             }
         } catch {
-            print("⚠️ Failed to load video mappings from database: \(error)")
+            AppLogger.warning("Failed to load video mappings from database: \(error.localizedDescription)", category: .general)
             await MainActor.run {
                 self.videosLoaded = true
             }
@@ -326,7 +321,7 @@ class VideoStreamingService: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
         } catch {
-            print("⚠️ Audio session setup failed: \(error)")
+            AppLogger.warning("Audio session setup failed: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -370,7 +365,7 @@ class VideoStreamingService: ObservableObject {
             // Limit to first 3 (was 15)
             let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(3)
             
-            print("🏋️ Prefetching \(uniqueExercises.count) program exercises (day \(currentDay) only)")
+            AppLogger.debug("Prefetching \(uniqueExercises.count) program exercises (day \(currentDay) only)", category: .general)
             
             DispatchQueue.main.async {
                 self.prefetchVideos(for: Array(uniqueExercises))
@@ -380,7 +375,7 @@ class VideoStreamingService: ObservableObject {
     
     /// Prefetch videos for a specific program day (call when viewing day details)
     func prefetchProgramDay(exercises: [String]) {
-        print("📅 Prefetching \(exercises.count) exercises for program day")
+        AppLogger.debug("Prefetching \(exercises.count) exercises for program day", category: .general)
         prefetchVideos(for: exercises)
     }
     
@@ -401,7 +396,7 @@ class VideoStreamingService: ObservableObject {
             
             let uniqueExercises = Array(Set(exercisesToPrefetch)).prefix(2)
             
-            print("👀 Prefetching \(uniqueExercises.count) exercises for program preview")
+            AppLogger.debug("Prefetching \(uniqueExercises.count) exercises for program preview", category: .general)
             
             DispatchQueue.main.async {
                 self.prefetchVideos(for: Array(uniqueExercises))
@@ -418,9 +413,7 @@ class VideoStreamingService: ObservableObject {
                 preloadOrder.remove(at: index)
                 preloadOrder.append(exerciseName)
             }
-            #if DEBUG
-            print("⚡ Instant playback: \(exerciseName) (preloaded)")
-            #endif
+            AppLogger.debug("Instant playback: \(exerciseName) (preloaded)", category: .general)
             return player
         }
         
@@ -429,9 +422,7 @@ class VideoStreamingService: ObservableObject {
         
         let player = createOptimizedPlayer(url: url)
         addToCache(exerciseName, player: player)
-        #if DEBUG
-        print("🎬 Creating player: \(exerciseName)")
-        #endif
+        AppLogger.debug("Creating player: \(exerciseName)", category: .general)
         return player
     }
     
@@ -446,9 +437,7 @@ class VideoStreamingService: ObservableObject {
         addToCache(exerciseName, player: player)
         prefetchingExercises.remove(exerciseName)
         
-        #if DEBUG
-        print("📥 Prefetched: \(exerciseName)")
-        #endif
+        AppLogger.debug("Prefetched video: \(exerciseName)", category: .general)
     }
     
     private func createOptimizedPlayer(url: URL) -> AVPlayer {
@@ -477,9 +466,7 @@ class VideoStreamingService: ObservableObject {
             preloadedPlayers[oldest]?.pause()
             preloadedPlayers[oldest] = nil
             preloadOrder.removeFirst()
-            #if DEBUG
-            print("🗑️ Evicted from cache: \(oldest)")
-            #endif
+            AppLogger.debug("Evicted from video cache: \(oldest)", category: .general)
         }
         
         preloadedPlayers[exerciseName] = player
@@ -495,9 +482,7 @@ class VideoStreamingService: ObservableObject {
         preloadedPlayers.removeAll()
         preloadOrder.removeAll()
         prefetchingExercises.removeAll()
-        #if DEBUG
-        print("🧹 Cleared prefetch cache")
-        #endif
+        AppLogger.debug("Cleared prefetch cache", category: .general)
     }
     
     // MARK: - Public Methods
@@ -538,9 +523,7 @@ class VideoStreamingService: ObservableObject {
                         "source": "r2_gender_cache",
                         "load_time_ms": Int(Date().timeIntervalSince(startTime) * 1000)
                     ])
-                    #if DEBUG
-                    print("📹 \(genderUsed) video: \(exerciseName) -> \(filename)")
-                    #endif
+                    AppLogger.debug("\(genderUsed) video: \(exerciseName) -> \(filename)", category: .general)
                     return url
                 }
             }
@@ -550,9 +533,7 @@ class VideoStreamingService: ObservableObject {
         if let filename = videoFilenameCache[normalizedName] {
             let urlString = "\(storageBaseURL)/\(filename)"
             if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                #if DEBUG
-                print("📹 R2 video: \(exerciseName) -> \(filename)")
-                #endif
+                AppLogger.debug("R2 video: \(exerciseName) -> \(filename)", category: .general)
                 return url
             }
         }
@@ -561,9 +542,7 @@ class VideoStreamingService: ObservableObject {
         if let filename = videoFilenameCache[exerciseName] {
             let urlString = "\(storageBaseURL)/\(filename)"
             if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                #if DEBUG
-                print("📹 R2 video (exact): \(exerciseName) -> \(filename)")
-                #endif
+                AppLogger.debug("R2 video (exact): \(exerciseName) -> \(filename)", category: .general)
                 return url
             }
         }
@@ -572,9 +551,7 @@ class VideoStreamingService: ObservableObject {
         if let filename = videoMapping[exerciseName] {
             let urlString = "\(storageBaseURL)/\(filename)"
             if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                #if DEBUG
-                print("📹 Legacy mapping: \(exerciseName) -> \(filename)")
-                #endif
+                AppLogger.debug("Legacy video mapping: \(exerciseName) -> \(filename)", category: .general)
                 return url
             }
         }
@@ -584,17 +561,13 @@ class VideoStreamingService: ObservableObject {
             if key.lowercased() == normalizedName {
                 let urlString = "\(storageBaseURL)/\(filename)"
                 if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                    #if DEBUG
-                    print("📹 Legacy fuzzy mapping: \(exerciseName) -> \(filename)")
-                    #endif
+                    AppLogger.debug("Legacy fuzzy video mapping: \(exerciseName) -> \(filename)", category: .general)
                     return url
                 }
             }
         }
         
-        #if DEBUG
-        print("⚠️ No video mapping found for: \(exerciseName)")
-        #endif
+        AppLogger.warning("No video mapping found for: \(exerciseName)", category: .general)
         return nil
     }
     
@@ -616,9 +589,7 @@ class VideoStreamingService: ObservableObject {
         if let filename = videoFilename, !filename.isEmpty {
             let urlString = "\(storageBaseURL)/\(filename)"
             if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                #if DEBUG
-                print("📹 Fallback to direct filename: \(exerciseName) -> \(filename)")
-                #endif
+                AppLogger.debug("Fallback to direct filename: \(exerciseName) -> \(filename)", category: .general)
                 return url
             }
         }
@@ -662,10 +633,10 @@ class VideoStreamingService: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(from: remoteURL)
             try data.write(to: localURL)
-            print("📥 Cached video: \(exerciseName)")
+            AppLogger.info("Cached video: \(exerciseName)", category: .general)
             return true
         } catch {
-            print("❌ Failed to cache video: \(error)")
+            AppLogger.error("Failed to cache video: \(error.localizedDescription)", category: .general)
             return false
         }
     }
@@ -679,9 +650,9 @@ class VideoStreamingService: ObservableObject {
             for file in files {
                 try FileManager.default.removeItem(at: file)
             }
-            print("🗑️ Video cache cleared")
+            AppLogger.info("Video cache cleared", category: .general)
         } catch {
-            print("❌ Failed to clear cache: \(error)")
+            AppLogger.error("Failed to clear video cache: \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -802,28 +773,7 @@ struct RemoteVideoPlayerView: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
-            } else if playerManager.isLoading {
-                // ⏳ No poster frame cached yet (first time playing this exercise)
-                // Show a clean gradient with subtle play icon — NOT a spinner
-                ZStack {
-                    LinearGradient(
-                        colors: [categoryColor.opacity(0.08), categoryColor.opacity(0.03)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [categoryColor.opacity(0.4), categoryColor.opacity(0.25)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            } else if !playerManager.isLoading, playerManager.player == nil {
                 // 🚫 No video available
                 VStack(spacing: 14) {
                     Image(systemName: "figure.strengthtraining.traditional")
@@ -831,7 +781,7 @@ struct RemoteVideoPlayerView: View {
                         .foregroundColor(categoryColor.opacity(0.4))
                     
                     Text("Video Coming Soon")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -843,17 +793,13 @@ struct RemoteVideoPlayerView: View {
             guard !hasAppeared else { return }
             hasAppeared = true
             
-            // 🖼️ Step 1: Show poster frame INSTANTLY (from cache — 0ms)
             posterImage = VideoThumbnailService.shared.getPosterFrame(for: exerciseName)
-            
-            // 🎬 Step 2: Load real video in background
             playerManager.loadVideo(for: exerciseName, videoFilename: videoFilename)
-            
-            // 🔀 Step 3: Crossfade from poster to live video when ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                withAnimation(.easeIn(duration: 0.15)) {
-                    showPlayer = true
-                }
+        }
+        .onReceive(playerManager.$isReadyToDisplay) { ready in
+            guard ready, !showPlayer else { return }
+            withAnimation(.easeIn(duration: 0.15)) {
+                showPlayer = true
             }
         }
         .onDisappear {
@@ -885,46 +831,42 @@ struct RemoteVideoPlayerView: View {
 class RemoteVideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isLoading = false
+    @Published var isReadyToDisplay = false
     @Published var error: Error?
     
     var queuePlayer: AVQueuePlayer?
-    var playerLooper: AVPlayerLooper?  // ⚡️ CRITICAL: Must store looper reference or it gets deallocated
+    var playerLooper: AVPlayerLooper?
+    private var readinessCancellable: AnyCancellable?
     
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
-        hasRetriedLooper = false  // Reset retry flag for new video
+        isReadyToDisplay = false
+        hasRetriedLooper = false
         
-        // 👤 ALWAYS check GenderFilterService FIRST to respect user's gender preference
-        // Only fall back to provided videoFilename if gender service has no match
         let genderAwareFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) ?? videoFilename
         
-        // 🚀 Use high-performance VideoPlaybackEngine (instant if cached)
-        // CRITICAL: Get both player AND looper to ensure looping works
         if let playerWithLooper = VideoPlaybackEngine.shared.getPlayerWithLooper(for: exerciseName, videoFilename: genderAwareFilename) {
             DispatchQueue.main.async { [weak self] in
                 self?.queuePlayer = playerWithLooper.player
                 self?.player = playerWithLooper.player
-                self?.playerLooper = playerWithLooper.looper  // ⚡️ STORE LOOPER REFERENCE!
-                self?.hasRetriedLooper = false  // Reset on successful load
+                self?.playerLooper = playerWithLooper.looper
+                self?.hasRetriedLooper = false
                 self?.isLoading = false
+                self?.observePlayerReadiness(playerWithLooper.player)
                 
-                #if DEBUG
                 let cacheStatus = VideoPlaybackEngine.shared.isReadyForInstantPlay(exerciseName: exerciseName) ? "cached" : "new"
                 let genderMatch = GenderFilterService.shared.hasPreferredGenderVideo(for: exerciseName) ? "preferred" : "fallback"
-                print("🎬 Video ready (\(cacheStatus), \(genderMatch) gender, looper: ✅): \(exerciseName)")
-                #endif
+                AppLogger.debug("Video ready (\(cacheStatus), \(genderMatch) gender, looper: active): \(exerciseName)", category: .general)
             }
             return
         }
         
-        // Fallback: Try legacy VideoStreamingService
         if let preloadedPlayer = VideoStreamingService.shared.getPreloadedPlayer(for: exerciseName) {
             setupLegacyPlayer(from: preloadedPlayer, exerciseName: exerciseName)
             isLoading = false
             return
         }
         
-        // Last resort: Create directly with gender-aware URL
         if let filename = genderAwareFilename, !filename.isEmpty {
             let storageBaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
             let urlString = "\(storageBaseURL)/\(filename)"
@@ -934,16 +876,36 @@ class RemoteVideoPlayerManager: ObservableObject {
             }
         }
         
-        // Get URL from VideoStreamingService with gender awareness
         if let videoURL = VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName) {
             createDirectPlayer(url: videoURL, exerciseName: exerciseName)
             return
         }
         
-        #if DEBUG
-        print("⚠️ No video found for: \(exerciseName)")
-        #endif
+        AppLogger.warning("No video found for: \(exerciseName)", category: .general)
         isLoading = false
+    }
+    
+    private func observePlayerReadiness(_ player: AVPlayer) {
+        readinessCancellable?.cancel()
+        
+        if player.currentItem?.status == .readyToPlay {
+            isReadyToDisplay = true
+            return
+        }
+        
+        readinessCancellable = player.currentItem?.publisher(for: \.status)
+            .filter { $0 == .readyToPlay }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.isReadyToDisplay = true
+            }
+        
+        // Timeout fallback: show player after 2s even if not fully ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self, !self.isReadyToDisplay else { return }
+            self.isReadyToDisplay = true
+        }
     }
     
     private func createDirectPlayer(url: URL, exerciseName: String) {
@@ -956,7 +918,6 @@ class RemoteVideoPlayerManager: ObservableObject {
         playerItem.preferredForwardBufferDuration = 2
         
         let qp = AVQueuePlayer(playerItem: playerItem)
-        // ⚡️ CRITICAL: Store looper reference - without this, looper is deallocated and video won't loop!
         self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
         
         qp.automaticallyWaitsToMinimizeStalling = false
@@ -965,6 +926,7 @@ class RemoteVideoPlayerManager: ObservableObject {
         self.queuePlayer = qp
         self.player = qp
         self.isLoading = false
+        observePlayerReadiness(qp)
     }
     
     private func setupLegacyPlayer(from sourcePlayer: AVPlayer, exerciseName: String) {
@@ -975,12 +937,12 @@ class RemoteVideoPlayerManager: ObservableObject {
         loopItem.preferredForwardBufferDuration = 3
         
         let qp = AVQueuePlayer(playerItem: loopItem)
-        // ⚡️ CRITICAL: Store looper reference - without this, looper is deallocated and video won't loop!
         self.playerLooper = AVPlayerLooper(player: qp, templateItem: loopItem)
         
         self.queuePlayer = qp
         self.player = qp
         qp.play()
+        observePlayerReadiness(qp)
     }
     
     func pause() {
@@ -990,7 +952,7 @@ class RemoteVideoPlayerManager: ObservableObject {
     func play() {
         // Ensure player plays and looper is still active
         if let looper = playerLooper, looper.status != .ready {
-            print("⚠️ [VIDEO] Looper not ready, recreating...")
+            AppLogger.warning("Video looper not ready, recreating", category: .general)
             // Looper might have failed, recreate it
             if let qp = queuePlayer, let currentItem = qp.currentItem {
                 self.playerLooper = AVPlayerLooper(player: qp, templateItem: currentItem)
@@ -1009,7 +971,7 @@ class RemoteVideoPlayerManager: ObservableObject {
         
         // If no looper and we haven't tried yet, create one
         if playerLooper == nil && !hasRetriedLooper {
-            print("🔄 [VIDEO] Creating looper for continuous playback")
+            AppLogger.debug("Creating looper for continuous playback", category: .general)
             if let currentItem = qp.currentItem {
                 self.playerLooper = AVPlayerLooper(player: qp, templateItem: currentItem)
                 hasRetriedLooper = true
@@ -1021,6 +983,7 @@ class RemoteVideoPlayerManager: ObservableObject {
     }
     
     deinit {
+        readinessCancellable?.cancel()
         pause()
     }
 }

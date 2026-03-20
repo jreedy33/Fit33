@@ -52,7 +52,7 @@ class OnboardingSessionManager: ObservableObject {
         sessionStartTime = Date()
         stepTimestamps = [:]
         stepDurations = [:]
-        print("📱 [ONBOARDING] New session started: \(currentSessionId ?? "nil")")
+        AppLogger.info("Onboarding session started: \(currentSessionId ?? "nil")", category: .ui)
     }
     
     func trackStepStarted(_ stepIndex: Int) {
@@ -68,9 +68,9 @@ class OnboardingSessionManager: ObservableObject {
     func endSession() {
         if let startTime = sessionStartTime {
             let duration = Date().timeIntervalSince(startTime)
-            print("📱 [ONBOARDING] Session ended. Duration: \(Int(duration))s")
+            AppLogger.info("Onboarding session ended. Duration: \(Int(duration))s", category: .ui)
             for (step, dur) in stepDurations.sorted(by: { $0.key < $1.key }) {
-                print("📱 [ONBOARDING]   Step \(step): \(String(format: "%.1f", dur))s")
+                AppLogger.debug("Onboarding step \(step): \(String(format: "%.1f", dur))s", category: .ui)
             }
         }
         currentSessionId = nil
@@ -426,8 +426,8 @@ struct NewOnboardingView: View {
         
     // Navigate to step and set appropriate focus
     private func navigateTo(_ step: OnboardingStep, animated: Bool = true) {
-        print("🔄 [NAV] navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)")
-        print("   └─ Previous step: \(currentStep)")
+        AppLogger.debug("navigateTo(\(step)) called, animated: \(animated), isEditingFromConfirmation: \(isEditingFromConfirmation)", category: .ui)
+        AppLogger.debug("Previous step: \(currentStep)", category: .ui)
         let previousStep = currentStep
         
         OnboardingSessionManager.shared.trackStepCompleted(previousStep.rawValue)
@@ -627,7 +627,7 @@ struct NewOnboardingView: View {
                             .accessibilityHint("Proceeds to next onboarding step")
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
                     .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
                     .animation(nil, value: isOnConfirmPasswordStep)  // No animation on button bar for password step changes
@@ -653,7 +653,7 @@ struct NewOnboardingView: View {
                         // Content - use opacity transitions to avoid layout bouncing
                         ZStack {
                             if currentStep == .phoneNumber {
-                                let _ = print("🎯 [ZSTACK] Rendering phoneNumberStepContent for currentStep: \(currentStep)")
+                                let _ = AppLogger.verbose("Rendering phoneNumberStepContent for currentStep: \(currentStep)", category: .ui)
                                 phoneNumberStepContent
                                     .transition(.opacity)
                             }
@@ -677,7 +677,7 @@ struct NewOnboardingView: View {
                     
                     // Floating Continue button - IDENTICAL to auth step positioning
                     onboardingSharedButtonBar
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
                         .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
                         .animation(nil, value: currentStep)  // Don't animate button bar on step changes
@@ -704,7 +704,7 @@ struct NewOnboardingView: View {
                             }) {
                                 HStack(spacing: 10) {
                                     Image(systemName: selectedLimitations.isEmpty ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 20))
+                                        .font(.ds_heading3)
                                     Text("No injuries or limitations")
                                         .font(.subheadline.weight(.semibold))
                                     Spacer()
@@ -743,7 +743,7 @@ struct NewOnboardingView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.top, 8)
                         .padding(.bottom, 16)
                     }
@@ -751,7 +751,7 @@ struct NewOnboardingView: View {
                     
                     // Fixed button bar at bottom
                     onboardingSharedButtonBar
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.top, 16)
                         .padding(.bottom, 50)
                 }
@@ -824,7 +824,7 @@ struct NewOnboardingView: View {
                             confirmationRowSimple(title: "Limitations", value: selectedLimitations.isEmpty ? "None" : "\(selectedLimitations.count) selected", editStep: .limitations)
                             confirmationRowSimple(title: "Days/Week", value: "\(selectedDays)", editStep: .schedule)
                         }
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.top, 8)
                         .padding(.bottom, 16)
                     }
@@ -832,7 +832,7 @@ struct NewOnboardingView: View {
                     
                     // Fixed button bar at bottom
                     onboardingSharedButtonBar
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, Spacing.lg)
                         .padding(.top, 16)
                         .padding(.bottom, 50)
                 }
@@ -893,7 +893,7 @@ struct NewOnboardingView: View {
                 if let socialUsername = UserDefaults.standard.string(forKey: "pending_social_username"), username.isEmpty {
                     username = socialUsername
                     UserDefaults.standard.removeObject(forKey: "pending_social_username")
-                    print("📘 Pre-filled username from social login: @\(socialUsername)")
+                    AppLogger.debug("Pre-filled username from social login: @\(socialUsername)", category: .auth)
                 }
                 // Note: Focus is now handled in:
                 // - handleAuth() for email signup (keeps keyboard open)
@@ -931,7 +931,7 @@ struct NewOnboardingView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OAuthNewUserNeedsOnboarding"))) { _ in
             // Handle new Google/OAuth user - navigate to username selection
             // This notification is ONLY posted from a fresh OAuth callback, not session restore
-            print("👤 [OAUTH] Received new user notification - navigating to username step")
+            AppLogger.debug("Received new user notification - navigating to username step", category: .auth)
             handleOAuthUserOnboarding()
         }
         // NOTE: Removed the onChange(of: supabaseManager.isAuthenticated) handler
@@ -968,10 +968,10 @@ struct NewOnboardingView: View {
     
     /// Handle OAuth user onboarding - pre-fill data and navigate to username step
     private func handleOAuthUserOnboarding() {
-        print("🔐 [OAUTH] handleOAuthUserOnboarding called - currentStep: \(currentStep)")
+        AppLogger.debug("handleOAuthUserOnboarding called - currentStep: \(currentStep)", category: .auth)
         
         let metadata = supabaseManager.currentUser?.userMetadata ?? [:]
-        print("🔐 [OAUTH] Current user metadata: \(metadata)")
+        AppLogger.debug("Current user metadata: \(metadata)", category: .auth)
         
         // Pre-fill FULL NAME (first + last) from OAuth provider
         // Try ALL sources to find the name - be flexible with type casting
@@ -981,7 +981,7 @@ struct NewOnboardingView: View {
         if let oauthName = UserDefaults.standard.string(forKey: "pending_oauth_name"), !oauthName.isEmpty {
             foundFullName = oauthName
             UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
-            print("🔐 [OAUTH] Got full name from UserDefaults: \(oauthName)")
+            AppLogger.debug("Got full name from UserDefaults: \(oauthName)", category: .auth)
         }
         
         // 2. Try user metadata - handle various types (String, AnyJSON, etc.)
@@ -991,7 +991,7 @@ struct NewOnboardingView: View {
                 let fullNameString = String(describing: fullNameValue)
                 if !fullNameString.isEmpty && fullNameString != "nil" && fullNameString != "<null>" {
                     foundFullName = fullNameString
-                    print("🔐 [OAUTH] Got full name from metadata (full_name): \(fullNameString)")
+                    AppLogger.debug("Got full name from metadata (full_name): \(fullNameString)", category: .auth)
                 }
             }
             
@@ -1000,7 +1000,7 @@ struct NewOnboardingView: View {
                 let nameString = String(describing: nameValue)
                 if !nameString.isEmpty && nameString != "nil" && nameString != "<null>" {
                     foundFullName = nameString
-                    print("🔐 [OAUTH] Got full name from metadata (name): \(nameString)")
+                    AppLogger.debug("Got full name from metadata (name): \(nameString)", category: .auth)
                 }
             }
         }
@@ -1008,26 +1008,26 @@ struct NewOnboardingView: View {
         // Set the full name if we found one
         if let foundFullName = foundFullName, !foundFullName.isEmpty {
             name = foundFullName
-            print("🔐 [OAUTH] ✅ Set full name to: '\(foundFullName)'")
+            AppLogger.info("OAuth set full name to: '\(foundFullName)'", category: .auth)
         } else {
-            print("🔐 [OAUTH] ⚠️ Could not find name in any source")
+            AppLogger.warning("OAuth could not find name in any source", category: .auth)
         }
         
         // Pre-fill email - try current user first (most reliable), then UserDefaults
         if let userEmail = supabaseManager.currentUser?.email, !userEmail.isEmpty {
             email = userEmail
-            print("🔐 [OAUTH] Pre-filled email from current user: \(userEmail)")
+            AppLogger.debug("Pre-filled email from current user: \(userEmail)", category: .auth)
         } else if let oauthEmail = UserDefaults.standard.string(forKey: "pending_oauth_email"), !oauthEmail.isEmpty {
             email = oauthEmail
             UserDefaults.standard.removeObject(forKey: "pending_oauth_email")
-            print("🔐 [OAUTH] Pre-filled email from UserDefaults: \(oauthEmail)")
+            AppLogger.debug("Pre-filled email from UserDefaults: \(oauthEmail)", category: .auth)
         }
         
-        print("🔐 [OAUTH] Final values - name: '\(name)', email: '\(email)'")
-        print("🔐 [OAUTH] needsNameInput will be: \(needsNameInput)")
+        AppLogger.debug("OAuth final values - name: '\(name)', email: '\(email)'", category: .auth)
+        AppLogger.debug("OAuth needsNameInput will be: \(needsNameInput)", category: .auth)
         
         // Navigate to username step (name pre-filled from OAuth)
-        print("🔐 [OAUTH] Navigating to username step...")
+        AppLogger.debug("OAuth navigating to username step...", category: .auth)
         navigateTo(.username)
         
         // Auto-focus the appropriate field based on whether name was filled
@@ -1041,7 +1041,7 @@ struct NewOnboardingView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             focusedField = targetField
         }
-        print("🔐 [OAUTH] Focus set to: \(targetField)")
+        AppLogger.debug("OAuth focus set to: \(targetField)", category: .auth)
     }
     
     // MARK: - Shared Header (Simple, fixed layout)
@@ -1190,11 +1190,11 @@ struct NewOnboardingView: View {
                     }
                     if currentStep == .phoneNumber && !isVerificationCodeSent && sendCodeCountdown == 0 {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     if currentStep == .phoneNumber && sendCodeCountdown > 0 {
                         Image(systemName: "clock.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text(continueButtonText)
                         .font(.headline)
@@ -1442,7 +1442,7 @@ struct NewOnboardingView: View {
     // Content-only step views used in the sliding ZStack layout
     
     private var phoneInputView: some View {
-        let _ = print("📱 [PHONE INPUT] Rendering phoneInputView - selectedCountryCode: \(selectedCountryCode.rawValue)")
+        let _ = AppLogger.verbose("Rendering phoneInputView - selectedCountryCode: \(selectedCountryCode.rawValue)", category: .ui)
         
         return VStack(alignment: .leading, spacing: 12) {
             Text("Phone Number")
@@ -1462,12 +1462,12 @@ struct NewOnboardingView: View {
     
     // Extracted country code picker to simplify view hierarchy
     private var countryCodePicker: some View {
-        let _ = print("🌍 [COUNTRY PICKER] Rendering - current: \(selectedCountryCode.name)")
+        let _ = AppLogger.verbose("Rendering country picker - current: \(selectedCountryCode.name)", category: .ui)
         
         return Menu {
             ForEach(CountryCode.allCases) { country in
                 Button {
-                    print("🌍 [COUNTRY PICKER] Selected: \(country.name)")
+                    AppLogger.debug("Country picker selected: \(country.name)", category: .ui)
                     selectedCountryCode = country
                     phoneNumber = ""
                 } label: {
@@ -1479,7 +1479,7 @@ struct NewOnboardingView: View {
             // Selected state shows: Flag + Country Code
             HStack(spacing: 6) {
                 Text(selectedCountryCode.flag)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                 Text(selectedCountryCode.dialingCode)
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundColor(.primary)
@@ -1500,7 +1500,7 @@ struct NewOnboardingView: View {
     
     // Extracted phone number text field
     private var phoneNumberTextField: some View {
-        let _ = print("📞 [PHONE FIELD] Rendering - phoneNumber: \(phoneNumber)")
+        let _ = AppLogger.verbose("Rendering phone field - phoneNumber: \(phoneNumber)", category: .ui)
         
         return HStack(spacing: 12) {
             TextField(selectedCountryCode.placeholder, text: $phoneNumber)
@@ -1510,14 +1510,14 @@ struct NewOnboardingView: View {
                 .onChange(of: phoneNumber) { _, newValue in
                     let formatted = formatPhoneNumberForCountry(newValue)
                     if formatted != phoneNumber {
-                        print("📞 [PHONE FIELD] Formatting: '\(newValue)' -> '\(formatted)'")
+                        AppLogger.verbose("Phone field formatting: '\(newValue)' -> '\(formatted)'", category: .ui)
                         phoneNumber = formatted
                     }
                 }
             
             if isPhoneNumberValid {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
             }
         }
@@ -1538,7 +1538,7 @@ struct NewOnboardingView: View {
     
     // MARK: - Phone Number Step Content (2FA / Account Security)
     private var phoneNumberStepContent: some View {
-        let _ = print("📱 [PHONE STEP] Rendering phoneNumberStepContent")
+        let _ = AppLogger.verbose("Rendering phoneNumberStepContent", category: .ui)
         
         return VStack(spacing: 20) {
             // FALLBACK: Email verification (when phone was skipped after max attempts)
@@ -1552,7 +1552,7 @@ struct NewOnboardingView: View {
                 
                 HStack(spacing: 10) {
                     Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.blue.opacity(0.8))
                     
                     Text("Your number is private and will never be shared.")
@@ -1569,12 +1569,12 @@ struct NewOnboardingView: View {
             
             // STATE 2: VERIFICATION CODE INPUT (after code sent)
             if isVerificationCodeSent && !isPhoneVerified {
-                let _ = print("📱 [PHONE STEP] Showing STATE 2: Verification code input")
+                let _ = AppLogger.verbose("Phone step showing STATE 2: Verification code input", category: .ui)
                 VStack(spacing: 20) {
                     // Show which number code was sent to
                     HStack(spacing: 8) {
                         Image(systemName: "phone.fill")
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.blue)
                         Text("Code sent to \(formatInternationalNumber())")
                             .font(.subheadline.weight(.medium))
@@ -1591,7 +1591,7 @@ struct NewOnboardingView: View {
                     if phoneVerificationAttempts >= maxPhoneVerificationAttempts {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                             Text("Last attempt - going back will skip this step")
                                 .font(.caption)
                         }
@@ -1663,7 +1663,7 @@ struct NewOnboardingView: View {
                     if !verificationError.isEmpty {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.circle.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                             Text(verificationError)
                                 .font(.caption)
                         }
@@ -1704,7 +1704,7 @@ struct NewOnboardingView: View {
             
             // STATE 3: VERIFIED SUCCESS
             if isPhoneVerified {
-                let _ = print("📱 [PHONE STEP] Showing STATE 3: Verified success")
+                let _ = AppLogger.verbose("Phone step showing STATE 3: Verified success", category: .ui)
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 50))
@@ -1725,7 +1725,7 @@ struct NewOnboardingView: View {
                     // Privacy reminder
                     HStack(spacing: 8) {
                         Image(systemName: "eye.slash.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.blue.opacity(0.7))
                         Text("Your number is private and will never be displayed or shared.")
                             .font(.caption)
@@ -1745,7 +1745,7 @@ struct NewOnboardingView: View {
             
             Spacer()
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
         .id("phoneNumberStepContent-\(selectedCountryCode.rawValue)-\(isVerificationCodeSent)-\(isPhoneVerified)")
     }
     
@@ -1820,11 +1820,11 @@ struct NewOnboardingView: View {
                                 .tint(.white)
                         } else {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         Text(isCheckingEmailVerification ? "Checking..." : "I've Verified My Email")
                     }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.md)
@@ -1881,13 +1881,13 @@ struct NewOnboardingView: View {
                         isEmailVerificationSent = true
                     }
                 }
-                print("📧 [EMAIL VERIFY] Verification email sent to \(email)")
+                AppLogger.info("Verification email sent to \(email)", category: .auth)
             } catch {
                 await MainActor.run {
                     isEmailVerificationSent = true
                     emailVerificationError = "Could not send email. Try again."
                 }
-                print("📧 [EMAIL VERIFY] Failed: \(error.localizedDescription)")
+                AppLogger.error("Email verify failed: \(error.localizedDescription)", category: .auth)
             }
         }
     }
@@ -1910,10 +1910,10 @@ struct NewOnboardingView: View {
                         }
                         let generator = UINotificationFeedbackGenerator()
                         generator.notificationOccurred(.success)
-                        print("📧 [EMAIL VERIFY] Email verified!")
+                        AppLogger.info("Email verified!", category: .auth)
                     } else {
                         emailVerificationError = "Email not yet verified. Check your inbox and tap the link."
-                        print("📧 [EMAIL VERIFY] Not verified yet")
+                        AppLogger.debug("Email not verified yet", category: .auth)
                     }
                 }
             } catch {
@@ -1921,7 +1921,7 @@ struct NewOnboardingView: View {
                     isCheckingEmailVerification = false
                     emailVerificationError = "Could not check status. Try again."
                 }
-                print("📧 [EMAIL VERIFY] Check failed: \(error.localizedDescription)")
+                AppLogger.error("Email verify check failed: \(error.localizedDescription)", category: .auth)
             }
         }
     }
@@ -1935,50 +1935,46 @@ struct NewOnboardingView: View {
     
     // Send verification code
     private func sendVerificationCode() {
-        print("📤 [SEND CODE] Starting sendVerificationCode()")
-        print("   └─ phoneNumber: '\(phoneNumber)'")
-        print("   └─ fullPhoneNumber: '\(fullPhoneNumber)'")
-        print("   └─ selectedCountryCode: \(selectedCountryCode.rawValue)")
-        print("   └─ phoneVerificationAttempts: \(phoneVerificationAttempts)")
+        AppLogger.debug("sendVerificationCode() - phone: '\(phoneNumber)', full: '\(fullPhoneNumber)', country: \(selectedCountryCode.rawValue), attempts: \(phoneVerificationAttempts)", category: .auth)
         
         verificationError = ""
         
         // Increment attempt counter
         phoneVerificationAttempts += 1
-        print("📤 [SEND CODE] Incremented attempts to: \(phoneVerificationAttempts)")
+        AppLogger.debug("Send code attempts incremented to: \(phoneVerificationAttempts)", category: .auth)
         
         // Immediately advance to code input screen (don't wait for send)
-        print("📤 [SEND CODE] Setting isVerificationCodeSent = true with animation")
+        AppLogger.debug("Setting isVerificationCodeSent = true with animation", category: .auth)
         withAnimation(.easeInOut(duration: 0.2)) {
             isVerificationCodeSent = true
         }
-        print("📤 [SEND CODE] isVerificationCodeSent is now: \(isVerificationCodeSent)")
+        AppLogger.debug("isVerificationCodeSent is now: \(isVerificationCodeSent)", category: .auth)
         
         startResendCountdown()
         
         // Focus the code field after a brief delay for view to build
-        print("📤 [SEND CODE] Scheduling focus change in 0.3s")
+        AppLogger.verbose("Scheduling focus change to verificationCode in 0.3s", category: .ui)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            print("📤 [SEND CODE] Setting focusedField to .verificationCode")
+            AppLogger.verbose("Setting focusedField to .verificationCode", category: .ui)
             self.focusedField = .verificationCode
         }
         
         // Send the code in background - by the time user sees the screen, SMS arrives
-        print("📤 [SEND CODE] Starting async task to send SMS")
+        AppLogger.debug("Starting async task to send SMS", category: .auth)
         Task {
-            print("📤 [SEND CODE] Calling phoneVerificationService.sendVerificationCode")
+            AppLogger.debug("Calling phoneVerificationService.sendVerificationCode", category: .auth)
             let success = await phoneVerificationService.sendVerificationCode(to: fullPhoneNumber)
-            print("📤 [SEND CODE] SMS send result: \(success)")
+            AppLogger.debug("SMS send result: \(success)", category: .auth)
             
             if !success {
                 await MainActor.run {
                     let errorMsg = phoneVerificationService.error ?? "Failed to send code. Tap resend to try again."
-                    print("📤 [SEND CODE] ERROR: \(errorMsg)")
+                    AppLogger.error("Send code error: \(errorMsg)", category: .auth)
                     verificationError = errorMsg
                 }
             }
         }
-        print("📤 [SEND CODE] Function complete (async task running in background)")
+        AppLogger.debug("sendVerificationCode() complete (async task running in background)", category: .auth)
     }
     
     // Verify the entered code
@@ -2016,7 +2012,7 @@ struct NewOnboardingView: View {
     }
     
     private func createMinimalAccountForEmailPasswordSignup() async {
-        print("📝 [PHONE VERIFIED] Creating minimal account for email/password signup...")
+        AppLogger.debug("Creating minimal account for email/password signup...", category: .auth)
         
         do {
             // Create account with minimal info (just like OAuth flow)
@@ -2025,7 +2021,7 @@ struct NewOnboardingView: View {
                 password: password,
                 name: name.isEmpty ? "User" : name
             )
-            print("✅ [PHONE VERIFIED] Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")")
+            AppLogger.info("Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")", category: .auth)
             
             // Update profile with phone number for contact matching
             if let userId = supabaseManager.currentUser?.id {
@@ -2044,19 +2040,19 @@ struct NewOnboardingView: View {
                     .update(update)
                     .eq("id", value: userId.uuidString)
                     .execute()
-                print("✅ [PHONE VERIFIED] Phone added - contact matching enabled!")
+                AppLogger.info("Phone added - contact matching enabled!", category: .auth)
             }
             
             // Set username if provided
             if !username.isEmpty {
-                print("📝 [PHONE VERIFIED] Setting username: @\(username)")
+                AppLogger.debug("Setting username: @\(username)", category: .auth)
                 try? await supabaseManager.setUsername(username)
             }
             
-            print("✅ [PHONE VERIFIED] Minimal account ready - user can continue onboarding")
+            AppLogger.info("Minimal account ready - user can continue onboarding", category: .auth)
             
         } catch {
-            print("❌ [PHONE VERIFIED] Failed to create account: \(error)")
+            AppLogger.error("Failed to create account: \(error)", category: .auth)
             await MainActor.run {
                 verificationError = "Account creation failed. Please try again."
                 isPhoneVerified = false
@@ -2068,14 +2064,11 @@ struct NewOnboardingView: View {
     // This enables contact matching to work during onboarding
     private func createMinimalProfileForContactMatching() async {
         guard let userId = supabaseManager.currentUser?.id else {
-            print("⚠️ [EARLY PROFILE] No user ID available")
+            AppLogger.warning("No user ID available for early profile", category: .auth)
             return
         }
         
-        print("📝 [EARLY PROFILE] Creating minimal profile for contact matching...")
-        print("   └─ User ID: \(userId.uuidString)")
-        print("   └─ Phone: \(fullPhoneNumber)")
-        print("   └─ Email: \(email)")
+        AppLogger.debug("Creating minimal profile for contact matching - User: \(userId.uuidString), Phone: \(fullPhoneNumber), Email: \(email)", category: .auth)
         
         do {
             // Create or update minimal profile with just phone + email
@@ -2102,9 +2095,9 @@ struct NewOnboardingView: View {
                 .upsert(profile)
                 .execute()
             
-            print("✅ [EARLY PROFILE] Minimal profile created - contact matching now enabled!")
+            AppLogger.info("Minimal profile created - contact matching now enabled!", category: .auth)
         } catch {
-            print("❌ [EARLY PROFILE] Failed to create profile: \(error)")
+            AppLogger.error("Failed to create early profile: \(error)", category: .auth)
         }
     }
     
@@ -2395,7 +2388,7 @@ struct NewOnboardingView: View {
                 )
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
     
     // Check username availability
@@ -2481,7 +2474,7 @@ struct NewOnboardingView: View {
                 }
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
     
     private var bodyStepContent: some View {
@@ -2628,7 +2621,7 @@ struct NewOnboardingView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
     
     // Custom measurement input field with unit toggle
@@ -2671,7 +2664,7 @@ struct NewOnboardingView: View {
                         }
                     }) {
                         Text(unit)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(unit == selectedUnit ? .white : .secondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -2796,7 +2789,7 @@ struct NewOnboardingView: View {
                     }) {
                         VStack(spacing: 8) {
                             Text(goal.1)
-                                .font(.system(size: 28))
+                                .font(.ds_heading1)
                             Text(goal.0)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
@@ -2827,7 +2820,7 @@ struct NewOnboardingView: View {
                     .foregroundColor(.primary)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 16)
         }
     }
@@ -2881,7 +2874,7 @@ struct NewOnboardingView: View {
                     .foregroundColor(.primary)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 16)
         }
     }
@@ -2929,7 +2922,7 @@ struct NewOnboardingView: View {
                     .foregroundColor(.primary)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 16)
         }
     }
@@ -2979,7 +2972,7 @@ struct NewOnboardingView: View {
                     .foregroundColor(.primary)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 16)
         }
     }
@@ -3057,7 +3050,7 @@ struct NewOnboardingView: View {
                     if needsSelection {
                         HStack(spacing: 6) {
                             Image(systemName: "hand.point.down.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                             Text("Select an accommodation level")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -3094,7 +3087,7 @@ struct NewOnboardingView: View {
                                 
                                 if limitationAccommodations[area] == level {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 18))
+                                        .font(.ds_heading3)
                                         .foregroundColor(level.color)
                                 }
                             }
@@ -3161,7 +3154,7 @@ struct NewOnboardingView: View {
                     }
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 32)
         }
     }
@@ -3245,7 +3238,7 @@ struct NewOnboardingView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
             }
             
             // Skip button (only show if no photo)
@@ -3272,7 +3265,7 @@ struct NewOnboardingView: View {
                 }
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
         .padding(.top, 32)
         .confirmationDialog("Profile Photo", isPresented: $showingPhotoOptions) {
             Button("Take Photo") {
@@ -3349,7 +3342,7 @@ struct NewOnboardingView: View {
                         .frame(width: 70, height: 70)
                     
                     Image(systemName: "person.2.fill")
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundStyle(
                             LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -3398,15 +3391,11 @@ struct NewOnboardingView: View {
                 VStack(spacing: 6) {
                     Button(action: {
                         HapticManager.impact(.medium)
-                        print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
-                        print("📇 [CONTACTS FLOW] 👆 Allow Contacts button tapped")
-                        print("📇 [CONTACTS FLOW] Current authorization: \(contactsService.authorizationStatus.rawValue)")
-                        print("📇 [CONTACTS FLOW] User's verified phone: \(phoneNumber.isEmpty ? "(none)" : fullPhoneNumber)")
-                        print("📇 [CONTACTS FLOW] isPhoneVerified: \(isPhoneVerified)")
+                        AppLogger.debug("Allow Contacts tapped - auth: \(contactsService.authorizationStatus.rawValue), phone: \(phoneNumber.isEmpty ? "(none)" : fullPhoneNumber), verified: \(isPhoneVerified)", category: .social)
                         
                         // Check if already denied - need to go to settings
                         if contactsService.permissionDenied {
-                            print("📇 [CONTACTS FLOW] ⚠️ Permission previously denied, opening Settings...")
+                            AppLogger.warning("Contacts permission previously denied, opening Settings...", category: .social)
                             if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(settingsUrl)
                             }
@@ -3415,38 +3404,33 @@ struct NewOnboardingView: View {
                         
                         Task {
                             contactsPermissionRequested = true
-                            print("📇 [CONTACTS FLOW] 🔄 Requesting contact access from iOS...")
+                            AppLogger.debug("Requesting contact access from iOS...", category: .social)
                             
                             let granted = await contactsService.requestAccess()
                             // Note: requestAccess() already calls fetchContactsAndFindFriends() if granted
                             
-                            print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
-                            print("📇 [CONTACTS FLOW] Permission result: \(granted ? "✅ GRANTED" : "❌ DENIED")")
+                            AppLogger.info("Contacts permission result: \(granted ? "GRANTED" : "DENIED")", category: .social)
                             
                             if granted {
-                                print("📇 [CONTACTS FLOW] 📊 Contact scan results:")
-                                print("   └─ Phone numbers found: \(contactsService.contactPhoneNumbers.count)")
-                                print("   └─ Emails found: \(contactsService.contactEmails.count)")
-                                print("   └─ Fit33 users matched: \(contactsService.suggestedFriends.count)")
+                                AppLogger.debug("Contact scan: phones=\(contactsService.contactPhoneNumbers.count), emails=\(contactsService.contactEmails.count), matched=\(contactsService.suggestedFriends.count)", category: .social)
                                 
                                 if !contactsService.suggestedFriends.isEmpty {
-                                    print("📇 [CONTACTS FLOW] 🎉 Friends found on Fit33:")
+                                    AppLogger.info("Friends found on Fit33: \(contactsService.suggestedFriends.count)", category: .social)
                                     for (i, friend) in contactsService.suggestedFriends.prefix(5).enumerated() {
-                                        print("   \(i + 1). \(friend.name ?? "Unknown") (@\(friend.username ?? "no-username"))")
+                                        AppLogger.debug("\(i + 1). \(friend.name ?? "Unknown") (@\(friend.username ?? "no-username"))", category: .social)
                                     }
                                     if contactsService.suggestedFriends.count > 5 {
-                                        print("   ... and \(contactsService.suggestedFriends.count - 5) more")
+                                        AppLogger.debug("... and \(contactsService.suggestedFriends.count - 5) more", category: .social)
                                     }
                                 } else {
-                                    print("📇 [CONTACTS FLOW] 📭 No contacts found on Fit33 yet")
+                                    AppLogger.debug("No contacts found on Fit33 yet", category: .social)
                                 }
                             }
-                            print("📇 [CONTACTS FLOW] ════════════════════════════════════════════════")
                             
                             await MainActor.run {
                                 contactsPermissionGranted = granted
                                 if granted {
-                                    print("📇 [CONTACTS FLOW] ➡️ Auto-navigating to Add Friends step...")
+                                    AppLogger.debug("Auto-navigating to Add Friends step...", category: .social)
                                     HapticManager.notification(.success)
                                     
                                     // Small delay for UI feedback, then navigate
@@ -3496,7 +3480,7 @@ struct NewOnboardingView: View {
             // Refresh and check current status on appear
             contactsService.checkAuthorizationStatus()
             contactsPermissionGranted = contactsService.canAccessContacts
-            print("📇 [ONBOARDING] Contacts step appeared - status: \(contactsService.authorizationStatus.rawValue), canAccess: \(contactsService.canAccessContacts)")
+            AppLogger.debug("Contacts step appeared - status: \(contactsService.authorizationStatus.rawValue), canAccess: \(contactsService.canAccessContacts)", category: .social)
         }
     }
     
@@ -3556,7 +3540,7 @@ struct NewOnboardingView: View {
             .padding(.vertical, Spacing.sm)
             .background(Color(.systemGray6))
             .cornerRadius(CornerRadius.md)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, 16)
             .padding(.bottom, 16)
             
@@ -3593,7 +3577,7 @@ struct NewOnboardingView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 60)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Spacing.xl)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -3601,7 +3585,7 @@ struct NewOnboardingView: View {
                             onboardingFriendRow(friend: friend)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.bottom, 100) // Space for continue button
                 }
             }
@@ -3609,28 +3593,21 @@ struct NewOnboardingView: View {
             Spacer()
         }
         .onAppear {
-            print("👥 [ADD FRIENDS] Step appeared")
-            print("   └─ contactsPermissionGranted: \(contactsPermissionGranted)")
-            print("   └─ contactsService.canAccessContacts: \(contactsService.canAccessContacts)")
-            print("   └─ contactsService.isLoading: \(contactsService.isLoading)")
-            print("   └─ contactsService.hasCheckedContacts: \(contactsService.hasCheckedContacts)")
-            print("   └─ suggestedFriends.count: \(contactsService.suggestedFriends.count)")
-            print("   └─ contactEmails.count: \(contactsService.contactEmails.count)")
-            print("   └─ contactPhoneNumbers.count: \(contactsService.contactPhoneNumbers.count)")
+            AppLogger.debug("Add Friends step appeared - granted: \(contactsPermissionGranted), canAccess: \(contactsService.canAccessContacts), loading: \(contactsService.isLoading), checked: \(contactsService.hasCheckedContacts), friends: \(contactsService.suggestedFriends.count), emails: \(contactsService.contactEmails.count), phones: \(contactsService.contactPhoneNumbers.count)", category: .social)
             
             // Refresh contacts and find friends if we have permission but haven't checked yet
             // or if the suggested friends list is empty (might need refresh)
             if contactsService.canAccessContacts {
                 if !contactsService.hasCheckedContacts || contactsService.suggestedFriends.isEmpty {
-                    print("👥 [ADD FRIENDS] Fetching/refreshing contacts and friends...")
+                    AppLogger.debug("Fetching/refreshing contacts and friends...", category: .social)
                     Task {
                         isLoadingFriends = true
                         await contactsService.fetchContactsAndFindFriends()
                         isLoadingFriends = false
-                        print("👥 [ADD FRIENDS] Fetch complete - found \(contactsService.suggestedFriends.count) friends")
+                        AppLogger.info("Add Friends fetch complete - found \(contactsService.suggestedFriends.count) friends", category: .social)
                     }
                 } else {
-                    print("👥 [ADD FRIENDS] Already have \(contactsService.suggestedFriends.count) suggested friends - no refresh needed")
+                    AppLogger.debug("Already have \(contactsService.suggestedFriends.count) suggested friends - no refresh needed", category: .social)
                 }
             }
         }
@@ -3699,7 +3676,7 @@ struct NewOnboardingView: View {
                 loadingFriendRequests.insert(friend.userId)
                 HapticManager.impact(.medium)
                 
-                print("👆 [ADD FRIEND] Tapped Add for \(friend.name ?? "Unknown") (ID: \(friend.userId))")
+                AppLogger.debug("Tapped Add for \(friend.name ?? "Unknown") (ID: \(friend.userId))", category: .social)
                 
                 Task {
                     let success = await FriendService.shared.sendFriendRequest(toUserId: friend.userId)
@@ -3708,11 +3685,11 @@ struct NewOnboardingView: View {
                         loadingFriendRequests.remove(friend.userId)
                         
                         if success {
-                            print("✅ [ADD FRIEND] Request sent successfully to \(friend.name ?? "Unknown")")
+                            AppLogger.info("Friend request sent successfully to \(friend.name ?? "Unknown")", category: .social)
                             sentFriendRequests.insert(friend.userId)
                             HapticManager.notification(.success)
                         } else {
-                            print("❌ [ADD FRIEND] Failed to send request to \(friend.name ?? "Unknown")")
+                            AppLogger.error("Failed to send friend request to \(friend.name ?? "Unknown")", category: .social)
                             failedFriendRequests.insert(friend.userId)
                             HapticManager.notification(.error)
                         }
@@ -3726,7 +3703,7 @@ struct NewOnboardingView: View {
                             .tint(.white)
                     } else {
                         Image(systemName: isRequestSent ? "checkmark" : (hasFailed ? "exclamationmark.triangle" : "plus"))
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.ds_bodySmall).fontWeight(.bold)
                     }
                     Text(isRequestSent ? "Sent" : (hasFailed ? "Retry" : (isLoading ? "" : "Add")))
                         .font(.subheadline)
@@ -3799,7 +3776,7 @@ struct NewOnboardingView: View {
                 
                 if editStep != nil {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                         .padding(.leading, 8)
                 }
@@ -3866,7 +3843,7 @@ struct NewOnboardingView: View {
             }
             .frame(height: 6)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
     
     
@@ -3970,7 +3947,7 @@ struct NewOnboardingView: View {
                                 Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Continue" : "Sign In"))
                                     .font(.ds_heading2)
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                             }
                         }
                         .foregroundColor(isAuthFormValid && !supabaseManager.isLoading ? .white : .gray)
@@ -4002,7 +3979,7 @@ struct NewOnboardingView: View {
                     .accessibilityHint("Proceeds to next onboarding step")
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.bottom, keyboardObserver.keyboardHeight + 10)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
@@ -4020,7 +3997,7 @@ struct NewOnboardingView: View {
                 clearAuthMessages()
             }) {
                 Text("Sign Up")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(isSignUp ? .white : .secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, hasStartedAuth ? 10 : 11)
@@ -4047,7 +4024,7 @@ struct NewOnboardingView: View {
                 clearAuthMessages()
             }) {
                 Text("Sign In")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(!isSignUp ? .white : .secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, hasStartedAuth ? 10 : 11)
@@ -4100,7 +4077,7 @@ struct NewOnboardingView: View {
                     
                     if !keyboardUp {
                         Text(isSignUp ? "Join the club" : "Continue your journey")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -4142,7 +4119,7 @@ struct NewOnboardingView: View {
                         // Maintain focus during password step transitions with aggressive restoration
                         if newValue {
                             // Switched to confirm password - set focus multiple times
-                            print("🔐 Switching to confirm password field")
+                            AppLogger.debug("Switching to confirm password field", category: .auth)
                             DispatchQueue.main.async {
                                 focusedField = .confirmPassword
                             }
@@ -4157,7 +4134,7 @@ struct NewOnboardingView: View {
                             }
                         } else {
                             // Switched back to first password
-                            print("🔐 Switching back to first password field")
+                            AppLogger.debug("Switching back to first password field", category: .auth)
                             DispatchQueue.main.async {
                                 focusedField = .password
                             }
@@ -4209,7 +4186,7 @@ struct NewOnboardingView: View {
                                     
                                     if acceptedTerms {
                                         Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .bold))
+                                            .font(.ds_bodySmall).fontWeight(.bold)
                                             .foregroundColor(.white)
                                     }
                                 }
@@ -4231,7 +4208,7 @@ struct NewOnboardingView: View {
                             Spacer()
                         }
                         .padding(.top, hasStartedAuth ? 8 : 12)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, Spacing.xxs)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                     
@@ -4396,7 +4373,7 @@ struct NewOnboardingView: View {
                                     Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Create Account" : "Sign In"))
                                         .font(.ds_heading2)
                                     Image(systemName: "arrow.right")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.ds_bodySmall).fontWeight(.bold)
                                 }
                             }
                             .foregroundColor(.white)
@@ -4619,22 +4596,18 @@ struct NewOnboardingView: View {
         emailAlreadyExists = false
         
         // Log validation state for debugging
-        print("📝 [ONBOARDING] createAccountAndComplete called")
-        print("📝 [ONBOARDING] isSignUp: \(isSignUp)")
-        print("📝 [ONBOARDING] Email: \(email)")
-        print("📝 [ONBOARDING] Password length: \(password.count)")
-        print("📝 [ONBOARDING] isAuthenticated: \(supabaseManager.isAuthenticated)")
+        AppLogger.debug("createAccountAndComplete called - isSignUp: \(isSignUp), email: \(email), pwLen: \(password.count), isAuth: \(supabaseManager.isAuthenticated)", category: .auth)
         
         // If user is already authenticated (social sign-in OR email/password created after phone verification)
         if supabaseManager.isAuthenticated {
-            print("✅ User already authenticated - completing onboarding with full profile update")
+            AppLogger.info("User already authenticated - completing onboarding with full profile update", category: .auth)
             completeOnboarding()
             return
         }
         
         // Validate email format
         guard email.contains("@") && email.contains(".") else {
-            print("❌ [ONBOARDING] Invalid email format: \(email)")
+            AppLogger.error("Invalid email format: \(email)", category: .auth)
             SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "Invalid email format")
             errorMessage = "Please enter a valid email address"
             showError = true
@@ -4643,7 +4616,7 @@ struct NewOnboardingView: View {
         
         // Validate password length
         guard password.count >= 6 else {
-            print("❌ [ONBOARDING] Password too short: \(password.count) chars")
+            AppLogger.error("Password too short: \(password.count) chars", category: .auth)
             SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "Password too short (\(password.count) chars)")
             errorMessage = "Password must be at least 6 characters"
             showError = true
@@ -4656,39 +4629,36 @@ struct NewOnboardingView: View {
                 do {
                     // This code path should NOT be reached for email/password signups anymore
                     // Account is now created after phone verification (earlier in the flow)
-                    print("⚠️ [ONBOARDING] This signup path should not be reached - account should already exist!")
-                    print("🔐 [ONBOARDING] Starting signup for: \(email)")
+                    AppLogger.warning("This signup path should not be reached - account should already exist!", category: .auth)
+                    AppLogger.debug("Starting signup for: \(email)", category: .auth)
                     try await supabaseManager.signUp(email: email, password: password, name: name.isEmpty ? "User" : name)
-                    print("✅ [ONBOARDING] Signup successful, user authenticated: \(supabaseManager.isAuthenticated)")
-                    print("👤 [ONBOARDING] Current user ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")")
+                    AppLogger.info("Signup successful, authenticated: \(supabaseManager.isAuthenticated), userID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")", category: .auth)
                     
                     // Set the username after account creation
                     if !username.isEmpty {
-                        print("📝 [ONBOARDING] Attempting to set username: @\(username)")
+                        AppLogger.debug("Attempting to set username: @\(username)", category: .auth)
                         
                         // Small delay to ensure profile is created
                         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
                         
                         do {
                             try await supabaseManager.setUsername(username)
-                            print("✅ [ONBOARDING] Username saved successfully: @\(username)")
+                            AppLogger.info("Username saved successfully: @\(username)", category: .auth)
                         } catch {
-                            print("❌ [ONBOARDING] Failed to set username: \(error)")
-                            print("❌ [ONBOARDING] Error details: \(error.localizedDescription)")
+                            AppLogger.error("Failed to set username: \(error.localizedDescription)", category: .auth)
                         }
                     } else {
-                        print("⚠️ [ONBOARDING] Username is empty, skipping")
+                        AppLogger.warning("Username is empty, skipping", category: .auth)
                     }
                     
                     await MainActor.run {
                         // Account created successfully, now complete onboarding
-                        print("🎉 [ONBOARDING] Completing onboarding flow...")
+                        AppLogger.info("Completing onboarding flow...", category: .ui)
                         completeOnboarding()
                     }
                 } catch {
                     // Log the auth failure for debugging
-                    print("❌ [ONBOARDING] Signup failed: \(error)")
-                    print("❌ [ONBOARDING] Error details: \(error.localizedDescription)")
+                    AppLogger.error("Signup failed: \(error.localizedDescription)", category: .auth)
                     SessionLogManager.shared.logAuthFailure(method: "email_signup", error: error.localizedDescription)
                     
                     await MainActor.run {
@@ -4727,7 +4697,7 @@ struct NewOnboardingView: View {
         errorMessage = ""
         emailAlreadyExists = false
         
-        print("📧 [PASSWORD RESET] Sending reset email to: \(email)")
+        AppLogger.debug("Sending password reset email to: \(email)", category: .auth)
         
         Task {
             do {
@@ -4735,7 +4705,7 @@ struct NewOnboardingView: View {
                 await MainActor.run {
                     passwordResetSent = true
                     HapticManager.notification(.success)
-                    print("✅ [PASSWORD RESET] Email sent successfully")
+                    AppLogger.info("Password reset email sent successfully", category: .auth)
                     
                     // Auto-hide success message after 10 seconds
                     DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
@@ -4746,7 +4716,7 @@ struct NewOnboardingView: View {
                 await MainActor.run {
                     errorMessage = "Failed to send reset email. Please check your email address and try again."
                     showError = true
-                    print("❌ [PASSWORD RESET] Failed: \(error.localizedDescription)")
+                    AppLogger.error("Password reset failed: \(error.localizedDescription)", category: .auth)
                 }
             }
         }
@@ -4838,7 +4808,7 @@ struct NewOnboardingView: View {
                             lineWidth: 1
                         )
                 )
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 
                 Spacer()
             }
@@ -4862,7 +4832,7 @@ struct NewOnboardingView: View {
                     .cornerRadius(CornerRadius.lg)
                     .shadow(color: Color.green.opacity(0.4), radius: 10, x: 0, y: 5)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.bottom, 30)
         }
     }
@@ -4874,10 +4844,7 @@ struct NewOnboardingView: View {
     }
     
     private func handleAuth() {
-        print("🔐 [AUTH] handleAuth() called")
-        print("   └─ isSignUp: \(isSignUp)")
-        print("   └─ email: '\(email)'")
-        print("   └─ password length: \(password.count)")
+        AppLogger.debug("handleAuth() called - isSignUp: \(isSignUp), email: '\(email)', pwLen: \(password.count)", category: .auth)
         
         showError = false
         errorMessage = ""
@@ -4886,14 +4853,14 @@ struct NewOnboardingView: View {
         if isSignUp {
             // For sign up: Just validate and proceed to username step
             // Account will be created on the confirmation screen
-            print("🔐 [AUTH] Sign up mode - navigating to username step")
+            AppLogger.debug("Sign up mode - navigating to username step", category: .auth)
             // Clean up auth states
             hasStartedAuth = false
             isOnConfirmPasswordStep = false
             
             // Determine which field should be focused based on name state
             let targetField: FocusedField = name.isEmpty ? .name : .username
-            print("🔐 [AUTH] Target field will be: \(targetField)")
+            AppLogger.debug("Auth target field will be: \(targetField)", category: .auth)
             
             // Navigate
             navigateTo(.username)
@@ -4901,21 +4868,21 @@ struct NewOnboardingView: View {
             // Aggressively maintain keyboard by setting focus multiple times
             DispatchQueue.main.async {
                 focusedField = targetField
-                print("🔐 [AUTH] Focus set immediately: \(targetField)")
+                AppLogger.verbose("Auth focus set immediately: \(targetField)", category: .ui)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 focusedField = targetField
-                print("🔐 [AUTH] Focus reinforced at 50ms: \(targetField)")
+                AppLogger.verbose("Auth focus reinforced at 50ms: \(targetField)", category: .ui)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 focusedField = targetField
-                print("🔐 [AUTH] Focus reinforced at 150ms: \(targetField)")
+                AppLogger.verbose("Auth focus reinforced at 150ms: \(targetField)", category: .ui)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 focusedField = targetField
-                print("🔐 [AUTH] Focus reinforced at 300ms: \(targetField)")
+                AppLogger.verbose("Auth focus reinforced at 300ms: \(targetField)", category: .ui)
             }
-            print("🔐 [AUTH] Navigation initiated with focus on \(targetField)")
+            AppLogger.debug("Auth navigation initiated with focus on \(targetField)", category: .auth)
         } else {
             // For sign in: First check if email is linked to Apple/Google
             Task {
@@ -4948,11 +4915,11 @@ struct NewOnboardingView: View {
                         if userManager.hasCompletedOnboarding {
                             // Returning user - ContentView will show main app automatically
                             // because it observes userManager.hasCompletedOnboarding
-                            print("✅ [EMAIL AUTH] Returning user signed in - onboarding complete, switching to main app")
+                            AppLogger.info("Returning user signed in - onboarding complete, switching to main app", category: .auth)
                             // Don't navigate - ContentView will handle it
                         } else {
                             // New user or incomplete onboarding - continue onboarding flow
-                            print("👤 [EMAIL AUTH] User needs onboarding - continuing to basics")
+                            AppLogger.debug("User needs onboarding - continuing to basics", category: .auth)
                             navigateTo(.basics)
                         }
                     }
@@ -4975,33 +4942,33 @@ struct NewOnboardingView: View {
     /// Upload the profile photo selected during onboarding to Supabase
     private func uploadOnboardingProfilePhoto(_ image: UIImage) async {
         guard SupabaseManager.shared.currentUser?.id != nil else {
-            print("⚠️ [ONBOARDING] No user ID available for profile photo")
+            AppLogger.warning("No user ID available for profile photo", category: .ui)
             return
         }
         
         // Compress to JPEG with good quality but small file size
         guard let imageData = image.jpegData(compressionQuality: 0.7) else {
-            print("❌ [ONBOARDING] Failed to convert image to JPEG")
+            AppLogger.error("Failed to convert image to JPEG", category: .ui)
             return
         }
         
         do {
             let photoUrl = try await SupabaseManager.shared.uploadProfilePhoto(imageData: imageData)
-            print("✅ [ONBOARDING] Profile photo uploaded: \(photoUrl)")
+            AppLogger.info("Profile photo uploaded: \(photoUrl)", category: .ui)
             
             // Cache the image locally for immediate display
             await MainActor.run {
                 ProfilePhotoCache.shared.cacheImage(image)
             }
         } catch {
-            print("❌ [ONBOARDING] Failed to upload profile photo: \(error)")
+            AppLogger.error("Failed to upload profile photo: \(error)", category: .ui)
             // Don't block onboarding completion - photo upload is optional
         }
     }
     
     private func saveLimitationsToCloud() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [ONBOARDING] No user ID available for limitations")
+            AppLogger.warning("No user ID available for limitations", category: .ui)
             return
         }
         
@@ -5027,9 +4994,9 @@ struct NewOnboardingView: View {
         
         do {
             try await LimitationsService.shared.addLimitations(limitations)
-            print("✅ [ONBOARDING] Saved \(limitations.count) limitations to cloud")
+            AppLogger.info("Saved \(limitations.count) limitations to cloud", category: .ui)
         } catch {
-            print("❌ [ONBOARDING] Failed to save limitations: \(error)")
+            AppLogger.error("Failed to save limitations: \(error)", category: .ui)
         }
     }
     
@@ -5080,7 +5047,7 @@ struct NewOnboardingView: View {
             // FIELD-LEVEL LOGGING: Log each field at "collected" stage
             // This captures exactly what was entered in the UI
             // ═══════════════════════════════════════════════════════════════════
-            print("📊 [FIELD LOG] Logging all collected field values...")
+            AppLogger.debug("Logging all collected field values...", category: .ui)
             
             await supabaseManager.logOnboardingField(fieldName: "name", stage: "collected", value: name)
             await supabaseManager.logOnboardingField(fieldName: "email", stage: "collected", value: email.isEmpty ? supabaseManager.currentUser?.email : email)
@@ -5113,7 +5080,7 @@ struct NewOnboardingView: View {
                     // FIELD-LEVEL LOGGING: Log each field at "sent_to_db" stage
                     // This captures exactly what we're sending to Supabase
                     // ═══════════════════════════════════════════════════════════════════
-                    print("📊 [FIELD LOG] Logging values being sent to database...")
+                    AppLogger.debug("Logging values being sent to database...", category: .ui)
                     
                     let emailToSend = email.isEmpty ? (supabaseManager.currentUser?.email ?? "") : email
                     let heightToSend = heightCmValue > 0 ? heightCmValue : nil
@@ -5140,8 +5107,7 @@ struct NewOnboardingView: View {
                     // Use full international phone number (with country code) if verified
                     let phoneForOAuth = isPhoneVerified ? fullPhoneNumber : nil
                     
-                    print("🔐 [ONBOARDING] Creating profile for OAuth user...")
-                    print("🔐 [ONBOARDING] Birthday: display='\(birthday)' -> ISO='\(birthdayISO ?? "nil")'")
+                    AppLogger.debug("Creating profile for OAuth user (late path)... Birthday: display='\(birthday)' -> ISO='\(birthdayISO ?? "nil")'", category: .auth)
                     try await supabaseManager.createProfileForOAuthUser(
                         name: name,
                         email: emailToSend,
@@ -5158,7 +5124,7 @@ struct NewOnboardingView: View {
                         workoutEnvironment: selectedWorkoutLocation.rawValue,
                         phoneNumber: phoneForOAuth  // 2FA phone number with country code (private)
                     )
-                    print("✅ [ONBOARDING] OAuth user profile created successfully!")
+                    AppLogger.info("OAuth user profile created successfully!", category: .auth)
                     
                     // Log success
                     await supabaseManager.logOnboardingEvent(
@@ -5171,20 +5137,20 @@ struct NewOnboardingView: View {
                     // VERIFY: Read back what was actually saved to the database
                     // This will log each field at "verified_in_db" stage
                     // ═══════════════════════════════════════════════════════════════════
-                    print("📊 [FIELD LOG] Verifying what was actually saved to database...")
+                    AppLogger.debug("Verifying what was actually saved to database...", category: .ui)
                     await supabaseManager.verifyAndLogSavedProfile()
                     
                     // 📬 NOTIFY EXISTING USERS: If phone is verified and contacts synced, notify contacts
                     // This sends push notifications to existing Fit33 users who have this new user in their contacts
                     if isPhoneVerified && ContactsService.shared.hasCheckedContacts {
-                        print("📬 [ONBOARDING] Phone verified + contacts synced → notifying existing users...")
+                        AppLogger.info("Phone verified + contacts synced → notifying existing users...", category: .social)
                         await ContactsService.shared.notifyExistingUsersOfNewJoin()
                     } else {
-                        print("⚠️ [ONBOARDING] Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))")
+                        AppLogger.warning("Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))", category: .social)
                     }
                     
                 } catch {
-                    print("❌ [ONBOARDING] Failed to create OAuth profile: \(error.localizedDescription)")
+                    AppLogger.error("Failed to create OAuth profile: \(error.localizedDescription)", category: .auth)
                     
                     // Log the error with full details
                     await supabaseManager.logOnboardingEvent(
@@ -5214,43 +5180,12 @@ struct NewOnboardingView: View {
                 weightInt = Int16(w)
             }
         } else {
-            print("❌ Invalid weight")
+            AppLogger.error("Invalid weight", category: .ui)
             return
         }
         
-        print("╔══════════════════════════════════════════════════════════════╗")
-        print("║            🎯 ONBOARDING DATA COLLECTION COMPLETE            ║")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ BASIC INFO:")
-        print("║   Name: \(name)")
-        print("║   Email: \(email.isEmpty ? "Not provided" : email)")
-        print("║   Age: \(ageInt) years")
-        print("║   Gender: \(selectedGender ?? "Not specified")")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ BODY METRICS:")
-        print("║   Height: \(heightInt) cm")
-        print("║   Weight: \(weightInt) kg")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ FITNESS PROFILE:")
-        print("║   Goals: \(selectedGoals.sorted().joined(separator: ", "))")
-        print("║   Experience: \(selectedExperience)")
-        print("║   Strength Level: \(selectedStrengthLevel.rawValue)")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ WORKOUT PREFERENCES:")
-        print("║   Environment: \(selectedWorkoutLocation.rawValue)")
-        print("║   Equipment: \(selectedEquipment.sorted().joined(separator: ", "))")
-        print("║   Days/Week: \(selectedDays)")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ LIMITATIONS:")
-        if selectedLimitations.isEmpty {
-            print("║   None reported")
-        } else {
-            for area in selectedLimitations {
-                let level = limitationAccommodations[area] ?? .beCareful
-                print("║   • \(area.rawValue): \(level.displayName)")
-            }
-        }
-        print("╚══════════════════════════════════════════════════════════════╝")
+        let limitationsStr = selectedLimitations.isEmpty ? "None" : selectedLimitations.map { "\($0.rawValue): \((limitationAccommodations[$0] ?? .beCareful).displayName)" }.joined(separator: ", ")
+        AppLogger.info("Onboarding complete - Name: \(name), Age: \(ageInt), Gender: \(selectedGender ?? "N/A"), Height: \(heightInt)cm, Weight: \(weightInt)kg, Goals: \(selectedGoals.sorted().joined(separator: ", ")), Exp: \(selectedExperience), Strength: \(selectedStrengthLevel.rawValue), Env: \(selectedWorkoutLocation.rawValue), Equipment: \(selectedEquipment.sorted().joined(separator: ", ")), Days: \(selectedDays), Limitations: \(limitationsStr)", category: .ui)
         
         // Get original height in total inches for storage
         let heightInches: Int16
@@ -5320,15 +5255,15 @@ struct NewOnboardingView: View {
         // (OAuth users are handled in the Task block above)
         if !supabaseManager.isAuthenticated {
             // This shouldn't happen, but log it
-            print("⚠️ [ONBOARDING] User not authenticated after profile creation - skipping contact notifications")
+            AppLogger.warning("User not authenticated after profile creation - skipping contact notifications", category: .auth)
         } else {
             Task {
                 // Check if phone is verified and contacts are synced
                 if isPhoneVerified && ContactsService.shared.hasCheckedContacts {
-                    print("📬 [ONBOARDING] Phone verified + contacts synced → notifying existing users...")
+                    AppLogger.info("Phone verified + contacts synced → notifying existing users (non-OAuth path)...", category: .social)
                     await ContactsService.shared.notifyExistingUsersOfNewJoin()
                 } else {
-                    print("⚠️ [ONBOARDING] Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))")
+                    AppLogger.warning("Skipping contact notifications - non-OAuth (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))", category: .social)
                 }
             }
         }
@@ -5340,7 +5275,7 @@ struct NewOnboardingView: View {
     private func finishOnboarding() {
         // UserManager.createUser already sets hasCompletedOnboarding = true
         // The view will automatically transition via ContentView
-        print("✅ [ONBOARDING] Complete! Transitioning to main app...")
+        AppLogger.info("Onboarding complete! Transitioning to main app...", category: .ui)
         
         // 🔔 REQUEST NOTIFICATION PERMISSIONS IMMEDIATELY
         // This triggers the native iOS permission prompt right as they complete onboarding
@@ -5349,13 +5284,13 @@ struct NewOnboardingView: View {
             // Request notification permission - this shows native iOS prompt
             let granted = await NotificationManager.shared.requestAuthorization()
             if granted {
-                print("✅ [NOTIFICATIONS] Permissions granted during onboarding - scheduling all notifications")
+                AppLogger.info("Notification permissions granted during onboarding - scheduling all notifications", category: .ui)
                 // Schedule all default notifications immediately
                 await MainActor.run {
                     NotificationManager.shared.scheduleAllNotifications()
                 }
             } else {
-                print("⚠️ [NOTIFICATIONS] User declined notification permission")
+                AppLogger.warning("User declined notification permission", category: .ui)
                 // We'll show them a banner on the Dashboard to reconsider
             }
         }
@@ -5363,9 +5298,9 @@ struct NewOnboardingView: View {
         // Generate personalized programs based on user profile
         if let user = userManager.currentUser {
             Task {
-                print("🎯 Generating personalized workout programs...")
+                AppLogger.debug("Generating personalized workout programs...", category: .workout)
                 _ = await GeneratedProgramService.shared.generateProgramsForUser(user)
-                print("✅ Programs generated!")
+                AppLogger.info("Programs generated!", category: .workout)
             }
         }
     }
@@ -5373,12 +5308,12 @@ struct NewOnboardingView: View {
     // MARK: - Social Login Handlers
     
     private func handleAppleSignIn() {
-        print("🍎 [APPLE AUTH] handleAppleSignIn called")
+        AppLogger.debug("handleAppleSignIn called", category: .auth)
         socialAuthService.signInWithApple { result in
-            print("🍎 [APPLE AUTH] socialAuthService callback received")
+            AppLogger.debug("Apple auth callback received", category: .auth)
             switch result {
             case .success(let credentials):
-                print("🍎 [APPLE AUTH] Got Apple credentials, starting Supabase auth...")
+                AppLogger.debug("Got Apple credentials, starting Supabase auth...", category: .auth)
                 
                 // Extract FULL NAME (first + last) from Apple credentials (only available on FIRST sign-in)
                 // Apple only provides the name once, so we need to capture and persist it
@@ -5386,18 +5321,18 @@ struct NewOnboardingView: View {
                 if let fullName = credentials.fullName {
                     let firstName = fullName.givenName ?? ""
                     let lastName = fullName.familyName ?? ""
-                    print("🍎 [APPLE AUTH] Raw name components - givenName: '\(fullName.givenName ?? "nil")', familyName: '\(fullName.familyName ?? "nil")'")
+                    AppLogger.debug("Apple raw name components - givenName: '\(fullName.givenName ?? "nil")', familyName: '\(fullName.familyName ?? "nil")'", category: .auth)
                     let fullNameStr = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
                     if !fullNameStr.isEmpty {
                         appleProvidedFullName = fullNameStr
-                        print("🍎 [APPLE AUTH] Got FULL NAME from Apple: \(fullNameStr)")
+                        AppLogger.info("Got full name from Apple: \(fullNameStr)", category: .auth)
                     } else {
-                        print("🍎 [APPLE AUTH] ⚠️ Apple returned empty name components (this happens after first sign-in)")
+                        AppLogger.warning("Apple returned empty name components (this happens after first sign-in)", category: .auth)
                     }
                 } else {
-                    print("🍎 [APPLE AUTH] ⚠️ Apple did NOT provide fullName (nil)")
+                    AppLogger.warning("Apple did NOT provide fullName (nil)", category: .auth)
                 }
-                print("🍎 [APPLE AUTH] Email from credentials: \(credentials.email ?? "nil")")
+                AppLogger.debug("Apple email from credentials: \(credentials.email ?? "nil")", category: .auth)
                 
                 // Use the credentials to sign in with Supabase
                 Task {
@@ -5409,50 +5344,45 @@ struct NewOnboardingView: View {
                             nonce: credentials.nonce,
                             appleProvidedName: appleProvidedFullName
                         )
-                        print("🍎 [APPLE AUTH] Supabase signInWithApple returned. isNewUser: \(isNewUser)")
+                        AppLogger.debug("Supabase signInWithApple returned. isNewUser: \(isNewUser)", category: .auth)
                         
                         // Set the FULL NAME (first + last) in onboarding state
                         await MainActor.run {
-                            print("🍎 [APPLE AUTH] 🔍 Looking for user's full name...")
-                            print("🍎 [APPLE AUTH] 🔍 appleProvidedFullName: \(appleProvidedFullName ?? "nil")")
+                            AppLogger.debug("Looking for user's full name... appleProvidedFullName: \(appleProvidedFullName ?? "nil")", category: .auth)
                             
                             if let providedFullName = appleProvidedFullName, !providedFullName.isEmpty {
                                 name = providedFullName
-                                print("🍎 [APPLE AUTH] ✅ Using full name from credentials: '\(providedFullName)'")
+                                AppLogger.info("Apple auth using full name from credentials: '\(providedFullName)'", category: .auth)
                             } else if let userId = supabaseManager.currentUser?.id {
-                                print("🍎 [APPLE AUTH] 🔍 Checking persisted names for userId: \(userId.uuidString.prefix(8))...")
+                                AppLogger.debug("Checking persisted names for userId: \(userId.uuidString.prefix(8))...", category: .auth)
                                 
                                 // Try to get persisted full name from previous Apple sign-in
                                 let persistedKey = "apple_user_name_\(userId.uuidString)"
                                 let persistedFullName = UserDefaults.standard.string(forKey: persistedKey)
-                                print("🍎 [APPLE AUTH] 🔍 UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")")
+                                AppLogger.debug("UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")", category: .auth)
                                 
                                 if let persistedFullName = persistedFullName, 
                                    !persistedFullName.isEmpty, 
                                    persistedFullName != "Apple User" {
                                     name = persistedFullName
-                                    print("🍎 [APPLE AUTH] ✅ Using persisted full name from UserDefaults: '\(persistedFullName)'")
+                                    AppLogger.info("Apple auth using persisted full name from UserDefaults: '\(persistedFullName)'", category: .auth)
                                 } else {
                                     let pendingName = UserDefaults.standard.string(forKey: "pending_oauth_name")
-                                    print("🍎 [APPLE AUTH] 🔍 UserDefaults[pending_oauth_name]: \(pendingName ?? "nil")")
+                                    AppLogger.debug("UserDefaults[pending_oauth_name]: \(pendingName ?? "nil")", category: .auth)
                                     
                                     if let pendingName = pendingName,
                                        !pendingName.isEmpty,
                                        pendingName != "Apple User" {
                                         // Check pending_oauth_name (just set by SupabaseManager)
                                         name = pendingName
-                                        print("🍎 [APPLE AUTH] ✅ Using pending OAuth full name: '\(pendingName)'")
+                                        AppLogger.info("Apple auth using pending OAuth full name: '\(pendingName)'", category: .auth)
                                     } else {
-                                        print("🍎 [APPLE AUTH] ⚠️ No valid name found in any source")
-                                        print("🍎 [APPLE AUTH] ℹ️ This happens when:")
-                                        print("🍎 [APPLE AUTH] ℹ️  1. Apple has already provided name (only does it once)")
-                                        print("🍎 [APPLE AUTH] ℹ️  2. Persisted name was cleared (e.g., account deleted)")
-                                        print("🍎 [APPLE AUTH] ℹ️  3. User is using private relay email")
+                                        AppLogger.warning("Apple auth: no valid name found in any source (Apple only provides name once, or persisted name was cleared)", category: .auth)
                                     }
                                 }
                             }
                             
-                            print("🍎 [APPLE AUTH] 📝 Final full name value: '\(name)'")
+                            AppLogger.debug("Apple auth final full name value: '\(name)'", category: .auth)
                         }
                         
                         // Get email - try Apple credentials first, then Supabase session
@@ -5474,11 +5404,11 @@ struct NewOnboardingView: View {
                         }
                         
                         await MainActor.run {
-                            print("🍎 [APPLE AUTH] Sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
+                            AppLogger.info("Apple sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)", category: .auth)
                             
                             if isNewUser {
                                 // New user - go to username step (name pre-filled from Apple)
-                                print("👤 [SOCIAL AUTH] New Apple user - directing to username step")
+                                AppLogger.debug("New Apple user - directing to username step", category: .auth)
                                 navigateTo(.username)
                                 // Auto-focus username field since name is pre-filled
                                 DispatchQueue.main.async {
@@ -5493,21 +5423,21 @@ struct NewOnboardingView: View {
                             } else {
                                 // Returning user - force reload from Core Data to get latest onboarding status
                                 userManager.reloadCurrentUser()
-                                print("🍎 [APPLE AUTH] After reload - hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)")
+                                AppLogger.debug("Apple auth after reload - hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)", category: .auth)
                                 
                                 if userManager.hasCompletedOnboarding {
                                     // They completed onboarding - ContentView will show main app automatically
                                     // because it observes userManager.hasCompletedOnboarding
-                                    print("✅ [SOCIAL AUTH] Returning Apple user signed in - onboarding complete, switching to main app")
+                                    AppLogger.info("Returning Apple user signed in - onboarding complete, switching to main app", category: .auth)
                                 } else {
                                     // They started but didn't finish onboarding - continue from phone number
-                                    print("👤 [SOCIAL AUTH] Returning Apple user - continuing onboarding")
+                                    AppLogger.debug("Returning Apple user - continuing onboarding", category: .auth)
                                     navigateTo(.phoneNumber)
                                 }
                             }
                         }
                     } catch {
-                        print("❌ [APPLE AUTH] Error during sign-in: \(error)")
+                        AppLogger.error("Apple auth error during sign-in: \(error)", category: .auth)
                         await MainActor.run {
                             errorMessage = "Apple Sign-In failed: \(error.localizedDescription)"
                             showError = true
@@ -5528,7 +5458,7 @@ struct NewOnboardingView: View {
     }
     
     private func handleGoogleSignIn() {
-        print("🔐 [GOOGLE AUTH] Starting Google Sign-In with ASWebAuthenticationSession")
+        AppLogger.debug("Starting Google Sign-In with ASWebAuthenticationSession", category: .auth)
         
         guard let authURL = supabaseManager.getGoogleOAuthURL() else {
             errorMessage = "Could not create Google Sign-In URL"
@@ -5536,7 +5466,7 @@ struct NewOnboardingView: View {
             return
         }
         
-        print("🔐 [GOOGLE AUTH] Auth URL: \(authURL.absoluteString)")
+        AppLogger.debug("Google auth URL: \(authURL.absoluteString)", category: .auth)
         
         // Use ASWebAuthenticationSession for OAuth - this handles callbacks properly
         let session = ASWebAuthenticationSession(
@@ -5546,10 +5476,10 @@ struct NewOnboardingView: View {
             if let error = error {
                 // Check if user cancelled
                 if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                    print("🔐 [GOOGLE AUTH] User cancelled login")
+                    AppLogger.debug("Google auth user cancelled login", category: .auth)
                     return
                 }
-                print("❌ [GOOGLE AUTH] Error: \(error.localizedDescription)")
+                AppLogger.error("Google auth error: \(error.localizedDescription)", category: .auth)
                 DispatchQueue.main.async {
                     self.errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
                     self.showError = true
@@ -5558,11 +5488,11 @@ struct NewOnboardingView: View {
             }
             
             guard let callbackURL = callbackURL else {
-                print("❌ [GOOGLE AUTH] No callback URL received")
+                AppLogger.error("Google auth: no callback URL received", category: .auth)
                 return
             }
             
-            print("✅ [GOOGLE AUTH] Callback URL received: \(callbackURL.absoluteString)")
+            AppLogger.info("Google auth callback URL received: \(callbackURL.absoluteString)", category: .auth)
             
             // Post notification to handle the OAuth callback
             NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: callbackURL)
@@ -5573,23 +5503,23 @@ struct NewOnboardingView: View {
         session.prefersEphemeralWebBrowserSession = true // Skip the "wants to use X to sign in" dialog
         
         if !session.start() {
-            print("❌ [GOOGLE AUTH] Failed to start ASWebAuthenticationSession")
+            AppLogger.error("Google auth: failed to start ASWebAuthenticationSession", category: .auth)
             errorMessage = "Could not start Google Sign-In"
             showError = true
         }
     }
     
     private func handleFacebookSignIn() {
-        print("📘 [FACEBOOK AUTH] Starting Facebook Sign-In with ASWebAuthenticationSession")
+        AppLogger.debug("Starting Facebook Sign-In with ASWebAuthenticationSession", category: .auth)
         
         guard let authURL = supabaseManager.getFacebookOAuthURL() else {
             errorMessage = "Could not create Facebook Sign-In URL"
             showError = true
-            print("❌ [FACEBOOK AUTH] Failed to create OAuth URL")
+            AppLogger.error("Facebook auth: failed to create OAuth URL", category: .auth)
             return
         }
         
-        print("📘 [FACEBOOK AUTH] Auth URL: \(authURL.absoluteString)")
+        AppLogger.debug("Facebook auth URL: \(authURL.absoluteString)", category: .auth)
         
         // Use ASWebAuthenticationSession for OAuth
         let session = ASWebAuthenticationSession(
@@ -5598,10 +5528,10 @@ struct NewOnboardingView: View {
         ) { callbackURL, error in
             if let error = error {
                 if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                    print("📘 [FACEBOOK AUTH] User cancelled login")
+                    AppLogger.debug("Facebook auth user cancelled login", category: .auth)
                     return
                 }
-                print("❌ [FACEBOOK AUTH] Error: \(error.localizedDescription)")
+                AppLogger.error("Facebook auth error: \(error.localizedDescription)", category: .auth)
                 DispatchQueue.main.async {
                     self.errorMessage = "Facebook Sign-In failed: \(error.localizedDescription)"
                     self.showError = true
@@ -5610,11 +5540,11 @@ struct NewOnboardingView: View {
             }
             
             guard let callbackURL = callbackURL else {
-                print("❌ [FACEBOOK AUTH] No callback URL received")
+                AppLogger.error("Facebook auth: no callback URL received", category: .auth)
                 return
             }
             
-            print("✅ [FACEBOOK AUTH] Callback URL received: \(callbackURL.absoluteString)")
+            AppLogger.info("Facebook auth callback URL received: \(callbackURL.absoluteString)", category: .auth)
             
             // Post notification to handle the OAuth callback
             NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: callbackURL)
@@ -5624,7 +5554,7 @@ struct NewOnboardingView: View {
         session.prefersEphemeralWebBrowserSession = true // Skip the "wants to use X to sign in" dialog
         
         if !session.start() {
-            print("❌ [FACEBOOK AUTH] Failed to start ASWebAuthenticationSession")
+            AppLogger.error("Facebook auth: failed to start ASWebAuthenticationSession", category: .auth)
             errorMessage = "Could not start Facebook Sign-In"
             showError = true
         }
@@ -5768,7 +5698,7 @@ struct PasswordTextField<F: Hashable>: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "lock.fill")
-                .font(.system(size: 18))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: isValid ? [Color.blue, Color.cyan.opacity(0.8)] : [Color.gray.opacity(0.5), Color.gray.opacity(0.4)],
@@ -5924,7 +5854,7 @@ struct PasswordRequirementsView: View {
             RequirementPillCompact(met: hasNumber, label: "123")
             RequirementPillCompact(met: hasSpecialChar, label: "!@#")
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
 }
 
@@ -5981,7 +5911,7 @@ struct RequirementPill: View {
             .fontWeight(.medium)
             .foregroundColor(met ? .green : .secondary.opacity(0.6))
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(met ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
@@ -6000,7 +5930,7 @@ struct RequirementRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: met ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 12))
+                .font(.ds_bodySmall)
                 .foregroundColor(met ? .green : .secondary.opacity(0.5))
             Text(text)
                 .font(.caption)
@@ -6037,7 +5967,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                         Button(action: onBack) {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.ds_labelMedium)
                                 Text("Back")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
@@ -6058,7 +5988,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         .foregroundStyle(
                             canContinue
@@ -6100,7 +6030,7 @@ struct OnboardingPageTemplate<Content: View>: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
-                                .padding(.horizontal, 32)
+                                .padding(.horizontal, Spacing.xl)
                                 .padding(.top, 16)
                         }
                         
@@ -6276,7 +6206,7 @@ struct GoalCardLarge: View {
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 22))
+                            .font(.ds_heading2)
                             .foregroundColor(.blue)
                             .padding(10)
                     }
@@ -6320,7 +6250,7 @@ struct ExperienceCardLarge: View {
                         .frame(width: 56, height: 56)
                     
                     Text(emoji)
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -6329,11 +6259,11 @@ struct ExperienceCardLarge: View {
                         .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
-                        .font(.system(size: 14))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                     
                     Text(detail)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.blue.opacity(0.7))
                 }
                 
@@ -6378,7 +6308,7 @@ struct EquipmentCardLarge: View {
                 }
                 
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
             }
@@ -6389,7 +6319,7 @@ struct EquipmentCardLarge: View {
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 20))
+                            .font(.ds_heading3)
                             .foregroundColor(.blue)
                             .padding(Spacing.xs)
                     }
@@ -6431,7 +6361,7 @@ struct EquipmentCardWithIcon: View {
                 }
                 
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(isSelected ? .blue : .primary)
                     .lineLimit(1)
                 
@@ -6447,7 +6377,7 @@ struct EquipmentCardWithIcon: View {
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.blue)
                             .padding(Spacing.xs)
                     }
@@ -6679,7 +6609,7 @@ struct OnboardingGoalCard: View {
                             .blur(radius: 10)
                     }
                     Text(emoji)
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                 }
                 
                 Text(title)
@@ -6874,7 +6804,7 @@ struct ConfirmationListRow: View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color.blue, Color.purple.opacity(0.8)],
@@ -6933,7 +6863,7 @@ struct CompactConfirmationCard: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(spacing: 8) {
                         Image(systemName: item.icon)
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [Color.blue, Color.purple.opacity(0.8)],
@@ -6984,7 +6914,7 @@ struct ConfirmationSection<Content: View>: View {
                         .foregroundColor(.blue)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Content box - tappable with exercise library style
             Button(action: onEdit) {
@@ -7262,7 +7192,7 @@ struct LimitationCardOnboardingWide: View {
                             .frame(width: 44, height: 44)
                         
                         Image(systemName: area.icon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                     }
                     
@@ -7311,7 +7241,7 @@ struct LimitationCardOnboardingWide: View {
                         if isSelected {
                             if needsSelection {
                                 Image(systemName: "exclamationmark")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                                     .foregroundColor(.orange)
                             } else {
                                 Circle()
@@ -7333,7 +7263,7 @@ struct LimitationCardOnboardingWide: View {
                     if needsSelection {
                         HStack(spacing: 6) {
                             Image(systemName: "hand.point.down.fill")
-                                .font(.system(size: 12))
+                                .font(.ds_bodySmall)
                             Text("Choose how you want us to handle this")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -7370,7 +7300,7 @@ struct LimitationCardOnboardingWide: View {
                                 
                                 if accommodation == level {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 18))
+                                        .font(.ds_heading3)
                                         .foregroundColor(level.color)
                                 }
                             }
@@ -7441,7 +7371,7 @@ struct LimitationCardOnboarding: View {
                             .frame(width: 44, height: 44)
                         
                         Image(systemName: area.icon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(isSelected ? .white : (colorScheme == .dark ? .gray : .gray.opacity(0.8)))
                     }
                     
@@ -7478,7 +7408,7 @@ struct LimitationCardOnboarding: View {
                     Group {
                         if isSelected {
                             Image(systemName: showingOptions ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(area.color)
                                 .padding(6)
                         }
@@ -7507,7 +7437,7 @@ struct LimitationCardOnboarding: View {
                     }
                 }
                 .padding(.top, 8)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
         }
     }
@@ -7524,7 +7454,7 @@ struct AccommodationOptionRow: View {
             HStack(spacing: 10) {
                 // Icon
                 Image(systemName: level.icon)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(isSelected ? .white : level.color)
                     .frame(width: 24, height: 24)
                     .background(
@@ -7535,7 +7465,7 @@ struct AccommodationOptionRow: View {
                 // Text
                 VStack(alignment: .leading, spacing: 1) {
                     Text(level.displayName)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(isSelected ? level.color : .primary)
                     
                     Text(level.description)

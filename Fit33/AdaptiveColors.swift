@@ -305,7 +305,7 @@ struct AdaptiveGradient {
             return universalDark
         } else {
             return LinearGradient(
-                gradient: Gradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.2), Color.purple.opacity(0.1), Color.white]),
+                gradient: Gradient(colors: [Color.blue.opacity(0.3), Color.cyan.opacity(0.2), Color.white]),
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -385,8 +385,8 @@ struct AnimatedOrbBackground: View {
     static func friends(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
             baseGradient: AdaptiveGradient.friends(for: colorScheme),
-            primaryOrbColor: .cyan,
-            secondaryOrbColor: .purple
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan
         )
     }
     

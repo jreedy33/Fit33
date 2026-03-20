@@ -213,7 +213,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                     }
                                     
                                     Text("\(maxMembers)")
-                                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                                        .font(.ds_statSmall)
                                         .foregroundColor(.white)
                                         .frame(width: 40)
                                     
@@ -249,7 +249,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                         .scaleEffect(0.9)
                                 } else {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 18))
+                                        .font(.ds_heading3)
                                     Text("Save Changes")
                                         .font(.headline)
                                         .fontWeight(.semibold)
@@ -310,7 +310,7 @@ struct PrivateChallengeAdminSettingsView: View {
     private func settingsRow(icon: String, iconColor: Color, title: String, subtitle: String, toggle: Binding<Bool>) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(iconColor)
                 .frame(width: 28)
             

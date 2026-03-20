@@ -18,6 +18,8 @@
 //  Created by Infrastructure Team - 2026-02-25
 //
 
+#if DEBUG
+
 import Foundation
 import SwiftUI
 import Supabase
@@ -3728,3 +3730,5 @@ class SocialSystemSimulator: ObservableObject {
         }
     }
 }
+
+#endif

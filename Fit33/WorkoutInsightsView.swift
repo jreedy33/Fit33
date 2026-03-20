@@ -47,7 +47,7 @@ struct WorkoutInsightsView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(24)
+                            .padding(Spacing.lg)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
                             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
@@ -57,7 +57,7 @@ struct WorkoutInsightsView: View {
                                 HStack {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.blue)
-                                        .font(.system(size: 20))
+                                        .font(.ds_heading3)
                                     Text("Your Selections")
                                         .font(.headline)
                                         .fontWeight(.bold)
@@ -86,7 +86,7 @@ struct WorkoutInsightsView: View {
                                 HStack {
                                     Image(systemName: "lightbulb.fill")
                                         .foregroundColor(.orange)
-                                        .font(.system(size: 20))
+                                        .font(.ds_heading3)
                                     Text("Applied Strategy")
                                         .font(.headline)
                                         .fontWeight(.bold)
@@ -131,7 +131,7 @@ struct WorkoutInsightsView: View {
                                     HStack {
                                         Image(systemName: "doc.text.fill")
                                             .foregroundColor(.green)
-                                            .font(.system(size: 20))
+                                            .font(.ds_heading3)
                                         Text("Why This Works")
                                             .font(.headline)
                                             .fontWeight(.bold)
@@ -163,7 +163,7 @@ struct WorkoutInsightsView: View {
                                             
                                             if index < insights.pairingDescriptions.count - 1 {
                                                 Divider()
-                                                    .padding(.vertical, 4)
+                                                    .padding(.vertical, Spacing.xxs)
                                             }
                                         }
                                     }

@@ -95,7 +95,7 @@ struct RecipeImportSheet: View {
                     .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
                 
                 Image(systemName: "link.badge.plus")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.ds_heading3)
                     .foregroundColor(.white)
             }
             
@@ -126,7 +126,7 @@ struct RecipeImportSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "link")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundColor(.blue)
                     .frame(width: 24)
                 
@@ -139,7 +139,7 @@ struct RecipeImportSheet: View {
                 if !urlText.isEmpty {
                     Button(action: { urlText = "" }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
+                            .font(.ds_heading3)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -164,7 +164,7 @@ struct RecipeImportSheet: View {
             
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                 Text("AllRecipes, Food Network, BBC Good Food, and more")
                     .font(.caption2)
             }
@@ -182,7 +182,7 @@ struct RecipeImportSheet: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "arrow.down.doc.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                 }
                 Text(isExtracting ? "Extracting Recipe..." : "Extract Recipe")
                     .font(.headline)
@@ -262,7 +262,7 @@ struct RecipeImportSheet: View {
             // Success badge
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                 Text("Extracted")
                     .font(.caption2)
                     .fontWeight(.bold)
@@ -376,7 +376,7 @@ struct RecipeImportSheet: View {
             HStack {
                 Image(systemName: "leaf.fill")
                     .foregroundColor(.green)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                 Text("Ingredients")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -389,7 +389,7 @@ struct RecipeImportSheet: View {
                         .fontWeight(.bold)
                         .foregroundColor(.green)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Capsule().fill(Color.green.opacity(0.15)))
                 }
             }
@@ -410,7 +410,7 @@ struct RecipeImportSheet: View {
                                         .fill(Color.green.opacity(0.1))
                                         .overlay(
                                             Image(systemName: "leaf.fill")
-                                                .font(.system(size: 10))
+                                                .font(.ds_caption)
                                                 .foregroundColor(.green)
                                         )
                                 @unknown default:
@@ -462,7 +462,7 @@ struct RecipeImportSheet: View {
             HStack {
                 Image(systemName: "list.number")
                     .foregroundColor(.blue)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                 Text("Steps")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -552,7 +552,7 @@ struct RecipeImportSheet: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "eye.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                 Text("View Full Details")
                     .font(.headline)
                     .fontWeight(.bold)

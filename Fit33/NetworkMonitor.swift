@@ -56,9 +56,9 @@ struct OfflineBanner: View {
         if !network.isConnected {
             HStack(spacing: 8) {
                 Image(systemName: "wifi.slash")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                 Text("You're offline")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                 Spacer()
                 Text("Changes will sync when reconnected")
                     .font(.system(size: 11))

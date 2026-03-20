@@ -49,8 +49,10 @@ struct FriendsTabView: View {
     /// Realtime WebSocket handles immediate updates; this is a fallback.
     private let autoRefreshInterval: TimeInterval = 60
     
+    
     var body: some View {
         NavigationStack(path: $navigationPath) {
+            ZStack {
             ScrollView(.vertical) {
                 // ⚡️ PERF FIX: LazyVStack defers off-screen sections (community widgets,
             // challenge carousel, quick actions) until the user scrolls to them.
@@ -113,6 +115,7 @@ struct FriendsTabView: View {
             .background(
                 AnimatedOrbBackground.friends(colorScheme: colorScheme)
             )
+            }
             .navigationBarHidden(true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: String.self) { destination in
@@ -352,7 +355,7 @@ struct FriendsTabView: View {
                     showingFriendsList = true
                 }) {
                     Image(systemName: "person.badge.plus")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundStyle(
                             LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -381,7 +384,7 @@ struct FriendsTabView: View {
                 }) {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .rotationEffect(.degrees(isManualRefreshing ? 360 : 0))
                             .animation(isManualRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isManualRefreshing)
                         
@@ -478,8 +481,8 @@ struct FriendsTabView: View {
                                 ))
                         }
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.xxs)
+                    .padding(.vertical, Spacing.xxs)
                 }
             } else if !contactsService.canAccessContacts {
                 // Prompt to enable contacts
@@ -495,7 +498,7 @@ struct FriendsTabView: View {
                                 )
                                 .frame(width: 44, height: 44)
                             Image(systemName: "person.crop.rectangle.stack")
-                                .font(.system(size: 18))
+                                .font(.ds_heading3)
                                 .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
                         
@@ -604,7 +607,7 @@ struct FriendsTabView: View {
                                 .frame(width: 22, height: 22)
                             
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 20))
+                                .font(.ds_heading3)
                                 .foregroundStyle(
                                     LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 )
@@ -828,7 +831,7 @@ struct FriendsTabView: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.sm)
                 .background(
                     LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing)
@@ -837,7 +840,7 @@ struct FriendsTabView: View {
                 .shadow(color: .cyan.opacity(0.3), radius: 10, x: 0, y: 4)
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity)
         .sleekCard(cornerRadius: 24, accentColor: .cyan)
     }
@@ -910,7 +913,7 @@ struct FriendsTabView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.orange)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, Spacing.xxs)
                                 .background(Capsule().fill(Color.orange.opacity(0.15)))
                         }
                     }
@@ -977,7 +980,7 @@ struct FriendsTabView: View {
                                     }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     } else if let challenge = activeChallenges.first {
                         activeChallengeCard(challenge: challenge)
                     } else if let group = groupChallenges.first {
@@ -1032,7 +1035,7 @@ struct FriendsTabView: View {
                                     }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     }
                 }
                 .onChange(of: challengeService.activeChallenges.count) { _, _ in
@@ -1066,7 +1069,7 @@ struct FriendsTabView: View {
                         .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 36, height: 36)
                     Text(resolvedType.emoji)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1098,7 +1101,7 @@ struct FriendsTabView: View {
                     .font(.ds_bodyRegular)
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 14)
@@ -1109,7 +1112,7 @@ struct FriendsTabView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 
                 if isAccountability {
                     friendsTabAccountabilityBar(challenge: challenge, typeColor: typeColor, typeGradient: typeGradient)
@@ -1173,7 +1176,7 @@ struct FriendsTabView: View {
         )
         .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
         .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     // MARK: - Pending Sent Challenge Card
@@ -1203,12 +1206,12 @@ struct FriendsTabView: View {
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         Text(resolvedType.emoji)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                     }
                     
                     HStack(spacing: 4) {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 10))
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                         Text("Sent to \(opponentFirst)")
                             .font(.caption)
@@ -1389,7 +1392,7 @@ struct FriendsTabView: View {
                     }
                     
                     Text(resolver.formatValue(myProgress, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(amWinning ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -1402,7 +1405,7 @@ struct FriendsTabView: View {
             // VS divider with score diff
             VStack(spacing: 2) {
                 Text("⚔️")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                 
                 if myProgress != oppProgress {
                     let diff = abs(myProgress - oppProgress)
@@ -1435,7 +1438,7 @@ struct FriendsTabView: View {
                     }
                     
                     Text(resolver.formatValue(oppProgress, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(!amWinning && oppProgress > 0 ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -1497,7 +1500,7 @@ struct FriendsTabView: View {
                 // Live progress value for "my" side
                 HStack(spacing: 4) {
                     Text(myDone ? "✅" : "⬜")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text(resolver.formattedProgress(for: challenge))
                         .font(.caption2)
                         .fontWeight(.bold)
@@ -1508,7 +1511,7 @@ struct FriendsTabView: View {
                         .foregroundColor(.secondary)
                     
                     Text(oppDone ? "✅" : "⬜")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                     Text(opponentFirst)
                         .font(.caption2)
                         .foregroundColor(oppDone ? .green : .secondary)
@@ -1551,7 +1554,7 @@ struct FriendsTabView: View {
                 
                 if myDone && oppDone {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.green)
                 } else {
                     Text("\(Int(livePercent * 100))%")
@@ -1629,7 +1632,7 @@ struct FriendsTabView: View {
                         .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 36, height: 36)
                     Text(resolvedType.emoji)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1655,7 +1658,7 @@ struct FriendsTabView: View {
                 }
                 .foregroundColor(.secondary)
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(Capsule().fill(Color.gray.opacity(0.15)))
             }
             .padding(Spacing.md)
@@ -1694,7 +1697,7 @@ struct FriendsTabView: View {
             .padding(.bottom, 14)
         }
         .sleekCard(cornerRadius: 20, accentColor: resolvedType.color)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     private var noChallengesCard: some View {
@@ -1709,7 +1712,7 @@ struct FriendsTabView: View {
                             .frame(width: 48, height: 48)
                         
                         Text("🏆")
-                            .font(.system(size: 22))
+                            .font(.ds_heading2)
                     }
                     
                     VStack(alignment: .leading, spacing: 3) {
@@ -1726,7 +1729,7 @@ struct FriendsTabView: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, Spacing.md)
@@ -2102,7 +2105,7 @@ struct FriendsTabView: View {
                     .rotationEffect(.degrees(-90))
                 
                 Text(challenge.displayEmoji)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
             
             VStack(alignment: .leading, spacing: 3) {
@@ -2348,7 +2351,7 @@ struct FriendsTabView: View {
                     .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 44, height: 44)
                 Text(challenge.displayEmoji)
-                    .font(.system(size: 20))
+                    .font(.ds_heading3)
             }
             
             VStack(alignment: .leading, spacing: 3) {
@@ -2524,7 +2527,7 @@ struct FriendsTabView: View {
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.8))
                 }
-                .padding(24)
+                .padding(Spacing.lg)
                 .background(
                     RoundedRectangle(cornerRadius: CornerRadius.xl)
                         .fill(.ultraThinMaterial)
@@ -2573,7 +2576,7 @@ struct FriendsQuickTile: View {
                         .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(.white)
                 }
                 

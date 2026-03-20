@@ -39,7 +39,7 @@ struct WeeklyLeagueWidget: View {
                     showingLeagueInfo = true
                 } label: {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
                 
@@ -48,14 +48,14 @@ struct WeeklyLeagueWidget: View {
                 if let standing = standing {
                     HStack(spacing: 4) {
                         Text(standing.tierEmoji)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                         Text(standing.tierName)
                             .font(.caption)
                             .fontWeight(.bold)
                             .foregroundColor(standing.tierSwiftUIColor)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(standing.tierSwiftUIColor.opacity(0.15))
@@ -283,14 +283,14 @@ struct WeeklyLeagueWidget: View {
             
             // Points
             Text("\(entry.points)")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
             
             Text("pts")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .padding(.horizontal, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 10)
@@ -310,7 +310,7 @@ struct WeeklyLeagueWidget: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(24)
+        .padding(Spacing.lg)
         .sleekCard(cornerRadius: 24, accentColor: .yellow)
     }
     
@@ -346,13 +346,13 @@ struct WeeklyLeagueWidget: View {
             
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text("Join Now")
                     .fontWeight(.semibold)
             }
             .font(.subheadline)
             .foregroundColor(.white)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.lg)
             .padding(.vertical, 10)
             .background(
                 LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
@@ -425,7 +425,7 @@ struct WeeklyLeagueDetailView: View {
                 
                 if let standing = leagueService.standing {
                     Text(standing.tierEmoji)
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                     Text("\(standing.tierName) League")
                         .font(.title3)
                         .fontWeight(.bold)
@@ -488,7 +488,7 @@ struct WeeklyLeagueDetailView: View {
     private func statPill(value: String, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(color)
             Text(label)
                 .font(.ds_caption)
@@ -586,10 +586,10 @@ struct WeeklyLeagueDetailView: View {
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                 } else {
                     Text("#\(entry.rank)")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                         .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
                 }
             }
@@ -627,20 +627,20 @@ struct WeeklyLeagueDetailView: View {
                 Image(systemName: "chevron.up")
                     .font(.ds_caption)
                     .foregroundColor(.green)
-                    .padding(4)
+                    .padding(Spacing.xxs)
                     .background(Circle().fill(Color.green.opacity(0.15)))
             } else if isRelegZone {
                 Image(systemName: "chevron.down")
                     .font(.ds_caption)
                     .foregroundColor(.red)
-                    .padding(4)
+                    .padding(Spacing.xxs)
                     .background(Circle().fill(Color.red.opacity(0.15)))
             }
             
             // Points
             VStack(alignment: .trailing, spacing: 1) {
                 Text("\(entry.points)")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
                 Text("pts")
                     .font(.system(size: 9))
@@ -779,7 +779,7 @@ struct WeeklyLeagueDetailView: View {
             // Result
             VStack(alignment: .trailing, spacing: 2) {
                 Text("#\(entry.finalRank)")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                 Text("\(entry.finalPoints) pts")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -889,7 +889,7 @@ struct WeeklyLeagueInfoSheet: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Spacing.xs)
         }
     }
     
@@ -928,7 +928,7 @@ struct WeeklyLeagueInfoSheet: View {
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, 3)
                                 .background(
                                     Capsule()
@@ -936,7 +936,7 @@ struct WeeklyLeagueInfoSheet: View {
                                 )
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     
                     if tier.rank < tiers.count {
                         Divider()
@@ -1044,7 +1044,7 @@ struct WeeklyLeagueInfoSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.white)
+                .fill(Color.cardBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1079,7 +1079,7 @@ struct WeeklyLeagueInfoSheet: View {
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.orange.opacity(0.1))

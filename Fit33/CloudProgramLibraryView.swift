@@ -117,7 +117,7 @@ struct CloudProgramLibraryView: View {
                         selectedDifficulty = selectedDifficulty == "advanced" ? nil : "advanced"
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             }
             
             // Results count
@@ -371,7 +371,7 @@ struct DepthProgramCard: View {
                         .shadow(color: program.programColor.opacity(0.35), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 

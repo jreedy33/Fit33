@@ -331,6 +331,44 @@ If a design decision conflicts with an engineering constraint:
 
 ---
 
+## Logic Audit Learnings
+
+### Ownership from Logic Audit (March 2026)
+- BUG-01: CollaborativeLearningEngine type safety (FIXED)
+- BUG-03: SmartExercisePairingEngine operator precedence (FIXED)
+- BUG-06: Challenge progress guard - pending status (FIXED)
+- BUG-07: ChallengeProgressResolver consistency (FIXED)
+- BUG-09: ForceExerciseRefresh delegation (FIXED)
+- BUG-12: ContextualMealEngine dynamic targets (FIXED)
+- GAP-01 through GAP-14: All logic gaps (FIXED)
+- DUP-01, DUP-02, DUP-04, DUP-05, DUP-06: Consolidation (FIXED)
+- DEAD-04 through DEAD-10: Dead code cleanup (FIXED)
+
+### Key Rules Established
+- "pending" challenges must NEVER receive progress updates — only "active"
+- Operator precedence: always use explicit parentheses in compound boolean conditions
+- Challenge progress must use `max(localValue, serverValue)` consistently
+- `ExerciseFilterService.normalizeEquipment()` is the single source of truth for equipment normalization
+- `ChallengeTypeResolvable` protocol is the canonical pattern for challenge type resolution
+- `ExerciseTypes.swift` contains the shared `MovementPattern` enum (30 cases)
+- `ExerciseCardRow` is the single shared exercise card component — used by both `CustomWorkoutBuilderView` and `ExerciseLibraryView`
+- Replace mode (`.replace`, `.addToWorkout`) must always reset filter state on appear via `mode.isSingleSelect`
+- Exercise replacement must show visual feedback: green border glow + toast message "Replaced with [Name]"
+- `loadHistoricalDataForExercise` tasks must be tracked in `initTasks` for cancellation on view disappear
+
+### Additional Domains Owned
+- `GenderFilterService.swift` — gender-related exercise filtering
+- `ExerciseTypes.swift` — shared exercise type enums
+- `ExerciseCardRow.swift` — shared exercise card component
+- `ActiveWorkoutView.swift` — active workout flow (set init, shuffle, progressive overload)
+- `ExerciseSwapService.swift` — tiered exercise swap logic (co-owned with Fitness Expert)
+- `ProgressiveWorkoutIntelligence` — progressive overload set generation
+- `ActiveWorkoutTests.swift` — active workout test suite (16 tests)
+- Localization/i18n (M-2: hardcoded strings)
+- iPad/device form factor implementation (with Design Agent for specs)
+
+---
+
 ## Quick Reference: File Locations
 
 | Need | File | Line |
@@ -404,3 +442,188 @@ If a design decision conflicts with an engineering constraint:
 **Test Coverage**:
 - `ActiveWorkoutTests.swift` added with 16 tests covering set init, progressive overload, swap tiers, historical data, and UX
 - Run from DevMenuView test runner
+
+### Architecture Flows (Active Workout)
+
+**Set Initialization Flow**:
+```
+User taps "GO" on workout preview
+  → WorkoutManager.startWorkout()
+    → prefetchExerciseData() [Core Data materialization]
+    → initializeSetsForExercises() [creates WorkoutSetData with pre-filled values from history]
+  → ActiveWorkoutView appears
+    → applyWarmupDataInstantly() [synchronous, <1ms — sets previousExerciseSets]
+    → initializeWorkout() deferred
+      → Check cache for missing exercises
+      → Async: StrengthProfileRecommendationEngine for exercises without history
+      → Async: Cloud fetch for exercises without cache
+```
+
+**Exercise Swap Flow**:
+```
+User taps shuffle icon on exercise card
+  → ExerciseCard.shuffleToSimilarExercise()
+    → ExerciseSwapService.getQuickSwap(swapCount: N)
+      → swapCount < 3: Equipment variant (Dumbbell → Barbell)
+      → swapCount >= 3: Complementary exercise (Bench → Fly)
+    → Fallback: AlternativeExerciseEngine.getBestAlternative()
+  → ActiveWorkoutView.shuffleExercise(at:with:)
+    → Transfer or create sets (min 3)
+    → Clear old previousExerciseSets
+    → loadHistoricalDataForExercise(newExercise)
+      → Cache hit → Apply previous data + sync set count
+      → Cloud fetch → Apply + sync
+      → No history → Smart recommendation engine
+    → Track swap in behavior learning engines
+```
+
+**Progressive Overload Flow**:
+```
+Exercise has previous workout data
+  → ProgressiveWorkoutIntelligence.generateProgressiveSets()
+    → Fetch last completed workout for this exercise
+    → Analyze consistency & readiness
+    → If ready for progression:
+      → First half of sets: +5lbs (or +2.5 if <30lbs)
+      → Second half: maintain previous weight
+    → If deload needed:
+      → All sets: -10% weight, +2 reps
+    → Otherwise: maintain
+  → Sets appear pre-filled with progressive values
+  → Previous column shows historical reference
+```
+
+### Remaining Opportunities
+- Progressive overload does not yet integrate with `GeneratedProgramService` periodization for program-context workouts
+- `UserBehaviorLearningEngine` records swaps but `ExerciseSwapService` doesn't re-rank based on swap history yet (3+ swaps away should deprioritize)
+- Warmup sets (e.g., 185lbs x 1) treated same as working sets in history calculations — filter by `SetType.warmup` needed
+- `ExerciseSwapService` hits Core Data per shuffle — pre-computing swap graph at workout start would eliminate per-shuffle latency
+
+### 2026-03-17: Video Loading Optimization
+
+**Tap-Time Prefetch**:
+- `ExerciseLibraryView.swift` `simultaneousGesture(TapGesture())` (~line 703) now calls `VideoPlaybackEngine.shared.priorityPrefetch(exerciseName:)` alongside popularity tracking
+- This gives ~200-300ms head start during the NavigationLink push animation
+- Only applies to ExerciseLibraryView (NavigationLink push); other entry points to ExerciseDetailView use `.sheet` or `.fullScreenCover` with shorter animation windows
+
+**ExerciseDetailView Entry Points** (11+ total — prefetch is triggered in `ExerciseDetailView.onAppear` for all):
+- `ExerciseLibraryView` — NavigationLink push (also gets tap-time prefetch)
+- `ActiveWorkoutView` — `.sheet`
+- `WorkoutHistoryDetailView` — `.sheet`
+- `ProgramScheduleFullView` — `.sheet`
+- `ExerciseSelectionView` — `.sheet`
+- `CustomWorkoutBuilderView` — `.fullScreenCover`
+- `ReceivedWorkoutsView` — `.sheet`
+- `AutoWorkoutPreviewView` — `.sheet`
+- `ProgramDayPreviewView` — `.sheet`
+- `ProgramScheduleView` — via `ExerciseDetailWrapper`
+
+**Crossfade Change**:
+- `RemoteVideoPlayerView` no longer uses a hardcoded 50ms `DispatchQueue.main.asyncAfter` timer
+- Now observes `playerManager.$isReadyToDisplay` (Combine publisher) — crossfade only when player has renderable content
+- 2-second timeout fallback prevents infinite waiting on network failure
+
+**Poster Frame Pre-Generation**:
+- `ExerciseDetailView.onAppear` now triggers `VideoThumbnailService.shared.generatePosterFrame()` for exercises without cached posters
+- `ExerciseLibraryView.onAppear` triggers batch `preGeneratePosterFrames(for:)` for first 20 visible exercises
+- Ensures repeat visits have instant poster frames (~0ms visual)
+
+### 2026-03-18: Weight Input Per-Side Toggle & Plate Calculator
+
+**Per-Side Toggle** (on `SetRowView`):
+- Small "total" / "/side" label below the weight field — tap to toggle mode
+- In per-side mode, user types weight on one side; `setData.weight` stores total = (typed × 2) + barWeight
+- Toggle is per-exercise (`ExerciseCard.isPerSideMode`), not per-set — all sets share the mode
+- When toggling, the displayed value auto-converts (135 total ↔ 45/side with 45lb bar)
+- Placeholders also convert: if previous was 135 total, per-side shows "45"
+
+**Plate Calculator** (long press weight field):
+- `PlateCalculatorView` presented as `.sheet` with `.presentationDetents([.medium])`
+- Plate grid: 45, 35, 25, 10, 5, 2.5 — tap to add, shows count badges
+- Bar weight picker: 45/35/25 — persisted via `@AppStorage("defaultBarWeight")`
+- Live total display: per-side breakdown + grand total
+- "Apply" fills `setData.weight` with the grand total and dismisses
+
+**Data Rule**: Weight is ALWAYS stored as total. Per-side mode and plate calculator are input-only conveniences. No Core Data or Supabase changes.
+
+### 2026-03-19: Exercise Search Unification
+
+**Architecture**: All exercise search is now routed through `SmartExerciseSearchService.shared.searchExercisesUltraFast()` as the single source of truth. Both `ExerciseSelectionView` and `ExerciseLibraryView` call this method — no more duplicated inline search logic.
+
+**Search Flow**:
+```
+User Types → onChange(of: searchText)
+                ↓
+         [100ms micro-debounce]
+                ↓
+         updateFilteredExercises()
+                ↓
+         Check view-level searchCache[key]
+            ↓ (miss)
+         SmartExerciseSearchService.shared.searchExercisesUltraFast()
+                ↓
+         [Per-word typo correction UPFRONT]
+         [Per-word variation generation]
+         [Priority bucket sort: exact > startsWith > contains > allWords > secondary]
+         [Secondary: category + muscles + equipment + nickname]
+         [Personalization boost from UserBehaviorProfile]
+         [Prefix-aware cache reuse for incremental typing]
+                ↓
+         Cache result → update UI
+```
+
+**Key Files**:
+- `SmartExerciseSearchService.swift` — sole search implementation (typos, variations, scoring, caching)
+- `ExerciseFilterService.swift` — shared `exerciseMatchesEquipment()` and `isExerciseForMuscleGroup()` (filter logic)
+- `ExerciseSelectionView.swift` — workout exercise picker (delegates search to service)
+- `ExerciseLibraryView.swift` — library tab (delegates search to service)
+
+**Rules for new search features**:
+- NEVER add search/typo/variation logic inline in a view — add it to `SmartExerciseSearchService`
+- NEVER add equipment/muscle matching logic inline in a view — add it to `ExerciseFilterService`
+- Both views share a 100ms debounce on `searchText` changes (clear = instant, typing = debounced)
+- Call `SmartExerciseSearchService.shared.invalidateCache()` whenever the pre-filtered exercise set changes
+
+### 2026-03-19: Active Workout Settings Side Panel
+
+**Architecture**: Gear icon in top-left of `ActiveWorkoutView` opens a half-width settings panel from the left edge. Panel is a ZStack overlay with dimmed backdrop + `WorkoutSettingsPanel` struct.
+
+**Side Panel Pattern**:
+- Width: 55% of screen
+- Animation: `.spring(response: 0.35, dampingFraction: 0.85)` with `.transition(.move(edge: .leading))`
+- Backdrop: `Color.black.opacity(0.4)`, tappable to dismiss
+- Panel background: `Color(red: 0.08, green: 0.08, blue: 0.10)` dark / `systemGroupedBackground` light
+
+**@AppStorage Keys** (all persist across workouts):
+| Key | Type | Default | Purpose |
+|-----|------|---------|---------|
+| `workoutWeightUnit` | Bool | false | lb (false) / kg (true) |
+| `workoutPerSideMode` | Bool | false | Total (false) / Per-Side (true) |
+| `defaultBarWeight` | Double | 45 | Bar weight for plate calculator |
+| `defaultRestSeconds` | Int | 90 | Default rest timer in seconds |
+| `autoStartRestTimer` | Bool | true | Auto-start timer between sets |
+| `keepScreenOnDuringWorkout` | Bool | true | Prevents screen dimming |
+| `workoutSoundEffects` | Bool | true | Sound effects during workout |
+
+**Keep Screen On**: Sets `UIApplication.shared.isIdleTimerDisabled = true` on appear, resets to `false` on disappear. Also reacts to toggle changes in the panel.
+
+**Remove Ads**: Free users see a "Remove Ads" row with gold crown that opens `PremiumUpgradeView` sheet.
+
+**Minimize Workout**: Bottom of panel has "Minimize Workout" button calling `workoutManager.navigateToHomeTab()` -- preserves the old back-chevron behavior.
+
+### 2026-03-19: Rest Timer — Countdown Glow Architecture
+
+**Timer Promotion**: `RestTimer` was promoted from `SetRowView` (per-set `@StateObject`) to `ExerciseCard` level (`@StateObject private var cardRestTimer`). Only one timer per card can be active at a time (enforced by `activeTimerSetNumber`), so a single shared instance is correct. `SetRowView` now receives the timer as `@ObservedObject var restTimer: RestTimer`.
+
+**Countdown Glow Overlay**: Replaced the inline progress bar below completed set rows with an electric blue glow that traces the `ExerciseCard` border. Uses `RoundedRectangle.trim(from: 0, to: visualRemainingProgress)` with `.stroke()` and double `.shadow()` for the glow effect. Animation: `.linear(duration: 1.0)` synced to `timeRemaining`. When the timer is inactive and the card is active, falls back to the existing blue-purple gradient stroke.
+
+**Timer Settings Wiring Fixes**:
+- `getRestDuration(for:)` now returns `TimeInterval(defaultRestSeconds)` from `@AppStorage` instead of hardcoded category-based values
+- `autoStartRestTimer` now gates the `startWithAdOffset()` call in the checkmark action — when `false`, completing a set does not start the rest timer
+- `restDuration == 0` means timer is off (user set Default Rest to 0s in settings)
+
+**Data Flow**: `ActiveWorkoutView` → `autoStartRestTimer` (Bool) → `ExerciseCard.autoStartTimer` → `SetRowView.autoStartTimer` → gates `restTimer.startWithAdOffset()` in checkmark action.
+
+### 2026-03-19: Premium Default Change
+
+**PremiumManager.isPremiumUser** now defaults to `true` (was `false`). This means all features are available by default. StoreKit still updates the status when subscription info is confirmed. The music player (`NowPlayingBar`) and other premium-gated features are now visible by default.

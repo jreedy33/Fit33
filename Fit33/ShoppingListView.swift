@@ -87,7 +87,7 @@ struct ShoppingListSheet: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, 14)
                 .background(
                     LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
@@ -228,7 +228,7 @@ struct AisleSection: View {
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: aisleIcon)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(aisleColor)
                     }
                     
@@ -685,7 +685,7 @@ struct ShoppingMealSection: View {
                                 .foregroundColor(.white)
                         } else {
                             Image(systemName: "fork.knife")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.white)
                         }
                     }

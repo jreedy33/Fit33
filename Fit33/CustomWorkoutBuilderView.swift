@@ -51,9 +51,9 @@ struct CustomWorkoutBuilderView: View {
     @State private var exercises: [Exercise] = []
     @State private var selectedExercises: [Exercise] = []
     @State private var searchText = ""
-    @State private var selectedCategory = "All"
-    @State private var selectedEquipment = "All"
-    @State private var selectedMuscleGroup = "All"
+    @State private var selectedCategories: Set<String> = []
+    @State private var selectedEquipmentItems: Set<String> = []
+    @State private var selectedMuscleGroups: Set<String> = []
     @State private var selectedExerciseForDetail: Exercise?
     @State private var forceRenderID = UUID()
     @State private var exerciseFilter: ExerciseFilterType = .all
@@ -78,224 +78,15 @@ struct CustomWorkoutBuilderView: View {
     private let categories = ExerciseFilterService.allCategories
     private let allMuscleGroups = ["All", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", "Glutes", "Calves", "Lats", "Upper Back", "Traps", "Lower Back", "Front Delts", "Side Delts", "Rear Delts", "Abs", "Obliques", "Hip Flexors", "Adductors", "Rotator Cuff"]
     
-    // Smart muscle groups based on selected category (uses centralized service)
+    // Smart muscle groups based on selected categories (uses centralized service)
     private var muscleGroups: [String] {
-        ExerciseFilterService.muscleGroupsForCategory(selectedCategory)
-    }
-    
-    // Comprehensive muscle group matching with ALL nicknames/shortnames/aliases
-    // Handles official names, anatomical terms, slang, and common abbreviations
-    private func isExerciseForMuscleGroup(_ exercise: Exercise, muscleGroup: String) -> Bool {
-        let exerciseName = exercise.name?.lowercased() ?? ""
-        let exerciseMuscleGroups = (exercise.muscleGroups as? [String])?.map { $0.lowercased() } ?? []
-        let category = exercise.category?.lowercased() ?? ""
-        
-        // Helper: Check if any string contains any of the aliases
-        func matchesAny(_ text: String, aliases: [String]) -> Bool {
-            aliases.contains { text.contains($0) }
+        if selectedCategories.isEmpty { return [] }
+        var allMuscles = Set<String>()
+        for category in selectedCategories {
+            let muscles = ExerciseFilterService.muscleGroupsForCategory(category)
+            allMuscles.formUnion(muscles.filter { $0 != "All" })
         }
-        
-        func muscleGroupsContainAny(_ aliases: [String]) -> Bool {
-            exerciseMuscleGroups.contains { group in
-                aliases.contains { alias in group.contains(alias) }
-            }
-        }
-        
-        // Helper to check if exercise is a fly/flye movement
-        let isFlyMovement = exerciseName.contains("fly") || exerciseName.contains("flye") || 
-                           exerciseName.contains("pec deck") || exerciseName.contains("crossover")
-        
-        switch muscleGroup {
-        // ═══════════════════════════════════════════════════════════════════════
-        // CHEST
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Upper Chest":
-            let isIncline = exerciseName.contains("incline") && !exerciseName.contains("decline")
-            let isLowToHigh = exerciseName.contains("low to high") || exerciseName.contains("low-to-high")
-            if isFlyMovement && isIncline { return true }
-            return isIncline || isLowToHigh ||
-                   matchesAny(exerciseName, aliases: ["landmine press", "reverse grip bench"]) ||
-                   muscleGroupsContainAny(["upper pec", "upper chest", "clavicular"])
-                   
-        case "Lower Chest":
-            let isDecline = exerciseName.contains("decline") && !exerciseName.contains("incline")
-            let isHighToLow = exerciseName.contains("high to low") || exerciseName.contains("high-to-low")
-            let isDip = exerciseName.contains("dip") && !exerciseName.contains("hip")
-            if isFlyMovement && isDecline { return true }
-            return isDecline || isHighToLow || isDip ||
-                   muscleGroupsContainAny(["lower pec", "lower chest", "sternal"])
-                   
-        case "Inner Chest":
-            return matchesAny(exerciseName, aliases: ["close grip", "close-grip", "squeeze", "diamond", "crossover", "cross over", "svend"]) ||
-                   muscleGroupsContainAny(["inner pec", "inner chest", "medial pec"])
-                   
-        case "Outer Chest":
-            return isFlyMovement ||
-                   matchesAny(exerciseName, aliases: ["wide grip", "wide-grip"]) ||
-                   muscleGroupsContainAny(["outer pec", "outer chest", "lateral pec"])
-                   
-        case "Chest", "Pecs", "Pectorals":
-            let chestAliases = ["pec", "chest", "bench press", "push up", "pushup"]
-            return category == "chest" ||
-                   matchesAny(exerciseName, aliases: chestAliases) ||
-                   muscleGroupsContainAny(chestAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // BACK
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Lats", "Latissimus", "Wings":
-            let latAliases = ["lat", "latissimus", "wing", "pulldown", "pull down", "pull-down", "chin up", "chinup", "chin-up", "pull up", "pullup", "pull-up"]
-            return matchesAny(exerciseName, aliases: latAliases) ||
-                   muscleGroupsContainAny(["lat", "latissimus"])
-                   
-        case "Traps", "Trapezius":
-            let trapAliases = ["trap", "trapezius", "shrug", "upright row"]
-            return matchesAny(exerciseName, aliases: trapAliases) ||
-                   muscleGroupsContainAny(["trap"])
-                   
-        case "Rhomboids", "Upper Back", "Mid Back":
-            let rhomboidAliases = ["rhomboid", "upper back", "mid back", "middle back", "row", "face pull", "rear delt"]
-            return matchesAny(exerciseName, aliases: rhomboidAliases) ||
-                   muscleGroupsContainAny(["rhomboid", "upper back", "mid back"])
-                   
-        case "Lower Back", "Erectors", "Lumbar":
-            let lowerBackAliases = ["lower back", "erector", "lumbar", "deadlift", "hyperextension", "back extension", "good morning", "superman"]
-            return matchesAny(exerciseName, aliases: lowerBackAliases) ||
-                   muscleGroupsContainAny(["lower back", "erector", "lumbar", "spinae"])
-                   
-        case "Back":
-            let backAliases = ["lat", "trap", "rhomboid", "erector", "back", "row", "pull"]
-            return category == "back" ||
-                   muscleGroupsContainAny(backAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // SHOULDERS / DELTS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Front Delts", "Anterior Delts", "Front Shoulders":
-            let frontDeltAliases = ["front raise", "military press", "overhead press", "shoulder press", "arnold press", "push press", "front delt", "anterior delt"]
-            let isPress = exerciseName.contains("press") && !exerciseName.contains("bench") && !exerciseName.contains("leg") && !exerciseName.contains("chest")
-            return matchesAny(exerciseName, aliases: frontDeltAliases) || isPress ||
-                   muscleGroupsContainAny(["front delt", "anterior delt"])
-                   
-        case "Side Delts", "Lateral Delts", "Middle Delts", "Medial Delts":
-            let sideDeltAliases = ["lateral raise", "side raise", "side delt", "lateral delt", "upright row", "lu raise", "y raise"]
-            return matchesAny(exerciseName, aliases: sideDeltAliases) ||
-                   muscleGroupsContainAny(["lateral delt", "side delt", "medial delt", "middle delt"])
-                   
-        case "Rear Delts", "Posterior Delts", "Back Delts":
-            let rearDeltAliases = ["rear delt", "posterior delt", "reverse fly", "reverse flye", "face pull", "bent over fly", "bent over raise", "rear lateral"]
-            return matchesAny(exerciseName, aliases: rearDeltAliases) ||
-                   muscleGroupsContainAny(["rear delt", "posterior delt"])
-                   
-        case "Shoulders", "Delts", "Deltoids":
-            let shoulderAliases = ["delt", "shoulder", "raise", "press"]
-            return category == "shoulders" ||
-                   muscleGroupsContainAny(shoulderAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // ARMS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Biceps", "Bicep", "Bis":
-            let bicepAliases = ["bicep", "curl", "chin up", "chinup", "chin-up", "preacher", "hammer", "concentration"]
-            return matchesAny(exerciseName, aliases: bicepAliases) ||
-                   muscleGroupsContainAny(["bicep", "brachialis"])
-                   
-        case "Triceps", "Tricep", "Tris":
-            let tricepAliases = ["tricep", "extension", "pushdown", "push down", "push-down", "skull crusher", "skullcrusher", "close grip", "diamond push", "kickback", "dip"]
-            return matchesAny(exerciseName, aliases: tricepAliases) ||
-                   muscleGroupsContainAny(["tricep", "anconeus"])
-                   
-        case "Forearms", "Forearm", "Wrists":
-            let forearmAliases = ["forearm", "wrist", "grip", "farmer", "reverse curl", "hammer curl", "brachioradialis"]
-            return matchesAny(exerciseName, aliases: forearmAliases) ||
-                   muscleGroupsContainAny(["forearm", "brachioradialis", "wrist"])
-                   
-        case "Arms":
-            let armAliases = ["bicep", "tricep", "forearm", "curl", "extension", "pushdown"]
-            return category == "arms" ||
-                   muscleGroupsContainAny(armAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // LEGS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Quads", "Quadriceps", "Thighs", "Front Thighs":
-            let quadAliases = ["quad", "squat", "lunge", "leg press", "leg extension", "step up", "step-up", "front squat", "goblet", "sissy", "split squat", "hack squat", "bulgarian", "vastus", "rectus femoris"]
-            return matchesAny(exerciseName, aliases: quadAliases) ||
-                   muscleGroupsContainAny(["quad", "vastus", "rectus femoris"])
-                   
-        case "Hamstrings", "Hams", "Hammies", "Back Thighs":
-            let hamstringAliases = ["hamstring", "ham", "leg curl", "romanian", "rdl", "stiff leg", "stiff-leg", "good morning", "nordic", "glute ham", "biceps femoris", "semitendinosus"]
-            return matchesAny(exerciseName, aliases: hamstringAliases) ||
-                   muscleGroupsContainAny(["hamstring", "biceps femoris", "semitendinosus", "semimembranosus"])
-                   
-        case "Glutes", "Glute", "Gluteus", "Butt", "Booty":
-            let gluteAliases = ["glute", "gluteus", "hip thrust", "hip-thrust", "glute bridge", "kickback", "donkey kick", "fire hydrant", "sumo", "frog pump", "clamshell", "maximus", "medius", "minimus"]
-            return matchesAny(exerciseName, aliases: gluteAliases) ||
-                   muscleGroupsContainAny(["glute", "gluteus"])
-                   
-        case "Calves", "Calf":
-            let calfAliases = ["calf", "calve", "gastrocnemius", "soleus", "heel raise", "toe raise", "calf raise", "tibialis"]
-            return matchesAny(exerciseName, aliases: calfAliases) ||
-                   muscleGroupsContainAny(["calf", "calve", "gastrocnemius", "soleus"])
-                   
-        case "Adductors", "Inner Thighs":
-            let adductorAliases = ["adduct", "inner thigh", "copenhagen", "sumo", "groin"]
-            return matchesAny(exerciseName, aliases: adductorAliases) ||
-                   muscleGroupsContainAny(["adduct", "inner thigh", "groin"])
-                   
-        case "Hip Flexors", "Iliopsoas", "Psoas":
-            let hipFlexorAliases = ["hip flexor", "psoas", "iliopsoas", "leg raise", "knee raise", "hanging raise", "flutter kick", "bicycle"]
-            return matchesAny(exerciseName, aliases: hipFlexorAliases) ||
-                   muscleGroupsContainAny(["hip flexor", "psoas", "iliopsoas"])
-                   
-        case "Legs":
-            let legAliases = ["quad", "hamstring", "glute", "calf", "leg", "squat", "lunge"]
-            return category == "legs" ||
-                   muscleGroupsContainAny(legAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // CORE / ABS
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Abs", "Abdominals", "Six Pack", "Rectus Abdominis":
-            let absAliases = ["ab", "crunch", "sit up", "situp", "sit-up", "leg raise", "plank", "v-up", "vup", "hollow", "dead bug", "rectus abdominis", "six pack"]
-            return matchesAny(exerciseName, aliases: absAliases) ||
-                   muscleGroupsContainAny(["ab", "rectus abdominis"]) ||
-                   category == "core"
-                   
-        case "Upper Abs":
-            let upperAbsAliases = ["crunch", "sit up", "situp", "sit-up", "upper ab"]
-            return matchesAny(exerciseName, aliases: upperAbsAliases) ||
-                   muscleGroupsContainAny(["upper ab"])
-                   
-        case "Lower Abs":
-            let lowerAbsAliases = ["leg raise", "knee raise", "reverse crunch", "hanging raise", "flutter", "scissor", "lower ab"]
-            return matchesAny(exerciseName, aliases: lowerAbsAliases) ||
-                   muscleGroupsContainAny(["lower ab"])
-                   
-        case "Obliques", "Oblique", "Love Handles", "Side Abs":
-            let obliqueAliases = ["oblique", "side bend", "russian twist", "woodchop", "wood chop", "bicycle", "windshield wiper", "side plank", "pallof"]
-            return matchesAny(exerciseName, aliases: obliqueAliases) ||
-                   muscleGroupsContainAny(["oblique"])
-                   
-        case "Core":
-            let coreAliases = ["ab", "oblique", "plank", "crunch", "core", "hollow", "dead bug"]
-            return category == "core" ||
-                   muscleGroupsContainAny(coreAliases)
-                   
-        // ═══════════════════════════════════════════════════════════════════════
-        // SPECIAL
-        // ═══════════════════════════════════════════════════════════════════════
-        case "Rotator Cuff", "Rotators":
-            let rotatorAliases = ["rotator", "external rotation", "internal rotation", "cuban", "face pull", "infraspinatus", "supraspinatus", "subscapularis", "teres minor"]
-            return matchesAny(exerciseName, aliases: rotatorAliases) ||
-                   muscleGroupsContainAny(["rotator", "infraspinatus", "supraspinatus"])
-                   
-        default:
-            // Generic fallback: try direct match on muscle group name
-            let target = muscleGroup.lowercased()
-            return exerciseMuscleGroups.contains { $0.contains(target) } ||
-                   exerciseName.contains(target)
-        }
+        return Array(allMuscles).sorted()
     }
     
     // Updated equipment for 7000+ exercise library
@@ -334,7 +125,10 @@ struct CustomWorkoutBuilderView: View {
     @State private var searchCache: [String: [Exercise]] = [:]
     
     private func rebuildFilterCache() {
-        let filterKey = "\(exerciseFilter.rawValue)|\(selectedCategory)|\(selectedEquipment)|\(selectedMuscleGroup)"
+        let categoryKey = selectedCategories.isEmpty ? "All" : selectedCategories.sorted().joined(separator: ",")
+        let equipmentKey = selectedEquipmentItems.isEmpty ? "All" : selectedEquipmentItems.sorted().joined(separator: ",")
+        let muscleKey = selectedMuscleGroups.isEmpty ? "All" : selectedMuscleGroups.sorted().joined(separator: ",")
+        let filterKey = "\(exerciseFilter.rawValue)|\(categoryKey)|\(equipmentKey)|\(muscleKey)"
         
         if filterKey != lastFilterKey {
             lastFilterKey = filterKey
@@ -536,23 +330,27 @@ struct CustomWorkoutBuilderView: View {
             break
         }
         
-        if selectedCategory != "All" {
-            let categoryLower = selectedCategory.lowercased()
+        if !selectedCategories.isEmpty {
+            let categoriesLower = Set(selectedCategories.map { $0.lowercased() })
             filtered = filtered.filter { exercise in
                 let exerciseCategory = (exercise.category ?? "").lowercased()
-                return exerciseCategory == categoryLower || exerciseCategory.contains(categoryLower)
+                return categoriesLower.contains(exerciseCategory) || categoriesLower.contains(where: { exerciseCategory.contains($0) })
             }
         }
         
-        if selectedEquipment != "All" {
+        if !selectedEquipmentItems.isEmpty {
             filtered = filtered.filter { exercise in
-                exerciseMatchesEquipment(exercise, selectedEquipment: selectedEquipment)
+                selectedEquipmentItems.contains { equipment in
+                    exerciseMatchesEquipment(exercise, selectedEquipment: equipment)
+                }
             }
         }
         
-        if selectedMuscleGroup != "All" {
+        if !selectedMuscleGroups.isEmpty {
             filtered = filtered.filter { exercise in
-                isExerciseForMuscleGroup(exercise, muscleGroup: selectedMuscleGroup)
+                selectedMuscleGroups.contains { muscleGroup in
+                    ExerciseFilterService.isExerciseForMuscleGroup(exercise, muscleGroup: muscleGroup)
+                }
             }
         }
         
@@ -695,10 +493,6 @@ struct CustomWorkoutBuilderView: View {
                     .ignoresSafeArea(.all, edges: .all)
                 
                     VStack(spacing: 0) {
-                        // Add top padding for the animated title (accounting for safe area + header)
-                        Color.clear.frame(height: 100)
-                    
-                    // Fixed search and filters (stays in place)
                     compactFiltersView
                     
                     // Scrollable exercise list
@@ -758,6 +552,15 @@ struct CustomWorkoutBuilderView: View {
                     SessionLogManager.shared.logScreen(.customWorkoutBuilder, metadata: [
                         "selected_count": selectedExercises.count
                     ])
+                    
+                    // Reset filters to defaults when presented as a replace/add sheet
+                    if mode.isSingleSelect {
+                        selectedCategories.removeAll()
+                        selectedEquipmentItems.removeAll()
+                        selectedMuscleGroups.removeAll()
+                        searchText = ""
+                    }
+                    
                     // Load exercises from cache/Core Data (cloud sync handles population)
                     loadExercises()
                     // ⚡️ Initialize cached results and filter cache immediately
@@ -801,15 +604,15 @@ struct CustomWorkoutBuilderView: View {
                 }
                 // ⚡️ HIGH-PERFORMANCE: Instant filter updates
                 .onChange(of: searchText) { _, _ in updateFilteredExercises() }
-                .onChange(of: selectedCategory) { _, _ in 
+                .onChange(of: selectedCategories) { _, _ in 
                     lastFilterKey = ""
                     updateFilteredExercises() 
                 }
-                .onChange(of: selectedEquipment) { _, _ in 
+                .onChange(of: selectedEquipmentItems) { _, _ in 
                     lastFilterKey = ""
                     updateFilteredExercises() 
                 }
-                .onChange(of: selectedMuscleGroup) { _, _ in 
+                .onChange(of: selectedMuscleGroups) { _, _ in 
                     lastFilterKey = ""
                     updateFilteredExercises() 
                 }
@@ -841,9 +644,6 @@ struct CustomWorkoutBuilderView: View {
                 }
             }
             
-            // Custom animated header
-            customNavigationHeader
-            
             // Banner ad overlay - floats on top, scroll content has space reserved
             if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
                 VStack {
@@ -854,8 +654,29 @@ struct CustomWorkoutBuilderView: View {
                 }
             }
         }
-        .navigationBarHidden(true)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationTitle(mode.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if mode.isSingleSelect {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        HapticManager.selectionChanged()
+                        dismiss()
+                    }
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if !mode.isSingleSelect {
+                    Button(action: {
+                        HapticManager.impact(.medium)
+                        showingAddExercise = true
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+        }
         .onChange(of: selectedExercises.count) { count in
             // Only show GO button in build mode
             guard case .build = mode else { return }
@@ -863,7 +684,8 @@ struct CustomWorkoutBuilderView: View {
             if count > 0 {
                 GoButtonState.shared.show(
                     primaryColor: .blue,
-                    secondaryColor: Color(red: 0.3, green: 0.5, blue: 0.9)
+                    secondaryColor: Color(red: 0.3, green: 0.5, blue: 0.9),
+                    accessibilityText: "Start workout with \(count) exercise\(count == 1 ? "" : "s")"
                 ) { [self] in
                     startCustomWorkout()
                 }
@@ -879,99 +701,7 @@ struct CustomWorkoutBuilderView: View {
         }
     }
     
-    // MARK: - Custom Navigation Header
-    private var customNavigationHeader: some View {
-        let isScrolled = scrollOffset < -20
-        
-        return GeometryReader { geometry in
-            VStack(alignment: .leading, spacing: 8) {
-                // Back button and Add Exercise button
-                HStack {
-                    // Liquid glass back button
-                    Button(action: {
-                        HapticManager.selectionChanged()
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.blue, .purple.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [.white.opacity(0.5), .white.opacity(0.2)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 1
-                                    )
-                            )
-                    }
-                    
-                    Spacer()
-                    
-                    // Liquid glass Add Exercise button
-                    Button(action: {
-                        HapticManager.impact(.medium)
-                        showingAddExercise = true
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.blue, .purple.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [.white.opacity(0.5), .white.opacity(0.2)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 1
-                                    )
-                            )
-                    }
-                }
-                .padding(.horizontal, Spacing.xs)
-                .padding(.top, max(geometry.safeAreaInsets.top + 4, 56))
-                
-                // Title - left aligned, animates size on scroll
-                Text(mode.title)
-                    .font(isScrolled ? .title3 : .largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(Color(red: 0.3, green: 0.5, blue: 0.7))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.bottom, 8)
-            }
-            .background(Color.clear)
-        }
-        .ignoresSafeArea()
-        .frame(height: 110)
-    }
+    
     
     private var compactFiltersView: some View {
         VStack(spacing: 12) {
@@ -1006,12 +736,12 @@ struct CustomWorkoutBuilderView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: filterIcon)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                             Text(exerciseFilter.rawValue)
                                 .font(.caption)
                                 .fontWeight(.medium)
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.ds_caption).fontWeight(.semibold)
                         }
                         .foregroundColor(exerciseFilter != .all ? .white : .secondary)
                         .padding(.horizontal, 10)
@@ -1035,7 +765,7 @@ struct CustomWorkoutBuilderView: View {
                                 .foregroundColor(.white)
                         }
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             LinearGradient(
                                 gradient: Gradient(colors: [Color.blue, Color.cyan]),
@@ -1050,7 +780,7 @@ struct CustomWorkoutBuilderView: View {
                 // ⚡️ SNAPPY SEARCH: Instant response search bar
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                     
                     TextField("Search exercises...", text: $searchText)
@@ -1073,7 +803,7 @@ struct CustomWorkoutBuilderView: View {
                             isSearchFocused = false
                         }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -1086,7 +816,7 @@ struct CustomWorkoutBuilderView: View {
                 )
             }
             
-            // Compact filter categories
+            // Multi-select filter categories (matches Exercise Library)
             VStack(alignment: .leading, spacing: 6) {
                 // Categories row
                 HStack(spacing: 8) {
@@ -1098,13 +828,17 @@ struct CustomWorkoutBuilderView: View {
                     
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            ForEach(categories, id: \.self) { category in
+                            ForEach(categories.filter { $0 != "All" }, id: \.self) { category in
                                 CompactFilterChip(
                                     text: category,
-                                    isSelected: selectedCategory == category,
+                                    isSelected: selectedCategories.contains(category),
                                     onTap: {
-                                        selectedCategory = category
-                                        selectedMuscleGroup = "All"
+                                        if selectedCategories.contains(category) {
+                                            selectedCategories.remove(category)
+                                        } else {
+                                            selectedCategories.insert(category)
+                                        }
+                                        selectedMuscleGroups.removeAll()
                                     }
                                 )
                             }
@@ -1113,8 +847,8 @@ struct CustomWorkoutBuilderView: View {
                     }
                 }
                 
-                // Muscle Groups row (only if category selected)
-                if selectedCategory != "All" && muscleGroups.count > 1 {
+                // Muscle Groups row (only if categories selected)
+                if !selectedCategories.isEmpty && !muscleGroups.isEmpty {
                     HStack(spacing: 8) {
                         Text("Muscles")
                             .font(.caption)
@@ -1127,9 +861,15 @@ struct CustomWorkoutBuilderView: View {
                                 ForEach(muscleGroups, id: \.self) { muscle in
                                     CompactFilterChip(
                                         text: muscle,
-                                        isSelected: selectedMuscleGroup == muscle,
+                                        isSelected: selectedMuscleGroups.contains(muscle),
                                         color: .green,
-                                        onTap: { selectedMuscleGroup = muscle }
+                                        onTap: {
+                                            if selectedMuscleGroups.contains(muscle) {
+                                                selectedMuscleGroups.remove(muscle)
+                                            } else {
+                                                selectedMuscleGroups.insert(muscle)
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -1148,12 +888,18 @@ struct CustomWorkoutBuilderView: View {
                     
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            ForEach(equipmentTypes, id: \.self) { equipment in
+                            ForEach(equipmentTypes.filter { $0 != "All" }, id: \.self) { equipment in
                                 CompactFilterChip(
                                     text: equipment,
-                                    isSelected: selectedEquipment == equipment,
+                                    isSelected: selectedEquipmentItems.contains(equipment),
                                     color: .orange,
-                                    onTap: { selectedEquipment = equipment }
+                                    onTap: {
+                                        if selectedEquipmentItems.contains(equipment) {
+                                            selectedEquipmentItems.remove(equipment)
+                                        } else {
+                                            selectedEquipmentItems.insert(equipment)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -1358,7 +1104,7 @@ struct CustomWorkoutExerciseRow: View {
                         .frame(width: 28, height: 28)
                     
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                         .foregroundColor(.white)
                 }
             }
@@ -1371,7 +1117,7 @@ struct CustomWorkoutExerciseRow: View {
                     .frame(width: 36, height: 36)
                 
                 Image(systemName: categoryIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
             }
             
@@ -1410,7 +1156,7 @@ struct CustomWorkoutExerciseRow: View {
             // Info button
             Button(action: { HapticManager.selectionChanged(); onInfoTap() }) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundColor(.blue)
             }
             .buttonStyle(PlainButtonStyle())
@@ -1549,7 +1295,7 @@ struct AddCustomExerciseView: View {
     @State private var showingIconPicker = false
     
     // Updated categories for 7000+ exercise library (excludes "All" for custom exercise creation)
-    private let categories = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full Body", "Plyometrics", "Stretching", "Cardio", "Neck"]
+    private let categories = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full Body", "Plyometrics", "Stretch", "Cardio", "Neck"]
     private let equipmentTypes = ["Bodyweight", "Dumbbells", "Barbell", "Cables", "Machines", "Kettlebell", "Resistance Bands", "TRX/Rings", "Stability Ball", "Smith Machine", "Bench", "Other"]
     
     private let allMuscleGroups: [String: [String]] = [
@@ -1561,7 +1307,7 @@ struct AddCustomExerciseView: View {
         "Core": ["Abs", "Obliques", "Lower Back", "Hip Flexors"],
         "Full Body": ["Full Body"],
         "Plyometrics": ["Lower Body", "Upper Body", "Full Body"],
-        "Stretching": ["Upper Body", "Lower Body", "Back", "Hips"],
+        "Stretch": ["Upper Body", "Lower Body", "Back", "Hips"],
         "Cardio": ["Cardio"],
         "Neck": ["Neck"]
     ]
@@ -1761,7 +1507,7 @@ struct AddCustomExerciseView: View {
                         HStack(spacing: 4) {
                             if selection.wrappedValue.contains(muscle) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                             }
                             Text(muscle)
                                 .font(.caption)
@@ -1964,150 +1710,23 @@ struct IconPickerView: View {
     }
 }
 struct CustomWorkoutExerciseRowWithNav: View {
-    @Environment(\.colorScheme) private var colorScheme
     let exercise: Exercise
     let isSelected: Bool
     let onToggle: () -> Void
-    
+
     @State private var showingDetail = false
-    
+
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: { HapticManager.selectionChanged(); onToggle() }) {
-                HStack(spacing: 12) {
-                    // Checkbox
-                    ZStack {
-                        Circle()
-                            .stroke(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: 2)
-                            .frame(width: 28, height: 28)
-                        
-                        if isSelected {
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 28, height: 28)
-                            
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
-                    
-                    // Exercise icon
-                    ZStack {
-                        Circle()
-                            .fill(categoryColor.opacity(0.15))
-                            .frame(width: 36, height: 36)
-                        
-                        Image(systemName: categoryIcon)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(categoryColor)
-                    }
-                    
-                    // Exercise details
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(exercise.displayName)
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        HStack(spacing: 8) {
-                            if let category = exercise.category {
-                                Text(category)
-                                    .font(.caption)
-                                    .foregroundColor(categoryColor)
-                                    .fontWeight(.medium)
-                            }
-                            
-                            if let equipment = exercise.equipment {
-                                Text("•")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(equipment)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                        }
-                    }
-                    
-                    Spacer()
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Info button - opens full screen detail
-            Button(action: {
-                HapticManager.selectionChanged()
-                showingDetail = true
-            }) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.blue)
-                    .padding(.leading, 8)
-            }
-            .buttonStyle(PlainButtonStyle())
+        Button(action: { HapticManager.selectionChanged(); onToggle() }) {
+            ExerciseCardRow(
+                exercise: exercise,
+                showCheckbox: true,
+                isSelected: isSelected,
+                showInfoButton: true,
+                onInfo: { showingDetail = true }
+            )
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - category colored
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(categoryColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
-                    .offset(y: 6)
-                    .blur(radius: 3)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 26)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.15 : 0.03))
-                    .offset(y: 3)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color.cardBackground]
-                                : [Color.white, Color.white.opacity(0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.white.opacity(0.3), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-                
-                // Subtle accent border
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                categoryColor.opacity(colorScheme == .dark ? 0.2 : 0.12),
-                                categoryColor.opacity(colorScheme == .dark ? 0.1 : 0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 8, x: 0, y: 4)
-        .shadow(color: categoryColor.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 12, x: 0, y: 6)
+        .buttonStyle(PlainButtonStyle())
         .fullScreenCover(isPresented: $showingDetail) {
             NavigationStack {
                 ExerciseDetailView(exercise: exercise)
@@ -2121,32 +1740,6 @@ struct CustomWorkoutExerciseRowWithNav: View {
                         }
                     }
             }
-        }
-    }
-    
-    private var categoryColor: Color {
-        switch exercise.category?.lowercased() {
-        case "chest": return .purple
-        case "back": return .blue
-        case "legs": return .green
-        case "shoulders": return .orange
-        case "arms": return .purple
-        case "core": return .yellow
-        case "full body": return .pink
-        default: return .gray
-        }
-    }
-    
-    private var categoryIcon: String {
-        guard let category = exercise.category else { return "figure.strengthtraining.traditional" }
-        switch category.lowercased() {
-        case "chest": return "heart.fill"
-        case "back": return "person.fill"
-        case "legs": return "figure.walk"
-        case "shoulders": return "figure.arms.open"
-        case "arms": return "hand.raised.fill"
-        case "core": return "circle.circle"
-        default: return "figure.strengthtraining.traditional"
         }
     }
 }

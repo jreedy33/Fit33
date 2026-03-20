@@ -33,7 +33,7 @@ struct FitnessEquipmentView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
@@ -398,7 +398,7 @@ struct DiscoveredDeviceCard: View {
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: device.type.icon)
-                            .font(.system(size: 22))
+                            .font(.ds_heading2)
                             .foregroundColor(Color(hex: device.type.color.primary) ?? .gray)
                     }
                 
@@ -479,7 +479,7 @@ struct LiveDataCell: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
                 .foregroundColor(color)
             
             Text(value)
@@ -506,7 +506,7 @@ struct EquipmentTypeIcon: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: type.icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundColor(Color(hex: type.color.primary) ?? .gray)
             
             Text(type.rawValue)
@@ -553,7 +553,7 @@ struct EquipmentWorkoutView: View {
                         }
                     }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white.opacity(0.7))
                             .frame(width: 36, height: 36)
                             .background(Circle().fill(Color.white.opacity(0.1)))
@@ -757,7 +757,7 @@ struct SecondaryMetric: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
                 .foregroundColor(color.opacity(0.7))
             
             Text(value)

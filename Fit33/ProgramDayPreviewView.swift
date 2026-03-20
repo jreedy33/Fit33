@@ -57,7 +57,7 @@ struct SmartProgramDayPreviewView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                 }
             }
@@ -194,7 +194,7 @@ struct SmartProgramDayPreviewView: View {
                         }
                         .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Spacing.xxs)
                     
                     VStack(spacing: 10) {
                         ForEach(Array(day.exercises.enumerated()), id: \.element.id) { index, exercise in
@@ -243,7 +243,7 @@ struct SmartProgramDayPreviewView: View {
                     .rotationEffect(.degrees(-90))
                 
                 Text("\(day.dayNumber)")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(themeColor)
             }
             
@@ -329,13 +329,17 @@ struct SmartProgramDayPreviewView: View {
             return
         }
         
-        // Start workout via WorkoutManager
+        // Start workout via WorkoutManager (pass week for program-aware progressive overload)
+        // Derive week from completed days (every ~4-6 workout days ≈ 1 week)
+        let completedCount = program.completedDays.count
+        let estimatedWeek = (completedCount / 4) + 1
         workoutManager.startWorkout(
             workout: workout,
             exercises: orderedExercises,
             programDay: program.currentDay,
             programDayFocus: day.name,
-            smartProgramId: program.id
+            smartProgramId: program.id,
+            programWeek: min(estimatedWeek, 5)
         )
     }
     
@@ -424,7 +428,7 @@ struct SmartProgramExerciseCard: View {
                         .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
                 
@@ -463,7 +467,7 @@ struct SmartProgramExerciseCard: View {
                 
                 // Chevron inside the card
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, Spacing.md)

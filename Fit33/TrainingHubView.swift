@@ -62,7 +62,7 @@ struct TrainingHubView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(32)
+        .padding(Spacing.xl)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 20)
@@ -235,10 +235,10 @@ struct TrainingInsightsWidget: View {
                         if let today = todayWorkoutInfo {
                             HStack(spacing: 6) {
                                 Text("Day \(today.day)")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
+                                    .padding(.vertical, Spacing.xxs)
                                     .background(
                                         Capsule()
                                             .fill(
@@ -247,7 +247,7 @@ struct TrainingInsightsWidget: View {
                                     )
                                 
                                 Text(today.name)
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(.ds_bodySmall).fontWeight(.medium)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
@@ -282,7 +282,7 @@ struct TrainingInsightsWidget: View {
                         
                         VStack(spacing: 0) {
                             Text("\(trainingScore)")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.ds_statSmall)
                                 .foregroundColor(scoreColor)
                             Text("pts")
                                 .font(.system(size: 9, weight: .medium))
@@ -323,7 +323,7 @@ struct TrainingInsightsWidget: View {
             Button(action: onViewProgram) {
                 HStack {
                     Image(systemName: "calendar")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.green)
                     
                     Text("View Full Schedule")
@@ -334,7 +334,7 @@ struct TrainingInsightsWidget: View {
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 20)
@@ -373,11 +373,11 @@ struct WidgetStat: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(color)
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.primary)
             }
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)

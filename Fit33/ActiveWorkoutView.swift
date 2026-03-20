@@ -58,6 +58,19 @@ struct ActiveWorkoutView: View {
     @State private var workoutNotes: String = ""
     @State private var showingNotesField = false
     
+    // Weight unit toggle (lb/kg) — persists across sessions
+    @AppStorage("workoutWeightUnit") private var useKg: Bool = false
+    @AppStorage("workoutPerSideMode") private var isPerSideGlobal: Bool = false
+    @AppStorage("defaultRestSeconds") private var defaultRestSeconds: Int = 90
+    @AppStorage("autoStartRestTimer") private var autoStartRestTimer: Bool = true
+    @AppStorage("keepScreenOnDuringWorkout") private var keepScreenOn: Bool = true
+    @AppStorage("workoutSoundEffects") private var soundEffects: Bool = true
+    @AppStorage("showMusicPlayer") private var showMusicPlayer: Bool = true
+    
+    // Settings panel
+    @State private var showingSettingsPanel = false
+    @State private var showingPremiumUpsell = false
+    
     // ⚡️ PERFORMANCE: Two-phase rendering for instant load
     // MARK: - Ad Logic
     
@@ -79,28 +92,101 @@ struct ActiveWorkoutView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
-    /// Dynamic placeholder for notes field: "Chest & Triceps - 3/17/26"
+    /// Live workout name based on current exercises' muscle groups
+    /// Stable sort: ties broken alphabetically so the name never flickers
+    private var liveWorkoutName: String {
+        var muscleGroupCounts: [String: Int] = [:]
+        for exercise in exercises {
+            let groups = parseMuscleGroups(from: exercise)
+            for group in groups {
+                muscleGroupCounts[group, default: 0] += 1
+            }
+        }
+        let sorted = muscleGroupCounts.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return $0.key < $1.key
+        }
+        if sorted.count == 1 {
+            return sorted[0].key
+        } else if sorted.count >= 2 {
+            let primary = sorted[0].key
+            let secondary = sorted[1].key
+            if sorted[0].value > sorted[1].value * 2 {
+                return "\(primary) Focus"
+            }
+            return "\(primary) & \(secondary)"
+        } else if exercises.count == 1 {
+            return exercises[0].name ?? "Workout"
+        }
+        return "Workout"
+    }
+
     private var notesPlaceholder: String {
-        let workoutName = workout.name ?? "Workout"
         let formatter = DateFormatter()
         formatter.dateFormat = "M/d/yy"
         let dateStr = formatter.string(from: Date())
-        return "\(workoutName) - \(dateStr)"
+        return "\(liveWorkoutName) - \(dateStr)"
     }
     
     var body: some View {
-        // 📱 GeometryReader ensures proper layout calculations on orientation change
+        mainWorkoutContent
+    }
+    
+    // MARK: - Main Content (extracted to reduce body type-check complexity)
+    private var workoutBackground: some View {
+        let darkColors = [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
+        let lightColors = [Color.blue.opacity(0.15), Color.purple.opacity(0.08), Color(.systemGroupedBackground)]
+        return LinearGradient(
+            gradient: Gradient(colors: colorScheme == .dark ? darkColors : lightColors),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+    
+    private var mainWorkoutContent: some View {
+        workoutGeometryContent
+            .onChange(of: horizontalSizeClass) { _, _ in OrientationManager.shared.updateScreenDimensions() }
+            .onChange(of: verticalSizeClass) { _, _ in OrientationManager.shared.updateScreenDimensions() }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { OrientationManager.shared.updateScreenDimensions() }
+            }
+            .onAppear { handleWorkoutAppear() }
+            .onChange(of: workoutManager.currentExercises) { oldExercises, newExercises in
+                let oldIds = Set(oldExercises.compactMap { $0.id })
+                let newIds = Set(newExercises.compactMap { $0.id })
+                if oldIds != newIds { exercises = newExercises }
+            }
+            .onDisappear {
+                stopTimer()
+                UIApplication.shared.isIdleTimerDisabled = false
+                for task in initTasks { task.cancel() }
+                initTasks.removeAll()
+            }
+            .overlay { settingsPanelOverlay }
+            .overlay(alignment: .bottom) {
+                if showMusicPlayer {
+                    NowPlayingBar()
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .sheet(isPresented: $showingPremiumUpsell) { PremiumUpgradeView(triggeringFeature: .removeAds) }
+            .navigationBarHidden(true)
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(isPresented: $showingCompletionView, onDismiss: { handleCompletionDismiss() }) {
+                WorkoutCompletionView(workout: workout, exercises: exercises, exerciseSets: workoutManager.exerciseSetsData, workoutDuration: elapsedTime)
+                    .environmentObject(workoutManager)
+            }
+            .sheet(isPresented: $showingWorkoutInsights) { WorkoutInsightsView(insights: workoutManager.workoutInsights) }
+    }
+    
+    private var workoutGeometryContent: some View {
         GeometryReader { geometry in
             ZStack {
-                // Full screen background gradient
-                LinearGradient(
-                    gradient: Gradient(colors: colorScheme == .dark
-                        ? [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-                        : [Color.blue.opacity(0.15), Color.purple.opacity(0.08), Color(.systemGroupedBackground)]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                workoutBackground
                 
                 VStack(spacing: 0) {
                 // Program Day Badge - only show if this is a program workout
@@ -110,69 +196,76 @@ struct ActiveWorkoutView: View {
                         .padding(.top, 8)
                 }
                 
+                // Music player is a floating overlay at the bottom (see mainWorkoutContent)
+                
+                // Workout Notes
+                HStack(spacing: Spacing.xs) {
+                    VStack(spacing: 0) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showingNotesField.toggle()
+                            }
+                            HapticManager.impact(.light)
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: workoutNotes.isEmpty ? "note.text" : "note.text.badge.plus")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Text(notesPlaceholder)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .rotationEffect(.degrees(showingNotesField ? 180 : 0))
+                            }
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if showingNotesField {
+                            Divider()
+                                .opacity(0.3)
+                                .padding(.horizontal, Spacing.sm)
+                            
+                            ZStack(alignment: .topLeading) {
+                                if workoutNotes.isEmpty {
+                                    Text("Add notes...")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary.opacity(0.5))
+                                        .padding(.horizontal, Spacing.md + 5)
+                                        .padding(.vertical, Spacing.sm)
+                                        .allowsHitTesting(false)
+                                }
+                                TextEditor(text: $workoutNotes)
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(minHeight: 44, maxHeight: 100)
+                                    .padding(.horizontal, Spacing.sm)
+                                    .padding(.vertical, Spacing.xxs)
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+                    
+                    
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, 2)
+                .padding(.bottom, Spacing.xs)
+                
                 // Exercise list - transparent container
-                // ⚡️ PERFORMANCE: Using LazyVStack to defer card rendering
-                // Only visible cards are rendered, reducing initial load time
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
                         LazyVStack(spacing: 16) {
-                            // Top spacing for glow effect visibility
-                            Spacer().frame(height: 0)
-                            
-                            // Workout Notes - collapsible journal entry
-                            Button(action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    showingNotesField.toggle()
-                                }
-                                HapticManager.impact(.light)
-                            }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: showingNotesField ? "note.text.badge.plus" : "note.text")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                    Text(workoutNotes.isEmpty ? notesPlaceholder : workoutNotes)
-                                        .font(.subheadline)
-                                        .foregroundColor(workoutNotes.isEmpty ? .secondary : .primary)
-                                        .lineLimit(showingNotesField ? nil : 1)
-                                    Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                        .rotationEffect(.degrees(showingNotesField ? 180 : 0))
-                                }
-                                .padding(.horizontal, Spacing.md)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.cardBackground.opacity(0.6))
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            
-                            if showingNotesField {
-                                ZStack(alignment: .topLeading) {
-                                    if workoutNotes.isEmpty {
-                                        Text(notesPlaceholder)
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary.opacity(0.5))
-                                            .padding(.horizontal, Spacing.sm + 5)
-                                            .padding(.vertical, Spacing.sm + 8)
-                                            .allowsHitTesting(false)
-                                    }
-                                    TextEditor(text: $workoutNotes)
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                        .scrollContentBackground(.hidden)
-                                        .frame(minHeight: 60, maxHeight: 120)
-                                        .padding(Spacing.sm)
-                                }
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.cardBackground.opacity(0.6))
-                                )
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
                                 let exerciseId = exercise.id?.uuidString ?? ""
                                 
@@ -232,16 +325,9 @@ struct ActiveWorkoutView: View {
                                     exerciseId: exerciseId,
                                     onFocusChanged: { isFocused in
                                         if isFocused {
-                                            // Set this card as active
                                             activeExerciseId = exerciseId
-                                            // Auto-scroll to the active card
                                             withAnimation(.easeInOut(duration: 0.3)) {
-                                                scrollProxy.scrollTo(exerciseId, anchor: .center)
-                                            }
-                                            // Stop any running timers on OTHER exercises
-                                            if exerciseWithActiveTimer != nil && exerciseWithActiveTimer != exerciseId {
-                                                print("⏹️ Stopping timer on exercise \(exerciseWithActiveTimer ?? "") - user switched to \(exerciseId)")
-                                                exerciseWithActiveTimer = nil
+                                                scrollProxy.scrollTo(exerciseId, anchor: .top)
                                             }
                                         }
                                     },
@@ -268,14 +354,17 @@ struct ActiveWorkoutView: View {
                                     totalCount: exercises.count,
                                     isBeingDragged: draggingIndex == index,
                                     shouldShift: shiftDirection(for: index),
-                                    isActiveCard: activeExerciseId == exerciseId
+                                    isActiveCard: activeExerciseId == exerciseId || (activeExerciseId == nil && index == 0),
+                                    useKg: useKg,
+                                    autoStartTimer: autoStartRestTimer
                                 )
                                 .id(exerciseId) // For ScrollViewReader
                             }
                         }
                         
-                        // Add Exercise button - hollow pill with gradient outline
+                        // Add Exercise button
                         Button(action: {
+                            HapticManager.impact(.light)
                             showingExerciseSelection = true
                         }) {
                             HStack(spacing: 10) {
@@ -285,54 +374,26 @@ struct ActiveWorkoutView: View {
                                     .font(.headline)
                                     .fontWeight(.semibold)
                             }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.blue, Color.purple.opacity(0.9)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .foregroundColor(.blue)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, Spacing.md)
                             .background(Color.clear)
                             .overlay(
                                 Capsule()
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [Color.blue, Color.purple.opacity(0.9)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ),
-                                        lineWidth: 2
-                                    )
+                                    .stroke(Color.blue, lineWidth: 2)
                             )
                             .clipShape(Capsule())
                         }
                         .padding(.top, 8)
                         .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, Spacing.md)
+                    .padding(.horizontal, Spacing.md + 8)
                     .padding(.top, 8)
                     .background(Color.clear)
                 }
+                .padding(.horizontal, -8)
                 .background(Color.clear)
                 .scrollDismissesKeyboard(.immediately)
-                // Fade mask - content blurs/fades as it scrolls off top
-                .mask(
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.08)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 60)
-                        
-                        Rectangle().fill(Color.black)
-                    }
-                )
             }
             .background(Color.clear)
         }
@@ -355,214 +416,8 @@ struct ActiveWorkoutView: View {
                 }
             )
         }
-        // Header overlay - same style as home tab
-        .safeAreaInset(edge: .top) {
-            VStack(spacing: 0) {
-                // Header content
-                ZStack {
-                    // Centered timer
-                    Text(workoutDuration)
-                        .foregroundColor(colorScheme == .dark ? .white : .primary)
-                        .font(.title)
-                        .fontWeight(.bold)
-                    
-                    // Left/Right buttons
-                    HStack {
-                        Button(action: {
-                            workoutManager.navigateToHomeTab()
-                        }) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundColor(colorScheme == .dark ? .white : .primary)
-                        }
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 12) {
-                            if workoutManager.workoutInsights != nil {
-                                Button(action: {
-                                    showingWorkoutInsights = true
-                                }) {
-                                    Image(systemName: "info.circle")
-                                        .font(.system(size: 22))
-                                        .foregroundColor(.blue)
-                                }
-                            }
-                            
-                            // Favorite button
-                            Button(action: {
-                                HapticManager.selectionChanged() // ⚡️ Pre-warmed haptics
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                    isWorkoutFavorite.toggle()
-                                    workout.isFavorite = isWorkoutFavorite
-                                    
-                                    // Save immediately to Core Data
-                                    do {
-                                        try viewContext.save()
-                                        print("⭐ Workout favorite status: \(isWorkoutFavorite)")
-                                        
-                                        // Sync to cloud if authenticated
-                                        if SupabaseManager.shared.isAuthenticated, let workoutId = workout.id?.uuidString {
-                                            Task {
-                                                do {
-                                                    if isWorkoutFavorite {
-                                                        // Save favorite to cloud with exercise list
-                                                        let exerciseNames = exercises.compactMap { $0.name }
-                                                        try await SupabaseManager.shared.saveFavoriteWorkout(
-                                                            workoutName: workout.name ?? "Workout",
-                                                            exerciseNames: exerciseNames,
-                                                            originalWorkoutId: workoutId
-                                                        )
-                                                    } else {
-                                                        // Remove favorite from cloud
-                                                        try await SupabaseManager.shared.removeFavoriteWorkout(
-                                                            originalWorkoutId: workoutId
-                                                        )
-                                                    }
-                                                    print("☁️ Workout favorite synced to cloud!")
-                                                } catch {
-                                                    print("⚠️ Failed to sync workout favorite to cloud: \(error)")
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        print("❌ Error saving workout favorite status: \(error)")
-                                    }
-                                }
-                            }) {
-                                Image(systemName: isWorkoutFavorite ? "star.fill" : "star")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
-                                    .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
-                            }
-                            
-                            Button("FINISH") {
-                                // Haptic feedback on finish (UX Audit)
-                                let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
-                                heavyImpact.impactOccurred()
-                                finishWorkout()
-                            }
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.blue)
-                        }
-                    }
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                
-                // Banner ad - integrated into header for free users
-                if shouldShowInlineAds {
-                    BannerAdView()
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.bottom, 4)
-                }
-            }
-            .background(
-                (colorScheme == .dark
-                    ? Color(red: 0.08, green: 0.10, blue: 0.18)
-                    : Color(.systemBackground))
-            )
-            }
+            .safeAreaInset(edge: .top) { workoutHeaderBar }
             .frame(width: geometry.size.width, height: geometry.size.height)
-        }
-        // Banner ad is now integrated into the header safeAreaInset above
-        // 📱 Respond to orientation changes properly
-        // Using GeometryReader proxy and size class changes ensures layout updates without resetting state
-        .onChange(of: horizontalSizeClass) { _, _ in
-            // Trigger layout recalculation on orientation change
-            OrientationManager.shared.updateScreenDimensions()
-        }
-        .onChange(of: verticalSizeClass) { _, _ in
-            // Trigger layout recalculation on orientation change  
-            OrientationManager.shared.updateScreenDimensions()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            // Force re-layout when device orientation changes
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                OrientationManager.shared.updateScreenDimensions()
-            }
-        }
-        .onAppear {
-            // ⚡️ PERFORMANCE: Start timer FIRST (instant feedback to user)
-            startTimer()
-            
-            // ⚡️ INSTANT: Apply warmup data SYNCHRONOUSLY for first render
-            // This ensures exercise cards show previous data immediately
-            applyWarmupDataInstantly()
-            
-            // Initialize favorite status from workout
-            isWorkoutFavorite = workout.isFavorite
-            // Set first exercise as active for glow effect
-            if activeExerciseId == nil {
-                activeExerciseId = exercises.first?.id?.uuidString
-            }
-            
-            // ⚠️ CRITICAL FIX: Reset finishing state for restored/reverted workouts
-            isFinishingWorkout = false
-            
-            // Also reset isCompleted if workout was previously marked complete but is being continued
-            if workout.isCompleted {
-                print("⚠️ [WORKOUT] Workout was marked completed but is active - resetting isCompleted")
-                workout.isCompleted = false
-                try? viewContext.save()
-            }
-            
-            // ⚡️ PERFORMANCE: Defer SLOW operations (network, smart recs) to next frame
-            DispatchQueue.main.async {
-                initializeWorkout()
-            }
-        }
-        // ⚡️ SYNC: Update local exercises when WorkoutManager exercises change (e.g., after replace)
-        .onChange(of: workoutManager.currentExercises) { oldExercises, newExercises in
-            // Only update if the exercises actually changed
-            let oldIds = Set(oldExercises.compactMap { $0.id })
-            let newIds = Set(newExercises.compactMap { $0.id })
-            
-            if oldIds != newIds {
-                #if DEBUG
-                print("🔄 [SYNC] Exercises changed - updating local state")
-                print("   Old: \(oldExercises.compactMap { $0.name })")
-                print("   New: \(newExercises.compactMap { $0.name })")
-                #endif
-                exercises = newExercises
-            }
-        }
-        .onDisappear {
-            stopTimer()
-            // Cancel async tasks to prevent crashes when view is dismissed
-            for task in initTasks {
-                task.cancel()
-            }
-            initTasks.removeAll()
-        }
-        // 🔧 Hide navigation bar to prevent "smashed header" (double back button)
-        .navigationBarHidden(true)
-        .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(isPresented: $showingCompletionView, onDismiss: {
-            // Reset the finishing flag when user goes back to continue workout
-            // This allows them to tap finish again later
-            isFinishingWorkout = false
-            
-            // ⚠️ CRITICAL FIX: Also reset isCompleted since saveWorkoutData() sets it to true
-            // This allows the user to finish the workout again if they go back and continue
-            if workout.isCompleted {
-                print("⚠️ [WORKOUT] User went back from completion - resetting isCompleted")
-                workout.isCompleted = false
-                try? viewContext.save()
-            }
-        }) {
-            WorkoutCompletionView(
-                workout: workout,
-                exercises: exercises,
-                exerciseSets: workoutManager.exerciseSetsData,
-                workoutDuration: elapsedTime
-            )
-            .environmentObject(workoutManager)
-        }
-        .sheet(isPresented: $showingWorkoutInsights) {
-            WorkoutInsightsView(insights: workoutManager.workoutInsights)
         }
     }
     
@@ -697,12 +552,14 @@ struct ActiveWorkoutView: View {
                     guard let exerciseId = exercise.id?.uuidString else { continue }
                     
                     // Heavy computation happens on background thread
+                    let progWeek = workoutManager.currentProgramWeek
                     let recs = await MainActor.run {
                         StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
                             numberOfSets: 3,
-                            context: context
+                            context: context,
+                            programWeek: progWeek
                         )
                     }
                     
@@ -796,12 +653,14 @@ struct ActiveWorkoutView: View {
                     updates.append((exerciseId: exerciseId, data: previousData))
                 } else if let user = currentUser {
                     // Fallback: generate smart recs (on main thread since it needs Core Data context)
+                    let progWeek2 = workoutManager.currentProgramWeek
                     let recommendations = await MainActor.run {
                         StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
                             numberOfSets: 3,
-                            context: ctx
+                            context: ctx,
+                            programWeek: progWeek2
                         )
                     }
                     
@@ -898,12 +757,14 @@ struct ActiveWorkoutView: View {
                 }
             } else if let user = currentUser {
                 // No historical data - generate smart recommendations
+                let progWeek3 = await MainActor.run { workoutManager.currentProgramWeek }
                 let recommendations = await MainActor.run {
                     StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                         exerciseName: exerciseName,
                         user: user,
                         numberOfSets: 3,
-                        context: ctx
+                        context: ctx,
+                        programWeek: progWeek3
                     )
                 }
 
@@ -952,6 +813,151 @@ struct ActiveWorkoutView: View {
         }
     }
     
+    // MARK: - Workout Header Bar (extracted to reduce body complexity)
+    private var workoutHeaderBar: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Text(workoutDuration)
+                    .foregroundColor(colorScheme == .dark ? .white : .primary)
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                HStack {
+                    Button(action: {
+                        HapticManager.selectionChanged()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showingSettingsPanel.toggle()
+                        }
+                    }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(colorScheme == .dark ? .white : .primary)
+                    }
+                    .accessibilityLabel("Workout Settings")
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 12) {
+                        if workoutManager.workoutInsights != nil {
+                            Button(action: { showingWorkoutInsights = true }) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                        Button(action: {
+                            HapticManager.selectionChanged()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                isWorkoutFavorite.toggle()
+                                workout.isFavorite = isWorkoutFavorite
+                                do {
+                                    try viewContext.save()
+                                    if SupabaseManager.shared.isAuthenticated, let workoutId = workout.id?.uuidString {
+                                        Task {
+                                            do {
+                                                if isWorkoutFavorite {
+                                                    let exerciseNames = exercises.compactMap { $0.name }
+                                                    try await SupabaseManager.shared.saveFavoriteWorkout(
+                                                        workoutName: workout.name ?? "Workout",
+                                                        exerciseNames: exerciseNames,
+                                                        originalWorkoutId: workoutId
+                                                    )
+                                                } else {
+                                                    try await SupabaseManager.shared.removeFavoriteWorkout(originalWorkoutId: workoutId)
+                                                }
+                                            } catch {
+                                                print("⚠️ Failed to sync workout favorite to cloud: \(error)")
+                                            }
+                                        }
+                                    }
+                                } catch {
+                                    print("❌ Error saving workout favorite status: \(error)")
+                                }
+                            }
+                        }) {
+                            Image(systemName: isWorkoutFavorite ? "star.fill" : "star")
+                                .font(.system(size: 22))
+                                .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
+                                .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
+                        }
+                        
+                        Button("FINISH") {
+                            let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
+                            heavyImpact.impactOccurred()
+                            finishWorkout()
+                        }
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.blue)
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            
+            if shouldShowInlineAds {
+                BannerAdView()
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.bottom, 4)
+            }
+        }
+        .background(Color.clear)
+    }
+    
+    // MARK: - Settings Panel Overlay (extracted to reduce body complexity)
+    @ViewBuilder
+    private var settingsPanelOverlay: some View {
+        if showingSettingsPanel {
+            ZStack(alignment: .leading) {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showingSettingsPanel = false
+                        }
+                    }
+                
+                WorkoutSettingsPanel(
+                    isPresented: $showingSettingsPanel,
+                    showingPremiumUpsell: $showingPremiumUpsell,
+                    onMinimize: {
+                        workoutManager.navigateToHomeTab()
+                    }
+                )
+                .frame(width: UIScreen.main.bounds.width * 0.72)
+                .transition(.move(edge: .leading))
+            }
+            .transition(.opacity)
+            .zIndex(100)
+        }
+    }
+    
+    private func handleWorkoutAppear() {
+        if keepScreenOn { UIApplication.shared.isIdleTimerDisabled = true }
+        startTimer()
+        applyWarmupDataInstantly()
+        isWorkoutFavorite = workout.isFavorite
+        if activeExerciseId == nil || !exercises.contains(where: { $0.id?.uuidString == activeExerciseId }) {
+            activeExerciseId = exercises.first?.id?.uuidString
+        }
+        isFinishingWorkout = false
+        if workout.isCompleted {
+            workout.isCompleted = false
+            try? viewContext.save()
+        }
+        workout.name = liveWorkoutName
+        DispatchQueue.main.async { initializeWorkout() }
+    }
+    
+    private func handleCompletionDismiss() {
+        isFinishingWorkout = false
+        if workout.isCompleted {
+            workout.isCompleted = false
+            try? viewContext.save()
+        }
+    }
+    
     private func startTimer() {
         // ⚡️ PERFORMANCE: Use workoutManager's start time (set when GO was tapped)
         // This ensures accurate timing even if view render was delayed
@@ -986,15 +992,8 @@ struct ActiveWorkoutView: View {
     }
     
     private func getRestDuration(for exercise: Exercise) -> TimeInterval {
-        // Default rest times based on exercise type
-        switch exercise.category?.lowercased() {
-        case "legs":
-            return 180 // 3 minutes for legs
-        case "back", "chest":
-            return 120 // 2 minutes for compound movements
-        default:
-            return 90  // 1.5 minutes for accessories
-        }
+        // Use user-configured default rest seconds (0 = timer off)
+        return TimeInterval(defaultRestSeconds)
     }
     
     private func cleanupPreviousExercises(currentExerciseId: String) {
@@ -1080,8 +1079,13 @@ struct ActiveWorkoutView: View {
         // Stop the timer immediately
         stopTimer()
 
-        // ⚠️ IMPORTANT: Capture sets data BEFORE any async tasks or clearing
-        // workoutManager.finishWorkout() will clear this data!
+        // Sync kg values on all sets before saving
+        for (_, sets) in workoutManager.exerciseSetsData {
+            for set in sets where set.isCompleted {
+                set.syncWeightUnits(fromLbs: true)
+            }
+        }
+        
         let capturedSetsData = workoutManager.exerciseSetsData
         let capturedExercises = exercises
         let capturedWorkout = workout
@@ -1828,7 +1832,7 @@ struct ActiveWorkoutView: View {
             }
             
             let completedSets = previousSets
-                .filter { $0.isCompleted && $0.weight > 0 }
+                .filter { $0.isCompleted && $0.weight > 0 && ($0.setType ?? "Normal") != "Warmup" }
                 .map { (weight: $0.weight, reps: Int($0.reps)) }
             
             return completedSets.isEmpty ? nil : completedSets
@@ -1929,62 +1933,7 @@ struct ActiveWorkoutView: View {
     }
     
     private func generateCustomWorkoutName() -> String {
-        // Get all completed exercises with their muscle groups
-        var muscleGroupCounts: [String: Int] = [:]
-        var completedExercises: [Exercise] = []
-        
-        // Count exercises by muscle group
-        for exercise in exercises {
-            guard let exerciseId = exercise.id?.uuidString,
-                  let sets = workoutManager.exerciseSetsData[exerciseId],
-                  sets.contains(where: { $0.isCompleted }) else { continue }
-            
-            completedExercises.append(exercise)
-            
-            // Parse muscle groups from the exercise
-            let muscleGroups = parseMuscleGroups(from: exercise)
-            for muscleGroup in muscleGroups {
-                muscleGroupCounts[muscleGroup, default: 0] += 1
-            }
-        }
-        
-        // If no completed exercises, return default name
-        guard !completedExercises.isEmpty else {
-            return "Workout - \(formatDate())"
-        }
-        
-        // Sort muscle groups by count (most worked first)
-        let sortedMuscleGroups = muscleGroupCounts.sorted { $0.value > $1.value }
-        
-        // Generate name based on top muscle groups
-        let workoutName: String
-        if sortedMuscleGroups.count == 1 {
-            // Single muscle group
-            workoutName = "\(sortedMuscleGroups[0].key)"
-        } else if sortedMuscleGroups.count >= 2 {
-            // Multiple muscle groups - take top 2
-            let primaryMuscle = sortedMuscleGroups[0].key
-            let secondaryMuscle = sortedMuscleGroups[1].key
-            
-            // Check if it's a balanced split or one dominant muscle
-            if sortedMuscleGroups[0].value == sortedMuscleGroups[1].value {
-                workoutName = "\(primaryMuscle) & \(secondaryMuscle)"
-            } else if sortedMuscleGroups[0].value > sortedMuscleGroups[1].value * 2 {
-                // Primary muscle is dominant
-                workoutName = "\(primaryMuscle) Focus"
-            } else {
-                workoutName = "\(primaryMuscle) & \(secondaryMuscle)"
-            }
-        } else {
-            // Fallback to exercise-based naming
-            if completedExercises.count == 1 {
-                workoutName = completedExercises[0].name ?? "Single Exercise"
-            } else {
-                workoutName = "Mixed Workout"
-            }
-        }
-        
-        return "\(workoutName) - \(formatDate())"
+        return "\(liveWorkoutName) - \(formatDate())"
     }
     
     private func parseMuscleGroups(from exercise: Exercise) -> [String] {
@@ -2134,8 +2083,10 @@ struct ExerciseCard: View {
     var currentIndex: Int = 0
     var totalCount: Int = 1
     var isBeingDragged: Bool = false
-    var shouldShift: Int = 0 // -1 shift up, 0 no shift, 1 shift down
-    var isActiveCard: Bool = false // Whether this card is currently active/focused
+    var shouldShift: Int = 0
+    var isActiveCard: Bool = false
+    var useKg: Bool = false
+    var autoStartTimer: Bool = true
     
     @State private var showingExerciseDetail = false
     @State private var shuffledExerciseIds: Set<UUID> = [] // Track which exercises we've already shuffled to
@@ -2147,7 +2098,12 @@ struct ExerciseCard: View {
     @State private var activeTimerSetNumber: Int? = nil // Track which set currently has an active timer
     @State private var isFavorite: Bool = false
     @State private var dragOffset: CGFloat = 0
-    @State private var hasAppeared: Bool = false // Track first appearance to skip initial animation
+    @State private var hasAppeared: Bool = false
+    @AppStorage("workoutPerSideMode") private var isPerSideMode: Bool = false
+    @State private var showingPlateCalculator: Bool = false
+    @State private var plateCalcSetIndex: Int = 0
+    @AppStorage("defaultBarWeight") private var barWeight: Double = 45
+    @StateObject private var cardRestTimer = RestTimer()
     
     private let cardHeight: CGFloat = 180 // Approximate card height for drag calculations
     
@@ -2160,34 +2116,64 @@ struct ExerciseCard: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Exercise header
-            exerciseHeader
+            // Exercise header + column headers — gray
+            VStack(spacing: 0) {
+                exerciseHeader
+                columnHeaders
+            }
+            .background(Color.cardBackground)
             
-            // Sets table
-            setsTable
+            // Sets — dark
+            setsRows
+                .background(Color(red: 0.08, green: 0.08, blue: 0.10))
             
-            // Add set button
+            // Add set button — dark
             addSetButton
+                .background(Color(red: 0.08, green: 0.08, blue: 0.10))
         }
-        .sleekCard(cornerRadius: 16, accentColor: isActiveCard ? .blue : Color(white: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .contentShape(Rectangle()) // Make entire card tappable
+        .background(SleekCardBackground(cornerRadius: CornerRadius.xl, accentColor: isActiveCard ? Color(red: 0.0, green: 0.7, blue: 1.0) : Color(white: 0.5)))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+        .shadow(color: isActiveCard ? Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.25) : .clear, radius: 16, x: 0, y: 0)
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .onTapGesture {
-            // Set this card as active when tapped anywhere
+            HapticManager.selectionChanged()
             onFocusChanged?(true)
         }
-        .overlay(
-            // Active card glow effect (brighter when active)
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.4)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: isActiveCard ? 2.5 : 0
-                )
-        )
+        .overlay(alignment: .bottomTrailing) {
+            if cardRestTimer.isActive {
+                Text(formatCountdownTime(cardRestTimer.timeRemaining))
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color(red: 0.0, green: 0.7, blue: 1.0))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.15))
+                    )
+                    .padding(10)
+            }
+        }
+        .overlay {
+            if cardRestTimer.isActive {
+                // Timer countdown glow — stays visible even if another card is selected
+                TimerBorderShape(cornerRadius: CornerRadius.xl)
+                    .trim(from: cardRestTimer.visualProgress, to: 1)
+                    .stroke(
+                        Color(red: 0.0, green: 0.7, blue: 1.0),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .padding(1.5)
+            } else if isActiveCard {
+                // Selected card — full electric blue glow
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .strokeBorder(
+                        Color(red: 0.0, green: 0.7, blue: 1.0),
+                        lineWidth: 2.5
+                    )
+            }
+        }
         // Drag offset for card being dragged, shift offset for other cards making room
         .offset(y: isBeingDragged ? dragOffset : CGFloat(shouldShift) * cardHeight)
         .scaleEffect(isBeingDragged ? 1.02 : 1.0)
@@ -2241,6 +2227,14 @@ struct ExerciseCard: View {
         .sheet(isPresented: $showingRenameExercise) {
             RenameExerciseView(exercise: exercise)
         }
+        .sheet(isPresented: $showingPlateCalculator) {
+            PlateCalculatorView(barWeight: $barWeight) { totalWeight in
+                if plateCalcSetIndex < sets.count {
+                    sets[plateCalcSetIndex].weight = totalWeight
+                }
+            }
+            .presentationDetents([.medium])
+        }
         .onAppear {
             // ⚡ PERF: Minimal work in onAppear for instant rendering
             guard !exercise.isFault else { return }
@@ -2259,18 +2253,20 @@ struct ExerciseCard: View {
             // Next shuffle tap will re-fetch fresh alternatives
             prefetchedExercises = []
         }
-        .onChange(of: exerciseWithActiveTimer) { _, newActiveExercise in
-            // If another exercise became active with timer, stop this exercise's timer
-            if newActiveExercise != exerciseId && activeTimerSetNumber != nil {
-                print("⏹️ [\(exercise.name ?? "?")] Stopping timer - user switched to different exercise")
-                activeTimerSetNumber = nil
-            }
+        .onChange(of: exerciseWithActiveTimer) { _, _ in
+            // Timer continues running even when user selects a different card
         }
     }
     
     // ⚡ PERF: Cache exercise name to avoid repeated property access
     private var exerciseName: String {
         exercise.name ?? "Exercise"
+    }
+    
+    private func formatCountdownTime(_ timeInterval: TimeInterval) -> String {
+        let minutes = Int(timeInterval) / 60
+        let seconds = Int(timeInterval) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
     
     // MARK: - Shuffle to Similar Exercise (Smart Tiered Swap)
@@ -2282,7 +2278,6 @@ struct ExerciseCard: View {
     private func shuffleToSimilarExercise() {
         let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
         let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
-        let userLocation = UserManager.shared.currentUser?.workoutLocation ?? "gym"
         var excludeIds = shuffledExerciseIds
         if let currentId = exercise.id {
             excludeIds.insert(currentId)
@@ -2295,7 +2290,6 @@ struct ExerciseCard: View {
             for: exercise,
             swapCount: perExerciseSwapCount,
             userGoal: userGoal,
-            userLocation: userLocation,
             userEquipment: userEquipment,
             previousSwapIds: excludeIds
         ) {
@@ -2310,21 +2304,23 @@ struct ExerciseCard: View {
             print("🔄 Shuffle #\(perExerciseSwapCount) (\(tier)): \(exercise.name ?? "") → \(newExercise.name ?? "")")
             onShuffleExercise(newExercise)
         } else {
-            // Fallback to AlternativeExerciseEngine if swap service has no results
-            if let newExercise = AlternativeExerciseEngine.shared.getBestAlternative(
+            // Fallback to SmartExercisePairingEngine if swap service has no results
+            let fallbackAlts = SmartExercisePairingEngine.shared.getAlternatives(
                 for: exercise,
                 userEquipment: userEquipment,
-                excludeIds: excludeIds
-            ) {
+                excludeIds: excludeIds,
+                maxResults: 1
+            )
+            if let alt = fallbackAlts.first {
                 HapticManager.impact(.medium)
                 perExerciseSwapCount += 1
 
-                if let newId = newExercise.id {
+                if let newId = alt.exercise.id {
                     shuffledExerciseIds.insert(newId)
                 }
 
-                print("🔄 Shuffle #\(perExerciseSwapCount) (fallback): \(exercise.name ?? "") → \(newExercise.name ?? "")")
-                onShuffleExercise(newExercise)
+                print("🔄 Shuffle #\(perExerciseSwapCount) (fallback): \(exercise.name ?? "") → \(alt.exercise.name ?? "")")
+                onShuffleExercise(alt.exercise)
             } else {
                 HapticManager.notification(.warning)
                 print("⚠️ No alternatives found for: \(exercise.name ?? "")")
@@ -2351,6 +2347,7 @@ struct ExerciseCard: View {
                 }
                 .onTapGesture {
                     if !isBeingDragged {
+                        HapticManager.impact(.light)
                         showingExerciseDetail = true
                     }
                 }
@@ -2409,6 +2406,7 @@ struct ExerciseCard: View {
                 
                 // Favorite star button
                 Button(action: {
+                    HapticManager.impact(.light)
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                         isFavorite.toggle()
                         
@@ -2479,6 +2477,7 @@ struct ExerciseCard: View {
                 
                 // Single menu button for all actions
                 Button(action: {
+                    HapticManager.impact(.light)
                     showingActionSheet = true
                 }) {
                     Image(systemName: "ellipsis")
@@ -2495,8 +2494,8 @@ struct ExerciseCard: View {
             .fixedSize() // Keep icons at their natural size
         }
         .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 10)
-        .frame(height: 42) // Fixed height for header
+        .padding(.top, 10)
+        .padding(.bottom, 4)
     }
     
     private var workoutSummary: String {
@@ -2510,51 +2509,52 @@ struct ExerciseCard: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
-    private var setsTable: some View {
-        VStack(spacing: 0) {
-            // Table header - check if we have smart recommendations
-            let hasSmartRecs = previousSets.first?.isSmartRecommendation ?? false
+    private var columnHeaders: some View {
+        let hasSmartRecs = previousSets.first?.isSmartRecommendation ?? false
+        return HStack(spacing: 8) {
+            Text("SET")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.secondary)
+                .frame(width: 44, alignment: .leading)
             
-            HStack(spacing: 8) {
-                Text("SET")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 44, alignment: .leading)
-                
-                HStack(spacing: 3) {
-                    if hasSmartRecs {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 9))
-                            .foregroundColor(.orange)
-                        Text("SUGGESTED")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.orange)
-                            .lineLimit(1)
-                    } else {
-                        Text("PREVIOUS")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
+            HStack(spacing: 3) {
+                if hasSmartRecs {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 9))
+                        .foregroundColor(.orange)
+                    Text("SUGGESTED")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                } else {
+                    Text("PREVIOUS")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                Text("LB")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 70, alignment: .center)
-                
-                Text("REPS")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 70, alignment: .center)
-                
-                Spacer()
-                    .frame(width: 34)
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
             
+            Text("LB")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.secondary)
+                .frame(width: 70, alignment: .center)
+            
+            Text("REPS")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.secondary)
+                .frame(width: 70, alignment: .center)
+            
+            Spacer()
+                .frame(width: 34)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+    }
+    
+    private var setsRows: some View {
+        VStack(spacing: 0) {
             // Sets
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, setItem in
                 SwipeableSetRow(
@@ -2575,26 +2575,30 @@ struct ExerciseCard: View {
                 ) {
                     SetRowView(
                         setNumber: index + 1,
-                        setData: setItem,  // Pass the object directly, not a binding
+                        setData: setItem,
                         previousSet: getPreviousSetData(for: index + 1),
                         onSetCompleted: {
-                            // Timer starts automatically in SetRowView
-                            // DO NOT auto-add new set - user must tap "Add Set" button
                             print("✅ Set \(index + 1) completed - timer started, waiting for user to add next set")
                         },
                         isLastSet: index == sets.count - 1,
                         restDuration: customRestTimer ?? restDuration,
-                        onTimerShouldStop: { setNumberToStop in
-                            // This callback is used to stop a specific set's timer
-                            // The logic is now handled by the activeTimerSetNumber binding
-                        },
+                        onTimerShouldStop: { _ in },
                         onNewExerciseInteraction: onNewExerciseInteraction,
                         activeTimerSetNumber: $activeTimerSetNumber,
                         exerciseWithActiveTimer: $exerciseWithActiveTimer,
                         exerciseId: exerciseId,
                         onShowAd: onShowAd,
-                        shouldAutoFocus: (isFirstExercise && index == 0 && !setItem.isCompleted) || (index == sets.count - 1 && index > 0 && !setItem.isCompleted), // Auto-focus first set of first exercise OR newly added sets after ad
-                        onFocusChanged: onFocusChanged
+                        shouldAutoFocus: (isFirstExercise && index == 0 && !setItem.isCompleted) || (index == sets.count - 1 && index > 0 && !setItem.isCompleted),
+                        onFocusChanged: onFocusChanged,
+                        isPerSideMode: $isPerSideMode,
+                        barWeight: barWeight,
+                        onOpenPlateCalculator: {
+                            plateCalcSetIndex = index
+                            showingPlateCalculator = true
+                        },
+                        useKg: useKg,
+                        restTimer: cardRestTimer,
+                        autoStartTimer: autoStartTimer
                     )
                 }
                 
@@ -2607,7 +2611,7 @@ struct ExerciseCard: View {
     }
     
     private var addSetButton: some View {
-        Button(action: onAddSet) {
+        Button(action: { HapticManager.impact(.light); onAddSet() }) {
             Text("ADD SET")
                 .font(.subheadline)
                 .fontWeight(.bold)
@@ -2675,6 +2679,7 @@ struct SwipeableSetRow<Content: View>: View {
                         offset = 0
                         isShowingDelete = false
                     }
+                    HapticManager.notification(.warning)
                     onDelete()
                 }) {
                     ZStack {
@@ -2727,25 +2732,30 @@ struct SwipeableSetRow<Content: View>: View {
 
 struct SetRowView: View {
     let setNumber: Int
-    @ObservedObject var setData: WorkoutSetData  // Changed from @Binding to @ObservedObject
-    let previousSet: PreviousSetData? // Previous workout's set data
+    @ObservedObject var setData: WorkoutSetData
+    let previousSet: PreviousSetData?
     let onSetCompleted: () -> Void
     let isLastSet: Bool
     let restDuration: TimeInterval
-    let onTimerShouldStop: (Int) -> Void // Callback to stop other timers
-    let onNewExerciseInteraction: () -> Void // Callback when user starts new exercise
-    @Binding var activeTimerSetNumber: Int? // Which set currently has an active timer
-    @Binding var exerciseWithActiveTimer: String? // Track which exercise has the active timer globally
-    var exerciseId: String = "" // This exercise's ID for timer tracking
-    let onShowAd: (@escaping () -> Void) -> Void // Callback to show ad between sets
-    let shouldAutoFocus: Bool // Whether this set should auto-focus (newly added)
-    var onFocusChanged: ((Bool) -> Void)? = nil // Callback when focus changes
+    let onTimerShouldStop: (Int) -> Void
+    let onNewExerciseInteraction: () -> Void
+    @Binding var activeTimerSetNumber: Int?
+    @Binding var exerciseWithActiveTimer: String?
+    var exerciseId: String = ""
+    let onShowAd: (@escaping () -> Void) -> Void
+    let shouldAutoFocus: Bool
+    var onFocusChanged: ((Bool) -> Void)? = nil
+    @Binding var isPerSideMode: Bool
+    var barWeight: Double = 45
+    var onOpenPlateCalculator: (() -> Void)? = nil
+    var useKg: Bool = false
+    @ObservedObject var restTimer: RestTimer
+    var autoStartTimer: Bool = true
     
     @State private var weightText: String = ""
     @State private var repsText: String = ""
     @FocusState private var isWeightFocused: Bool
     @FocusState private var isRepsFocused: Bool
-    @StateObject private var restTimer = RestTimer()
     @State private var hasInitialized = false
     
     // Debounce timer for weight/reps updates to prevent excessive re-renders
@@ -2810,53 +2820,67 @@ struct SetRowView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-            // Weight input - use previous workout's weight as placeholder
-            // Uses SelectAllTextField for better editing UX (selects all on focus)
-            SelectAllTextField(
-                placeholder: previousSet != nil ? formatWeightPlaceholder(previousSet!.weight) : "45",
-                text: $weightText,
-                keyboardType: .decimalPad,
-                font: .systemFont(ofSize: 17, weight: .semibold),
-                textAlignment: .center,
-                textColor: setData.isCompleted ? .white : .label, // White when completed
-                onFocusChange: { isFocused in
-                    isWeightFocused = isFocused
-                    if isFocused {
-                        onNewExerciseInteraction()
-                        // Notify parent to scroll to this card and set it as active
-                        onFocusChanged?(true)
-                    } else {
-                        // Update setData when focus is lost
-                        if let weight = parseWeight(weightText) {
-                            setData.weight = weight
+            VStack(spacing: 2) {
+                SelectAllTextField(
+                    placeholder: weightPlaceholder,
+                    text: $weightText,
+                    keyboardType: .decimalPad,
+                    font: .systemFont(ofSize: 17, weight: .semibold),
+                    textAlignment: .center,
+                    textColor: setData.isCompleted ? .white : .label,
+                    onFocusChange: { isFocused in
+                        isWeightFocused = isFocused
+                        if isFocused {
+                            HapticManager.selectionChanged()
+                            onNewExerciseInteraction()
+                            onFocusChanged?(true)
+                        } else {
+                            if let weight = parseWeight(weightText) {
+                                applyWeight(weight)
+                            }
                         }
                     }
+                )
+                .frame(width: 70, height: 38)
+                .background(Color(.systemGray6))
+                .cornerRadius(CornerRadius.sm)
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
+                        .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
+                )
+                .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
+                .onLongPressGesture(minimumDuration: 0.5) {
+                    HapticManager.impact(.medium)
+                    onOpenPlateCalculator?()
                 }
-            )
-            .frame(width: 70, height: 38)
-            .background(Color(.systemGray6))
-            .cornerRadius(CornerRadius.sm)
-            .overlay(
-                // Glow border when this field is focused
-                RoundedRectangle(cornerRadius: CornerRadius.sm)
-                    .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
-            )
-            .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
-            .onChange(of: weightText) { _, newValue in
-                // Cancel previous debounce task
-                weightDebounceTask?.cancel()
                 
-                // Debounce: wait 150ms before updating setData to prevent lag
+                
+            }
+            .onChange(of: weightText) { _, newValue in
+                weightDebounceTask?.cancel()
                 weightDebounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+                    try? await Task.sleep(nanoseconds: 150_000_000)
                     guard !Task.isCancelled else { return }
                     if let weight = parseWeight(newValue) {
-                        setData.weight = weight
+                        applyWeight(weight)
                     }
                 }
             }
+            .onChange(of: useKg) { _, _ in
+                let storedLbs = setData.weight
+                guard storedLbs > 0 else { return }
+                let bar = useKg ? barWeight * WorkoutSetData.lbsToKg : barWeight
+                var displayValue: Double
+                if isPerSideMode {
+                    let totalDisplay = useKg ? storedLbs * WorkoutSetData.lbsToKg : storedLbs
+                    displayValue = max(0, (totalDisplay - bar) / 2)
+                } else {
+                    displayValue = useKg ? storedLbs * WorkoutSetData.lbsToKg : storedLbs
+                }
+                weightText = formatWeightPlaceholder((displayValue * 10).rounded() / 10)
+            }
                 
-            // Reps input - use previous workout's reps as placeholder
+            // Reps input
             // Uses SelectAllTextField for better editing UX (selects all on focus)
             SelectAllTextField(
                 placeholder: previousSet != nil ? "\(previousSet!.reps)" : "8",
@@ -2868,8 +2892,8 @@ struct SetRowView: View {
                 onFocusChange: { isFocused in
                     isRepsFocused = isFocused
                     if isFocused {
+                        HapticManager.selectionChanged()
                         onNewExerciseInteraction()
-                        // Notify parent to scroll to this card and set it as active
                         onFocusChanged?(true)
                     } else {
                         // Update setData when focus is lost
@@ -2904,6 +2928,7 @@ struct SetRowView: View {
                 
                 // Completion checkmark
                 Button(action: {
+                    HapticManager.impact(.medium)
                     // IMPORTANT: Flush any pending debounce tasks before completing set
                     // This ensures the latest weight/reps values are captured
                     weightDebounceTask?.cancel()
@@ -2973,14 +2998,15 @@ struct SetRowView: View {
                         setData.reps = reps
                     }
                     
-                    // IMMEDIATELY stop ALL other timers by setting this as the active timer
-                    activeTimerSetNumber = setNumber
-                    // Also mark THIS exercise as having the active timer (stops other exercises' timers)
-                    exerciseWithActiveTimer = exerciseId
+                    let shouldStartTimer = autoStartTimer && restDuration > 0
+                    
+                    if shouldStartTimer {
+                        activeTimerSetNumber = setNumber
+                        exerciseWithActiveTimer = exerciseId
+                    }
                     
                     let finalRestDuration = restDuration > 0 ? restDuration : 90.0
                     
-                    // Capture references to persist across ad display
                     let theSetData: WorkoutSetData = setData
                     let theRestTimer: RestTimer = restTimer
                     let theSetNumber: Int = setNumber
@@ -2992,23 +3018,21 @@ struct SetRowView: View {
                     print("   Raw weightText: '\(weightText)' | Parsed: \(parseWeight(weightText) ?? -1)")
                     #endif
                     
-                    // IMMEDIATELY mark set complete and start timer BEFORE ad shows
-                    // This way timer runs in background during ad - no delay when ad closes
                     theSetData.isCompleted = true
-                    theRestTimer.startWithAdOffset(
-                        duration: theRestDuration,
-                        originalTotal: theRestDuration,
-                        adTime: 0
-                    )
                     
-                    // Show ad between sets (timer continues running in background)
+                    if shouldStartTimer {
+                        theRestTimer.startWithAdOffset(
+                            duration: theRestDuration,
+                            originalTotal: theRestDuration,
+                            adTime: 0
+                        )
+                    }
+                    
                     onShowAd { [theSetData, theRestTimer] in
                         DispatchQueue.main.async {
-                            // Enable smooth animation now that ad is done
-                            theRestTimer.enableAnimation()
-                            
-                            // DO NOT auto-add next set - user must tap "Add Set"
-                            // theOnSetCompleted()  // REMOVED - no longer auto-adding sets
+                            if shouldStartTimer {
+                                theRestTimer.enableAnimation()
+                            }
                         }
                     }
                 }) {
@@ -3020,63 +3044,12 @@ struct SetRowView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 6)
-            .background(
-                // Subtle alternating row highlight
-                setNumber % 2 == 0 ? Color(.systemGray6) : Color.clear
-            )
+            .background(Color.clear)
             
-            // Live rest timer indicator (shown after completing a set)
-            if setData.isCompleted && restTimer.isActive {
-                // Progress bar that shrinks as timer counts down
-                VStack(spacing: 0) {
-                    HStack {
-                        Spacer()
-                        Text(formatTime(restTimer.timeRemaining))
-                            .font(.system(.caption, design: .monospaced))
-                            .fontWeight(.medium)
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding(.vertical, Spacing.xs)
-                    .background(
-                        // Background container with GeometryReader for responsive width
-                        GeometryReader { geometry in
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(Color.gray.opacity(0.15))
-                                .overlay(
-                                    // Animated progress bar - uses actual container width
-                                    HStack {
-                                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                            .fill(
-                                                LinearGradient(
-                                                    gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.8)]),
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                )
-                                            )
-                                            .frame(width: max(0, (restTimer.timeRemaining / restTimer.originalTotalTime) * geometry.size.width))
-                                        Spacer(minLength: 0)
-                                    }
-                                )
-                        }
-                    )
-                    // Only animate when shouldAnimate is true (after ad ends)
-                    .animation(restTimer.shouldAnimate ? .linear(duration: 1.0) : nil, value: restTimer.timeRemaining)
-                }
-                .padding(.horizontal)
-                .padding(.top, 2)
-            }
+            // Timer countdown is now shown as a glow border on ExerciseCard
         }
         .onChange(of: activeTimerSetNumber) { _, newActiveSet in
-            // ALWAYS stop this set's timer if another set becomes active
-            if newActiveSet != setNumber {
-                if restTimer.isActive {
-                    print("🛑 Set \(setNumber): Stopping active timer because set \(newActiveSet ?? 0) took over")
-                    restTimer.stop()
-                } else {
-                    print("🛑 Set \(setNumber): No active timer to stop (set \(newActiveSet ?? 0) took over)")
-                }
-            } else if newActiveSet == setNumber {
+            if newActiveSet == setNumber {
                 print("✅ Set \(setNumber): Confirmed as active timer")
             }
         }
@@ -3104,10 +3077,10 @@ struct SetRowView: View {
             }
         }
         .onChange(of: isWeightFocused) { _, isFocused in
-            if isFocused { onFocusChanged?(true) }
+            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true) }
         }
         .onChange(of: isRepsFocused) { _, isFocused in
-            if isFocused { onFocusChanged?(true) }
+            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true) }
         }
     }
     
@@ -3117,7 +3090,36 @@ struct SetRowView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
-    /// Format weight for placeholder - shows decimal only if needed (e.g., 27.5 but not 45.0)
+    private var weightPlaceholder: String {
+        if let prev = previousSet {
+            var displayWeight = prev.weight
+            if useKg { displayWeight = (displayWeight * WorkoutSetData.lbsToKg * 10).rounded() / 10 }
+            if isPerSideMode {
+                let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
+                let perSide = max(0, (displayWeight - bar) / 2)
+                return formatWeightPlaceholder(perSide)
+            }
+            return formatWeightPlaceholder(displayWeight)
+        }
+        return isPerSideMode ? (useKg ? "20" : "45") : (useKg ? "60" : "135")
+    }
+    
+    private func applyWeight(_ inputWeight: Double) {
+        var totalLbs: Double
+        let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
+        
+        if isPerSideMode {
+            totalLbs = useKg
+                ? ((inputWeight * 2 + bar) * WorkoutSetData.kgToLbs)
+                : (inputWeight * 2 + barWeight)
+        } else {
+            totalLbs = useKg ? (inputWeight * WorkoutSetData.kgToLbs) : inputWeight
+        }
+        
+        setData.weight = (totalLbs * 10).rounded() / 10
+        setData.syncWeightUnits(fromLbs: true)
+    }
+    
     private func formatWeightPlaceholder(_ weight: Double) -> String {
         if weight.truncatingRemainder(dividingBy: 1) == 0 {
             return "\(Int(weight))"
@@ -3303,11 +3305,23 @@ enum SetType: String, CaseIterable, Codable {
 
 class WorkoutSetData: ObservableObject, Identifiable {
     let id = UUID()
-    @Published var weight: Double = 0
+    @Published var weight: Double = 0       // Always stored in lbs
+    @Published var weightKg: Double = 0     // Always stored in kg
     @Published var reps: Int = 0
     @Published var isCompleted: Bool = false
     @Published var setType: SetType = .normal
     @Published var restTime: TimeInterval = 0
+    
+    static let lbsToKg = 0.453592
+    static let kgToLbs = 2.20462
+    
+    func syncWeightUnits(fromLbs: Bool = true) {
+        if fromLbs {
+            weightKg = (weight * Self.lbsToKg * 10).rounded() / 10
+        } else {
+            weight = (weightKg * Self.kgToLbs * 10).rounded() / 10
+        }
+    }
     
     // Legacy computed properties for backwards compatibility
     var isFailure: Bool {
@@ -3326,75 +3340,111 @@ class WorkoutSetData: ObservableObject, Identifiable {
     }
 }
 
+struct TimerBorderShape: InsettableShape {
+    let cornerRadius: CGFloat
+    var inset: CGFloat = 0
+
+    func inset(by amount: CGFloat) -> TimerBorderShape {
+        TimerBorderShape(cornerRadius: cornerRadius, inset: inset + amount)
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: inset, dy: inset)
+        let cr = min(cornerRadius - inset, min(r.width, r.height) / 2)
+        let k: CGFloat = 0.62 * cr
+
+        var p = Path()
+        p.move(to: CGPoint(x: r.midX, y: r.minY))
+
+        p.addLine(to: CGPoint(x: r.maxX - cr, y: r.minY))
+        p.addCurve(to: CGPoint(x: r.maxX, y: r.minY + cr),
+                    control1: CGPoint(x: r.maxX - cr + k, y: r.minY),
+                    control2: CGPoint(x: r.maxX, y: r.minY + cr - k))
+
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - cr))
+        p.addCurve(to: CGPoint(x: r.maxX - cr, y: r.maxY),
+                    control1: CGPoint(x: r.maxX, y: r.maxY - cr + k),
+                    control2: CGPoint(x: r.maxX - cr + k, y: r.maxY))
+
+        p.addLine(to: CGPoint(x: r.minX + cr, y: r.maxY))
+        p.addCurve(to: CGPoint(x: r.minX, y: r.maxY - cr),
+                    control1: CGPoint(x: r.minX + cr - k, y: r.maxY),
+                    control2: CGPoint(x: r.minX, y: r.maxY - cr + k))
+
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + cr))
+        p.addCurve(to: CGPoint(x: r.minX + cr, y: r.minY),
+                    control1: CGPoint(x: r.minX, y: r.minY + cr - k),
+                    control2: CGPoint(x: r.minX + cr - k, y: r.minY))
+
+        p.addLine(to: CGPoint(x: r.midX, y: r.minY))
+        return p
+    }
+}
+
 class RestTimer: ObservableObject {
     @Published var timeRemaining: TimeInterval = 0
     @Published var isActive: Bool = false
     @Published var totalTime: TimeInterval = 0
-    
-    // Track the original total time (before ad time was subtracted)
-    // This is used for visual progress calculation
     @Published var originalTotalTime: TimeInterval = 0
     @Published var adElapsedTime: TimeInterval = 0
-    
-    // Controls whether the progress bar should animate
-    // Set to false during ad, true after ad ends to prevent "catch up" animation
     @Published var shouldAnimate: Bool = true
     
-    private var timer: Timer?
+    private var displayLink: CADisplayLink?
+    private var lastTimestamp: CFTimeInterval = 0
     
-    /// Standard start - no ad time offset
+    var visualProgress: CGFloat {
+        guard originalTotalTime > 0 else { return 0 }
+        return CGFloat((originalTotalTime - timeRemaining) / originalTotalTime)
+    }
+    
+    var visualRemainingProgress: CGFloat {
+        1.0 - visualProgress
+    }
+    
     func start(duration: TimeInterval) {
         startWithAdOffset(duration: duration, originalTotal: duration, adTime: 0)
     }
     
-    /// Start timer with ad time already counted as elapsed
-    /// - Parameters:
-    ///   - duration: The remaining time to count down
-    ///   - originalTotal: The original full rest duration (before ad)
-    ///   - adTime: How many seconds the ad consumed
     func startWithAdOffset(duration: TimeInterval, originalTotal: TimeInterval, adTime: TimeInterval) {
+        stop()
+        
         totalTime = duration
         timeRemaining = duration
         originalTotalTime = originalTotal
         adElapsedTime = adTime
         isActive = true
-        shouldAnimate = false  // Start with no animation (during ad)
+        shouldAnimate = true
+        lastTimestamp = 0
         
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.timeRemaining > 0 {
-                self.timeRemaining -= 1
-            } else {
-                self.stop()
-            }
-        }
+        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink?.add(to: .main, forMode: .common)
     }
     
-    /// Call this when ad ends to enable smooth animation
     func enableAnimation() {
-        // Small delay to let the view settle at current position first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.shouldAnimate = true
+        shouldAnimate = true
+    }
+    
+    @objc private func tick(_ link: CADisplayLink) {
+        if lastTimestamp == 0 {
+            lastTimestamp = link.timestamp
+            return
         }
-    }
-    
-    /// Calculate progress including ad time for visual display
-    /// Returns value from 0.0 (just started) to 1.0 (complete)
-    var visualProgress: CGFloat {
-        guard originalTotalTime > 0 else { return 0 }
-        let timeElapsed = (originalTotalTime - timeRemaining)
-        return CGFloat(timeElapsed / originalTotalTime)
-    }
-    
-    /// Calculate remaining progress (for progress bar width)
-    /// Returns value from 1.0 (just started) to 0.0 (complete)
-    var visualRemainingProgress: CGFloat {
-        return 1.0 - visualProgress
+        let dt = link.timestamp - lastTimestamp
+        lastTimestamp = link.timestamp
+        
+        guard dt > 0, dt < 0.5 else { return }
+        
+        timeRemaining -= dt
+        if timeRemaining <= 0 {
+            timeRemaining = 0
+            stop()
+        }
     }
     
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        lastTimestamp = 0
         isActive = false
         timeRemaining = 0
         adElapsedTime = 0
@@ -3402,23 +3452,18 @@ class RestTimer: ObservableObject {
     }
     
     func pause() {
-        timer?.invalidate()
-        timer = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        lastTimestamp = 0
         isActive = false
     }
     
     func resume() {
         guard timeRemaining > 0 else { return }
         isActive = true
-        
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.timeRemaining > 0 {
-                self.timeRemaining -= 1
-            } else {
-                self.stop()
-            }
-        }
+        lastTimestamp = 0
+        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink?.add(to: .main, forMode: .common)
     }
 }
 
@@ -3647,7 +3692,7 @@ struct ExerciseReplacementView: View {
         Task {
             let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
             
-            let alternatives = await AlternativeExerciseEngine.shared.getAlternatives(
+            let alternatives = SmartExercisePairingEngine.shared.getAlternatives(
                 for: currentExercise,
                 userEquipment: userEquipment,
                 excludeIds: [],
@@ -3736,69 +3781,41 @@ struct MarqueeText: View {
     let text: String
     let font: Font
     let weight: Font.Weight
-    let shouldAnimate: Bool // Only scroll when card is active
-    
-    // Animation configuration
-    private let scrollSpeed: CGFloat = 20 // Points per second - slow steady scroll
-    private let gapBetweenCopies: CGFloat = 100 // Large gap between text copies
-    private let pauseDuration: Double = 3.0 // Pause after each full rotation
-    
+    let shouldAnimate: Bool
+
+    private let scrollSpeed: CGFloat = 25
+    private let gap: CGFloat = 80
+    private let pauseSeconds: Double = 3.0
+
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
-    @State private var needsScrolling = false
-    @State private var xOffset: CGFloat = 0
-    
+    @StateObject private var ticker = MarqueeTicker()
+
+    private var needsScrolling: Bool { textWidth > containerWidth - 10 }
+    private var cycleWidth: CGFloat { textWidth + gap }
+
     init(text: String, font: Font = .headline, weight: Font.Weight = .semibold, shouldAnimate: Bool = true) {
         self.text = text
         self.font = font
         self.weight = weight
         self.shouldAnimate = shouldAnimate
     }
-    
-    // One full rotation distance
-    private var cycleWidth: CGFloat {
-        textWidth + gapBetweenCopies
-    }
-    
-    // How long one scroll cycle takes
-    private var scrollTime: Double {
-        guard scrollSpeed > 0, cycleWidth > 0 else { return 5.0 }
-        return Double(cycleWidth) / Double(scrollSpeed)
-    }
-    
+
     var body: some View {
         GeometryReader { geometry in
-            // Always show both copies of text for smooth looping
-            HStack(spacing: gapBetweenCopies) {
-                Text(text)
-                    .font(font)
-                    .fontWeight(weight)
-                    .fixedSize()
+            HStack(spacing: gap) {
+                tickerLabel
                     .background(
                         GeometryReader { textGeo in
-                            Color.clear
-                                .onAppear {
-                                    textWidth = textGeo.size.width
-                                    containerWidth = geometry.size.width
-                                    needsScrolling = textWidth > containerWidth - 10
-                                    
-                                    // Start animation if needed
-                                    if needsScrolling && shouldAnimate {
-                                        startScrolling()
-                                    }
-                                }
+                            Color.clear.onAppear {
+                                textWidth = textGeo.size.width
+                                containerWidth = geometry.size.width
+                            }
                         }
                     )
-                
-                // Second copy for seamless loop (only visible during scroll)
-                if needsScrolling {
-                    Text(text)
-                        .font(font)
-                        .fontWeight(weight)
-                        .fixedSize()
-                }
+                if needsScrolling { tickerLabel }
             }
-            .offset(x: xOffset)
+            .offset(x: ticker.offset)
             .frame(width: geometry.size.width, alignment: .leading)
             .clipped()
         }
@@ -3806,59 +3823,79 @@ struct MarqueeText: View {
         .clipped()
         .onChange(of: shouldAnimate) { _, animate in
             if animate && needsScrolling {
-                startScrolling()
-            } else if !animate {
-                resetPosition()
+                ticker.start(cycleWidth: cycleWidth, speed: scrollSpeed, pause: pauseSeconds)
+            } else {
+                ticker.stop()
             }
         }
+        .onChange(of: textWidth) { _, _ in
+            if shouldAnimate && needsScrolling {
+                ticker.start(cycleWidth: cycleWidth, speed: scrollSpeed, pause: pauseSeconds)
+            } else {
+                ticker.stop()
+            }
+        }
+        .onDisappear { ticker.stop() }
+    }
+
+    private var tickerLabel: some View {
+        Text(text)
+            .font(font)
+            .fontWeight(weight)
+            .fixedSize()
+    }
+}
+
+private class MarqueeTicker: ObservableObject {
+    @Published var offset: CGFloat = 0
+    
+    private var displayLink: CADisplayLink?
+    private var cycleWidth: CGFloat = 0
+    private var speed: CGFloat = 25
+    private var pauseDuration: Double = 3.0
+    private var pauseRemaining: Double = 3.0
+    private var isScrolling = false
+    private var rawOffset: CGFloat = 0
+    
+    func start(cycleWidth: CGFloat, speed: CGFloat, pause: Double) {
+        stop()
+        self.cycleWidth = cycleWidth
+        self.speed = speed
+        self.pauseDuration = pause
+        self.pauseRemaining = pause
+        self.isScrolling = false
+        self.rawOffset = 0
+        self.offset = 0
+        
+        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink?.add(to: .main, forMode: .common)
     }
     
-    private func startScrolling() {
-        guard needsScrolling && shouldAnimate else { return }
-        
-        // Reset to start position
-        xOffset = 0
-        
-        // Wait a moment, then start the scroll cycle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            guard shouldAnimate && needsScrolling else { return }
-            performScrollCycle()
-        }
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+        isScrolling = false
+        rawOffset = 0
+        offset = 0
     }
     
-    private func performScrollCycle() {
-        guard shouldAnimate && needsScrolling else { 
-            resetPosition()
-            return 
-        }
+    @objc private func tick(_ link: CADisplayLink) {
+        let dt = link.targetTimestamp - link.timestamp
+        guard dt > 0, dt < 0.5 else { return }
         
-        // Animate scroll to the left (one full cycle)
-        withAnimation(.linear(duration: scrollTime)) {
-            xOffset = -cycleWidth
-        }
-        
-        // After scroll completes: reset instantly, pause, then repeat
-        DispatchQueue.main.asyncAfter(deadline: .now() + scrollTime) {
-            guard shouldAnimate && needsScrolling else {
-                resetPosition()
-                return
+        if !isScrolling {
+            pauseRemaining -= dt
+            if pauseRemaining <= 0 {
+                isScrolling = true
             }
-            
-            // Instant reset (second copy is now at start position - seamless)
-            withAnimation(.none) {
-                xOffset = 0
+        } else {
+            rawOffset -= CGFloat(dt) * speed
+            if rawOffset <= -cycleWidth {
+                rawOffset += cycleWidth
+                isScrolling = false
+                pauseRemaining = pauseDuration
             }
-            
-            // Pause, then scroll again
-            DispatchQueue.main.asyncAfter(deadline: .now() + pauseDuration) {
-                performScrollCycle()
-            }
-        }
-    }
-    
-    private func resetPosition() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            xOffset = 0
+            offset = rawOffset
         }
     }
 }
@@ -4350,6 +4387,160 @@ struct AddExerciseFilterChip: View {
     }
 }
 
+// MARK: - Plate Calculator View
+
+struct PlateCalculatorView: View {
+    @Binding var barWeight: Double
+    let onApply: (Double) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedPlates: [Double] = []
+    
+    private let availablePlates: [Double] = [45, 35, 25, 10, 5, 2.5]
+    private let barOptions: [Double] = [45, 35, 25]
+    
+    private var perSideTotal: Double { selectedPlates.reduce(0, +) }
+    private var grandTotal: Double { perSideTotal * 2 + barWeight }
+    
+    var body: some View {
+        VStack(spacing: Spacing.lg) {
+            HStack {
+                Text("Plate Calculator")
+                    .font(.ds_heading3)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.top, Spacing.md)
+            
+            HStack(spacing: Spacing.sm) {
+                Text("Bar")
+                    .font(.ds_bodyMedium)
+                    .foregroundColor(.secondary)
+                ForEach(barOptions, id: \.self) { weight in
+                    Button {
+                        barWeight = weight
+                        HapticManager.selectionChanged()
+                    } label: {
+                        Text("\(Int(weight))")
+                            .font(.ds_labelMedium)
+                            .foregroundColor(barWeight == weight ? .white : .primary)
+                            .frame(width: 48, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.sm)
+                                    .fill(barWeight == weight ? Color.blue : Color(.systemGray5))
+                            )
+                    }
+                }
+                Text("lb")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            
+            VStack(spacing: Spacing.sm) {
+                Text("Per Side")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack(spacing: Spacing.xs) {
+                    ForEach(availablePlates, id: \.self) { plate in
+                        let count = selectedPlates.filter { $0 == plate }.count
+                        Button {
+                            selectedPlates.append(plate)
+                            HapticManager.impact(.light)
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(plate == 2.5 ? "2.5" : "\(Int(plate))")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(count > 0 ? .white : .primary)
+                                if count > 0 {
+                                    Text("×\(count)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .fill(count > 0 ? Color.blue : Color(.systemGray5))
+                            )
+                        }
+                    }
+                }
+                
+                if !selectedPlates.isEmpty {
+                    let grouped = Dictionary(grouping: selectedPlates) { $0 }
+                        .sorted { $0.key > $1.key }
+                    let breakdown = grouped.map { plate, arr in
+                        arr.count > 1 ? "\(Int(plate))×\(arr.count)" : (plate == 2.5 ? "2.5" : "\(Int(plate))")
+                    }.joined(separator: " + ")
+                    
+                    Text("\(breakdown) = \(formatWeight(perSideTotal))/side")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            VStack(spacing: 4) {
+                Text("Total Weight")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+                Text("\(formatWeight(grandTotal)) lb")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+            }
+            
+            HStack(spacing: Spacing.md) {
+                Button {
+                    selectedPlates.removeAll()
+                    HapticManager.impact(.light)
+                } label: {
+                    Text("Clear")
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.sm)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
+                                .fill(Color(.systemGray5))
+                        )
+                }
+                
+                Button {
+                    onApply(grandTotal)
+                    HapticManager.notification(.success)
+                    dismiss()
+                } label: {
+                    Text("Apply \(formatWeight(grandTotal))")
+                        .font(.ds_labelLarge)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.sm)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
+                                .fill(Color.blue)
+                        )
+                }
+            }
+            .padding(.bottom, Spacing.md)
+        }
+        .padding(.horizontal, Spacing.lg)
+    }
+    
+    private func formatWeight(_ weight: Double) -> String {
+        weight.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(weight))" : String(format: "%.1f", weight)
+    }
+}
+
 #Preview {
     let context = PersistenceController.preview.container.viewContext
     
@@ -4398,13 +4589,7 @@ struct SelectAllTextField: UIViewRepresentable {
         textField.textColor = textColor
         textField.tintColor = .systemBlue
         
-        // Add done button to number pad
-        let toolbar = UIToolbar()
-        toolbar.sizeToFit()
-        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        let doneButton = UIBarButtonItem(barButtonSystemItem: .done, target: context.coordinator, action: #selector(Coordinator.donePressed))
-        toolbar.items = [flexSpace, doneButton]
-        textField.inputAccessoryView = toolbar
+        textField.inputAccessoryView = nil
         
         return textField
     }
@@ -4671,6 +4856,476 @@ struct RenameExerciseView: View {
                     showingError = true
                 }
             }
+        }
+    }
+}
+
+// MARK: - Workout Settings Side Panel
+
+private struct WorkoutSettingsPanel: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var isPresented: Bool
+    @Binding var showingPremiumUpsell: Bool
+    
+    @AppStorage("workoutWeightUnit") private var useKg: Bool = false
+    @AppStorage("workoutPerSideMode") private var isPerSideGlobal: Bool = false
+    @AppStorage("defaultBarWeight") private var barWeight: Double = 45
+    @AppStorage("defaultRestSeconds") private var defaultRestSeconds: Int = 90
+    @AppStorage("autoStartRestTimer") private var autoStartRestTimer: Bool = true
+    @AppStorage("keepScreenOnDuringWorkout") private var keepScreenOn: Bool = true
+    @AppStorage("workoutSoundEffects") private var soundEffects: Bool = true
+    @AppStorage("showMusicPlayer") private var showMusicPlayer: Bool = true
+    
+    let onMinimize: () -> Void
+    
+    private var barWeightOptions: [Double] { useKg ? [20, 15, 10] : [45, 35, 25] }
+    private var unitLabel: String { useKg ? "kg" : "lb" }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            panelHeader
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    weightSection
+                    restTimerSection
+                    generalSection
+                    removeAdsButton
+                    minimizeButton
+                    Spacer(minLength: 30)
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .background(
+            colorScheme == .dark
+                ? Color(red: 0.08, green: 0.08, blue: 0.10)
+                : Color(UIColor.systemGroupedBackground)
+        )
+    }
+    
+    // MARK: - Header
+    
+    private var panelHeader: some View {
+        HStack {
+            Text("Settings")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+            Spacer()
+            Button {
+                HapticManager.selectionChanged()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { isPresented = false }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+    
+    // MARK: - Weight Section
+    
+    private var weightSection: some View {
+        sectionCard {
+            sectionLabel("WEIGHT")
+            
+            rowWithPicker(title: "Unit") {
+                Picker("", selection: $useKg) {
+                    Text("lb").tag(false)
+                    Text("kg").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+            
+            Divider().opacity(0.3)
+            
+            rowWithPicker(title: "Entry Mode") {
+                Picker("", selection: $isPerSideGlobal) {
+                    Text("Total").tag(false)
+                    Text("Per Side").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+            
+            Divider().opacity(0.3)
+            
+            rowWithPicker(title: "Bar Weight") {
+                Picker("", selection: $barWeight) {
+                    ForEach(barWeightOptions, id: \.self) { w in
+                        Text("\(Int(w)) \(unitLabel)").tag(w)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+    
+    // MARK: - Rest Timer Section
+    
+    private var restTimerSection: some View {
+        sectionCard {
+            sectionLabel("REST TIMER")
+            
+            VStack(spacing: 6) {
+                Text("Default Rest")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack {
+                    Button {
+                        if defaultRestSeconds > 0 { defaultRestSeconds -= 15; HapticManager.selectionChanged() }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(defaultRestSeconds > 0 ? .blue : .secondary.opacity(0.3))
+                    }
+                    .disabled(defaultRestSeconds <= 0)
+                    
+                    Spacer()
+                    
+                    Text(formatRestTime(defaultRestSeconds))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .fontDesign(.rounded)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Button {
+                        if defaultRestSeconds < 300 { defaultRestSeconds += 15; HapticManager.selectionChanged() }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(defaultRestSeconds < 300 ? .blue : .secondary.opacity(0.3))
+                    }
+                    .disabled(defaultRestSeconds >= 300)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            
+            Divider().opacity(0.3)
+            
+            toggleRow(title: "Auto-Start Timer", isOn: $autoStartRestTimer)
+        }
+    }
+    
+    // MARK: - General Section
+    
+    private var generalSection: some View {
+        sectionCard {
+            sectionLabel("GENERAL")
+            toggleRow(title: "Keep Screen On", isOn: $keepScreenOn)
+                .onChange(of: keepScreenOn) { _, newValue in
+                    UIApplication.shared.isIdleTimerDisabled = newValue
+                }
+            Divider().opacity(0.3)
+            toggleRow(title: "Sound Effects", isOn: $soundEffects)
+            Divider().opacity(0.3)
+            musicPlayerRow
+        }
+    }
+    
+    private var musicPlayerRow: some View {
+        HStack {
+            Text("Music Player")
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            
+            if !PremiumManager.shared.isPremiumUser {
+                Image(systemName: "crown.fill")
+                    .font(.caption2)
+                    .foregroundColor(.yellow)
+            }
+            
+            Spacer()
+            
+            if PremiumManager.shared.isPremiumUser {
+                Toggle("", isOn: $showMusicPlayer)
+                    .labelsHidden()
+                    .tint(.blue)
+            } else {
+                Button {
+                    HapticManager.impact(.medium)
+                    showingPremiumUpsell = true
+                } label: {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+    
+    // MARK: - Remove Ads
+    
+    @ViewBuilder
+    private var removeAdsButton: some View {
+        if !PremiumManager.shared.isPremiumUser {
+            Button {
+                HapticManager.impact(.medium)
+                showingPremiumUpsell = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "crown.fill")
+                        .foregroundColor(.yellow)
+                    Text("Remove Ads")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .font(.subheadline)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackground))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    // MARK: - Minimize
+    
+    private var minimizeButton: some View {
+        Button {
+            HapticManager.impact(.medium)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { isPresented = false }
+            onMinimize()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.compress.vertical")
+                Text("Minimize Workout")
+                    .fontWeight(.medium)
+            }
+            .font(.subheadline)
+            .foregroundColor(.orange)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.1)))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Reusable Components
+    
+    private func sectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackground))
+    }
+    
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+    }
+    
+    private func rowWithPicker<Content: View>(title: String, @ViewBuilder picker: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            picker()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+    
+    private func toggleRow(title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { isOn.wrappedValue },
+                set: { newValue in
+                    HapticManager.selectionChanged()
+                    isOn.wrappedValue = newValue
+                }
+            ))
+                .labelsHidden()
+                .tint(.blue)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+    
+    private func formatRestTime(_ seconds: Int) -> String {
+        if seconds == 0 { return "Off" }
+        let m = seconds / 60
+        let s = seconds % 60
+        if m > 0 && s > 0 { return "\(m):\(String(format: "%02d", s))" }
+        if m > 0 { return "\(m)m" }
+        return "\(s)s"
+    }
+}
+
+// MARK: - Now Playing Mini Bar
+
+import MediaPlayer
+
+private struct NowPlayingBar: View {
+    @State private var songTitle: String = ""
+    @State private var artistName: String = ""
+    @State private var isPlaying: Bool = false
+    @State private var hasLoaded: Bool = false
+    @State private var pollTimer: Timer?
+    @State private var albumArtwork: UIImage?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !songTitle.isEmpty {
+                HStack(spacing: 10) {
+                    if let artwork = albumArtwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 36, height: 36)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(songTitle)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text(artistName)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 16) {
+                        Button { skipBack() } label: {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Button { togglePlayPause() } label: {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        Button { skipForward() } label: {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 4)
+            }
+        }
+        .onAppear {
+            let player = MPMusicPlayerController.systemMusicPlayer
+            if !hasLoaded {
+                hasLoaded = true
+                player.beginGeneratingPlaybackNotifications()
+            }
+            updateFromNowPlaying()
+            startPolling()
+        }
+        .onDisappear {
+            stopPolling()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .MPMusicPlayerControllerNowPlayingItemDidChange)) { _ in
+            updateFromNowPlaying()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .MPMusicPlayerControllerPlaybackStateDidChange)) { _ in
+            updateFromNowPlaying()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            updateFromNowPlaying()
+        }
+    }
+    
+    private func startPolling() {
+        stopPolling()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            DispatchQueue.main.async { updateFromNowPlaying() }
+        }
+    }
+    
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+    
+    private func togglePlayPause() {
+        HapticManager.selectionChanged()
+        let player = MPMusicPlayerController.systemMusicPlayer
+        if isPlaying { player.pause() } else { player.play() }
+        isPlaying.toggle()
+    }
+    
+    private func skipForward() {
+        HapticManager.selectionChanged()
+        MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
+        refreshNowPlaying()
+    }
+    
+    private func skipBack() {
+        HapticManager.selectionChanged()
+        MPMusicPlayerController.systemMusicPlayer.skipToPreviousItem()
+        refreshNowPlaying()
+    }
+    
+    private func refreshNowPlaying() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { updateFromNowPlaying() }
+    }
+    
+    private func updateFromNowPlaying() {
+        let player = MPMusicPlayerController.systemMusicPlayer
+        let item = player.nowPlayingItem
+        
+        songTitle = item?.title ?? ""
+        artistName = item?.artist ?? ""
+        isPlaying = player.playbackState == .playing
+        
+        // Get artwork — keep existing if new fetch fails (transient nil)
+        if let img = item?.artwork?.image(at: CGSize(width: 200, height: 200)) {
+            albumArtwork = img
+        } else if songTitle != (item?.title ?? "") {
+            albumArtwork = nil
+        }
+        
+        // Fallback for non-Apple Music apps (Spotify, etc.)
+        if songTitle.isEmpty && AVAudioSession.sharedInstance().isOtherAudioPlaying {
+            songTitle = "Now Playing"
+            artistName = "External App"
+            isPlaying = true
         }
     }
 }

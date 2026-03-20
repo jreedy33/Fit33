@@ -227,18 +227,6 @@ class WorkoutLimitationFilter {
         targetMuscles: [String]
     ) -> (shouldExclude: Bool, penalty: Double, warnings: [String], reason: String?) {
         
-        // Use the existing LimitationFilterEngine logic
-        let (filtered, _) = LimitationFilterEngine.applyLimitations(
-            exercises: [],  // We're just using the evaluation logic
-            limitations: [limitation],
-            targetMuscles: targetMuscles,
-            metadataProvider: { _ in metadata }
-        )
-        
-        // This is a simplified single-exercise evaluation
-        // In practice, we'll directly call the internal evaluation
-        
-        // Check if exercise affects this limitation area
         let affectsArea = doesMetadataAffectArea(metadata: metadata, area: limitation.area)
         
         guard affectsArea else {

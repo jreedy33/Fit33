@@ -67,7 +67,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "square.grid.2x2.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.blue, Color.cyan],
@@ -89,7 +89,7 @@ struct SettingsView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -113,7 +113,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "play.rectangle.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.purple, Color.pink],
@@ -135,7 +135,7 @@ struct SettingsView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -160,7 +160,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "doc.text.magnifyingglass")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.orange, Color.red],
@@ -182,7 +182,7 @@ struct SettingsView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -251,7 +251,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "icloud.and.arrow.up")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.blue, Color.cyan],
@@ -302,7 +302,7 @@ struct SettingsView: View {
                                                     .scaleEffect(0.8)
                                             } else {
                                                 Image(systemName: "arrow.triangle.2.circlepath")
-                                                    .font(.system(size: 16))
+                                                    .font(.ds_bodyRegular)
                                                     .foregroundStyle(
                                                         LinearGradient(
                                                             colors: [Color.orange, Color.yellow],
@@ -345,7 +345,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "arrow.down.doc.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.green, Color.mint],
@@ -395,7 +395,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "figure.stand")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color(red: 0, green: 0.48, blue: 0.8), Color.cyan],
@@ -419,11 +419,11 @@ struct SettingsView: View {
                                         if InBodyService.shared.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
-                                                .font(.system(size: 14))
+                                                .font(.ds_bodySmall)
                                         }
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -447,7 +447,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "figure.run")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color.orange],
@@ -471,10 +471,10 @@ struct SettingsView: View {
                                         if stravaService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
-                                                .font(.system(size: 20))
+                                                .font(.ds_heading3)
                                         } else {
                                             Image(systemName: "chevron.right")
-                                                .font(.system(size: 14, weight: .medium))
+                                                .font(.ds_bodySmall).fontWeight(.medium)
                                                 .foregroundColor(.secondary)
                                         }
                                     }
@@ -499,7 +499,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "heart.circle.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color(red: 0, green: 0.73, blue: 0.77), Color(red: 0, green: 0.55, blue: 0.58)],
@@ -523,10 +523,10 @@ struct SettingsView: View {
                                         if fitbitService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
-                                                .font(.system(size: 20))
+                                                .font(.ds_heading3)
                                         } else {
                                             Image(systemName: "chevron.right")
-                                                .font(.system(size: 14, weight: .medium))
+                                                .font(.ds_bodySmall).fontWeight(.medium)
                                                 .foregroundColor(.secondary)
                                         }
                                     }
@@ -551,7 +551,7 @@ struct SettingsView: View {
                                                 )
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "heart.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [Color.red, Color.pink],
@@ -575,10 +575,10 @@ struct SettingsView: View {
                                         if healthKitService.isAuthorized {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
-                                                .font(.system(size: 20))
+                                                .font(.ds_heading3)
                                         } else {
                                             Image(systemName: "chevron.right")
-                                                .font(.system(size: 14, weight: .medium))
+                                                .font(.ds_bodySmall).fontWeight(.medium)
                                                 .foregroundColor(.secondary)
                                         }
                                     }
@@ -630,7 +630,7 @@ struct SettingsView: View {
                                                 .fill(Color.red.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "ant.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundColor(.red)
                                         }
                                         
@@ -716,7 +716,7 @@ struct SettingsView: View {
                                                 .fill(Color.gray.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "doc.text.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundColor(.gray)
                                         }
                                         
@@ -732,7 +732,7 @@ struct SettingsView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -749,7 +749,7 @@ struct SettingsView: View {
                                                 .fill(Color.gray.opacity(0.15))
                                                 .frame(width: 36, height: 36)
                                             Image(systemName: "hand.raised.fill")
-                                                .font(.system(size: 16))
+                                                .font(.ds_bodyRegular)
                                                 .foregroundColor(.gray)
                                         }
                                         
@@ -765,7 +765,7 @@ struct SettingsView: View {
                                         Spacer()
                                         
                                         Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.ds_bodySmall).fontWeight(.medium)
                                             .foregroundColor(.secondary)
                                     }
                                     .padding(.vertical, Spacing.sm)
@@ -814,7 +814,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             content()
                 .background(
@@ -922,11 +922,11 @@ struct SettingsView: View {
                     )
                     .frame(width: 36, height: 36)
                 Image(systemName: premiumManager.isPremiumUser ? "crown.fill" : "person.fill")
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                     .foregroundStyle(
                         LinearGradient(
                             colors: premiumManager.isPremiumUser 
-                                ? [Color.green, Color.mint]
+                                ? [Color.yellow, Color.orange]
                                 : [Color.orange, Color.yellow],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -984,7 +984,7 @@ struct SettingsView: View {
                         )
                         .frame(width: 36, height: 36)
                     Image(systemName: "testtube.2")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [Color.purple, Color.pink],
@@ -1010,7 +1010,7 @@ struct SettingsView: View {
                         .scaleEffect(0.8)
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.ds_bodySmall).fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
             }
@@ -1268,7 +1268,7 @@ struct SettingsView: View {
                         .frame(width: 36, height: 36)
                     
                     Image(systemName: "bell.badge.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
                 

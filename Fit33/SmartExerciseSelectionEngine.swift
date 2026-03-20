@@ -18,9 +18,9 @@
 import Foundation
 import CoreData
 
-// MARK: - Movement Pattern Definitions
+// MARK: - Selection Movement Pattern Definitions
 
-enum MovementPattern: String, CaseIterable {
+enum SelectionMovementPattern: String, CaseIterable {
     case horizontalPress = "horizontal_press"    // Bench press, push-ups
     case verticalPress = "vertical_press"        // Overhead press, push press
     case horizontalPull = "horizontal_pull"      // Rows
@@ -119,7 +119,7 @@ enum WorkoutStyle: String, CaseIterable {
 struct SmartSelectedExercise {
     let exercise: Exercise
     let score: Double
-    let movementPattern: MovementPattern
+    let movementPattern: SelectionMovementPattern
     let exerciseType: ExerciseType
     
     var name: String { exercise.name ?? "Unknown" }
@@ -269,25 +269,8 @@ class SmartExerciseSelectionEngine {
         // ═══════════════════════════════════════════════════════════════════════════
         let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
         
-        print("╔══════════════════════════════════════════════════════════════╗")
-        print("║         🧠 SMART EXERCISE SELECTION ENGINE                   ║")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ USER INPUTS BEING APPLIED:")
-        print("║   • Target Muscles: \(targetMuscles.joined(separator: ", "))")
-        print("║   • Exercise Count: \(exerciseCount)")
-        print("║   • Is Gym User: \(isGymUser)")
-        print("║   • User Equipment: \(userEquipment.joined(separator: ", "))")
-        print("║   • User Goal: \(userGoal)")
-        print("║   • Experience Level: \(experienceLevel)")
-        print("║   • Previous Day Exercises: \(previousDayExercises.count) to avoid")
-        print("║   • Max Per Equipment Type: \(maxPerEquipmentType) (50% rule)")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ 🌟 PROGRESSIVE UNLOCK STATUS:")
-        print("║   • Total Workouts Completed: \(userWorkoutCount)")
-        print("║   • Current Unlock Tier: \(currentTier.displayName)")
-        print("║   • Restrict to Foundational: \(restrictToFoundational ? "YES ⚠️" : "NO")")
-        print("║   • Variety Percentage: \(Int(varietyPercentage * 100))%")
-        print("╠══════════════════════════════════════════════════════════════╣")
+        AppLogger.debug("SMART EXERCISE SELECTION — Muscles: \(targetMuscles.joined(separator: ", ")), Count: \(exerciseCount), Gym: \(isGymUser), Equipment: \(userEquipment.joined(separator: ", ")), Goal: \(userGoal), Level: \(experienceLevel), PrevDay: \(previousDayExercises.count), MaxPerEquip: \(maxPerEquipmentType)", category: .workout)
+        AppLogger.debug("PROGRESSIVE UNLOCK — Workouts: \(userWorkoutCount), Tier: \(currentTier.displayName), Foundational: \(restrictToFoundational), Variety: \(Int(varietyPercentage * 100))%", category: .workout)
         
         // Get all exercises from library
         let allExercises = ExerciseLibraryService.shared.getAllExercises()
@@ -297,22 +280,13 @@ class SmartExerciseSelectionEngine {
         // ═══════════════════════════════════════════════════════════════════════════
         let safeExercises = LimitationsService.shared.filterSafeExercises(allExercises)
         let filteredOutCount = allExercises.count - safeExercises.count
-        print("║ LIMITATION FILTERING:")
-        print("║   • Total exercises available: \(allExercises.count)")
-        print("║   • Safe exercises after filter: \(safeExercises.count)")
-        print("║   • Filtered out for safety: \(filteredOutCount)")
-        if LimitationsService.shared.hasActiveLimitationsSync {
-            print("║   • User has active limitations ⚠️")
-        } else {
-            print("║   • No active limitations ✓")
-        }
-        print("╠══════════════════════════════════════════════════════════════╣")
+        AppLogger.debug("LIMITATION FILTERING — Available: \(allExercises.count), Safe: \(safeExercises.count), Filtered: \(filteredOutCount), Active limitations: \(LimitationsService.shared.hasActiveLimitationsSync)", category: .workout)
         
         // Get user behavior learning data
         let learningEngine = UserBehaviorLearningEngine.shared
         
         // Score all exercises
-        var scoredExercises: [(exercise: Exercise, score: Double, pattern: MovementPattern, type: ExerciseType)] = []
+        var scoredExercises: [(exercise: Exercise, score: Double, pattern: SelectionMovementPattern, type: ExerciseType)] = []
         
         for exercise in safeExercises {
             guard let exerciseName = exercise.name else { continue }
@@ -393,7 +367,7 @@ class SmartExerciseSelectionEngine {
                     $0.contains("bodyweight") || $0.contains("body weight")
                 }
                 if !equipmentMatch {
-                    print("   🚫 [EQUIPMENT] Excluding '\(exerciseName)': bodyweight not in user equipment")
+                    AppLogger.debug("Excluding '\(exerciseName)': bodyweight not in user equipment", category: .workout)
                 }
             } else {
                 // 🛡️ SAFETY CHECK: Check exercise NAME for equipment keywords
@@ -405,7 +379,7 @@ class SmartExerciseSelectionEngine {
                 let userHasBands = userEquipmentNormalized.contains { $0.contains("band") || $0.contains("resistance") }
                 
                 if nameIndicatesBands && !userHasBands {
-                    print("   🚫 [NAME CHECK] Excluding '\(exerciseName)': name indicates bands but user doesn't have bands")
+                    AppLogger.debug("Excluding '\(exerciseName)': name indicates bands but user doesn't have bands", category: .workout)
                     equipmentMatch = false
                 } else {
                     // 🔧 Use smart equipment matching that handles database format
@@ -415,7 +389,7 @@ class SmartExerciseSelectionEngine {
                     
                     // Log equipment exclusions for debugging
                     if !equipmentMatch {
-                        print("   🚫 [EQUIPMENT] Excluding '\(exerciseName)': requires '\(equipment)' but user has \(userEquipment)")
+                        AppLogger.debug("Excluding '\(exerciseName)': requires '\(equipment)' but user has \(userEquipment)", category: .workout)
                     }
                 }
             }
@@ -434,7 +408,7 @@ class SmartExerciseSelectionEngine {
             if restrictToFoundational || userWorkoutCount < 10 {
                 let foundationalDB = FoundationalExerciseDatabase.shared
                 if foundationalDB.isRiskyExercise(nameLower) {
-                    print("   🚫 [RISKY] Excluding '\(exerciseName)' - risky exercise blocked for foundational user")
+                    AppLogger.debug("Excluding '\(exerciseName)' - risky exercise blocked for foundational user", category: .workout)
                     continue
                 }
             }
@@ -446,7 +420,7 @@ class SmartExerciseSelectionEngine {
             if hasLowerBackIssue {
                 let foundationalDB = FoundationalExerciseDatabase.shared
                 if foundationalDB.isLowerBackStressExercise(nameLower) {
-                    print("   🚫 [BACK SAFETY] Excluding '\(exerciseName)' - lower back stress exercise blocked for user with back limitation")
+                    AppLogger.debug("Excluding '\(exerciseName)' - lower back stress exercise blocked for user with back limitation", category: .workout)
                     continue
                 }
             }
@@ -478,7 +452,7 @@ class SmartExerciseSelectionEngine {
             }
             
             if practicalityResult.shouldExclude {
-                print("   🚫 [PRACTICALITY] Excluding '\(exerciseName)': \(practicalityResult.reason)")
+                AppLogger.debug("Excluding '\(exerciseName)': \(practicalityResult.reason)", category: .workout)
                 continue
             }
             
@@ -512,7 +486,7 @@ class SmartExerciseSelectionEngine {
             // Check if user should be restricted to foundational exercises only
             if restrictToFoundational && foundationalBoost < 0 {
                 // New user + non-foundational exercise = heavy penalty (but don't always skip)
-                print("   🚫 [BEGINNER] Heavy penalty for '\(exerciseName)': non-foundational for new user")
+                AppLogger.debug("Heavy penalty for '\(exerciseName)': non-foundational for new user", category: .workout)
                 score -= 200  // Heavy penalty instead of hard skip to allow some flexibility
             }
             
@@ -530,7 +504,7 @@ class SmartExerciseSelectionEngine {
             if riskyPenalty != 0 {
                 score += riskyPenalty
                 if riskyPenalty < -100 {
-                    print("   ⚠️ [SAFETY] '\(exerciseName)' penalty: \(Int(riskyPenalty))")
+                    AppLogger.warning("'\(exerciseName)' safety penalty: \(Int(riskyPenalty))", category: .workout)
                 }
             }
             
@@ -540,7 +514,7 @@ class SmartExerciseSelectionEngine {
             // └─────────────────────────────────────────────────────────────┘
             if hasLowerBackIssue && foundationalDB.isLowerBackSafeAlternative(nameLower) {
                 score += 100
-                print("   ✅ [BACK SAFE] '\(exerciseName)' boosted +100 (safe for lower back)")
+                AppLogger.debug("'\(exerciseName)' boosted +100 (safe for lower back)", category: .workout)
             }
             
             // ┌─────────────────────────────────────────────────────────────┐
@@ -653,7 +627,7 @@ class SmartExerciseSelectionEngine {
                 
                 if comboPatterns.contains(where: { nameLower.contains($0) }) || isLungeCurlCombo || isLungePressCombo {
                     score -= 200  // VERY heavy penalty - exclude combo moves for beginners
-                    print("   ⚠️ [BEGINNER] Penalizing combo exercise: \(exerciseName)")
+                    AppLogger.debug("Penalizing combo exercise for beginner: \(exerciseName)", category: .workout)
                 }
                 
                 // COMPLEX PLANK VARIATIONS: Plank with dumbbells, rows, raises
@@ -669,7 +643,7 @@ class SmartExerciseSelectionEngine {
                 
                 if complexPlankPatterns.contains(where: { nameLower.contains($0) }) || isPlankCombo {
                     score -= 200  // VERY heavy penalty for complex plank variations
-                    print("   ⚠️ [BEGINNER] Penalizing complex plank: \(exerciseName)")
+                    AppLogger.debug("Penalizing complex plank for beginner: \(exerciseName)", category: .workout)
                 }
                 
                 // TWISTING/ROTATING - too much coordination for beginners
@@ -679,7 +653,7 @@ class SmartExerciseSelectionEngine {
                 ]
                 if complexMovementPatterns.contains(where: { nameLower.contains($0) }) {
                     score -= 150  // Heavy penalty for coordination-heavy movements
-                    print("   ⚠️ [BEGINNER] Penalizing complex movement: \(exerciseName)")
+                    AppLogger.debug("Penalizing complex movement for beginner: \(exerciseName)", category: .workout)
                 }
                 
                 // OVERLY COMPLEX NAMES (usually indicate complex movements)
@@ -732,20 +706,20 @@ class SmartExerciseSelectionEngine {
             // SHRUGS on Push Day = Wrong category (shrugs are traps/pull movement)
             if isPushDay && nameLower.contains("shrug") {
                 score -= 150  // Heavy penalty - shrugs don't belong on push days
-                print("   ⚠️ [CATEGORY] Penalizing shrug on push day: \(exerciseName)")
+                AppLogger.debug("Penalizing shrug on push day: \(exerciseName)", category: .workout)
             }
             
             // SQUATS/LEG PRESS on Core Day = Wrong category
             if isCoreDay && (nameLower.contains("squat") || nameLower.contains("leg press") || 
                             nameLower.contains("lunge") || nameLower.contains("deadlift")) {
                 score -= 200  // Heavy penalty - big lifts don't belong on core days
-                print("   ⚠️ [CATEGORY] Penalizing compound leg move on core day: \(exerciseName)")
+                AppLogger.debug("Penalizing compound leg move on core day: \(exerciseName)", category: .workout)
             }
             
             // UPRIGHT ROWS - Shoulder irritation risk for many users
             if nameLower.contains("upright row") {
                 score -= 80  // Moderate penalty - risky for shoulders
-                print("   ⚠️ [SAFETY] Penalizing upright row (shoulder risk): \(exerciseName)")
+                AppLogger.warning("Penalizing upright row (shoulder risk): \(exerciseName)", category: .workout)
             }
             
             // ┌─────────────────────────────────────────────────────────────┐
@@ -782,7 +756,7 @@ class SmartExerciseSelectionEngine {
             
             if isCombo {
                 score -= 150  // Heavy penalty for ALL users - these are impractical
-                print("   ⚠️ [COMBO] Penalizing combo exercise: \(exerciseName)")
+                AppLogger.debug("Penalizing combo exercise: \(exerciseName)", category: .workout)
             }
             
             // COMPLEX PLANK PENALTY - For ALL users (shoulder stability heavy)
@@ -797,7 +771,7 @@ class SmartExerciseSelectionEngine {
             
             if complexPlankPatterns.contains(where: { nameLower.contains($0) }) || isPlankCombo {
                 score -= 250  // Very strong penalty for complex planks (all users)
-                print("   ⚠️ [PLANK] Penalizing complex plank: \(exerciseName)")
+                AppLogger.debug("Penalizing complex plank: \(exerciseName)", category: .workout)
             }
             
             // ┌─────────────────────────────────────────────────────────────┐
@@ -834,7 +808,7 @@ class SmartExerciseSelectionEngine {
         
         var selectedExercises: [SmartSelectedExercise] = []
         var selectedNames: Set<String> = []
-        var patternCounts: [MovementPattern: Int] = [:]
+        var patternCounts: [SelectionMovementPattern: Int] = [:]
         var equipmentCounts: [String: Int] = [:]  // Track equipment diversity
         var exerciseBundleCounts: [String: Int] = [:]   // 📦 Track exercise BUNDLES (not just families)
         var exerciseFamilyCounts: [String: Int] = [:]    // Also track families within bundles
@@ -848,7 +822,7 @@ class SmartExerciseSelectionEngine {
         // 📦 Bundle engine handles max-per-workout limits intelligently
         let bundleEngine = ExerciseBundleEngine.shared
         
-        print("📊 Target mix: \(targetCompounds) compounds, \(targetIsolations) isolations, max \(maxPerEquipmentType) per equipment type")
+        AppLogger.debug("Target mix: \(targetCompounds) compounds, \(targetIsolations) isolations, max \(maxPerEquipmentType) per equipment type", category: .workout)
         
         for (exercise, score, pattern, type) in scoredExercises {
             guard selectedExercises.count < exerciseCount else { break }
@@ -878,7 +852,7 @@ class SmartExerciseSelectionEngine {
             if let bundle = bundle {
                 let currentBundleCount = exerciseBundleCounts[bundle.id, default: 0]
                 if currentBundleCount >= bundle.maxPerWorkout {
-                    print("   ⏭️ Skipping \(exercise.name ?? "") - already have \(currentBundleCount)/\(bundle.maxPerWorkout) '\(bundle.displayName)' exercises in this workout")
+                    AppLogger.debug("Skipping \(exercise.name ?? "") - already have \(currentBundleCount)/\(bundle.maxPerWorkout) '\(bundle.displayName)' exercises", category: .workout)
                     continue
                 }
             }
@@ -886,7 +860,7 @@ class SmartExerciseSelectionEngine {
             // Also check exact family within bundle (max 1 per family)
             let currentFamilyCount = exerciseFamilyCounts[exerciseFamily, default: 0]
             if exerciseFamily != "other" && currentFamilyCount >= 1 {
-                print("   ⏭️ Skipping \(exercise.name ?? "") - already have a '\(exerciseFamily)' exercise")
+                AppLogger.debug("Skipping \(exercise.name ?? "") - already have a '\(exerciseFamily)' exercise", category: .workout)
                 continue
             }
             
@@ -895,7 +869,7 @@ class SmartExerciseSelectionEngine {
             // ═══════════════════════════════════════════════════════════════
             let currentEquipmentCount = equipmentCounts[equipmentCategory, default: 0]
             if currentEquipmentCount >= maxPerEquipmentType {
-                print("   ⏭️ Skipping \(exercise.name ?? "") - already have \(currentEquipmentCount) \(equipmentCategory) exercises (max: \(maxPerEquipmentType))")
+                AppLogger.debug("Skipping \(exercise.name ?? "") - already have \(currentEquipmentCount) \(equipmentCategory) exercises (max: \(maxPerEquipmentType))", category: .workout)
                 continue
             }
             
@@ -904,7 +878,7 @@ class SmartExerciseSelectionEngine {
             // ═══════════════════════════════════════════════════════════════
             let currentPatternCount = patternCounts[pattern, default: 0]
             if currentPatternCount >= pattern.maxPerWorkout {
-                print("   ⏭️ Skipping \(exercise.name ?? "") - already have \(currentPatternCount) \(pattern.rawValue) exercises")
+                AppLogger.debug("Skipping \(exercise.name ?? "") - already have \(currentPatternCount) \(pattern.rawValue) exercises", category: .workout)
                 continue
             }
             
@@ -944,7 +918,7 @@ class SmartExerciseSelectionEngine {
             if type == .compound { compoundCount += 1 }
             if type == .isolation { isolationCount += 1 }
             
-            print("   ✅ Selected: \(exercise.name ?? "") (\(pattern.rawValue), \(type.rawValue), \(equipmentCategory), score: \(Int(score)))")
+            AppLogger.debug("Selected: \(exercise.name ?? "") (\(pattern.rawValue), \(type.rawValue), \(equipmentCategory), score: \(Int(score)))", category: .workout)
         }
         
         // ═══════════════════════════════════════════════════════════════════
@@ -962,15 +936,10 @@ class SmartExerciseSelectionEngine {
             return exercise1.score > exercise2.score
         }
         
-        print("║ FINAL SELECTION RESULTS:")
-        print("║   • Compounds: \(compoundCount), Isolations: \(isolationCount)")
-        print("║   • Pattern distribution: \(patternCounts.map { "\($0.key.rawValue): \($0.value)" }.joined(separator: ", "))")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ SELECTED EXERCISES:")
+        AppLogger.debug("FINAL RESULTS — Compounds: \(compoundCount), Isolations: \(isolationCount), Patterns: \(patternCounts.map { "\($0.key.rawValue): \($0.value)" }.joined(separator: ", "))", category: .workout)
         for (index, ex) in selectedExercises.enumerated() {
-            print("║   \(index + 1). \(ex.name) [\(ex.equipment)] - \(ex.exerciseType.rawValue)")
+            AppLogger.debug("  \(index + 1). \(ex.name) [\(ex.equipment)] - \(ex.exerciseType.rawValue)", category: .workout)
         }
-        print("╚══════════════════════════════════════════════════════════════╝")
         
         return selectedExercises
     }
@@ -1326,7 +1295,7 @@ class SmartExerciseSelectionEngine {
     
     // MARK: - Movement Pattern Classification
     
-    private func classifyMovementPattern(exerciseName: String, muscles: String) -> MovementPattern {
+    private func classifyMovementPattern(exerciseName: String, muscles: String) -> SelectionMovementPattern {
         let name = exerciseName.lowercased()
         
         // === SHRUGS (check before presses due to name overlap) ===
@@ -1493,7 +1462,7 @@ class SmartExerciseSelectionEngine {
     // MARK: - Public Movement Pattern Accessor
     
     /// Get the movement pattern for an exercise (public accessor for SmartDayGenerator)
-    func getMovementPattern(for exerciseName: String) -> MovementPattern {
+    func getMovementPattern(for exerciseName: String) -> SelectionMovementPattern {
         return classifyMovementPattern(exerciseName: exerciseName.lowercased(), muscles: "")
     }
     
@@ -1622,12 +1591,30 @@ class SmartExerciseSelectionEngine {
     
     private func matchBroadMuscleGroup(_ muscle: String, exerciseMuscles: String, category: String) -> Bool {
         switch muscle {
-        case "chest": return exerciseMuscles.contains("pec") || category.contains("chest")
-        case "back": return exerciseMuscles.contains("lat") || exerciseMuscles.contains("trap") || exerciseMuscles.contains("rhomb")
-        case "legs": return exerciseMuscles.contains("quad") || exerciseMuscles.contains("ham") || exerciseMuscles.contains("glut") || exerciseMuscles.contains("calf")
-        case "arms": return exerciseMuscles.contains("bicep") || exerciseMuscles.contains("tricep") || exerciseMuscles.contains("forearm")
-        case "shoulders": return exerciseMuscles.contains("delt") || exerciseMuscles.contains("shoulder")
-        case "core": return exerciseMuscles.contains("ab") || exerciseMuscles.contains("oblique") || exerciseMuscles.contains("core")
+        case "chest", "upper chest", "lower chest":
+            return exerciseMuscles.contains("chest") || category.contains("chest")
+        case "back", "upper back", "lower back", "lats":
+            return exerciseMuscles.contains("lat") || exerciseMuscles.contains("trap") || exerciseMuscles.contains("back") || category.contains("back")
+        case "legs", "quadriceps", "quads":
+            return exerciseMuscles.contains("quad") || exerciseMuscles.contains("ham") || exerciseMuscles.contains("glut") || exerciseMuscles.contains("calf") || category.contains("leg")
+        case "arms":
+            return exerciseMuscles.contains("bicep") || exerciseMuscles.contains("tricep") || exerciseMuscles.contains("forearm") || category.contains("arm")
+        case "shoulders", "front delts", "side delts", "rear delts", "rotator cuff":
+            return exerciseMuscles.contains("delt") || exerciseMuscles.contains("shoulder") || exerciseMuscles.contains("rotator") || category.contains("shoulder")
+        case "core", "abs", "obliques", "lower abs":
+            return exerciseMuscles.contains("ab") || exerciseMuscles.contains("oblique") || exerciseMuscles.contains("core") || category.contains("core")
+        case "hips", "hip flexors", "inner thighs":
+            return exerciseMuscles.contains("hip") || exerciseMuscles.contains("inner thigh") || exerciseMuscles.contains("adduct") || category.contains("hip")
+        case "neck":
+            return exerciseMuscles.contains("neck") || category.contains("neck")
+        case "full body":
+            return exerciseMuscles.contains("full body") || category.contains("full body")
+        case "traps":
+            return exerciseMuscles.contains("trap") || category.contains("back")
+        case "forearms":
+            return exerciseMuscles.contains("forearm") || exerciseMuscles.contains("grip")
+        case "calves":
+            return exerciseMuscles.contains("calf") || exerciseMuscles.contains("calves")
         default: return false
         }
     }
@@ -1797,7 +1784,7 @@ extension SmartExerciseSelectionEngine {
 struct OptimalWorkoutTemplates {
     
     /// Optimal Push Day structure
-    static let pushDay: [(pattern: MovementPattern, equipment: String?, notes: String)] = [
+    static let pushDay: [(pattern: SelectionMovementPattern, equipment: String?, notes: String)] = [
         (.horizontalPress, "Barbell", "Primary compound - flat or incline bench press"),
         (.horizontalPress, "Dumbbells", "Secondary press - different angle"),
         (.chestFly, "Cables", "Chest isolation - stretch under load"),
@@ -1806,7 +1793,7 @@ struct OptimalWorkoutTemplates {
     ]
     
     /// Optimal Pull Day structure
-    static let pullDay: [(pattern: MovementPattern, equipment: String?, notes: String)] = [
+    static let pullDay: [(pattern: SelectionMovementPattern, equipment: String?, notes: String)] = [
         (.horizontalPull, "Barbell", "Primary compound - barbell or cable row"),
         (.verticalPull, nil, "Secondary pull - pulldowns or pull-ups"),
         (.horizontalPull, "Dumbbells", "Unilateral row variation"),
@@ -1815,7 +1802,7 @@ struct OptimalWorkoutTemplates {
     ]
     
     /// Optimal Leg Day structure
-    static let legDay: [(pattern: MovementPattern, equipment: String?, notes: String)] = [
+    static let legDay: [(pattern: SelectionMovementPattern, equipment: String?, notes: String)] = [
         (.squat, "Barbell", "Primary compound - back squat or front squat"),
         (.hinge, "Barbell", "Hip hinge - RDL or deadlift variation"),
         (.lunge, "Dumbbells", "Unilateral - lunges or split squats"),

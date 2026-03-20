@@ -308,23 +308,30 @@ class BodyCompositionTrackingService: ObservableObject {
             )]
         }
         
-        // Body fat insights
+        // Body fat insights (gender-aware thresholds)
         if let bf = current.bodyFatPercentage {
-            if bf < 8 {
+            let userGender = (UserDefaults.standard.string(forKey: "userGender") ?? "").lowercased()
+            let isFemale = userGender.contains("female") || userGender.contains("woman")
+            
+            let veryLowThreshold: Double = isFemale ? 12 : 8
+            let athleticThreshold: Double = isFemale ? 18 : 15
+            let highThreshold: Double = isFemale ? 32 : 25
+            
+            if bf < veryLowThreshold {
                 insights.append(BodyCompositionInsight(
                     type: .warning,
                     title: "Very Low Body Fat",
-                    message: "Body fat below 8% can affect hormone levels and recovery. Consider a maintenance phase.",
+                    message: "Body fat below \(Int(veryLowThreshold))% can affect hormone levels and recovery. Consider a maintenance phase.",
                     actionText: nil
                 ))
-            } else if bf >= 8 && bf < 15 {
+            } else if bf >= veryLowThreshold && bf < athleticThreshold {
                 insights.append(BodyCompositionInsight(
                     type: .success,
                     title: "Athletic Body Fat",
                     message: "You're in the athletic range. Great for performance!",
                     actionText: nil
                 ))
-            } else if bf >= 25 {
+            } else if bf >= highThreshold {
                 insights.append(BodyCompositionInsight(
                     type: .info,
                     title: "Fat Loss Potential",

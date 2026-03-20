@@ -48,9 +48,8 @@ class ExerciseNicknameService: ObservableObject {
     
     /// Auto-capitalize a nickname (Title Case)
     func autoCapitalize(_ text: String) -> String {
-        return text.split(separator: " ")
+        let result = text.split(separator: " ")
             .map { word in
-                // Keep short words lowercase unless at start
                 let lowercased = word.lowercased()
                 if ["a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with"].contains(lowercased) {
                     return String(lowercased)
@@ -58,7 +57,7 @@ class ExerciseNicknameService: ObservableObject {
                 return word.prefix(1).uppercased() + word.dropFirst().lowercased()
             }
             .joined(separator: " ")
-            .prefix(1).uppercased() + text.dropFirst() // Ensure first letter is always capitalized
+        return result.prefix(1).uppercased() + result.dropFirst()
     }
     
     // MARK: - Data Management

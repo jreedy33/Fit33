@@ -118,7 +118,7 @@ struct FavoriteRoutinesView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.xl)
             }
         }
         .padding()
@@ -385,7 +385,7 @@ struct FavoriteWorkoutCard: View {
                         
                         // Expand/collapse chevron
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.secondary.opacity(0.5))
                             .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
@@ -399,10 +399,10 @@ struct FavoriteWorkoutCard: View {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(workoutGradient[0])
                                 Text(formatDuration(Int(workout.duration)))
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(.primary)
                             }
                             Text("Duration")
@@ -419,10 +419,10 @@ struct FavoriteWorkoutCard: View {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "figure.strengthtraining.traditional")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(workoutGradient[0])
                                 Text("\(exerciseCount)")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(.primary)
                             }
                             Text("Exercises")
@@ -439,10 +439,10 @@ struct FavoriteWorkoutCard: View {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "repeat")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(workoutGradient[0])
                                 Text("\(totalSets)")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(.primary)
                             }
                             Text("Sets")
@@ -459,10 +459,10 @@ struct FavoriteWorkoutCard: View {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "star.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                     .foregroundColor(.orange)
                                 Text("+\(Int(workout.xpEarned))")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(.primary)
                             }
                             Text("XP")
@@ -481,7 +481,7 @@ struct FavoriteWorkoutCard: View {
                                     .fontWeight(.medium)
                                     .foregroundColor(workoutGradient[0])
                                     .padding(.horizontal, Spacing.xs)
-                                    .padding(.vertical, 4)
+                                    .padding(.vertical, Spacing.xxs)
                                     .background(
                                         Capsule()
                                             .fill(workoutGradient[0].opacity(0.12))
@@ -538,7 +538,7 @@ struct FavoriteWorkoutCard: View {
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                             Text("Start Routine")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
@@ -692,7 +692,7 @@ struct FavoriteExerciseCard: View {
                     CoreIcon(size: 22, color: .white)
                 } else {
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
             }
@@ -736,7 +736,7 @@ struct FavoriteExerciseCard: View {
                     .fontWeight(.medium)
                     .foregroundColor(categoryColor)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(categoryColor.opacity(0.12))
@@ -881,7 +881,7 @@ struct FavoriteExerciseFallbackCard: View {
                     CoreIcon(size: 22, color: .white)
                 } else {
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
             }
@@ -923,7 +923,7 @@ struct FavoriteExerciseFallbackCard: View {
                     .fontWeight(.medium)
                     .foregroundColor(categoryColor)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule()
                             .fill(categoryColor.opacity(0.12))

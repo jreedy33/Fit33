@@ -226,7 +226,7 @@ struct StreakAtRiskAlert: View {
                     .frame(width: 60, height: 60)
                 
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             
@@ -318,13 +318,13 @@ struct StreakAtRiskAlert: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
         )
-        .padding(.horizontal, 32)
+        .padding(.horizontal, Spacing.xl)
     }
 }
 
@@ -337,13 +337,13 @@ struct StreakShieldBadge: View {
         if shieldService.availableShields > 0 {
             HStack(spacing: 4) {
                 Image(systemName: "shield.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text("\(shieldService.availableShields)")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
             }
             .foregroundColor(.white)
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(

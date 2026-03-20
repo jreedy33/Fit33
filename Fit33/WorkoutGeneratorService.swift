@@ -97,8 +97,8 @@ class WorkoutGeneratorService: ObservableObject {
     
     /// Get recommended exercise count based on workout duration.
     /// Delegates to the canonical implementation in WorkoutComboRules.
-    static func exerciseCountForDuration(_ durationMinutes: Int) -> Int {
-        return getExerciseCountForDuration(durationMinutes)
+    static func exerciseCountForDuration(_ durationMinutes: Int, equipmentIsMostlyMachines: Bool = false) -> Int {
+        return getExerciseCountForDuration(durationMinutes, equipmentIsMostlyMachines: equipmentIsMostlyMachines)
     }
     
     // ⚡️ Use the shared Supabase client instead of duplicating credentials
@@ -138,23 +138,8 @@ class WorkoutGeneratorService: ObservableObject {
         let user = UserManager.shared.currentUser
         
         #if DEBUG
-        print("╔══════════════════════════════════════════════════════════════╗")
-        print("║            🎯 AUTO-GEN WORKOUT GENERATION                    ║")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ USER PROFILE (from database):")
-        print("║   • Name: \(user?.name ?? "Unknown")")
-        print("║   • Goal: \(user?.fitnessGoal ?? "Not set")")
-        print("║   • Experience: \(user?.experienceLevel ?? "Not set")")
-        print("║   • Workout Environment: \(user?.workoutEnvironment ?? "Not set")")
-        print("║   • Stored Equipment: \(user?.getEquipment()?.joined(separator: ", ") ?? "None")")
-        print("║   • Available Days: \(user?.availableDays ?? 0)")
-        print("╠══════════════════════════════════════════════════════════════╣")
-        print("║ WORKOUT REQUEST:")
-        print("║   • Primary Muscles: \(primaryMuscles.joined(separator: ", "))")
-        print("║   • Secondary Muscles: \(secondaryMuscles.joined(separator: ", "))")
-        print("║   • Equipment Filter: \(equipment.joined(separator: ", "))")
-        print("║   • Exercise Count: \(count)")
-        print("╠══════════════════════════════════════════════════════════════╣")
+        AppLogger.debug("AUTO-GEN WORKOUT GENERATION | User: \(user?.name ?? "Unknown"), Goal: \(user?.fitnessGoal ?? "Not set"), Experience: \(user?.experienceLevel ?? "Not set"), Environment: \(user?.workoutEnvironment ?? "Not set"), Equipment: \(user?.getEquipment()?.joined(separator: ", ") ?? "None"), Available Days: \(user?.availableDays ?? 0)", category: .workout)
+        AppLogger.debug("WORKOUT REQUEST | Primary: \(primaryMuscles.joined(separator: ", ")), Secondary: \(secondaryMuscles.joined(separator: ", ")), Equipment: \(equipment.joined(separator: ", ")), Count: \(count)", category: .workout)
         #endif
         
         // 🚀 SIMPLE & CLEAN: Generate exercises that hit user's selected muscles
@@ -171,7 +156,7 @@ class WorkoutGeneratorService: ObservableObject {
                 }
             }
             #if DEBUG
-            print("║ 🚫 Excluding \(excludeNames.count) previously used exercises")
+            AppLogger.debug("Excluding \(excludeNames.count) previously used exercises", category: .workout)
             #endif
         }
         
@@ -186,12 +171,10 @@ class WorkoutGeneratorService: ObservableObject {
         if !coreDataExercises.isEmpty {
             let duration = Date().timeIntervalSince(startTime)
             #if DEBUG
-            print("║ GENERATION COMPLETE:")
-            print("║   ✅ Generated \(coreDataExercises.count) exercises")
+            AppLogger.info("Generation complete: \(coreDataExercises.count) exercises", category: .workout)
             for (index, ex) in coreDataExercises.enumerated() {
-                print("║   \(index + 1). \(ex.name) [\(ex.equipment ?? "Bodyweight")]")
+                AppLogger.debug("  \(index + 1). \(ex.name) [\(ex.equipment ?? "Bodyweight")]", category: .workout)
             }
-            print("╚══════════════════════════════════════════════════════════════╝")
             #endif
             
             // Log generation complete
@@ -215,7 +198,7 @@ class WorkoutGeneratorService: ObservableObject {
         
         if !exercises.isEmpty {
             #if DEBUG
-            print("✅ Generated \(exercises.count) exercises from fallback")
+            AppLogger.info("Generated \(exercises.count) exercises from fallback", category: .workout)
             #endif
             generatedExercises = exercises
             return exercises
@@ -239,13 +222,13 @@ class WorkoutGeneratorService: ObservableObject {
                     )
                 )
             
-            print("✅ Generated \(response.exercises.count) exercises from cloud")
+            AppLogger.info("Generated \(response.exercises.count) exercises from cloud", category: .workout)
             generatedExercises = response.exercises
             
             return response.exercises
             
         } catch {
-            print("❌ Cloud generation failed: \(error)")
+            AppLogger.error("Cloud generation failed: \(error.localizedDescription)", category: .workout)
             self.error = "Failed to generate workout: \(error.localizedDescription)"
             throw error
         }
@@ -312,11 +295,7 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("🔍 Searching for exercises matching:")
-        print("   User selected primaries: \(normalizedPrimaries)")
-        print("   Target categories: \(targetCategories)")
-        print("   Target muscles: \(targetMuscles)")
-        print("   Equipment: \(normalizedEquipment)")
+        AppLogger.debug("Searching for exercises matching: primaries=\(normalizedPrimaries), categories=\(targetCategories), muscles=\(targetMuscles), equipment=\(normalizedEquipment)", category: .workout)
         #endif
         
         // STRICT Filter - Only include exercises that match the user's selected muscles
@@ -365,13 +344,13 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("   Found \(matchingExercises.count) strictly matching exercises")
+        AppLogger.debug("Found \(matchingExercises.count) strictly matching exercises", category: .workout)
         #endif
         
         // If very few matches, slightly broaden but still respect category
         if matchingExercises.count < count {
             #if DEBUG
-            print("⚠️ Few strict matches, including more exercises from same categories...")
+            AppLogger.warning("Few strict matches, including more exercises from same categories...", category: .workout)
             #endif
             let additionalExercises = allExercises.filter { exercise in
                 let exerciseCategory = exercise.category.lowercased()
@@ -389,7 +368,7 @@ class WorkoutGeneratorService: ObservableObject {
             }
             matchingExercises.append(contentsOf: additionalExercises)
             #if DEBUG
-            print("   Now have \(matchingExercises.count) exercises")
+            AppLogger.debug("Now have \(matchingExercises.count) exercises", category: .workout)
             #endif
         }
         
@@ -422,9 +401,9 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("✅ Selected \(result.count) exercises for workout")
+        AppLogger.info("Selected \(result.count) exercises for workout", category: .workout)
         for (index, exercise) in result.enumerated() {
-            print("   \(index + 1). \(exercise.name) - \(exercise.category) - \(exercise.primaryMuscle)")
+            AppLogger.debug("  \(index + 1). \(exercise.name) - \(exercise.category) - \(exercise.primaryMuscle)", category: .workout)
         }
         #endif
         
@@ -465,7 +444,7 @@ class WorkoutGeneratorService: ObservableObject {
             ("Core & Functional", ["Core", "Abs", "Obliques"], ["general fitness", "improve flexibility"]),
             
             // Flexibility
-            ("Flexibility & Mobility", ["Stretching"], ["improve flexibility", "general fitness"]),
+            ("Flexibility & Mobility", ["Stretch"], ["improve flexibility", "general fitness"]),
             
             // Universal (good for anyone)
             ("Upper Body", ["Chest", "Back", "Shoulders"], ["build muscle", "get stronger", "general fitness"]),
@@ -503,12 +482,7 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("🎲 Surprise workout (Goal-Optimized):")
-        print("   User goal: \(userGoal)")
-        print("   User level: \(userLevel)")
-        print("   Selected split: \(selectedSplit.name)")
-        print("   Muscles: \(selectedSplit.muscles)")
-        print("   Equipment: \(userEquipment)")
+        AppLogger.debug("Surprise workout (Goal-Optimized): goal=\(userGoal), level=\(userLevel), split=\(selectedSplit.name), muscles=\(selectedSplit.muscles), equipment=\(userEquipment)", category: .workout)
         #endif
         
         // Use the smart generation with user context
@@ -560,7 +534,7 @@ class WorkoutGeneratorService: ObservableObject {
         
         #if DEBUG
         if filteredForSafety > 0 {
-            print("🛡️ [SAFETY] Filtered out \(filteredForSafety) exercises due to user limitations")
+            AppLogger.info("[SAFETY] Filtered out \(filteredForSafety) exercises due to user limitations", category: .workout)
         }
         #endif
         
@@ -582,7 +556,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // Pre-filter risky exercises for foundational users
                 if foundationalDB.isRiskyExercise(name) {
                     #if DEBUG
-                    print("   🚫 [RISKY] Pre-filtering '\(exercise.name ?? "")' - risky for foundational user")
+                    AppLogger.debug("[RISKY] Pre-filtering '\(exercise.name ?? "")' - risky for foundational user", category: .workout)
                     #endif
                     return false
                 }
@@ -591,7 +565,7 @@ class WorkoutGeneratorService: ObservableObject {
             let filteredRisky = beforeRiskyFilter - allExercises.count
             #if DEBUG
             if filteredRisky > 0 {
-                print("🚫 [RISKY] Pre-filtered \(filteredRisky) risky exercises for foundational user")
+                AppLogger.debug("[RISKY] Pre-filtered \(filteredRisky) risky exercises for foundational user", category: .workout)
             }
             #endif
         }
@@ -604,7 +578,7 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 if foundationalDB.isLowerBackStressExercise(name) {
                     #if DEBUG
-                    print("   🚫 [BACK SAFETY] Pre-filtering '\(exercise.name ?? "")' - stresses lower back")
+                    AppLogger.debug("[BACK SAFETY] Pre-filtering '\(exercise.name ?? "")' - stresses lower back", category: .workout)
                     #endif
                     return false
                 }
@@ -613,7 +587,7 @@ class WorkoutGeneratorService: ObservableObject {
             let filteredBack = beforeBackFilter - allExercises.count
             #if DEBUG
             if filteredBack > 0 {
-                print("🚫 [BACK SAFETY] Pre-filtered \(filteredBack) lower back stress exercises")
+                AppLogger.debug("[BACK SAFETY] Pre-filtered \(filteredBack) lower back stress exercises", category: .workout)
             }
             #endif
         }
@@ -640,7 +614,7 @@ class WorkoutGeneratorService: ObservableObject {
                     
                     if !isAllowedPattern {
                         #if DEBUG
-                        print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - combo exercise (X to Y pattern)")
+                        AppLogger.debug("[COMBO] Pre-filtering '\(exercise.name ?? "")' - combo exercise (X to Y pattern)", category: .workout)
                         #endif
                         return false
                     }
@@ -649,7 +623,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // Block plank-based combo moves
                 if name.contains("plank") && (name.contains("push") || name.contains("row") || name.contains("pass") || name.contains("jack") || name.contains("through")) {
                     #if DEBUG
-                    print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - combo/core move not foundational")
+                    AppLogger.debug("[COMBO] Pre-filtering '\(exercise.name ?? "")' - combo/core move not foundational", category: .workout)
                     #endif
                     return false
                 }
@@ -657,7 +631,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // Block bear crawl, renegade, man maker, burpee
                 if name.contains("bear crawl") || name.contains("renegade") || name.contains("man maker") || name.contains("burpee") {
                     #if DEBUG
-                    print("   🚫 [COMBO] Pre-filtering '\(exercise.name ?? "")' - complex combo move")
+                    AppLogger.debug("[COMBO] Pre-filtering '\(exercise.name ?? "")' - complex combo move", category: .workout)
                     #endif
                     return false
                 }
@@ -667,13 +641,13 @@ class WorkoutGeneratorService: ObservableObject {
             let filteredCombo = beforeComboFilter - allExercises.count
             #if DEBUG
             if filteredCombo > 0 {
-                print("🚫 [COMBO] Pre-filtered \(filteredCombo) combo/core exercises for foundational user")
+                AppLogger.debug("[COMBO] Pre-filtered \(filteredCombo) combo/core exercises for foundational user", category: .workout)
             }
             #endif
         }
         
         guard !allExercises.isEmpty else {
-            print("⚠️ No exercises in Core Data library (or all filtered for safety)")
+            AppLogger.warning("No exercises in Core Data library (or all filtered for safety)", category: .workout)
             return []
         }
         
@@ -691,10 +665,10 @@ class WorkoutGeneratorService: ObservableObject {
         
         #if DEBUG
         if hasLearnedPreferences {
-            print("🧠 [SMART GEN] Using learned user preferences for personalized selection")
+            AppLogger.debug("[SMART GEN] Using learned user preferences for personalized selection", category: .workout)
         }
-        print("🌟 [PROGRESSIVE UNLOCK] User workout count: \(userWorkoutCount), Tier: \(currentTier.displayName)")
-        print("🌟 [PROGRESSIVE UNLOCK] Restrict to foundational: \(restrictToFoundational), Variety: \(Int(varietyPercentage * 100))%")
+        AppLogger.debug("[PROGRESSIVE UNLOCK] User workout count: \(userWorkoutCount), Tier: \(currentTier.displayName)", category: .workout)
+        AppLogger.debug("[PROGRESSIVE UNLOCK] Restrict to foundational: \(restrictToFoundational), Variety: \(Int(varietyPercentage * 100))%", category: .workout)
         #endif
         
         // Get FULL user profile for smart filtering
@@ -748,16 +722,7 @@ class WorkoutGeneratorService: ObservableObject {
         let normalizedEquipment = Set(equipment.map { ExerciseFilterService.normalizeEquipment($0) })
         
         #if DEBUG
-        print("🧠 [SMART GEN] Starting intelligent workout generation:")
-        print("   Target muscles: \(targetMuscles)")
-        print("   Expanded to: \(normalizedMuscles)")
-        print("   User equipment: \(normalizedEquipment)")
-        print("   User level: \(userLevel)")
-        print("   User goal: \(userGoal)")
-        print("   👤 User gender: \(preferredGender.uppercased())")
-        print("   ⚖️ User weight: \(Int(userWeightLbs))lbs, Age: \(userAge)")
-        print("   Favorite exercises: \(favorites.count)")
-        print("   Total library: \(allExercises.count)")
+        AppLogger.debug("[SMART GEN] Starting intelligent workout generation: muscles=\(targetMuscles), expanded=\(normalizedMuscles), equipment=\(normalizedEquipment), level=\(userLevel), goal=\(userGoal), gender=\(preferredGender.uppercased()), weight=\(Int(userWeightLbs))lbs, age=\(userAge), favorites=\(favorites.count), library=\(allExercises.count)", category: .workout)
         #endif
         
         // 🧠 SMART PROFILE-BASED EXCLUSION KEYWORDS
@@ -779,23 +744,39 @@ class WorkoutGeneratorService: ObservableObject {
         // Enhanced category mapping with body region matching
         let categoryMapping: [String: [String]] = [
             "chest": ["chest"],
+            "upper chest": ["chest"],
+            "lower chest": ["chest"],
             "back": ["back"],
-            "shoulders": ["shoulders", "shoulder"],
-            "arms": ["arms", "upper arms", "forearms"],
-            "biceps": ["arms", "upper arms"],
-            "triceps": ["arms", "upper arms"],
-            "legs": ["legs", "thighs", "hips", "calves"],
-            "quads": ["legs", "thighs"],
-            "hamstrings": ["legs", "thighs", "hips"],
-            "glutes": ["legs", "hips"],
-            "calves": ["legs", "calves"],
-            "core": ["core", "waist"],
-            "abs": ["core", "waist"],
-            "obliques": ["core", "waist"],
+            "lats": ["back"],
+            "upper back": ["back"],
             "lower back": ["back"],
-            "full body": ["full body", "plyometrics", "cardio"],
-            "stretching": ["stretching"],
-            "cardio": ["cardio", "plyometrics", "full body"]
+            "shoulders": ["shoulders"],
+            "front delts": ["shoulders"],
+            "side delts": ["shoulders"],
+            "rear delts": ["shoulders"],
+            "rotator cuff": ["shoulders"],
+            "arms": ["arms"],
+            "biceps": ["arms"],
+            "triceps": ["arms"],
+            "forearms": ["arms"],
+            "legs": ["legs"],
+            "quads": ["legs"],
+            "hamstrings": ["legs"],
+            "glutes": ["legs"],
+            "calves": ["legs"],
+            "hip flexors": ["legs", "hips"],
+            "inner thighs": ["legs", "hips"],
+            "hips": ["hips", "legs"],
+            "core": ["core"],
+            "abs": ["core"],
+            "obliques": ["core"],
+            "lower abs": ["core"],
+            "neck": ["neck"],
+            "full body": ["full body"],
+            "traps": ["back", "shoulders"],
+            "stretch": ["stretch"],
+            "stretching": ["stretch"],
+            "cardio": ["cardio", "full body"]
         ]
         
         // Build target categories
@@ -854,7 +835,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // Log when unusual equipment is missing (for debugging)
                 if exerciseEquipmentRaw.contains("wall") || exerciseEquipmentRaw.contains("rings") || 
                    exerciseEquipmentRaw.contains("partner") || exerciseEquipmentRaw.contains("tire") {
-                    print("   🚫 [EQUIPMENT] Excluded '\(exercise.name ?? "")': requires \(exerciseEquipmentRaw)")
+                    AppLogger.debug("[EQUIPMENT] Excluded '\(exercise.name ?? "")': requires \(exerciseEquipmentRaw)", category: .workout)
                 }
                 #endif
                 return false
@@ -879,7 +860,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             guard isAppropriateForLocation else {
                 #if DEBUG
-                print("   🚫 [LOCATION] Excluded '\(exercise.name ?? "")': not appropriate for \(userEnvironment)")
+                AppLogger.debug("[LOCATION] Excluded '\(exercise.name ?? "")': not appropriate for \(userEnvironment)", category: .workout)
                 #endif
                 return false
             }
@@ -952,7 +933,7 @@ class WorkoutGeneratorService: ObservableObject {
                 }
                 if isLowerBodyExercise {
                     #if DEBUG
-                    print("   🚫 [BODY REGION] Excluding '\(exercise.name ?? "")': lower body exercise in upper body workout")
+                    AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': lower body exercise in upper body workout", category: .workout)
                     #endif
                     return false
                 }
@@ -965,7 +946,7 @@ class WorkoutGeneratorService: ObservableObject {
                 }
                 if isUpperBodyExercise {
                     #if DEBUG
-                    print("   🚫 [BODY REGION] Excluding '\(exercise.name ?? "")': upper body exercise in lower body workout")
+                    AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': upper body exercise in lower body workout", category: .workout)
                     #endif
                     return false
                 }
@@ -976,7 +957,7 @@ class WorkoutGeneratorService: ObservableObject {
             if dbPracticalityScore > 0 && dbPracticalityScore < 30 {
                 // Exclude exercises with very low practicality scores (handstands, weird variations, etc.)
                 #if DEBUG
-                print("   🚫 [PRACTICALITY] Excluding '\(exercise.name ?? "")': score=\(dbPracticalityScore)")
+                AppLogger.debug("[PRACTICALITY] Excluding '\(exercise.name ?? "")': score=\(dbPracticalityScore)", category: .workout)
                 #endif
                 return false
             }
@@ -1054,35 +1035,28 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("   🔍 Filtering stats:")
-        print("      ✅ Passed filters: \(matchCount)")
-        print("      ❌ Failed equipment: \(equipmentFailCount)")
-        print("      ❌ Failed muscle: \(muscleFailCount)")
-        print("      🧠 Filtered by profile (weight/age/exp): \(profileFailCount)")
+        AppLogger.debug("[FILTER STATS] Passed: \(matchCount), Failed equipment: \(equipmentFailCount), Failed muscle: \(muscleFailCount), Filtered by profile: \(profileFailCount)", category: .workout)
         
         // Show first 5 ACTUAL barbell exercises if user selected Barbell
         if normalizedEquipment.contains(where: { $0.lowercased().contains("barbell") }) {
             let barbellOnly = matchingExercises.filter { ($0.equipment ?? "").lowercased().contains("barbell") }
-            print("   🏋️ Barbell exercises found: \(barbellOnly.count)")
+            AppLogger.debug("[BARBELL] Barbell exercises found: \(barbellOnly.count)", category: .workout)
             for (idx, ex) in barbellOnly.prefix(5).enumerated() {
-                print("      \(idx+1). \(ex.name ?? "?") - \(ex.equipment ?? "?")")
+                AppLogger.debug("  \(idx+1). \(ex.name ?? "?") - \(ex.equipment ?? "?")", category: .workout)
             }
         }
         #endif
         
         #if DEBUG
-        print("   🔍 STRICT filtering results:")
-        print("      Equipment filter: User has \(normalizedEquipment)")
-        print("      Muscle filter: Looking for \(normalizedMuscles)")
-        print("      Exercises after STRICT filter: \(matchingExercises.count)")
+        AppLogger.debug("[STRICT FILTER] Equipment: \(normalizedEquipment), Muscles: \(normalizedMuscles), Exercises after filter: \(matchingExercises.count)", category: .workout)
         
         // Show first 10 matching exercises with their equipment and muscles
-        print("   📋 Sample matches:")
+        AppLogger.debug("[SAMPLE MATCHES]:", category: .workout)
         for (idx, ex) in matchingExercises.prefix(10).enumerated() {
             let muscles = (ex.muscleGroups as? [String]) ?? []
             let equipment = ex.equipment ?? "?"
             let workoutType = ex.workoutType ?? "?"
-            print("      \(idx+1). \(ex.name ?? "?") - Equipment: \(equipment) - Muscles: \(muscles) - Type: \(workoutType)")
+            AppLogger.debug("  \(idx+1). \(ex.name ?? "?") - Equipment: \(equipment) - Muscles: \(muscles) - Type: \(workoutType)", category: .workout)
         }
         #endif
         
@@ -1102,9 +1076,7 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         #if DEBUG
-        print("   Exercises after strict filter: \(matchingExercises.count)")
-        print("   👤 Gender-matching videos: \(genderMatchCount)")
-        print("   👤 Opposite gender fallback: \(genderFallbackCount)")
+        AppLogger.debug("Exercises after strict filter: \(matchingExercises.count), Gender-matching: \(genderMatchCount), Fallback: \(genderFallbackCount)", category: .workout)
         #endif
         
         // Score each exercise for intelligent selection
@@ -1138,7 +1110,7 @@ class WorkoutGeneratorService: ObservableObject {
             if restrictToFoundational && foundationalBoost < 0 {
                 score -= 500  // Massive penalty to ensure non-foundational rarely appears
                 #if DEBUG
-                print("   🚫 [BEGINNER] Heavy penalty for '\(exercise.name ?? "")': non-foundational for new user")
+                AppLogger.debug("[BEGINNER] Heavy penalty for '\(exercise.name ?? "")': non-foundational for new user", category: .workout)
                 #endif
             }
             
@@ -1157,7 +1129,7 @@ class WorkoutGeneratorService: ObservableObject {
                 score += riskyPenalty
                 #if DEBUG
                 if riskyPenalty < -100 {
-                    print("   ⚠️ [SAFETY] '\(exercise.name ?? "")' penalty: \(Int(riskyPenalty))")
+                    AppLogger.warning("[SAFETY] '\(exercise.name ?? "")' penalty: \(Int(riskyPenalty))", category: .workout)
                 }
                 #endif
             }
@@ -1166,7 +1138,7 @@ class WorkoutGeneratorService: ObservableObject {
             if hasLowerBackIssue && foundationalDB.isLowerBackSafeAlternative(name) {
                 score += 100
                 #if DEBUG
-                print("   ✅ [BACK SAFE] '\(exercise.name ?? "")' boosted +100 (safe for lower back)")
+                AppLogger.info("[BACK SAFE] '\(exercise.name ?? "")' boosted +100 (safe for lower back)", category: .workout)
                 #endif
             }
             
@@ -1178,7 +1150,7 @@ class WorkoutGeneratorService: ObservableObject {
                 #if DEBUG
                 if abs(safetyPenalty) > 50 {
                     let direction = safetyPenalty > 0 ? "🚫" : "✅"
-                    print("   \(direction) [SAFETY] '\(exercise.name ?? "")': \(safetyPenalty > 0 ? "-" : "+")\(Int(abs(safetyPenalty)))")
+                    AppLogger.debug("[SAFETY] '\(exercise.name ?? "")': \(safetyPenalty > 0 ? "-" : "+")\(Int(abs(safetyPenalty)))", category: .workout)
                 }
                 #endif
             }
@@ -1197,7 +1169,7 @@ class WorkoutGeneratorService: ObservableObject {
             #if DEBUG
             if equipQualityBoost > 0 {
                 let equipType = exercise.equipment ?? "unknown"
-                print("   🏋️ [EQUIP QUALITY] '\(exercise.name ?? "")' (\(equipType)): +\(Int(equipQualityBoost))")
+                AppLogger.debug("[EQUIP QUALITY] '\(exercise.name ?? "")' (\(equipType)): +\(Int(equipQualityBoost))", category: .workout)
             }
             #endif
             
@@ -1211,12 +1183,12 @@ class WorkoutGeneratorService: ObservableObject {
                 if isSupported {
                     score += 80  // Bonus for supported rows
                     #if DEBUG
-                    print("   🪑 [FOUNDATIONAL] '\(exercise.name ?? "")' +80 (supported row for new user)")
+                    AppLogger.debug("[FOUNDATIONAL] '\(exercise.name ?? "")' +80 (supported row for new user)", category: .workout)
                     #endif
                 } else if isBentOver {
                     score -= 60  // Penalty for bent-over rows (not banned, just discouraged)
                     #if DEBUG
-                    print("   🪑 [FOUNDATIONAL] '\(exercise.name ?? "")' -60 (bent-over row - prefer supported)")
+                    AppLogger.debug("[FOUNDATIONAL] '\(exercise.name ?? "")' -60 (bent-over row - prefer supported)", category: .workout)
                     #endif
                 }
             }
@@ -1469,9 +1441,9 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 #if DEBUG
                 if benchScore >= 90 {
-                    print("   🪑 [CONTEXT BENCH] '\(exercise.name ?? "")' bench type matches muscle context (+\(Int(benchAdjustment)))")
+                    AppLogger.debug("[CONTEXT BENCH] '\(exercise.name ?? "")' bench type matches muscle context (+\(Int(benchAdjustment)))", category: .workout)
                 } else if benchScore < 50 {
-                    print("   🪑 [SMART BENCH] '\(exercise.name ?? "")' requires specialized bench without context (\(exerciseEquipment)) - score: \(Int(benchAdjustment))")
+                    AppLogger.debug("[SMART BENCH] '\(exercise.name ?? "")' requires specialized bench without context (\(exerciseEquipment)) - score: \(Int(benchAdjustment))", category: .workout)
                 }
                 #endif
             }
@@ -1495,7 +1467,7 @@ class WorkoutGeneratorService: ObservableObject {
                 if inclinePatterns.contains(where: { name.contains($0) }) {
                     score += 150  // Very strong boost for incline work when upper chest is targeted
                     #if DEBUG
-                    print("   📐 [UPPER CHEST] '\(exercise.name ?? "")' +150 (incline for upper chest)")
+                    AppLogger.debug("[UPPER CHEST] '\(exercise.name ?? "")' +150 (incline for upper chest)", category: .workout)
                     #endif
                 }
                 
@@ -1521,7 +1493,7 @@ class WorkoutGeneratorService: ObservableObject {
             if isPressingDay && name.contains("front raise") {
                 score -= 100  // Front delts get hit by pressing - use lateral raises instead
                 #if DEBUG
-                print("   🔄 [REDUNDANT] '\(exercise.name ?? "")' -100 (front delts already hit by pressing)")
+                AppLogger.debug("[REDUNDANT] '\(exercise.name ?? "")' -100 (front delts already hit by pressing)", category: .workout)
                 #endif
             }
             
@@ -1534,7 +1506,7 @@ class WorkoutGeneratorService: ObservableObject {
                 if name.contains("lateral raise") || name.contains("side raise") || name.contains("side delt") {
                     score += 80  // Lateral delts need direct work
                     #if DEBUG
-                    print("   💪 [LATERAL] '\(exercise.name ?? "")' +80 (lateral delt focus)")
+                    AppLogger.debug("[LATERAL] '\(exercise.name ?? "")' +80 (lateral delt focus)", category: .workout)
                     #endif
                 }
                 
@@ -1558,7 +1530,7 @@ class WorkoutGeneratorService: ObservableObject {
                     if name.contains("seated") || equipLower.contains("machine") || equipLower.contains("lever") {
                         score += 100  // Much safer for lower back
                         #if DEBUG
-                        print("   🪑 [BACK SAFE] '\(exercise.name ?? "")' +100 (seated overhead for back safety)")
+                        AppLogger.debug("[BACK SAFE] '\(exercise.name ?? "")' +100 (seated overhead for back safety)", category: .workout)
                         #endif
                     }
                     // PENALIZE standing variations - potential back stress
@@ -1587,7 +1559,7 @@ class WorkoutGeneratorService: ObservableObject {
                 if rearDeltPatterns.contains(where: { name.contains($0) }) {
                     score += 120  // Very important for shoulder health on pressing days
                     #if DEBUG
-                    print("   ⚖️ [BALANCE] '\(exercise.name ?? "")' +120 (rear delt for shoulder health)")
+                    AppLogger.debug("[BALANCE] '\(exercise.name ?? "")' +120 (rear delt for shoulder health)", category: .workout)
                     #endif
                 }
             }
@@ -1599,7 +1571,7 @@ class WorkoutGeneratorService: ObservableObject {
             if restrictToFoundational && name.contains("bench dip") {
                 score -= 200  // Bench dips are shoulder-risky for beginners - prefer assisted dip or pushdowns
                 #if DEBUG
-                print("   🚫 [RISKY] '\(exercise.name ?? "")' -200 (bench dip shoulder risk for beginners)")
+                AppLogger.debug("[RISKY] '\(exercise.name ?? "")' -200 (bench dip shoulder risk for beginners)", category: .workout)
                 #endif
             }
             
@@ -1618,7 +1590,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             #if DEBUG
             if locationPenalty < -30 {
-                print("   🏢 [LOCATION] '\(exercise.name ?? "")' penalized (\(Int(locationPenalty))) - not suitable for \(workoutLocation.displayName)")
+                AppLogger.debug("[LOCATION] '\(exercise.name ?? "")' penalized (\(Int(locationPenalty))) - not suitable for \(workoutLocation.displayName)", category: .workout)
             }
             #endif
             
@@ -1631,7 +1603,7 @@ class WorkoutGeneratorService: ObservableObject {
                     score -= freshnessPenalty
                     #if DEBUG
                     if freshnessPenalty > 30 {
-                        print("   ❄️ [COOLDOWN] '\(exercise.name ?? "")' penalty -\(Int(freshnessPenalty)) (done \(daysSince) days ago, cooldown \(cooldown)d)")
+                        AppLogger.debug("[COOLDOWN] '\(exercise.name ?? "")' penalty -\(Int(freshnessPenalty)) (done \(daysSince) days ago, cooldown \(cooldown)d)", category: .workout)
                     }
                     #endif
                 }
@@ -1684,9 +1656,7 @@ class WorkoutGeneratorService: ObservableObject {
         let exercisesPerMuscle = max(1, count / max(1, normalizedTargetMuscles.count))
         
         #if DEBUG
-        print("   🔧 Selected equipment types for diversity: \(selectedEquipmentTypes)")
-        print("   💪 Target muscle groups (\(normalizedTargetMuscles.count)): \(normalizedTargetMuscles)")
-        print("   📊 Target ~\(exercisesPerMuscle) exercises per muscle group")
+        AppLogger.debug("[DIVERSITY] Equipment types: \(selectedEquipmentTypes), Target muscles(\(normalizedTargetMuscles.count)): \(normalizedTargetMuscles), ~\(exercisesPerMuscle) per group", category: .workout)
         #endif
         
         // ═══════════════════════════════════════════════════════════════════════════
@@ -1706,7 +1676,7 @@ class WorkoutGeneratorService: ObservableObject {
         var freeWeightCount = 0  // Dumbbell + Barbell combined
         
         #if DEBUG
-        print("   🎯 [EQUIP MIX] Targets - Machine/Cable: \(targetMachineOrCable), Free-weight: \(targetFreeWeight), Max Free-weight: \(maxFreeWeight)")
+        AppLogger.debug("[EQUIP MIX] Targets - Machine/Cable: \(targetMachineOrCable), Free-weight: \(targetFreeWeight), Max Free-weight: \(maxFreeWeight)", category: .workout)
         #endif
         
         // Select exercises with MAXIMUM VARIETY (avoid duplicates and repetitive patterns)
@@ -1757,7 +1727,7 @@ class WorkoutGeneratorService: ObservableObject {
         let maxForearmIsolations = explicitlyWantsForearms ? 2 : 1
         
         #if DEBUG
-        print("   🏋️ [ARM CAPS] Biceps/Triceps max: \(maxArmIsolations), Forearms max: \(maxForearmIsolations) (explicit: \(explicitlyWantsForearms))")
+        AppLogger.debug("[ARM CAPS] Biceps/Triceps max: \(maxArmIsolations), Forearms max: \(maxForearmIsolations) (explicit: \(explicitlyWantsForearms))", category: .workout)
         #endif
         
         // ═══════════════════════════════════════════════════════════════════════════
@@ -1865,7 +1835,7 @@ class WorkoutGeneratorService: ObservableObject {
         
         #if DEBUG
         if shouldBlockHinges {
-            print("   🚫 [HINGE GATE] Blocking hinges for Back/Pull day (no lower_back/posterior_chain/full_body selected)")
+            AppLogger.debug("[HINGE GATE] Blocking hinges for Back/Pull day (no lower_back/posterior_chain/full_body selected)", category: .workout)
         }
         #endif
         
@@ -1876,16 +1846,16 @@ class WorkoutGeneratorService: ObservableObject {
         
         #if DEBUG
         if backIsPrimary {
-            print("   💪 [BACK PRIMARY] Minimum back exercises: \(minBackExercises)")
+            AppLogger.debug("[BACK PRIMARY] Minimum back exercises: \(minBackExercises)", category: .workout)
         }
         if wantsChest {
-            print("   💪 [CHEST PRIMARY] Minimum chest exercises: \(minChestExercises)")
+            AppLogger.debug("[CHEST PRIMARY] Minimum chest exercises: \(minChestExercises)", category: .workout)
         }
         if wantsCore {
-            print("   💪 [CORE PRIMARY] Minimum core exercises: \(minCoreExercises)")
+            AppLogger.debug("[CORE PRIMARY] Minimum core exercises: \(minCoreExercises)", category: .workout)
         }
-        print("   🎯 [TRICEPS GATE] Explicitly wants triceps: \(explicitlyWantsTriceps)")
-        print("   🎯 [BICEPS GATE] Explicitly wants biceps: \(explicitlyWantsBiceps)")
+        AppLogger.debug("[TRICEPS GATE] Explicitly wants triceps: \(explicitlyWantsTriceps)", category: .workout)
+        AppLogger.debug("[BICEPS GATE] Explicitly wants biceps: \(explicitlyWantsBiceps)", category: .workout)
         #endif
         
         // 🆕 COMBO RULES - Get applicable combo rule for this workout
@@ -1895,12 +1865,10 @@ class WorkoutGeneratorService: ObservableObject {
         
         #if DEBUG
         if let rule = comboRule {
-            print("📋 [COMBO RULES] Detected combo: \(rule.comboName)")
-            print("   Must include: \(rule.mustInclude)")
-            print("   Avoid: \(rule.avoid)")
+            AppLogger.debug("[COMBO RULES] Detected combo: \(rule.comboName), Must include: \(rule.mustInclude), Avoid: \(rule.avoid)", category: .workout)
         }
         if let balance = balanceSlot {
-            print("   ⚖️ Balance slot: \(balance)")
+            AppLogger.debug("[COMBO RULES] Balance slot: \(balance)", category: .workout)
         }
         #endif
         var equipmentTypesRepresented: Set<String> = []  // Which equipment types have at least 1 exercise
@@ -2010,7 +1978,7 @@ class WorkoutGeneratorService: ObservableObject {
                            n.contains("static hold") || n.contains("suspension back stretch")
             if isStretch {
                 #if DEBUG
-                print("   🚫 [STRETCH GATE] Blocking '\(exerciseName)' - Stretches not counted as main exercises")
+                AppLogger.debug("[STRETCH GATE] Blocking '\(exerciseName)' - Stretches not counted as main exercises", category: .workout)
                 #endif
                 return true
             }
@@ -2023,7 +1991,7 @@ class WorkoutGeneratorService: ObservableObject {
                                 n.contains("guillotine") || n.contains("smith high pull")
             if isRiskyPattern {
                 #if DEBUG
-                print("   🚫 [RISKY PATTERN] Blocking '\(exerciseName)' - Shoulder-risky movement pattern")
+                AppLogger.debug("[RISKY PATTERN] Blocking '\(exerciseName)' - Shoulder-risky movement pattern", category: .workout)
                 #endif
                 return true
             }
@@ -2043,7 +2011,7 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 if isTricepsExercise {
                     #if DEBUG
-                    print("   🚫 [TRICEPS GATE] Blocking '\(exerciseName)' - Triceps NOT in target muscles")
+                    AppLogger.debug("[TRICEPS GATE] Blocking '\(exerciseName)' - Triceps NOT in target muscles", category: .workout)
                     #endif
                     return true
                 }
@@ -2059,7 +2027,7 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 if isBicepsExercise {
                     #if DEBUG
-                    print("   🚫 [BICEPS GATE] Blocking '\(exerciseName)' - Biceps NOT in target muscles")
+                    AppLogger.debug("[BICEPS GATE] Blocking '\(exerciseName)' - Biceps NOT in target muscles", category: .workout)
                     #endif
                     return true
                 }
@@ -2083,7 +2051,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             if isForearmExercise && !targetHasForearms {
                 #if DEBUG
-                print("   🚫 [FOREARM GATE] Blocking '\(exerciseName)' - Forearms NOT explicitly selected")
+                AppLogger.debug("[FOREARM GATE] Blocking '\(exerciseName)' - Forearms NOT explicitly selected", category: .workout)
                 #endif
                 return true
             }
@@ -2097,7 +2065,7 @@ class WorkoutGeneratorService: ObservableObject {
                 let isSquat = n.contains("squat") || n.contains("front squat") || n.contains("goblet")
                 if isSquat {
                     #if DEBUG
-                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Squat not for Core/Abs day")
+                    AppLogger.debug("[CORE DAY] Blocking '\(exerciseName)' - Squat not for Core/Abs day", category: .workout)
                     #endif
                     return true
                 }
@@ -2106,7 +2074,7 @@ class WorkoutGeneratorService: ObservableObject {
                              n.contains("good morning") || n.contains("hip hinge")
                 if isHinge {
                     #if DEBUG
-                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Hinge not for Core/Abs day")
+                    AppLogger.debug("[CORE DAY] Blocking '\(exerciseName)' - Hinge not for Core/Abs day", category: .workout)
                     #endif
                     return true
                 }
@@ -2114,7 +2082,7 @@ class WorkoutGeneratorService: ObservableObject {
                 let isPress = (n.contains("press") && !n.contains("pallof press")) || n.contains("push up")
                 if isPress {
                     #if DEBUG
-                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Press not for Core/Abs day")
+                    AppLogger.debug("[CORE DAY] Blocking '\(exerciseName)' - Press not for Core/Abs day", category: .workout)
                     #endif
                     return true
                 }
@@ -2122,7 +2090,7 @@ class WorkoutGeneratorService: ObservableObject {
                 let isLateralRaisePlank = n.contains("lateral raise plank") || n.contains("plank lateral raise")
                 if isLateralRaisePlank {
                     #if DEBUG
-                    print("   🚫 [CORE DAY] Blocking '\(exerciseName)' - Lateral raise plank is shoulder-y, not core")
+                    AppLogger.debug("[CORE DAY] Blocking '\(exerciseName)' - Lateral raise plank is shoulder-y, not core", category: .workout)
                     #endif
                     return true
                 }
@@ -2137,7 +2105,7 @@ class WorkoutGeneratorService: ObservableObject {
             // For now, block plyo exercises by default (can be enabled via specific goal later)
             if isPlyoExercise && !n.contains("step up") {
                 #if DEBUG
-                print("   🚫 [PLYO GATE] Blocking '\(exerciseName)' - Plyo/jump exercises not in default mode")
+                AppLogger.debug("[PLYO GATE] Blocking '\(exerciseName)' - Plyo/jump exercises not in default mode", category: .workout)
                 #endif
                 return true
             }
@@ -2164,7 +2132,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             if isHingeExercise && shouldBlockHingesInFilter {
                 #if DEBUG
-                print("   🚫 [HINGE GATE] Blocking '\(exerciseName)' - Hinge not allowed on Back/Pull day (no lower_back/posterior/full_body selected)")
+                AppLogger.debug("[HINGE GATE] Blocking '\(exerciseName)' - Hinge not allowed on Back/Pull day (no lower_back/posterior/full_body selected)", category: .workout)
                 #endif
                 return true
             }
@@ -2176,7 +2144,7 @@ class WorkoutGeneratorService: ObservableObject {
             let isArmsOnlyDay = targetHasArms && !targetHasBack && !targetHasChest && !targetHasShoulders && !targetHasLegs
             if isArmsOnlyDay && isHingeExercise {
                 #if DEBUG
-                print("   🚫 [ARMS DAY] Blocking '\(exerciseName)' - Hinge/back extension not for Arms-only day")
+                AppLogger.debug("[ARMS DAY] Blocking '\(exerciseName)' - Hinge/back extension not for Arms-only day", category: .workout)
                 #endif
                 return true
             }
@@ -2188,26 +2156,26 @@ class WorkoutGeneratorService: ObservableObject {
                 // Block chest press/fly
                 if n.contains("press") && !n.contains("leg press") {
                     #if DEBUG
-                    print("   🚫 [LEAK BLOCK] Blocking press '\(exerciseName)' in Back+Arms workout")
+                    AppLogger.debug("[LEAK BLOCK] Blocking press '\(exerciseName)' in Back+Arms workout", category: .workout)
                     #endif
                     return true
                 }
                 if n.contains("fly") && !n.contains("reverse fly") && !n.contains("rear delt fly") {
                     #if DEBUG
-                    print("   🚫 [LEAK BLOCK] Blocking fly '\(exerciseName)' in Back+Arms workout")
+                    AppLogger.debug("[LEAK BLOCK] Blocking fly '\(exerciseName)' in Back+Arms workout", category: .workout)
                     #endif
                     return true
                 }
                 if n.contains("dip") && !pm.contains("back") {
                     #if DEBUG
-                    print("   🚫 [LEAK BLOCK] Blocking dip '\(exerciseName)' in Back+Arms workout")
+                    AppLogger.debug("[LEAK BLOCK] Blocking dip '\(exerciseName)' in Back+Arms workout", category: .workout)
                     #endif
                     return true
                 }
                 // Block lateral raises (shoulder, not back)
                 if n.contains("lateral raise") && !n.contains("rear") {
                     #if DEBUG
-                    print("   🚫 [LEAK BLOCK] Blocking lateral raise '\(exerciseName)' in Back+Arms workout")
+                    AppLogger.debug("[LEAK BLOCK] Blocking lateral raise '\(exerciseName)' in Back+Arms workout", category: .workout)
                     #endif
                     return true
                 }
@@ -2223,7 +2191,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // For Back+Arms, only allow if focus includes lower back
                 if targetHasBack && targetHasArms {
                     #if DEBUG
-                    print("   🚫 [HINGE GATE] Blocking '\(exerciseName)' - Hinge/extension not for Back+Arms (no lower back selected)")
+                    AppLogger.debug("[HINGE GATE] Blocking '\(exerciseName)' - Hinge/extension not for Back+Arms (no lower back selected)", category: .workout)
                     #endif
                     return true
                 }
@@ -2235,7 +2203,7 @@ class WorkoutGeneratorService: ObservableObject {
             let isShrug = n.contains("shrug")
             if isShrug && !targetHasTraps && !targetHasBack {
                 #if DEBUG
-                print("   🚫 [SHRUG GATE] Blocking '\(exerciseName)' - Traps NOT explicitly selected")
+                AppLogger.debug("[SHRUG GATE] Blocking '\(exerciseName)' - Traps NOT explicitly selected", category: .workout)
                 #endif
                 return true
             }
@@ -2264,7 +2232,7 @@ class WorkoutGeneratorService: ObservableObject {
         
         if let rule = comboRule, !rule.mustInclude.isEmpty {
             #if DEBUG
-            print("   🎯 [PHASE 0] Enforcing required patterns: \(rule.mustInclude)")
+            AppLogger.debug("[PHASE 0] Enforcing required patterns: \(rule.mustInclude)", category: .workout)
             #endif
             
             // Try to fulfill each required pattern
@@ -2291,7 +2259,7 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 if hasPattern {
                     #if DEBUG
-                    print("   ✅ [PHASE 0] Already have \(requiredPattern)")
+                    AppLogger.info("[PHASE 0] Already have \(requiredPattern)", category: .workout)
                     #endif
                     continue
                 }
@@ -2334,7 +2302,7 @@ class WorkoutGeneratorService: ObservableObject {
                     let (shouldAvoid, avoidReason) = WorkoutComboRules.shouldAvoidExercise(name, comboRule: rule, focusAreas: nil)
                     if shouldAvoid {
                         #if DEBUG
-                        print("   🚫 [PHASE 0] Skipping '\(name)': \(avoidReason)")
+                        AppLogger.debug("[PHASE 0] Skipping '\(name)': \(avoidReason)", category: .workout)
                         #endif
                         continue
                     }
@@ -2356,7 +2324,7 @@ class WorkoutGeneratorService: ObservableObject {
                     // 📦 BUNDLE CHECK - Prevent similar exercises (bench press ≈ chest press ≈ push-up)
                     if wouldExceedBundleLimit(name) {
                         #if DEBUG
-                        print("   ⏭️ [PHASE 0 BUNDLE] Skipping '\(name)': bundle limit reached")
+                        AppLogger.debug("[PHASE 0 BUNDLE] Skipping '\(name)': bundle limit reached", category: .workout)
                         #endif
                         continue
                     }
@@ -2425,7 +2393,7 @@ class WorkoutGeneratorService: ObservableObject {
                     usedMuscles[primaryMuscle, default: 0] += 1
                     
                     #if DEBUG
-                    print("   ✅ [PHASE 0] Reserved \(requiredPattern): \(name) (score: \(Int(scored.score)))")
+                    AppLogger.info("[PHASE 0] Reserved \(requiredPattern): \(name) (score: \(Int(scored.score)))", category: .workout)
                     #endif
                     break
                 }
@@ -2435,8 +2403,8 @@ class WorkoutGeneratorService: ObservableObject {
             let missing = rule.mustInclude.filter { !requiredPatternsFulfilled.contains($0) }
             if !missing.isEmpty {
                 #if DEBUG
-                print("   ⚠️ [PHASE 0] Could not find exercises for: \(missing)")
-                print("   🔧 [AUTO-REPAIR] Attempting to find missing patterns...")
+                AppLogger.warning("[PHASE 0] Could not find exercises for: \(missing)", category: .workout)
+                AppLogger.debug("[AUTO-REPAIR] Attempting to find missing patterns...", category: .workout)
                 #endif
                 
                 // 🆕 AUTO-REPAIR: Force-find missing required patterns
@@ -2463,7 +2431,7 @@ class WorkoutGeneratorService: ObservableObject {
                             result.remove(at: lowestIndex)
                             usedNames.remove(removed.name.lowercased())
                             #if DEBUG
-                            print("   🔧 [AUTO-REPAIR] Removing '\(removed.name)' to make room for \(missingPattern)")
+                            AppLogger.debug("[AUTO-REPAIR] Removing '\(removed.name)' to make room for \(missingPattern)", category: .workout)
                             #endif
                         }
                     }
@@ -2531,14 +2499,14 @@ class WorkoutGeneratorService: ObservableObject {
                         requiredPatternsFulfilled.insert(missingPattern)
                         
                         #if DEBUG
-                        print("   ✅ [AUTO-REPAIR] Added '\(name)' to fulfill \(missingPattern)")
+                        AppLogger.info("[AUTO-REPAIR] Added '\(name)' to fulfill \(missingPattern)", category: .workout)
                         #endif
                         break
                     }
                 }
             } else {
                 #if DEBUG
-                print("   ✅ [PHASE 0] All required patterns fulfilled: \(requiredPatternsFulfilled.sorted())")
+                AppLogger.info("[PHASE 0] All required patterns fulfilled: \(requiredPatternsFulfilled.sorted())", category: .workout)
                 #endif
             }
         }
@@ -2560,7 +2528,7 @@ class WorkoutGeneratorService: ObservableObject {
             let maxSlotsForPhase1 = min(count, equipmentTypesList.count * slotsPerType)
             
             #if DEBUG
-            print("   🔄 [EQUIP DIVERSITY] Round-robin allocation: \(equipmentTypesList.count) types, \(slotsPerType) per type, \(maxSlotsForPhase1) total Phase 1 slots")
+            AppLogger.debug("[EQUIP DIVERSITY] Round-robin allocation: \(equipmentTypesList.count) types, \(slotsPerType) per type, \(maxSlotsForPhase1) total Phase 1 slots", category: .workout)
             #endif
             
             // Pre-index exercises by equipment type for efficient lookup
@@ -2574,7 +2542,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             #if DEBUG
             for (equipType, exercises) in exercisesByEquipType {
-                print("   📦 Available for \(equipType): \(exercises.count) exercises")
+                AppLogger.debug("[PHASE 1] Available for \(equipType): \(exercises.count) exercises", category: .workout)
             }
             #endif
             
@@ -2610,7 +2578,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let baseMovement = getBaseMovement(nameLower)
                         if usedBaseMovements.contains(baseMovement) {
                             #if DEBUG
-                            print("   🚫 Skipping '\(name)' - base movement '\(baseMovement)' already used")
+                            AppLogger.debug("Skipping '\(name)' - base movement '\(baseMovement)' already used", category: .workout)
                             #endif
                             continue
                         }
@@ -2633,7 +2601,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let maxPerFamily = 2  // Updated: allow up to 2 from same family (e.g., 2 curls OK, 3 not)
                         if exerciseFamily != "other" && familyCount >= maxPerFamily {
                             #if DEBUG
-                            print("   🚫 [FAMILY CAP] Skipping '\(name)': family '\(exerciseFamily)' already has \(familyCount) exercises (max: \(maxPerFamily))")
+                            AppLogger.debug("[FAMILY CAP] Skipping '\(name)': family '\(exerciseFamily)' already has \(familyCount) exercises (max: \(maxPerFamily))", category: .workout)
                             #endif
                             continue  // Already have max from this family
                         }
@@ -2641,7 +2609,7 @@ class WorkoutGeneratorService: ObservableObject {
                         // 📦 BUNDLE CHECK - Chest press ≈ bench press ≈ smith press = same bundle
                         if wouldExceedBundleLimit(name) {
                             #if DEBUG
-                            print("   📦 [BUNDLE] Skipping '\(name)': bundle limit reached")
+                            AppLogger.debug("[BUNDLE] Skipping '\(name)': bundle limit reached", category: .workout)
                             #endif
                             continue
                         }
@@ -2684,7 +2652,7 @@ class WorkoutGeneratorService: ObservableObject {
                         // 🆕 GLOBAL PRESS CAP: Max 2 total presses for multi-muscle workouts
                         if globalPressCapEnabled && movementKeyword == "press" && totalPressCount >= maxGlobalPresses {
                             #if DEBUG
-                            print("   🚫 [PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))")
+                            AppLogger.debug("[PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))", category: .workout)
                             #endif
                             continue
                         }
@@ -2726,7 +2694,7 @@ class WorkoutGeneratorService: ObservableObject {
                                                  nameLower.contains("gripper")
                         if isForearmIsolation && forearmIsolationCount >= maxForearmIsolations {
                             #if DEBUG
-                            print("   🚫 [FOREARM CAP] Skipping '\(name)': already have \(forearmIsolationCount) forearm exercises (max: \(maxForearmIsolations))")
+                            AppLogger.debug("[FOREARM CAP] Skipping '\(name)': already have \(forearmIsolationCount) forearm exercises (max: \(maxForearmIsolations))", category: .workout)
                             #endif
                             continue
                         }
@@ -2736,7 +2704,7 @@ class WorkoutGeneratorService: ObservableObject {
                                             nameLower.contains("soleus") || nameLower.contains("toe raise")
                         if isCalfExercise && calfExerciseCount >= maxCalfExercises {
                             #if DEBUG
-                            print("   🚫 [CALF CAP] Skipping '\(name)': already have \(calfExerciseCount) calf exercises (max: \(maxCalfExercises))")
+                            AppLogger.debug("[CALF CAP] Skipping '\(name)': already have \(calfExerciseCount) calf exercises (max: \(maxCalfExercises))", category: .workout)
                             #endif
                             continue
                         }
@@ -2745,7 +2713,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let isShrug = nameLower.contains("shrug")
                         if isShrug && shrugCount >= maxShrugExercises {
                             #if DEBUG
-                            print("   🚫 [SHRUG CAP] Skipping '\(name)': already have \(shrugCount) shrug exercises (max: \(maxShrugExercises))")
+                            AppLogger.debug("[SHRUG CAP] Skipping '\(name)': already have \(shrugCount) shrug exercises (max: \(maxShrugExercises))", category: .workout)
                             #endif
                             continue
                         }
@@ -2767,7 +2735,7 @@ class WorkoutGeneratorService: ObservableObject {
                             
                             if verticalPullFamilies.contains(vpFamily) {
                                 #if DEBUG
-                                print("   🚫 [VERTICAL PULL DUP] Skipping '\(name)': family '\(vpFamily)' already used")
+                                AppLogger.debug("[VERTICAL PULL DUP] Skipping '\(name)': family '\(vpFamily)' already used", category: .workout)
                                 #endif
                                 continue  // Already have this family of vertical pull
                             }
@@ -2777,7 +2745,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let isPullover = nameLower.contains("pullover")
                         if isPullover && pulloverCount >= maxPullovers {
                             #if DEBUG
-                            print("   🚫 [PULLOVER CAP] Skipping '\(name)': already have \(pulloverCount) pullovers (max: \(maxPullovers))")
+                            AppLogger.debug("[PULLOVER CAP] Skipping '\(name)': already have \(pulloverCount) pullovers (max: \(maxPullovers))", category: .workout)
                             #endif
                             continue
                         }
@@ -2787,7 +2755,7 @@ class WorkoutGeneratorService: ObservableObject {
                                         (nameLower.contains("press") && nameLower.contains("leg"))
                         if isLegPress && legPressCount >= maxLegPress {
                             #if DEBUG
-                            print("   🚫 [LEG PRESS CAP] Skipping '\(name)': already have \(legPressCount) leg press (max: \(maxLegPress))")
+                            AppLogger.debug("[LEG PRESS CAP] Skipping '\(name)': already have \(legPressCount) leg press (max: \(maxLegPress))", category: .workout)
                             #endif
                             continue
                         }
@@ -2798,7 +2766,7 @@ class WorkoutGeneratorService: ObservableObject {
                                              !nameLower.contains("leg")
                         if isVerticalPress && verticalPressCount >= maxVerticalPress {
                             #if DEBUG
-                            print("   🚫 [VERTICAL PRESS CAP] Skipping '\(name)': already have \(verticalPressCount) vertical press (max: \(maxVerticalPress))")
+                            AppLogger.debug("[VERTICAL PRESS CAP] Skipping '\(name)': already have \(verticalPressCount) vertical press (max: \(maxVerticalPress))", category: .workout)
                             #endif
                             continue
                         }
@@ -2814,14 +2782,14 @@ class WorkoutGeneratorService: ObservableObject {
                         
                         if isHorizontalRow && !isTbarRow && horizontalRowCount >= maxHorizontalRow {
                             #if DEBUG
-                            print("   🚫 [ROW CAP] Skipping '\(name)': already have \(horizontalRowCount) horizontal rows (max: \(maxHorizontalRow))")
+                            AppLogger.debug("[ROW CAP] Skipping '\(name)': already have \(horizontalRowCount) horizontal rows (max: \(maxHorizontalRow))", category: .workout)
                             #endif
                             continue
                         }
                         
                         if isTbarRow && tbarRowCount >= maxTbarRow {
                             #if DEBUG
-                            print("   🚫 [TBAR CAP] Skipping '\(name)': already have \(tbarRowCount) T-bar rows (max: \(maxTbarRow))")
+                            AppLogger.debug("[TBAR CAP] Skipping '\(name)': already have \(tbarRowCount) T-bar rows (max: \(maxTbarRow))", category: .workout)
                             #endif
                             continue
                         }
@@ -2830,7 +2798,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let isHammerCurl = nameLower.contains("hammer") && nameLower.contains("curl")
                         if isHammerCurl && hammerCurlCount >= maxHammerCurl {
                             #if DEBUG
-                            print("   🚫 [HAMMER CURL CAP] Skipping '\(name)': already have \(hammerCurlCount) hammer curls (max: \(maxHammerCurl))")
+                            AppLogger.debug("[HAMMER CURL CAP] Skipping '\(name)': already have \(hammerCurlCount) hammer curls (max: \(maxHammerCurl))", category: .workout)
                             #endif
                             continue
                         }
@@ -2839,7 +2807,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let isPreacherCurl = nameLower.contains("preacher") && nameLower.contains("curl")
                         if isPreacherCurl && preacherCurlCount >= maxPreacherCurl {
                             #if DEBUG
-                            print("   🚫 [PREACHER CURL CAP] Skipping '\(name)': already have \(preacherCurlCount) preacher curls (max: \(maxPreacherCurl))")
+                            AppLogger.debug("[PREACHER CURL CAP] Skipping '\(name)': already have \(preacherCurlCount) preacher curls (max: \(maxPreacherCurl))", category: .workout)
                             #endif
                             continue
                         }
@@ -2849,7 +2817,7 @@ class WorkoutGeneratorService: ObservableObject {
                         let isOtherPattern = detectedPatternForCap == "other" || detectedPatternForCap.isEmpty
                         if isOtherPattern && otherPatternCount >= maxOtherPattern {
                             #if DEBUG
-                            print("   🚫 [OTHER PATTERN CAP] Skipping '\(name)': already have \(otherPatternCount) unknown-pattern exercises (max: \(maxOtherPattern))")
+                            AppLogger.debug("[OTHER PATTERN CAP] Skipping '\(name)': already have \(otherPatternCount) unknown-pattern exercises (max: \(maxOtherPattern))", category: .workout)
                             #endif
                             continue
                         }
@@ -2866,7 +2834,7 @@ class WorkoutGeneratorService: ObservableObject {
                             let neededBackExercises = minBackExercises - backPatternCount
                             if remainingSlots <= neededBackExercises {
                                 #if DEBUG
-                                print("   🚫 [BACK PRIORITY] Skipping '\(name)': need \(neededBackExercises) more back exercises, only \(remainingSlots) slots left")
+                                AppLogger.debug("[BACK PRIORITY] Skipping '\(name)': need \(neededBackExercises) more back exercises, only \(remainingSlots) slots left", category: .workout)
                                 #endif
                                 continue
                             }
@@ -2895,13 +2863,13 @@ class WorkoutGeneratorService: ObservableObject {
                             if detectedPattern == "press" || detectedPattern == "chest_press" || detectedPattern == "incline_press" || 
                                detectedPattern == "decline_press" || detectedPattern == "shoulder_press" {
                                 #if DEBUG
-                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': press exercise in Back+Biceps workout")
+                                AppLogger.debug("[WRONG MUSCLE GROUP] Skipping '\(name)': press exercise in Back+Biceps workout", category: .workout)
                                 #endif
                                 continue
                             }
                             if detectedPattern == "tricep_pressdown" || detectedPattern == "tricep_overhead" || detectedPattern == "dip" {
                                 #if DEBUG
-                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': tricep exercise in Back+Biceps workout")
+                                AppLogger.debug("[WRONG MUSCLE GROUP] Skipping '\(name)': tricep exercise in Back+Biceps workout", category: .workout)
                                 #endif
                                 continue
                             }
@@ -2911,7 +2879,7 @@ class WorkoutGeneratorService: ObservableObject {
                         if wantsChestAndShoulders && !normalizedTargetMuscles.contains("back") {
                             if detectedPattern == "horizontal_row" || detectedPattern == "vertical_pull" {
                                 #if DEBUG
-                                print("   🚫 [WRONG MUSCLE GROUP] Skipping '\(name)': back exercise in Chest/Shoulder workout")
+                                AppLogger.debug("[WRONG MUSCLE GROUP] Skipping '\(name)': back exercise in Chest/Shoulder workout", category: .workout)
                                 #endif
                                 continue
                             }
@@ -2922,7 +2890,7 @@ class WorkoutGeneratorService: ObservableObject {
                         if !targetHasArms && wantsChestAndShoulders {
                             if movementKeyword == "curl" || exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl" {
                                 #if DEBUG
-                                print("   🚫 [OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout")
+                                AppLogger.debug("[OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout", category: .workout)
                                 #endif
                                 continue
                             }
@@ -3110,7 +3078,7 @@ class WorkoutGeneratorService: ObservableObject {
                         }
                         
                         #if DEBUG
-                        print("   🎯 [ROUND \(round)] \(equipType): \(name) (\(normalizedMuscle), family: \(exerciseFamily), move: \(movementKeyword)) - slot \(currentCount + 1)/\(slotsPerType)")
+                        AppLogger.debug("[ROUND \(round)] \(equipType): \(name) (\(normalizedMuscle), family: \(exerciseFamily), move: \(movementKeyword)) - slot \(currentCount + 1)/\(slotsPerType)", category: .workout)
                         #endif
                         
                         break  // Move to next equipment type
@@ -3123,9 +3091,9 @@ class WorkoutGeneratorService: ObservableObject {
             }
             
             #if DEBUG
-            print("   ✅ [PHASE 1 COMPLETE] Reserved \(result.count) exercises across \(equipmentTypesRepresented.count) equipment types")
+            AppLogger.info("[PHASE 1 COMPLETE] Reserved \(result.count) exercises across \(equipmentTypesRepresented.count) equipment types", category: .workout)
             for (equipType, cnt) in takenPerType.sorted(by: { $0.key < $1.key }) {
-                print("      • \(equipType): \(cnt)")
+                AppLogger.debug("  \(equipType): \(cnt)", category: .workout)
             }
             #endif
         }
@@ -3204,7 +3172,7 @@ class WorkoutGeneratorService: ObservableObject {
                     }
                     
                     #if DEBUG
-                    print("   💪 [MUSCLE DIVERSITY] Reserved slot for \(targetMuscle): \(name) (\(exerciseEquipType), family: \(exerciseFamily), base: \(baseMovement))")
+                    AppLogger.debug("[MUSCLE DIVERSITY] Reserved slot for \(targetMuscle): \(name) (\(exerciseEquipType), family: \(exerciseFamily), base: \(baseMovement))", category: .workout)
                     #endif
                     break
                 }
@@ -3243,7 +3211,7 @@ class WorkoutGeneratorService: ObservableObject {
                 let underrepresentedMuscles = normalizedTargetMuscles.filter { (usedNormalizedMuscles[$0] ?? 0) < maxPerMuscleGroup }
                 if !underrepresentedMuscles.isEmpty {
                     #if DEBUG
-                    print("   💪 [MUSCLE BALANCE] Soft-skipping \(normalizedMuscle) (has \(normalizedMuscleCount)/\(maxPerMuscleGroup)), prefer: \(underrepresentedMuscles)")
+                    AppLogger.debug("[MUSCLE BALANCE] Soft-skipping \(normalizedMuscle) (has \(normalizedMuscleCount)/\(maxPerMuscleGroup)), prefer: \(underrepresentedMuscles)", category: .workout)
                     #endif
                     continue
                 }
@@ -3254,7 +3222,7 @@ class WorkoutGeneratorService: ObservableObject {
             let familyCount = usedExerciseFamilies[exerciseFamily] ?? 0
             if exerciseFamily != "other" && familyCount >= 1 {
                 #if DEBUG
-                print("   🚫 [FAMILY] Skipping '\(name)': already have 1 from \(exerciseFamily) family")
+                AppLogger.debug("[FAMILY] Skipping '\(name)': already have 1 from \(exerciseFamily) family", category: .workout)
                 #endif
                 continue
             }
@@ -3264,7 +3232,7 @@ class WorkoutGeneratorService: ObservableObject {
             if wouldExceedBundleLimit(name) {
                 #if DEBUG
                 if let bundle = bundleEngine.bundleForExercise(named: name) {
-                    print("   📦 [BUNDLE] Skipping '\(name)': \(bundle.displayName) bundle at max (\(usedExerciseBundles[bundle.id, default: 0])/\(bundle.maxPerWorkout))")
+                    AppLogger.debug("[BUNDLE] Skipping '\(name)': \(bundle.displayName) bundle at max (\(usedExerciseBundles[bundle.id, default: 0])/\(bundle.maxPerWorkout))", category: .workout)
                 }
                 #endif
                 continue
@@ -3302,7 +3270,7 @@ class WorkoutGeneratorService: ObservableObject {
             let maxPerMovement = count <= 6 ? 1 : 2
             if movementKeyword != "other" && movementKeywordCount >= maxPerMovement {
                 #if DEBUG
-                print("   🎨 [VARIETY] Skipping '\(name)': already have \(movementKeywordCount) \(movementKeyword) exercises")
+                AppLogger.debug("[VARIETY] Skipping '\(name)': already have \(movementKeywordCount) \(movementKeyword) exercises", category: .workout)
                 #endif
                 continue
             }
@@ -3310,7 +3278,7 @@ class WorkoutGeneratorService: ObservableObject {
             // 🆕 GLOBAL PRESS CAP: Max 2 total presses for multi-muscle workouts
             if globalPressCapEnabled && movementKeyword == "press" && totalPressCount >= maxGlobalPresses {
                 #if DEBUG
-                print("   🚫 [PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))")
+                AppLogger.debug("[PRESS CAP] Skipping '\(name)': already have \(totalPressCount) presses (cap: \(maxGlobalPresses))", category: .workout)
                 #endif
                 continue
             }
@@ -3359,7 +3327,7 @@ class WorkoutGeneratorService: ObservableObject {
             if !targetHasArms && wantsChestAndShoulders {
                 if movementKeyword == "curl" || exerciseFamily == "bicep_curl" || exerciseFamily == "hammer_curl" || exerciseFamily == "preacher_curl" {
                     #if DEBUG
-                    print("   🚫 [OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout")
+                    AppLogger.debug("[OFF-TARGET] Skipping '\(name)': bicep isolation in chest/shoulder workout", category: .workout)
                     #endif
                     continue
                 }
@@ -3374,7 +3342,7 @@ class WorkoutGeneratorService: ObservableObject {
             // 🎨 BODY POSITION VARIETY: Max 2 per position (avoid 4 lying exercises)
             if bodyPosition != "other" && positionCount >= 2 {
                 #if DEBUG
-                print("   🎨 [VARIETY] Skipping '\(name)': already have \(positionCount) \(bodyPosition) exercises")
+                AppLogger.debug("[VARIETY] Skipping '\(name)': already have \(positionCount) \(bodyPosition) exercises", category: .workout)
                 #endif
                 continue
             }
@@ -3400,7 +3368,7 @@ class WorkoutGeneratorService: ObservableObject {
                 let underrepresentedTypes = selectedEquipmentTypes.filter { (usedEquipmentTypes[$0] ?? 0) < maxPerEquipType }
                 if !underrepresentedTypes.isEmpty {
                     #if DEBUG
-                    print("   ⚖️ [BALANCE] Soft-skipping \(exerciseEquipType) (has \(equipTypeCount)/\(maxPerEquipType)), prefer: \(underrepresentedTypes)")
+                    AppLogger.debug("[BALANCE] Soft-skipping \(exerciseEquipType) (has \(equipTypeCount)/\(maxPerEquipType)), prefer: \(underrepresentedTypes)", category: .workout)
                     #endif
                     continue
                 }
@@ -3478,7 +3446,7 @@ class WorkoutGeneratorService: ObservableObject {
         // 🆕 BALANCE SLOT ENFORCEMENT: Add a balance exercise if space allows
         if let balance = balanceSlot, !hasBalanceExercise, result.count < count {
             #if DEBUG
-            print("⚖️ [BALANCE SLOT] Adding balance exercise: \(balance)")
+            AppLogger.debug("[BALANCE SLOT] Adding balance exercise: \(balance)", category: .workout)
             #endif
             
             for scored in scoredExercises {
@@ -3517,7 +3485,7 @@ class WorkoutGeneratorService: ObservableObject {
                     hasBalanceExercise = true
                     
                     #if DEBUG
-                    print("   ✅ Added balance exercise: \(name)")
+                    AppLogger.info("Added balance exercise: \(name)", category: .workout)
                     #endif
                     break
                 }
@@ -3527,7 +3495,7 @@ class WorkoutGeneratorService: ObservableObject {
         // 🆕 SHOULDER ENFORCEMENT: If user wanted shoulders but we didn't get any, force-add one
         if wantsShoulders && !hasShoulderExercise && result.count > 0 {
             #if DEBUG
-            print("⚠️ [SHOULDER ENFORCEMENT] No shoulder exercises selected despite request! Attempting to swap...")
+            AppLogger.warning("[SHOULDER ENFORCEMENT] No shoulder exercises selected despite request! Attempting to swap...", category: .workout)
             #endif
             
             // Find a shoulder exercise to swap in
@@ -3567,7 +3535,7 @@ class WorkoutGeneratorService: ObservableObject {
                         )
                         
                         #if DEBUG
-                        print("   ✅ [SHOULDER ENFORCEMENT] Replacing '\(result[replaceIndex].name)' with '\(name)'")
+                        AppLogger.info("[SHOULDER ENFORCEMENT] Replacing '\(result[replaceIndex].name)' with '\(name)'", category: .workout)
                         #endif
                         result[replaceIndex] = generated
                         hasShoulderExercise = true
@@ -3613,15 +3581,15 @@ class WorkoutGeneratorService: ObservableObject {
             
             if !missingPatterns.isEmpty {
                 #if DEBUG
-                print("   ❌ [VALIDATION FAILED] Missing required patterns: \(missingPatterns)")
-                print("   ❌ This workout violates combo rules - returning empty result!")
+                AppLogger.error("[VALIDATION FAILED] Missing required patterns: \(missingPatterns)", category: .workout)
+                AppLogger.error("This workout violates combo rules - returning empty result!", category: .workout)
                 #endif
                 // CRITICAL: NEVER show a workout that violates combo rules
                 // Return empty to trigger fallback or retry
                 return []
             } else {
                 #if DEBUG
-                print("   ✅ [VALIDATION PASSED] All required patterns satisfied")
+                AppLogger.info("[VALIDATION PASSED] All required patterns satisfied", category: .workout)
                 #endif
             }
         }
@@ -3631,33 +3599,33 @@ class WorkoutGeneratorService: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════════════
         #if DEBUG
         if wantsChest && chestExerciseCount < minChestExercises {
-            print("   ⚠️ [MUSCLE MIN] Chest selected but only \(chestExerciseCount)/\(minChestExercises) chest exercises")
+            AppLogger.warning("[MUSCLE MIN] Chest selected but only \(chestExerciseCount)/\(minChestExercises) chest exercises", category: .workout)
         }
         if wantsCore && coreExerciseCount < minCoreExercises {
-            print("   ⚠️ [MUSCLE MIN] Core selected but only \(coreExerciseCount)/\(minCoreExercises) core exercises")
+            AppLogger.warning("[MUSCLE MIN] Core selected but only \(coreExerciseCount)/\(minCoreExercises) core exercises", category: .workout)
         }
         if wantsGlutes && gluteExerciseCount < minGluteExercises {
-            print("   ⚠️ [MUSCLE MIN] Glutes selected but only \(gluteExerciseCount)/\(minGluteExercises) glute exercises")
+            AppLogger.warning("[MUSCLE MIN] Glutes selected but only \(gluteExerciseCount)/\(minGluteExercises) glute exercises", category: .workout)
         }
         #endif
         
         // Log tracking stats
         #if DEBUG
-        print("   📊 [CAPS] Calf: \(calfExerciseCount)/\(maxCalfExercises), Shrug: \(shrugCount)/\(maxShrugExercises), Forearm: \(forearmIsolationCount)/\(maxForearmIsolations)")
-        print("   📊 [MUSCLE] Chest: \(chestExerciseCount)/\(minChestExercises), Core: \(coreExerciseCount)/\(minCoreExercises), Glute: \(gluteExerciseCount)/\(minGluteExercises)")
-        print("   📊 [VERTICAL PULLS] Count: \(verticalPullCount), Families: \(verticalPullFamilies)")
+        AppLogger.debug("[CAPS] Calf: \(calfExerciseCount)/\(maxCalfExercises), Shrug: \(shrugCount)/\(maxShrugExercises), Forearm: \(forearmIsolationCount)/\(maxForearmIsolations)", category: .workout)
+        AppLogger.debug("[MUSCLE] Chest: \(chestExerciseCount)/\(minChestExercises), Core: \(coreExerciseCount)/\(minCoreExercises), Glute: \(gluteExerciseCount)/\(minGluteExercises)", category: .workout)
+        AppLogger.debug("[VERTICAL PULLS] Count: \(verticalPullCount), Families: \(verticalPullFamilies)", category: .workout)
         #endif
         
-        print("✅ [SMART GEN] Final workout (\(result.count) exercises):")
-        print("   👤 Gender: \(finalGenderMatchCount) matching, \(finalGenderFallbackCount) fallback")
-        print("   🎯 Diversity: Positions \(usedBodyPositions.count), Movements \(usedMovementKeywords.count), Families \(usedExerciseFamilies.count), Base movements: \(usedBaseMovements.count)")
-        print("   🔧 Equipment mix: \(usedEquipmentTypes.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
-        print("   🎯 Equipment targets: Machine/Cable: \(machineOrCableCount)/\(targetMachineOrCable) | Free-weight: \(freeWeightCount)/\(targetFreeWeight) (max: \(maxFreeWeight))")
-        print("   💪 Muscle mix: \(usedNormalizedMuscles.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
-        print("   🏋️ Exercise families: \(usedExerciseFamilies.filter { $0.key != "other" }.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
+        AppLogger.info("[SMART GEN] Final workout (\(result.count) exercises):", category: .workout)
+        AppLogger.debug("Gender: \(finalGenderMatchCount) matching, \(finalGenderFallbackCount) fallback", category: .workout)
+        AppLogger.debug("Diversity: Positions \(usedBodyPositions.count), Movements \(usedMovementKeywords.count), Families \(usedExerciseFamilies.count), Base movements: \(usedBaseMovements.count)", category: .workout)
+        AppLogger.debug("Equipment mix: \(usedEquipmentTypes.map { "\($0.key): \($0.value)" }.joined(separator: ", "))", category: .workout)
+        AppLogger.debug("Equipment targets: Machine/Cable: \(machineOrCableCount)/\(targetMachineOrCable) | Free-weight: \(freeWeightCount)/\(targetFreeWeight) (max: \(maxFreeWeight))", category: .workout)
+        AppLogger.debug("Muscle mix: \(usedNormalizedMuscles.map { "\($0.key): \($0.value)" }.joined(separator: ", "))", category: .workout)
+        AppLogger.debug("Exercise families: \(usedExerciseFamilies.filter { $0.key != "other" }.map { "\($0.key): \($0.value)" }.joined(separator: ", "))", category: .workout)
         for (idx, ex) in result.enumerated() {
             let isFav = favorites.contains(ex.name.lowercased()) ? "⭐" : ""
-            print("   \(idx + 1). \(isFav) \(ex.name) - \(ex.category) - \(ex.equipment)")
+            AppLogger.debug("  \(idx + 1). \(isFav) \(ex.name) - \(ex.category) - \(ex.equipment)", category: .workout)
         }
         #endif
         
@@ -3666,9 +3634,9 @@ class WorkoutGeneratorService: ObservableObject {
         let sortedResult = sortExercisesStrategically(result)
         
         #if DEBUG
-        print("\n   📋 FINAL ORDER (after smart sorting):")
+        AppLogger.debug("FINAL ORDER (after smart sorting):", category: .workout)
         for (idx, ex) in sortedResult.enumerated() {
-            print("   \(idx + 1). \(ex.name) - \(ex.equipment)")
+            AppLogger.debug("  \(idx + 1). \(ex.name) - \(ex.equipment)", category: .workout)
         }
         
         // ═══════════════════════════════════════════════════════════════════════════
@@ -3679,13 +3647,10 @@ class WorkoutGeneratorService: ObservableObject {
             let missing = WorkoutComboRules.getMissingRequirements(rule, exercises: exerciseList)
             
             if !missing.isEmpty {
-                print("   ⚠️ [VALIDATION WARNING] Workout missing required patterns:")
-                for pattern in missing {
-                    print("      ❌ \(pattern)")
-                }
-                print("   ⚠️ This workout may not meet user expectations!")
+                AppLogger.warning("[VALIDATION WARNING] Workout missing required patterns: \(missing)", category: .workout)
+                AppLogger.warning("This workout may not meet user expectations!", category: .workout)
             } else {
-                print("   ✅ [VALIDATION PASSED] All required patterns satisfied")
+                AppLogger.info("[VALIDATION PASSED] All required patterns satisfied", category: .workout)
             }
         }
         #endif
@@ -3814,7 +3779,7 @@ class WorkoutGeneratorService: ObservableObject {
         var finalOrder = spacedCompounds + spacedIsolations + coreExercises
         
         #if DEBUG
-        print("   🔀 [SMART ORDER] Compounds: \(spacedCompounds.count), Isolations: \(spacedIsolations.count), Core: \(coreExercises.count)")
+        AppLogger.debug("[SMART ORDER] Compounds: \(spacedCompounds.count), Isolations: \(spacedIsolations.count), Core: \(coreExercises.count)", category: .workout)
         #endif
         
         return finalOrder

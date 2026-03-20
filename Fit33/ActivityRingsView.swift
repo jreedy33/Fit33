@@ -684,7 +684,7 @@ struct ActivityRingsDetailView: View {
                                 .frame(width: 40, height: 40)
                             
                             Image(systemName: item.icon)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.ds_labelLarge)
                                 .foregroundColor(item.color)
                         }
                         

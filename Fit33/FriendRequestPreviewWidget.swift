@@ -159,7 +159,7 @@ struct FriendRequestPreviewWidget: View {
                             .tint(.primary)
                     } else {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text("Decline")
                         .font(.subheadline)
@@ -184,7 +184,7 @@ struct FriendRequestPreviewWidget: View {
                             .tint(.white)
                     } else {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text("Accept")
                         .font(.subheadline)
@@ -294,7 +294,7 @@ struct FriendRequestPreviewContainer: View {
                 if friendService.pendingRequests.count > 1 {
                     HStack(spacing: 6) {
                         Image(systemName: "person.2.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
                         Text("\(friendService.pendingRequests.count - 1) more request\(friendService.pendingRequests.count > 2 ? "s" : "") waiting")
                             .font(.caption)

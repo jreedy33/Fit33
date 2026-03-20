@@ -54,7 +54,8 @@ serve(async (req) => {
       formattedPhone = '+' + formattedPhone
     }
 
-    console.log(`📱 Sending verification to: ${formattedPhone}`)
+    const redacted = formattedPhone.slice(0, -4).replace(/\d/g, '*') + formattedPhone.slice(-4)
+    console.log(`Sending verification to: ${redacted}`)
 
     // Send verification via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/Verifications`
@@ -78,7 +79,7 @@ serve(async (req) => {
       throw new Error(twilioData.message || 'Failed to send verification')
     }
 
-    console.log(`✅ Verification sent successfully. Status: ${twilioData.status}`)
+    console.log(`Verification sent successfully. Status: ${twilioData.status}`)
 
     // Log verification attempt in database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -92,9 +93,12 @@ serve(async (req) => {
       const { data: { user } } = await supabase.auth.getUser(token)
       
       if (user) {
-        await supabase.rpc('start_phone_verification', {
+        const { error: rpcError } = await supabase.rpc('start_phone_verification', {
           p_phone_number: formattedPhone
         })
+        if (rpcError) {
+          console.error('RPC start_phone_verification failed:', rpcError.message)
+        }
       }
     }
 

@@ -220,7 +220,7 @@ struct CardioActiveWorkoutView: View {
                         .fontWeight(.bold)
                         .foregroundColor(activityType.color)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(activityType.color.opacity(0.2))
@@ -360,7 +360,7 @@ struct CardioActiveWorkoutView: View {
                         .frame(width: 70, height: 70)
                     
                     Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 28))
+                        .font(.ds_heading1)
                         .foregroundColor(.white)
                 }
             }
@@ -581,7 +581,7 @@ struct CardioStatCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(color)
                 Spacer()
             }
@@ -614,7 +614,7 @@ struct MiniStatCard: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(color)
             
             Text(value)

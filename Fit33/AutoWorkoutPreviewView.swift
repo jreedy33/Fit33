@@ -112,7 +112,7 @@ struct AutoWorkoutPreviewView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                 }
             }
@@ -244,7 +244,7 @@ struct AutoWorkoutPreviewView: View {
                         }
                         .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Spacing.xxs)
                     
                     VStack(spacing: 10) {
                         ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
@@ -283,7 +283,7 @@ struct AutoWorkoutPreviewView: View {
                         }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 18))
+                                    .font(.ds_heading3)
                                 Text("Add Exercise")
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -352,7 +352,7 @@ struct AutoWorkoutPreviewView: View {
                     .frame(width: 46, height: 46)
                 
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -391,7 +391,7 @@ struct AutoWorkoutPreviewView: View {
                             .tint(themeColor)
                     } else {
                         Image(systemName: "shuffle")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(themeColor)
                     }
                 }
@@ -757,7 +757,7 @@ struct AutoExerciseCard: View {
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: categoryIcon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(categoryColor)
                     }
                     
@@ -789,7 +789,7 @@ struct AutoExerciseCard: View {
                     
                     // Info icon
                     Image(systemName: "info.circle")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(.secondary.opacity(0.5))
                 }
             }
@@ -803,7 +803,7 @@ struct AutoExerciseCard: View {
                         .frame(width: 32, height: 32)
                 } else {
                     Image(systemName: "arrow.triangle.swap")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(categoryColor)
                         .padding(Spacing.xs)
                         .background(
@@ -937,7 +937,7 @@ struct AutoExerciseSwapView: View {
                             Image(systemName: "arrow.right.circle.fill")
                                 .foregroundColor(themeColor)
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     }
                 }
                 .listStyle(.plain)
@@ -1035,9 +1035,9 @@ struct ExerciseDataDetailView: View {
                             // Category Badge
                             HStack(spacing: 6) {
                                 Image(systemName: categoryIcon)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.ds_labelMedium)
                                 Text(exerciseData.category)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.ds_labelMedium)
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.sm)
@@ -1054,7 +1054,7 @@ struct ExerciseDataDetailView: View {
                             // Equipment Badge
                             HStack(spacing: 6) {
                                 Image(systemName: "dumbbell.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                 Text(exerciseData.equipment)
                                     .font(.system(size: 13, weight: .medium))
                             }
@@ -1115,7 +1115,7 @@ struct ExerciseDataDetailView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                 }
             }
@@ -1152,7 +1152,7 @@ struct ExerciseDataDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
                 
                 Text(title)
@@ -1184,7 +1184,7 @@ struct ExerciseDataDetailView: View {
     private func stepRow(number: Int, text: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text("\(number)")
-                .font(.system(size: 14, weight: .bold))
+                .font(.ds_bodySmall).fontWeight(.bold)
                 .foregroundColor(.white)
                 .frame(width: 24, height: 24)
                 .background(
@@ -1281,9 +1281,9 @@ struct GeneratedExerciseDetailView: View {
                             // Category Badge
                             HStack(spacing: 6) {
                                 Image(systemName: categoryIcon)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.ds_labelMedium)
                                 Text(exercise.category)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.ds_labelMedium)
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.sm)
@@ -1300,7 +1300,7 @@ struct GeneratedExerciseDetailView: View {
                             // Equipment Badge
                             HStack(spacing: 6) {
                                 Image(systemName: "dumbbell.fill")
-                                    .font(.system(size: 12))
+                                    .font(.ds_bodySmall)
                                 Text(exercise.equipment)
                                     .font(.system(size: 13, weight: .medium))
                             }
@@ -1316,7 +1316,7 @@ struct GeneratedExerciseDetailView: View {
                     // Primary Muscle
                     sectionCard(title: "Primary Muscle", icon: "figure.strengthtraining.traditional") {
                         Text(exercise.primaryMuscle)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
@@ -1332,7 +1332,7 @@ struct GeneratedExerciseDetailView: View {
                             FlowLayout(spacing: 8) {
                                 ForEach(exercise.secondaryMuscles, id: \.self) { muscle in
                                     Text(muscle)
-                                        .font(.system(size: 14, weight: .medium))
+                                        .font(.ds_bodySmall).fontWeight(.medium)
                                         .foregroundColor(.primary)
                                         .padding(.horizontal, Spacing.sm)
                                         .padding(.vertical, 6)
@@ -1378,7 +1378,7 @@ struct GeneratedExerciseDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
                 
                 Text(title)

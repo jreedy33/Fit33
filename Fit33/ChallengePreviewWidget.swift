@@ -247,7 +247,7 @@ struct ChallengePreviewWidget: View {
                             .tint(.primary)
                     } else {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     Text("Decline")
                         .font(.subheadline)
@@ -392,7 +392,7 @@ struct ChallengePreviewContainer: View {
                 if challengeService.pendingInvites.count > 1 {
                     HStack(spacing: 6) {
                         Image(systemName: "trophy.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
                         Text("\(challengeService.pendingInvites.count - 1) more challenge\(challengeService.pendingInvites.count > 2 ? "s" : "") waiting")
                             .font(.caption)
@@ -434,7 +434,7 @@ struct ActiveChallengeWidget: View {
                             .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
                             .frame(width: 28, height: 28)
                         Text(resolvedType.emoji)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                     }
                     
                     Text(challenge.displayTitle)
@@ -449,14 +449,14 @@ struct ActiveChallengeWidget: View {
                     if challenge.amWinning {
                         HStack(spacing: 2) {
                             Image(systemName: "crown.fill")
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                             Text("Leading")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.yellow)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                         .background(
                             Capsule()
                                 .fill(Color.yellow.opacity(0.2))
@@ -467,7 +467,7 @@ struct ActiveChallengeWidget: View {
                             .fontWeight(.medium)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xxs)
                             .background(
                                 Capsule()
                                     .fill(Color.secondary.opacity(0.15))
@@ -611,11 +611,11 @@ struct FriendChallengeRow: View {
                 // Win indicator
                 if challenge.status == "completed" {
                     Image(systemName: challenge.amWinning ? "trophy.fill" : "medal")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(challenge.amWinning ? .yellow : .secondary)
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: challengeType.gradientColors,
@@ -752,7 +752,7 @@ struct GroupChallengeInviteWidget: View {
                 Spacer()
                 
                 Text(challengeType.emoji)
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
             }
             .padding(Spacing.md)
             
@@ -817,7 +817,7 @@ struct GroupChallengeInviteWidget: View {
                             ProgressView().scaleEffect(0.7).tint(.secondary)
                         } else {
                             Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         Text("Decline")
                             .font(.subheadline)
@@ -841,7 +841,7 @@ struct GroupChallengeInviteWidget: View {
                             ProgressView().scaleEffect(0.7).tint(.white)
                         } else {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         Text("Join Challenge")
                             .font(.subheadline)
@@ -1025,7 +1025,7 @@ struct PrivateChallengeInviteWidget: View {
                 Spacer()
                 
                 Text(invite.challengeEmoji ?? challengeType.emoji)
-                    .font(.system(size: 28))
+                    .font(.ds_heading1)
             }
             .padding(Spacing.md)
             
@@ -1050,7 +1050,7 @@ struct PrivateChallengeInviteWidget: View {
                 // Lock icon indicating private
                 VStack(spacing: 2) {
                     Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
@@ -1076,7 +1076,7 @@ struct PrivateChallengeInviteWidget: View {
                             ProgressView().scaleEffect(0.7).tint(.secondary)
                         } else {
                             Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         Text("Decline")
                             .font(.subheadline)
@@ -1100,7 +1100,7 @@ struct PrivateChallengeInviteWidget: View {
                             ProgressView().scaleEffect(0.7).tint(.white)
                         } else {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ds_labelMedium)
                         }
                         Text("Join Challenge")
                             .font(.subheadline)
@@ -1232,7 +1232,7 @@ struct PrivateChallengeInviteContainer: View {
                 if privateChallengeService.pendingInvites.count > 3 {
                     HStack(spacing: 6) {
                         Image(systemName: "lock.shield.fill")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.purple)
                         Text("\(privateChallengeService.pendingInvites.count) private challenge invites")
                             .font(.caption)

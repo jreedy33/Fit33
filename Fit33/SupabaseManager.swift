@@ -107,7 +107,7 @@ class SupabaseManager: ObservableObject {
     private init() {
         // Initialize Supabase client
         guard let url = URL(string: supabaseURL) else {
-            print("❌ Invalid Supabase URL")
+            AppLogger.error("Invalid Supabase URL", category: .network)
             return
         }
         
@@ -128,7 +128,7 @@ class SupabaseManager: ObservableObject {
             let userExists = await verifyUserExists(userId: session.user.id)
             
             if !userExists {
-                print("⚠️ Session exists but user was deleted from database - forcing sign out")
+                AppLogger.warning("Session exists but user was deleted from database - forcing sign out", category: .auth)
                 try? await client.auth.signOut()
                 await MainActor.run {
                     currentUser = nil
@@ -143,14 +143,14 @@ class SupabaseManager: ObservableObject {
                 currentUser = session.user
                 isAuthenticated = true
             }
-            print("✅ User already signed in: \(session.user.email ?? "unknown")")
+            AppLogger.info("User already signed in: \(session.user.email ?? "unknown")", category: .auth)
             
             // Sync all data from cloud (skipped in fast startup mode for dev)
             #if DEBUG
             if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
             await syncAllDataFromCloud()
             } else {
-                print("⚡ [FAST STARTUP] Skipping cloud sync - using cached data")
+                AppLogger.debug("[FAST STARTUP] Skipping cloud sync - using cached data", category: .network)
             }
             #else
             await syncAllDataFromCloud()
@@ -160,7 +160,7 @@ class SupabaseManager: ObservableObject {
                 isAuthenticated = false
                 currentUser = nil
             }
-            print("ℹ️ No active session")
+            AppLogger.info("No active session", category: .auth)
         }
     }
     
@@ -179,7 +179,7 @@ class SupabaseManager: ObservableObject {
             
             // Check if profile exists AND has meaningful data
             guard let profile = response.first else {
-                print("📝 [VERIFY] No profile found for user \(userId.uuidString)")
+                AppLogger.debug("[VERIFY] No profile found for user \(userId.uuidString)", category: .network)
                 return false
             }
             
@@ -188,14 +188,14 @@ class SupabaseManager: ObservableObject {
             let hasEmail = profile.email != nil && !profile.email!.isEmpty
             
             if !hasName && !hasEmail {
-                print("⚠️ [VERIFY] Profile exists but has no name or email - treating as new user")
+                AppLogger.warning("[VERIFY] Profile exists but has no name or email - treating as new user", category: .network)
                 return false
             }
             
-            print("✅ [VERIFY] Valid profile found - Name: \(profile.name ?? "nil"), Email: \(profile.email ?? "nil")")
+            AppLogger.info("[VERIFY] Valid profile found - Name: \(profile.name ?? "nil"), Email: \(profile.email ?? "nil")", category: .network)
             return true
         } catch {
-            print("⚠️ [VERIFY] Error checking user profile: \(error)")
+            AppLogger.warning("[VERIFY] Error checking user profile: \(error)", category: .network)
             // IMPORTANT: If we can't verify, assume user is NEW so profile gets created
             // This is safer than assuming they exist and leaving them with null data
             return false
@@ -207,23 +207,23 @@ class SupabaseManager: ObservableObject {
         SessionLogManager.shared.logAuthAttempt(method: "email_signup")
         
         let startTime = Date()
-        print("🔐 [SUPABASE] Starting signup request for: \(email)")
-        print("🔐 [SUPABASE] Timestamp: \(startTime)")
+        AppLogger.debug("[SUPABASE] Starting signup request for: \(email)", category: .auth)
+        AppLogger.debug("[SUPABASE] Timestamp: \(startTime)", category: .auth)
 
         do {
-            print("🔐 [SUPABASE] Calling client.auth.signUp...")
+            AppLogger.debug("[SUPABASE] Calling client.auth.signUp...", category: .auth)
             let response = try await client.auth.signUp(email: email, password: password)
             
             let duration = Date().timeIntervalSince(startTime)
-            print("🔐 [SUPABASE] signUp response received in \(String(format: "%.2f", duration))s")
+            AppLogger.debug("[SUPABASE] signUp response received in \(String(format: "%.2f", duration))s", category: .auth)
             
             let user = response.user
-            print("🔐 [SUPABASE] User ID: \(user.id)")
+            AppLogger.debug("[SUPABASE] User ID: \(user.id)", category: .auth)
             
             // Create user profile
-            print("🔐 [SUPABASE] Creating user profile...")
+            AppLogger.debug("[SUPABASE] Creating user profile...", category: .auth)
             try await createUserProfile(userId: user.id, name: name, email: email)
-            print("🔐 [SUPABASE] Profile created successfully")
+            AppLogger.info("[SUPABASE] Profile created successfully", category: .auth)
             
             await MainActor.run {
                 currentUser = user
@@ -235,13 +235,13 @@ class SupabaseManager: ObservableObject {
             }
             
             let totalDuration = Date().timeIntervalSince(startTime)
-            print("✅ Sign up successful: \(email) (total: \(String(format: "%.2f", totalDuration))s)")
+            AppLogger.info("Sign up successful: \(email) (total: \(String(format: "%.2f", totalDuration))s)", category: .auth)
             SessionLogManager.shared.logAuthSuccess(method: "email_signup", userId: user.id.uuidString)
         } catch {
             let duration = Date().timeIntervalSince(startTime)
             await MainActor.run { isLoading = false }
-            print("❌ Sign up error after \(String(format: "%.2f", duration))s: \(error.localizedDescription)")
-            print("❌ Sign up error details: \(error)")
+            AppLogger.error("Sign up error after \(String(format: "%.2f", duration))s: \(error.localizedDescription)", category: .auth)
+            AppLogger.error("Sign up error details: \(error)", category: .auth)
             SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "\(error.localizedDescription) | Duration: \(String(format: "%.2f", duration))s")
             throw error
         }
@@ -267,14 +267,14 @@ class SupabaseManager: ObservableObject {
                 "email": email,
                 "user_id": String(currentUser?.id.uuidString.prefix(8) ?? "?")
             ])
-            print("✅ Sign in successful: \(email)")
+            AppLogger.info("Sign in successful: \(email)", category: .auth)
             
             // Sync all data from cloud
             await syncAllDataFromCloud()
         } catch {
             await MainActor.run { isLoading = false }
             SessionLogManager.shared.logAuthFailure(method: "email", error: error.localizedDescription)
-            print("❌ Sign in error: \(error.localizedDescription)")
+            AppLogger.error("Sign in error: \(error.localizedDescription)", category: .auth)
             throw error
         }
     }
@@ -286,10 +286,10 @@ class SupabaseManager: ObservableObject {
     func checkAuthProvider(for email: String) async -> String {
         do {
             let response: String = try await client.rpc("check_auth_provider", params: ["email_to_check": email.lowercased()]).execute().value
-            print("🔍 Auth provider for \(email): \(response)")
+            AppLogger.debug("Auth provider for \(email): \(response)", category: .auth)
             return response
         } catch {
-            print("⚠️ Could not check auth provider: \(error.localizedDescription)")
+            AppLogger.warning("Could not check auth provider: \(error.localizedDescription)", category: .auth)
             return "unknown"
         }
     }
@@ -350,8 +350,8 @@ class SupabaseManager: ObservableObject {
                 // 6. Don't store anything (let user enter their name)
                 var appleFullName: String?
                 
-                print("🔍 [APPLE] Starting name resolution for user: \(session.user.id.uuidString.prefix(8))...")
-                print("🔍 [APPLE] appleProvidedName: \(appleProvidedName ?? "nil")")
+                AppLogger.debug("[APPLE] Starting name resolution for user: \(session.user.id.uuidString.prefix(8))...", category: .auth)
+                AppLogger.debug("[APPLE] appleProvidedName: \(appleProvidedName ?? "nil")", category: .auth)
                 
                 if let providedName = appleProvidedName, !providedName.isEmpty, providedName != "Apple User" {
                     appleFullName = providedName
@@ -359,36 +359,36 @@ class SupabaseManager: ObservableObject {
                     // Store both per-user AND globally (global survives account deletion)
                     UserDefaults.standard.set(providedName, forKey: "apple_user_name_\(session.user.id.uuidString)")
                     UserDefaults.standard.set(providedName, forKey: "apple_global_name")
-                    print("💾 [APPLE] Persisted user FULL NAME for future sign-ins: \(providedName)")
-                    print("💾 [APPLE] Also stored globally as fallback")
+                    AppLogger.debug("[APPLE] Persisted user FULL NAME for future sign-ins: \(providedName)", category: .auth)
+                    AppLogger.debug("[APPLE] Also stored globally as fallback", category: .auth)
                 } else {
                     // Check per-user persisted name
                     let persistedKey = "apple_user_name_\(session.user.id.uuidString)"
                     let persistedFullName = UserDefaults.standard.string(forKey: persistedKey)
-                    print("🔍 [APPLE] Checking UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")")
+                    AppLogger.debug("[APPLE] Checking UserDefaults[\(persistedKey)]: \(persistedFullName ?? "nil")", category: .auth)
                     
                     if let persistedFullName = persistedFullName, 
                        !persistedFullName.isEmpty,
                        persistedFullName != "Apple User" {
                         appleFullName = persistedFullName
-                        print("📂 [APPLE] Using persisted FULL NAME from previous sign-in: \(persistedFullName)")
+                        AppLogger.debug("[APPLE] Using persisted FULL NAME from previous sign-in: \(persistedFullName)", category: .auth)
                     } else {
                         // Check global name cache (survives account deletion)
                         let globalName = UserDefaults.standard.string(forKey: "apple_global_name")
-                        print("🔍 [APPLE] Checking global cache [apple_global_name]: \(globalName ?? "nil")")
+                        AppLogger.debug("[APPLE] Checking global cache [apple_global_name]: \(globalName ?? "nil")", category: .auth)
                         
                         if let globalName = globalName, !globalName.isEmpty, globalName != "Apple User" {
                             appleFullName = globalName
                             // Restore to per-user cache
                             UserDefaults.standard.set(globalName, forKey: "apple_user_name_\(session.user.id.uuidString)")
-                            print("📂 [APPLE] Using GLOBAL cached name (restored from previous session): \(globalName)")
+                            AppLogger.debug("[APPLE] Using GLOBAL cached name (restored from previous session): \(globalName)", category: .auth)
                         } else if let fullName = session.user.userMetadata["full_name"] as? String, !fullName.isEmpty {
-                            print("🔍 [APPLE] Checking metadata full_name: \(fullName)")
+                            AppLogger.debug("[APPLE] Checking metadata full_name: \(fullName)", category: .auth)
                             if fullName != "Apple User" {
                                 appleFullName = fullName
                             }
                         } else if let name = session.user.userMetadata["name"] as? String, !name.isEmpty {
-                            print("🔍 [APPLE] Checking metadata name: \(name)")
+                            AppLogger.debug("[APPLE] Checking metadata name: \(name)", category: .auth)
                             if name != "Apple User" {
                                 appleFullName = name
                             }
@@ -397,7 +397,7 @@ class SupabaseManager: ObservableObject {
                             let emailPrefix = email.components(separatedBy: "@").first ?? ""
                             // Check if email prefix looks like a real name (contains letters, not too many numbers)
                             let letterCount = emailPrefix.filter { $0.isLetter }.count
-                            print("🔍 [APPLE] Checking email prefix: \(emailPrefix) (letters: \(letterCount))")
+                            AppLogger.debug("[APPLE] Checking email prefix: \(emailPrefix) (letters: \(letterCount))", category: .auth)
                             if letterCount > 2 && emailPrefix.count > 2 {
                                 appleFullName = emailPrefix.capitalized
                             }
@@ -405,7 +405,7 @@ class SupabaseManager: ObservableObject {
                     }
                 }
                 
-                print("📧 Apple Sign-In - Email: \(appleEmail), Full Name: \(appleFullName ?? "(none - user will enter)")")
+                AppLogger.debug("Apple Sign-In - Email: \(appleEmail), Full Name: \(appleFullName ?? "(none - user will enter)")", category: .auth)
                 
                 // ⚠️ IMPORTANT: Do NOT create profile here!
                 // The profile should only be created when user taps "Create Account" at end of onboarding.
@@ -413,19 +413,19 @@ class SupabaseManager: ObservableObject {
                 // Store the Apple FULL NAME temporarily ONLY if we have a valid one - profile will be created in completeOnboarding()
                 if let fullName = appleFullName, !fullName.isEmpty {
                     UserDefaults.standard.set(fullName, forKey: "pending_oauth_name")
-                    print("🔐 [APPLE] Stored pending full name: \(fullName)")
+                    AppLogger.debug("[APPLE] Stored pending full name: \(fullName)", category: .auth)
                 } else {
                     // Don't store anything - user will be prompted to enter their name
                     UserDefaults.standard.removeObject(forKey: "pending_oauth_name")
-                    print("🔐 [APPLE] ⚠️ No valid name available - user will be prompted to enter name")
-                    print("🔐 [APPLE] ℹ️ To fix: Sign out of Apple ID in Settings > [Your Name] > Sign In & Security > Apps Using Your Apple ID > Fit33 > Stop Using Apple ID")
-                    print("🔐 [APPLE] ℹ️ Then sign in again - Apple will provide your name on the FIRST sign-in with a new connection")
+                    AppLogger.warning("[APPLE] No valid name available - user will be prompted to enter name", category: .auth)
+                    AppLogger.info("[APPLE] To fix: Sign out of Apple ID in Settings > [Your Name] > Sign In & Security > Apps Using Your Apple ID > Fit33 > Stop Using Apple ID", category: .auth)
+                    AppLogger.info("[APPLE] Then sign in again - Apple will provide your name on the FIRST sign-in with a new connection", category: .auth)
                 }
                 UserDefaults.standard.set(appleEmail, forKey: "pending_oauth_email")
                 UserDefaults.standard.synchronize()
                 
                 isNewUser = true
-                print("👤 New Apple user - needs onboarding")
+                AppLogger.debug("New Apple user - needs onboarding", category: .auth)
             }
             
             await MainActor.run {
@@ -434,7 +434,7 @@ class SupabaseManager: ObservableObject {
                 isLoading = false
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
-            print("✅ Apple Sign-In successful: \(session.user.email ?? "private email")")
+            AppLogger.info("Apple Sign-In successful: \(session.user.email ?? "private email")", category: .auth)
             
             // Only sync data for EXISTING users (not new users who need onboarding)
             if !isNewUser {
@@ -444,7 +444,7 @@ class SupabaseManager: ObservableObject {
             return isNewUser
         } catch {
             await MainActor.run { isLoading = false }
-            print("❌ Apple Sign-In error: \(error.localizedDescription)")
+            AppLogger.error("Apple Sign-In error: \(error.localizedDescription)", category: .auth)
             throw error
         }
     }
@@ -464,7 +464,7 @@ class SupabaseManager: ObservableObject {
                 session = try await client.auth.session(from: url)
             } catch {
                 // PKCE failed - try parsing implicit flow tokens from URL fragment
-                print("🔐 [OAUTH] PKCE failed, trying implicit flow token parsing...")
+                AppLogger.debug("[OAUTH] PKCE failed, trying implicit flow token parsing...", category: .auth)
                 
                 guard let fragment = url.fragment else {
                     throw error
@@ -481,22 +481,22 @@ class SupabaseManager: ObservableObject {
                 
                 guard let accessToken = params["access_token"],
                       let refreshToken = params["refresh_token"] else {
-                    print("❌ [OAUTH] Missing tokens in URL fragment")
+                    AppLogger.error("[OAUTH] Missing tokens in URL fragment", category: .auth)
                     throw error
                 }
                 
                 // Decode the JWT to extract user metadata (it's in the payload)
                 jwtUserMetadata = decodeJWTPayload(accessToken)
                 if let metadata = jwtUserMetadata?["user_metadata"] as? [String: Any] {
-                    print("🔐 [OAUTH] Decoded user metadata from JWT: \(metadata)")
+                    AppLogger.debug("[OAUTH] Decoded user metadata from JWT: \(metadata)", category: .auth)
                     jwtUserMetadata = metadata
                 }
                 
-                print("🔐 [OAUTH] Found tokens in URL fragment, setting session...")
+                AppLogger.debug("[OAUTH] Found tokens in URL fragment, setting session...", category: .auth)
                 
                 // Set the session using the tokens
                 session = try await client.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
-                print("✅ [OAUTH] Session set from implicit flow tokens")
+                AppLogger.info("[OAUTH] Session set from implicit flow tokens", category: .auth)
             }
             
             // Check if this is a new user (no profile exists yet)
@@ -532,14 +532,14 @@ class SupabaseManager: ObservableObject {
                     socialUsername = session.user.userMetadata["user_name"] as? String 
                         ?? session.user.userMetadata["username"] as? String
                     
-                    print("📘 Facebook Sign-In - Username: @\(socialUsername ?? "unknown"), Name: \(userName)")
+                    AppLogger.debug("Facebook Sign-In - Username: @\(socialUsername ?? "unknown"), Name: \(userName)", category: .auth)
                 } else {
                     // Google or other OAuth provider
                     userEmail = session.user.email ?? "oauth_user_\(session.user.id.uuidString.prefix(8))@email.com"
                     userName = sessionFullName ?? sessionName ?? jwtFullName ?? jwtName ?? "User"
-                    print("🔐 OAuth Sign-In - Provider: \(provider), Name: \(userName)")
-                    print("🔐 OAuth Sign-In - Session metadata: \(session.user.userMetadata)")
-                    print("🔐 OAuth Sign-In - JWT metadata: \(jwtUserMetadata ?? [:])")
+                    AppLogger.debug("OAuth Sign-In - Provider: \(provider), Name: \(userName)", category: .auth)
+                    AppLogger.debug("OAuth Sign-In - Session metadata: \(session.user.userMetadata)", category: .auth)
+                    AppLogger.debug("OAuth Sign-In - JWT metadata: \(jwtUserMetadata ?? [:])", category: .auth)
                 }
                 
                 // ⚠️ IMPORTANT: Do NOT create profile here!
@@ -553,8 +553,8 @@ class SupabaseManager: ObservableObject {
                         UserDefaults.standard.set(avatar, forKey: "pending_oauth_avatar")
                     }
                     UserDefaults.standard.synchronize()
-                    print("🔐 [OAUTH] Stored pending profile data (will create on onboarding completion)")
-                    print("🔐 [OAUTH] Pending name: \(userName), email: \(userEmail)")
+                    AppLogger.debug("[OAUTH] Stored pending profile data (will create on onboarding completion)", category: .auth)
+                    AppLogger.debug("[OAUTH] Pending name: \(userName), email: \(userEmail)", category: .auth)
                 }
                 
                 isNewUser = true
@@ -566,7 +566,7 @@ class SupabaseManager: ObservableObject {
                 isLoading = false
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
-            print("✅ OAuth Sign-In successful: \(session.user.email ?? "unknown")")
+            AppLogger.info("OAuth Sign-In successful: \(session.user.email ?? "unknown")", category: .auth)
             
             // Only sync for existing users
             if !isNewUser {
@@ -576,8 +576,8 @@ class SupabaseManager: ObservableObject {
             return (isNewUser, socialUsername)
         } catch {
             await MainActor.run { isLoading = false }
-            print("❌ OAuth callback error: \(error.localizedDescription)")
-            print("❌ OAuth callback error: \(error)")
+            AppLogger.error("OAuth callback error: \(error.localizedDescription)", category: .auth)
+            AppLogger.error("OAuth callback error: \(error)", category: .auth)
             throw error
         }
     }
@@ -661,10 +661,10 @@ class SupabaseManager: ObservableObject {
                 isLoading = false
             }
             SessionLogManager.shared.log(.info, category: .auth, message: "🔐 Sign out complete")
-            print("✅ Sign out successful - all local data cleared")
+            AppLogger.info("Sign out successful - all local data cleared", category: .auth)
         } catch {
             await MainActor.run { isLoading = false }
-            print("❌ Sign out error: \(error.localizedDescription)")
+            AppLogger.error("Sign out error: \(error.localizedDescription)", category: .auth)
             throw error
         }
     }
@@ -676,23 +676,21 @@ class SupabaseManager: ObservableObject {
             throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
         }
         
-        print("🗑️ ════════════════════════════════════════")
-        print("🗑️ STARTING ACCOUNT DELETION")
-        print("🗑️ User ID: \(userId.uuidString)")
-        print("🗑️ ════════════════════════════════════════")
+        AppLogger.info("STARTING ACCOUNT DELETION", category: .auth)
+        AppLogger.info("User ID: \(userId.uuidString)", category: .auth)
         
         await MainActor.run { isLoading = true }
         
         // STEP 1: Always delete all user data from tables first (this always works)
-        print("🗑️ Step 1: Deleting all user data from tables...")
+        AppLogger.debug("Step 1: Deleting all user data from tables...", category: .network)
         await deleteAllUserDataFromTables(userId: userId)
         
         // STEP 2: Delete profile photo from storage
-        print("🗑️ Step 2: Deleting profile photo...")
+        AppLogger.debug("Step 2: Deleting profile photo...", category: .network)
         await deleteProfilePhotoFromStorage(userId: userId)
         
         // STEP 3: Try to delete from auth.users via RPC (requires DELETE_USER_ACCOUNT.sql)
-        print("🗑️ Step 3: Attempting to delete from auth.users via RPC...")
+        AppLogger.debug("Step 3: Attempting to delete from auth.users via RPC...", category: .network)
         var authUserDeleted = false
         do {
             let result: Bool = try await client
@@ -702,18 +700,18 @@ class SupabaseManager: ObservableObject {
             
             authUserDeleted = result
             if result {
-                print("✅ User deleted from auth.users via RPC")
+                AppLogger.info("User deleted from auth.users via RPC", category: .auth)
             } else {
-                print("⚠️ RPC returned false - auth.users entry may still exist")
+                AppLogger.warning("RPC returned false - auth.users entry may still exist", category: .auth)
             }
         } catch {
-            print("⚠️ RPC delete_user_account failed: \(error.localizedDescription)")
-            print("⚠️ Run DELETE_USER_ACCOUNT.sql in Supabase to enable full deletion")
+            AppLogger.warning("RPC delete_user_account failed: \(error.localizedDescription)", category: .network)
+            AppLogger.warning("Run DELETE_USER_ACCOUNT.sql in Supabase to enable full deletion", category: .network)
             // Continue anyway - profile data is already deleted
         }
         
         // STEP 4: Sign out and clear local data
-        print("🗑️ Step 4: Signing out and clearing local data...")
+        AppLogger.debug("Step 4: Signing out and clearing local data...", category: .auth)
         try? await client.auth.signOut()
         
         await MainActor.run {
@@ -728,14 +726,12 @@ class SupabaseManager: ObservableObject {
             isLoading = false
         }
         
-        print("🗑️ ════════════════════════════════════════")
         if authUserDeleted {
-            print("✅ ACCOUNT FULLY DELETED - user can re-register with same email")
+            AppLogger.info("ACCOUNT FULLY DELETED - user can re-register with same email", category: .auth)
         } else {
-            print("⚠️ PROFILE DATA DELETED but auth.users entry may remain")
-            print("⚠️ User may need to use a different email or run DELETE_USER_ACCOUNT.sql")
+            AppLogger.warning("PROFILE DATA DELETED but auth.users entry may remain", category: .auth)
+            AppLogger.warning("User may need to use a different email or run DELETE_USER_ACCOUNT.sql", category: .auth)
         }
-        print("🗑️ ════════════════════════════════════════")
     }
     
     /// Delete all user data from all tables (comprehensive cleanup)
@@ -834,10 +830,10 @@ class SupabaseManager: ObservableObject {
                     .delete()
                     .eq(column, value: userId.uuidString)
                     .execute()
-                print("  ✓ Deleted from \(table)")
+                AppLogger.debug("Deleted from \(table)", category: .network)
             } catch {
                 // Table might not exist or no data - continue
-                print("  ⚠️ \(table): \(error.localizedDescription)")
+                AppLogger.warning("\(table): \(error.localizedDescription)", category: .network)
             }
         }
         
@@ -848,9 +844,9 @@ class SupabaseManager: ObservableObject {
                 .delete()
                 .eq("created_by", value: userId.uuidString)
                 .execute()
-            print("  ✓ Deleted created challenges")
+            AppLogger.debug("Deleted created challenges", category: .network)
         } catch {
-            print("  ⚠️ group_challenges (created_by): \(error.localizedDescription)")
+            AppLogger.warning("group_challenges (created_by): \(error.localizedDescription)", category: .network)
         }
         
         // Finally delete the user profile
@@ -860,12 +856,12 @@ class SupabaseManager: ObservableObject {
                 .delete()
                 .eq("id", value: userId.uuidString)
                 .execute()
-            print("  ✓ Deleted user_profiles")
+            AppLogger.debug("Deleted user_profiles", category: .network)
         } catch {
-            print("  ⚠️ user_profiles: \(error.localizedDescription)")
+            AppLogger.warning("user_profiles: \(error.localizedDescription)", category: .network)
         }
         
-        print("🗑️ All user data deletion complete")
+        AppLogger.info("All user data deletion complete", category: .network)
     }
     
     /// Delete profile photo from Supabase Storage
@@ -875,10 +871,10 @@ class SupabaseManager: ObservableObject {
             try await client.storage
                 .from("avatars")
                 .remove(paths: [filePath])
-            print("🗑️ Profile photo deleted from storage")
+            AppLogger.debug("Profile photo deleted from storage", category: .network)
         } catch {
             // Photo might not exist, which is fine
-            print("⚠️ Could not delete profile photo from storage: \(error.localizedDescription)")
+            AppLogger.warning("Could not delete profile photo from storage: \(error.localizedDescription)", category: .network)
         }
     }
     
@@ -896,11 +892,11 @@ class SupabaseManager: ObservableObject {
                 redirectTo: URL(string: redirectURL)
             )
             await MainActor.run { isLoading = false }
-            print("✅ Password reset email sent to: \(email)")
+            AppLogger.info("Password reset email sent to: \(email)", category: .auth)
         } catch {
             await MainActor.run { isLoading = false }
-            print("❌ Password reset error: \(error.localizedDescription)")
-            print("❌ Full error: \(error)")
+            AppLogger.error("Password reset error: \(error.localizedDescription)", category: .auth)
+            AppLogger.error("Password reset full error: \(error)", category: .auth)
             throw error
         }
     }
@@ -957,10 +953,10 @@ class SupabaseManager: ObservableObject {
             // Call the RPC function (convert to Encodable for Supabase)
             try await client.rpc("log_onboarding_event", params: params.toEncodable()).execute()
             
-            print("📝 [ONBOARDING LOG] \(eventType) - \(stepName ?? "N/A")")
+            AppLogger.debug("[ONBOARDING LOG] \(eventType) - \(stepName ?? "N/A")", category: .network)
         } catch {
             // Don't throw - logging should never break the app
-            print("⚠️ [ONBOARDING LOG] Failed to log event: \(error.localizedDescription)")
+            AppLogger.warning("[ONBOARDING LOG] Failed to log event: \(error.localizedDescription)", category: .network)
         }
     }
     
@@ -1029,9 +1025,9 @@ class SupabaseManager: ObservableObject {
             try await client.rpc("log_onboarding_field", params: params.toEncodable()).execute()
             
             let valueDesc = fieldValue ?? "NULL"
-            print("📊 [FIELD LOG] \(fieldName) @ \(stage): \(valueDesc)")
+            AppLogger.debug("[FIELD LOG] \(fieldName) @ \(stage): \(valueDesc)", category: .network)
         } catch {
-            print("⚠️ [FIELD LOG] Failed: \(error.localizedDescription)")
+            AppLogger.warning("[FIELD LOG] Failed: \(error.localizedDescription)", category: .network)
         }
     }
     
@@ -1112,10 +1108,10 @@ class SupabaseManager: ObservableObject {
                 )
             }
             
-            print("✅ [VERIFY] Logged all verified field values from database")
+            AppLogger.info("[VERIFY] Logged all verified field values from database", category: .network)
             
         } catch {
-            print("❌ [VERIFY] Failed to verify saved profile: \(error.localizedDescription)")
+            AppLogger.error("[VERIFY] Failed to verify saved profile: \(error.localizedDescription)", category: .network)
             await logOnboardingEvent(
                 eventType: "error",
                 stepName: "verify_profile",
@@ -1144,10 +1140,10 @@ class SupabaseManager: ObservableObject {
         do {
             // Try using the secure RPC function first
             try await client.rpc("create_user_profile", params: params).execute()
-            print("✅ User profile created via RPC function")
+            AppLogger.info("User profile created via RPC function", category: .network)
         } catch {
             // Fallback to direct insert if RPC function doesn't exist
-            print("⚠️ RPC function not available, trying direct insert: \(error.localizedDescription)")
+            AppLogger.warning("RPC function not available, trying direct insert: \(error.localizedDescription)", category: .network)
             
             struct ProfileInsert: Encodable {
                 let id: String
@@ -1173,7 +1169,7 @@ class SupabaseManager: ObservableObject {
         // Create initial progress record (also uses upsert)
         try await createUserProgress(userId: userId)
         
-        print("✅ User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))")
+        AppLogger.info("User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))", category: .network)
     }
     
     // MARK: - Activity & Integration Tracking
@@ -1184,7 +1180,7 @@ class SupabaseManager: ObservableObject {
         
         do {
             try await client.rpc("update_last_login", params: ["p_user_id": userId.uuidString]).execute()
-            print("✅ [ACTIVITY] Updated last login timestamp")
+            AppLogger.info("[ACTIVITY] Updated last login timestamp", category: .network)
         } catch {
             // Fallback to direct update if RPC doesn't exist
             do {
@@ -1199,9 +1195,9 @@ class SupabaseManager: ObservableObject {
                     .update(update)
                     .eq("id", value: userId.uuidString)
                     .execute()
-                print("✅ [ACTIVITY] Updated last login timestamp (direct)")
+                AppLogger.info("[ACTIVITY] Updated last login timestamp (direct)", category: .network)
             } catch {
-                print("⚠️ [ACTIVITY] Failed to update last login: \(error.localizedDescription)")
+                AppLogger.warning("[ACTIVITY] Failed to update last login: \(error.localizedDescription)", category: .network)
             }
         }
     }
@@ -1219,7 +1215,7 @@ class SupabaseManager: ObservableObject {
             case "apple_health": columnName = "is_apple_health_connected"
             case "inbody": columnName = "is_inbody_connected"
             default:
-                print("⚠️ [INTEGRATIONS] Unknown integration: \(integration)")
+                AppLogger.warning("[INTEGRATIONS] Unknown integration: \(integration)", category: .network)
                 return
             }
             
@@ -1243,9 +1239,9 @@ class SupabaseManager: ObservableObject {
                 .update(update)
                 .eq("id", value: userId.uuidString)
                 .execute()
-            print("✅ [INTEGRATIONS] Updated \(integration) status to \(isConnected)")
+            AppLogger.info("[INTEGRATIONS] Updated \(integration) status to \(isConnected)", category: .network)
         } catch {
-            print("⚠️ [INTEGRATIONS] Failed to update \(integration) status: \(error.localizedDescription)")
+            AppLogger.warning("[INTEGRATIONS] Failed to update \(integration) status: \(error.localizedDescription)", category: .network)
         }
     }
     
@@ -1269,7 +1265,7 @@ class SupabaseManager: ObservableObject {
         await updateIntegrationStatus(integration: "apple_health", isConnected: appleHealthConnected)
         await updateIntegrationStatus(integration: "inbody", isConnected: inbodyConnected)
         
-        print("✅ [INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected)")
+        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected)", category: .network)
     }
     
     /// Public function to create user profile for OAuth users when they complete onboarding
@@ -1292,14 +1288,14 @@ class SupabaseManager: ObservableObject {
         phoneNumber: String? = nil  // For 2FA / account security (private)
     ) async throws {
         guard let userId = currentUser?.id else {
-            print("❌ [PROFILE] Cannot create profile - no authenticated user")
+            AppLogger.error("[PROFILE] Cannot create profile - no authenticated user", category: .network)
             throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
         // Check if profile already exists (safety check)
         let profileExists = await verifyUserExists(userId: userId)
         if profileExists {
-            print("⚠️ [PROFILE] Profile already exists for user \(userId), updating instead")
+            AppLogger.warning("[PROFILE] Profile already exists for user \(userId), updating instead", category: .network)
             try await updateUserProfile(
                 name: name,
                 heightCm: heightCm,
@@ -1326,8 +1322,8 @@ class SupabaseManager: ObservableObject {
             return
         }
         
-        print("🔐 [PROFILE] Creating profile for OAuth user at end of onboarding...")
-        print("🔐 [PROFILE] User ID: \(userId), Name: \(name), Email: \(email)")
+        AppLogger.debug("[PROFILE] Creating profile for OAuth user at end of onboarding...", category: .network)
+        AppLogger.debug("[PROFILE] User ID: \(userId), Name: \(name), Email: \(email)", category: .network)
         
         // Create the full profile with all onboarding data
         struct OAuthProfileInsert: Encodable {
@@ -1371,33 +1367,17 @@ class SupabaseManager: ObservableObject {
         )
         
         // Log the upsert attempt with all data for debugging
-        print("🔐 [PROFILE] Attempting upsert with data:")
-        print("   - id: \(userId.uuidString)")
-        print("   - name: \(name)")
-        print("   - email: \(email)")
-        print("   - phone_number: \(phoneNumber ?? "nil")")
-        print("   - phone_verified: \(phoneNumber != nil)")
-        print("   - username: \(username ?? "nil")")
-        print("   - birthday: \(birthday ?? "nil")")
-        print("   - age: \(age ?? 0)")
-        print("   - gender: \(gender ?? "nil")")
-        print("   - height_cm: \(heightCm ?? 0)")
-        print("   - weight_kg: \(weightKg ?? 0)")
-        print("   - fitness_goal: \(fitnessGoal ?? "nil")")
-        print("   - experience_level: \(experienceLevel ?? "nil")")
-        print("   - equipment: \(equipment ?? [])")
-        print("   - available_days: \(availableDays ?? 0)")
-        print("   - workout_environment: \(workoutEnvironment ?? "nil")")
+        AppLogger.debug("[PROFILE] Attempting upsert with data: id=\(userId.uuidString), name=\(name), email=\(email), phone=\(phoneNumber ?? "nil"), username=\(username ?? "nil"), birthday=\(birthday ?? "nil"), age=\(age ?? 0), gender=\(gender ?? "nil"), height_cm=\(heightCm ?? 0), weight_kg=\(weightKg ?? 0), fitness_goal=\(fitnessGoal ?? "nil"), experience_level=\(experienceLevel ?? "nil"), equipment=\(equipment ?? []), available_days=\(availableDays ?? 0), workout_environment=\(workoutEnvironment ?? "nil")", category: .network)
         
         do {
             try await client
                 .from("user_profiles")
                 .upsert(profile, onConflict: "id")
                 .execute()
-            print("✅ [PROFILE] Upsert to user_profiles succeeded")
+            AppLogger.info("[PROFILE] Upsert to user_profiles succeeded", category: .network)
         } catch {
-            print("❌ [PROFILE] Upsert FAILED: \(error)")
-            print("❌ [PROFILE] Error details: \(error.localizedDescription)")
+            AppLogger.error("[PROFILE] Upsert FAILED: \(error)", category: .network)
+            AppLogger.error("[PROFILE] Error details: \(error.localizedDescription)", category: .network)
             
             // Log the error to the onboarding_logs table
             await logOnboardingEvent(
@@ -1418,9 +1398,9 @@ class SupabaseManager: ObservableObject {
         // Create initial progress record
         do {
             try await createUserProgress(userId: userId)
-            print("✅ [PROFILE] User progress record created")
+            AppLogger.info("[PROFILE] User progress record created", category: .network)
         } catch {
-            print("⚠️ [PROFILE] Failed to create user progress (non-fatal): \(error.localizedDescription)")
+            AppLogger.warning("[PROFILE] Failed to create user progress (non-fatal): \(error.localizedDescription)", category: .network)
             // Don't throw - profile was created successfully
         }
         
@@ -1431,7 +1411,7 @@ class SupabaseManager: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "pending_oauth_avatar")
         }
         
-        print("✅ [PROFILE] OAuth user profile created successfully with all onboarding data!")
+        AppLogger.info("[PROFILE] OAuth user profile created successfully with all onboarding data!", category: .network)
     }
     
     func updateUserProfile(
@@ -1485,7 +1465,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ User profile updated - Equipment: \(equipment ?? []), Days: \(availableDays ?? 0)")
+        AppLogger.info("User profile updated - Equipment: \(equipment ?? []), Days: \(availableDays ?? 0)", category: .network)
     }
     
     // MARK: - Phone Number
@@ -1494,7 +1474,7 @@ class SupabaseManager: ObservableObject {
     /// Sets phone_verified = true in database after successful verification
     func updatePhoneNumber(_ phoneNumber: String) async throws {
         guard let userId = currentUser?.id else {
-            print("❌ [PHONE] Cannot update phone - no authenticated user")
+            AppLogger.error("[PHONE] Cannot update phone - no authenticated user", category: .network)
             throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
@@ -1516,7 +1496,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ [PHONE] Phone number updated and marked as verified for user: \(phoneNumber)")
+        AppLogger.info("[PHONE] Phone number updated and marked as verified for user: \(phoneNumber)", category: .network)
     }
     
     /// Check if current user has a phone number saved
@@ -1533,7 +1513,7 @@ class SupabaseManager: ObservableObject {
             
             return result.first?.phone_number
         } catch {
-            print("⚠️ [PHONE] Error fetching phone number: \(error)")
+            AppLogger.warning("[PHONE] Error fetching phone number: \(error)", category: .network)
             return nil
         }
     }
@@ -1582,14 +1562,14 @@ class SupabaseManager: ObservableObject {
                 .value
             
             if success {
-                print("✅ Profile photo uploaded via RPC: \(publicUrl.absoluteString)")
+                AppLogger.info("Profile photo uploaded via RPC: \(publicUrl.absoluteString)", category: .network)
             } else {
-                print("⚠️ RPC returned false, trying direct update...")
+                AppLogger.warning("RPC returned false, trying direct update...", category: .network)
                 throw NSError(domain: "SupabaseManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "RPC returned false"])
             }
         } catch {
             // Fallback to direct update
-            print("⚠️ Profile photo RPC failed: \(error.localizedDescription), trying direct update...")
+            AppLogger.warning("Profile photo RPC failed: \(error.localizedDescription), trying direct update...", category: .network)
             struct PhotoUpdate: Encodable {
                 let profile_photo_url: String
                 let updated_at: String
@@ -1606,7 +1586,7 @@ class SupabaseManager: ObservableObject {
                 .eq("id", value: userId.uuidString)
                 .execute()
             
-            print("✅ Profile photo uploaded via direct update: \(publicUrl.absoluteString)")
+            AppLogger.info("Profile photo uploaded via direct update: \(publicUrl.absoluteString)", category: .network)
         }
         return publicUrl.absoluteString
     }
@@ -1640,7 +1620,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ Profile photo deleted")
+        AppLogger.info("Profile photo deleted", category: .network)
     }
     
     /// Mark onboarding as complete in the cloud
@@ -1663,7 +1643,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ Onboarding marked as complete in cloud")
+        AppLogger.info("Onboarding marked as complete in cloud", category: .network)
     }
     
     // MARK: - Username Management
@@ -1693,26 +1673,24 @@ class SupabaseManager: ObservableObject {
     
     /// Set the username for the current user
     func setUsername(_ username: String) async throws {
-        print("🔧 [USERNAME] ========== SET USERNAME START ==========")
-        print("🔧 [USERNAME] Input username: '\(username)'")
+        AppLogger.debug("[USERNAME] SET USERNAME START - Input: '\(username)'", category: .network)
         
         guard let user = currentUser else {
-            print("❌ [USERNAME] Not authenticated - currentUser is nil")
+            AppLogger.error("[USERNAME] Not authenticated - currentUser is nil", category: .network)
             throw NSError(domain: "SupabaseManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
         
-        print("👤 [USERNAME] Current user ID: \(user.id.uuidString)")
-        print("👤 [USERNAME] User email: \(user.email ?? "nil")")
+        AppLogger.debug("[USERNAME] Current user ID: \(user.id.uuidString), email: \(user.email ?? "nil")", category: .network)
         
         // Debug: Check profile state before setting username
         await debugProfileState()
         
         let cleanUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        print("🧹 [USERNAME] Cleaned username: '\(cleanUsername)'")
+        AppLogger.debug("[USERNAME] Cleaned username: '\(cleanUsername)'", category: .network)
         
         // Validate on client side first
         guard cleanUsername.count >= 3 else {
-            print("❌ [USERNAME] Username too short: \(cleanUsername.count) chars")
+            AppLogger.error("[USERNAME] Username too short: \(cleanUsername.count) chars", category: .network)
             throw NSError(domain: "SupabaseManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Username must be at least 3 characters"])
         }
         
@@ -1720,7 +1698,7 @@ class SupabaseManager: ObservableObject {
         
         // Try RPC with user_id parameter (handles UUID casting internally)
         do {
-            print("📡 [USERNAME] Trying Method 1: RPC set_username_for_user with user_id: '\(user.id.uuidString)', username: '\(cleanUsername)'")
+            AppLogger.debug("[USERNAME] Trying Method 1: RPC set_username_for_user with user_id: '\(user.id.uuidString)', username: '\(cleanUsername)'", category: .network)
             let success: Bool = try await client
                 .rpc("set_username_for_user", params: [
                     "p_user_id": user.id.uuidString,
@@ -1729,21 +1707,21 @@ class SupabaseManager: ObservableObject {
                 .execute()
                 .value
             
-            print("📡 [USERNAME] RPC returned: \(success)")
+            AppLogger.debug("[USERNAME] RPC returned: \(success)", category: .network)
             
             if success {
                 rpcSucceeded = true
-                print("✅ [USERNAME] RPC success!")
+                AppLogger.info("[USERNAME] RPC success!", category: .network)
             } else {
-                print("⚠️ [USERNAME] RPC returned false, will try fallback...")
+                AppLogger.warning("[USERNAME] RPC returned false, will try fallback...", category: .network)
             }
             
         } catch {
-            print("⚠️ [USERNAME] RPC set_username_for_user failed: \(error.localizedDescription)")
+            AppLogger.warning("[USERNAME] RPC set_username_for_user failed: \(error.localizedDescription)", category: .network)
             
             // Try the original set_username as fallback
             do {
-                print("📡 [USERNAME] Trying Method 2: RPC set_username (auth.uid based)")
+                AppLogger.debug("[USERNAME] Trying Method 2: RPC set_username (auth.uid based)", category: .network)
                 let success: Bool = try await client
                     .rpc("set_username", params: ["new_username": cleanUsername])
                     .execute()
@@ -1751,17 +1729,17 @@ class SupabaseManager: ObservableObject {
                 
                 if success {
                     rpcSucceeded = true
-                    print("✅ [USERNAME] Fallback RPC success!")
+                    AppLogger.info("[USERNAME] Fallback RPC success!", category: .network)
                 }
             } catch {
-                print("⚠️ [USERNAME] Fallback RPC also failed: \(error.localizedDescription)")
+                AppLogger.warning("[USERNAME] Fallback RPC also failed: \(error.localizedDescription)", category: .network)
             }
         }
         
         // Fallback: Direct table update if RPC failed
         if !rpcSucceeded {
             do {
-                print("📡 [USERNAME] Trying Method 3: Direct table update")
+                AppLogger.debug("[USERNAME] Trying Method 3: Direct table update", category: .network)
                 
                 try await client
                     .from("user_profiles")
@@ -1769,27 +1747,27 @@ class SupabaseManager: ObservableObject {
                     .eq("id", value: user.id.uuidString)
                     .execute()
                 
-                print("✅ [USERNAME] Direct update executed")
+                AppLogger.info("[USERNAME] Direct update executed", category: .network)
                 
             } catch {
-                print("❌ [USERNAME] Direct update also failed: \(error.localizedDescription)")
+                AppLogger.error("[USERNAME] Direct update also failed: \(error.localizedDescription)", category: .network)
                 throw error
             }
         }
         
         // Verify the username was actually saved
-        print("🔍 [USERNAME] Verifying save...")
+        AppLogger.debug("[USERNAME] Verifying save...", category: .network)
         let savedUsername = try await getCurrentUsername()
         if savedUsername == cleanUsername {
-            print("✅ [USERNAME] VERIFIED: Username saved as '@\(cleanUsername)'")
+            AppLogger.info("[USERNAME] VERIFIED: Username saved as '@\(cleanUsername)'", category: .network)
         } else if let saved = savedUsername {
-            print("⚠️ [USERNAME] Mismatch! Expected '\(cleanUsername)' but got '\(saved)'")
+            AppLogger.warning("[USERNAME] Mismatch! Expected '\(cleanUsername)' but got '\(saved)'", category: .network)
         } else {
-            print("❌ [USERNAME] FAILED: Username is still NULL after save attempt!")
+            AppLogger.error("[USERNAME] FAILED: Username is still NULL after save attempt!", category: .network)
             throw NSError(domain: "SupabaseManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Username failed to save to database"])
         }
         
-        print("🔧 [USERNAME] ========== SET USERNAME END ==========")
+        AppLogger.debug("[USERNAME] SET USERNAME END", category: .network)
     }
     
     /// Get the current user's username
@@ -1812,16 +1790,14 @@ class SupabaseManager: ObservableObject {
     
     /// Debug: Check profile state and username
     func debugProfileState() async {
-        print("🔍 [DEBUG] ============= PROFILE STATE CHECK =============")
+        AppLogger.debug("[DEBUG] PROFILE STATE CHECK", category: .network)
         
         guard let user = currentUser else {
-            print("❌ [DEBUG] No current user - not authenticated")
+            AppLogger.error("[DEBUG] No current user - not authenticated", category: .network)
             return
         }
         
-        print("✅ [DEBUG] Current User ID: \(user.id.uuidString)")
-        print("✅ [DEBUG] User Email: \(user.email ?? "nil")")
-        print("✅ [DEBUG] Is Authenticated: \(isAuthenticated)")
+        AppLogger.debug("[DEBUG] Current User ID: \(user.id.uuidString), Email: \(user.email ?? "nil"), Is Authenticated: \(isAuthenticated)", category: .network)
         
         // Check if profile exists
         do {
@@ -1841,21 +1817,15 @@ class SupabaseManager: ObservableObject {
                 .value
             
             if let profile = profiles.first {
-                print("✅ [DEBUG] Profile EXISTS in database:")
-                print("   - ID: \(profile.id)")
-                print("   - Username: \(profile.username ?? "NULL")")
-                print("   - Name: \(profile.name ?? "NULL")")
-                print("   - Email: \(profile.email ?? "NULL")")
-                print("   - Onboarding Complete: \(profile.has_completed_onboarding ?? false)")
+                AppLogger.debug("[DEBUG] Profile EXISTS in database: ID=\(profile.id), Username=\(profile.username ?? "NULL"), Name=\(profile.name ?? "NULL"), Email=\(profile.email ?? "NULL"), Onboarding Complete=\(profile.has_completed_onboarding ?? false)", category: .network)
             } else {
-                print("❌ [DEBUG] Profile NOT FOUND in user_profiles table!")
-                print("   Searched for id = '\(user.id.uuidString)'")
+                AppLogger.error("[DEBUG] Profile NOT FOUND in user_profiles table! Searched for id = '\(user.id.uuidString)'", category: .network)
             }
         } catch {
-            print("❌ [DEBUG] Failed to query profile: \(error)")
+            AppLogger.error("[DEBUG] Failed to query profile: \(error)", category: .network)
         }
         
-        print("🔍 [DEBUG] ============================================")
+        AppLogger.debug("[DEBUG] PROFILE STATE CHECK END", category: .network)
     }
     
     func fetchUserProfile() async throws -> UserProfileDTO? {
@@ -1881,12 +1851,12 @@ class SupabaseManager: ObservableObject {
     /// ⚠️ IMPORTANT: Checks cloud updated_at first to avoid overwriting admin CMS changes
     func syncCoreDataProfile(from user: User) async throws {
         guard let authUser = currentUser else {
-            print("⚠️ [SYNC] No authenticated Supabase user - cannot sync profile")
+            AppLogger.warning("[SYNC] No authenticated Supabase user - cannot sync profile", category: .network)
             return
         }
         
-        print("☁️ [SYNC] Starting profile sync for user: \(authUser.id.uuidString)")
-        print("☁️ [SYNC] Core Data user: name=\(user.name ?? "nil"), email=\(user.email ?? "nil")")
+        AppLogger.debug("[SYNC] Starting profile sync for user: \(authUser.id.uuidString)", category: .network)
+        AppLogger.debug("[SYNC] Core Data user: name=\(user.name ?? "nil"), email=\(user.email ?? "nil")", category: .network)
         
         // ═══════════════════════════════════════════════════════════════════
         // ADMIN CMS GUARD: Check if cloud was updated more recently by admin
@@ -1904,8 +1874,8 @@ class SupabaseManager: ObservableObject {
             
             if let cloudUpdated = formatter.date(from: cloudUpdatedStr) ?? fallbackFormatter.date(from: cloudUpdatedStr) {
                 if cloudUpdated > lastPushTime {
-                    print("☁️ [SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))")
-                    print("☁️ [SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing")
+                    AppLogger.debug("[SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))", category: .network)
+                    AppLogger.debug("[SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing", category: .network)
                     await syncUserProfileToCoreData(profile: cloudProfile)
                     // Update last push time so we don't keep pulling every sync cycle
                     UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
@@ -1982,7 +1952,7 @@ class SupabaseManager: ObservableObject {
         )
         
         guard let userId = currentUser?.id else { 
-            print("❌ [SYNC] No authenticated user ID - cannot sync profile")
+            AppLogger.error("[SYNC] No authenticated user ID - cannot sync profile", category: .network)
             return 
         }
         
@@ -2058,43 +2028,35 @@ class SupabaseManager: ObservableObject {
                 .upsert(upsertProfile, onConflict: "id")
                 .execute()
             
-            print("✅ [SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)")
+            AppLogger.info("[SYNC] Profile UPSERTED to cloud for user: \(userId.uuidString)", category: .network)
             // Track when we last pushed so we can detect CMS/admin edits
             UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         } catch {
-            print("❌ [SYNC] UPSERT FAILED: \(error)")
-            print("❌ [SYNC] Error details: \(error.localizedDescription)")
-            print("❌ [SYNC] User can try Settings > Sync Profile to force retry")
+            AppLogger.error("[SYNC] UPSERT FAILED: \(error)", category: .network)
+            AppLogger.error("[SYNC] Error details: \(error.localizedDescription)", category: .network)
+            AppLogger.error("[SYNC] User can try Settings > Sync Profile to force retry", category: .network)
             throw error  // Propagate error so caller knows sync failed
         }
         let ft = user.heightInches / 12
         let inches = user.heightInches % 12
-        print("✅ Full profile synced to cloud:")
-        print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil"), Age: \(user.age)")
-        print("   Gender: \(user.gender ?? "nil")")
-        print("   Height: \(ft)'\(inches)\" (\(user.heightInches) in / \(user.height)cm)")
-        print("   Weight: \(user.weightLbs) lbs (\(user.weight)kg)")
-        print("   Goal: \(user.fitnessGoal ?? "nil"), Level: \(user.experienceLevel ?? "nil")")
-        print("   Strength: \(user.strengthLevel ?? "nil"), Environment: \(user.workoutEnvironment ?? "nil")")
-        print("   Equipment: \(equipmentArray), Days: \(user.availableDays)")
-        print("   XP: \(user.xp), Streak: \(user.currentStreak), Workouts: \(user.totalWorkouts)")
+        AppLogger.info("Full profile synced to cloud: Name=\(user.name ?? "nil"), Birthday=\(user.birthday ?? "nil"), Age=\(user.age), Gender=\(user.gender ?? "nil"), Height=\(ft)'\(inches)\" (\(user.heightInches)in/\(user.height)cm), Weight=\(user.weightLbs)lbs (\(user.weight)kg), Goal=\(user.fitnessGoal ?? "nil"), Level=\(user.experienceLevel ?? "nil"), Equipment=\(equipmentArray), Days=\(user.availableDays), XP=\(user.xp), Streak=\(user.currentStreak), Workouts=\(user.totalWorkouts)", category: .network)
     }
     
     /// Force sync profile from Core Data to cloud - call this if sync seems broken
     /// This is a public method that can be called from Settings to manually trigger a sync
     func forceSyncProfileToCloud() async throws {
         guard let user = await MainActor.run(body: { UserManager.shared.currentUser }) else {
-            print("❌ [FORCE SYNC] No local user to sync")
+            AppLogger.error("[FORCE SYNC] No local user to sync", category: .network)
             throw NSError(domain: "SupabaseManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "No local user found"])
         }
         
         guard let userId = currentUser?.id else {
-            print("❌ [FORCE SYNC] Not authenticated")
+            AppLogger.error("[FORCE SYNC] Not authenticated", category: .network)
             throw NSError(domain: "SupabaseManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
         
-        print("🔄 [FORCE SYNC] Starting forced profile sync...")
-        print("🔄 [FORCE SYNC] User: \(user.name ?? "unknown"), Age: \(user.age), Gender: \(user.gender ?? "nil")")
+        AppLogger.debug("[FORCE SYNC] Starting forced profile sync...", category: .network)
+        AppLogger.debug("[FORCE SYNC] User: \(user.name ?? "unknown"), Age: \(user.age), Gender: \(user.gender ?? "nil")", category: .network)
         
         // Build complete profile update with ALL fields
         struct FullProfileUpdate: Encodable {
@@ -2146,12 +2108,7 @@ class SupabaseManager: ObservableObject {
         // Track push time so we can detect CMS/admin edits
         UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         
-        print("✅ [FORCE SYNC] Profile force synced successfully!")
-        print("   Name: \(user.name ?? "nil"), Birthday: \(user.birthday ?? "nil")")
-        print("   Age: \(user.age), Gender: \(user.gender ?? "nil")")
-        print("   Height: \(user.height)cm / \(user.heightInches)in")
-        print("   Weight: \(user.weight)kg / \(user.weightLbs)lbs")
-        print("   Goal: \(user.fitnessGoal ?? "nil"), Level: \(user.experienceLevel ?? "nil")")
+        AppLogger.info("[FORCE SYNC] Profile force synced successfully! Name=\(user.name ?? "nil"), Birthday=\(user.birthday ?? "nil"), Age=\(user.age), Gender=\(user.gender ?? "nil"), Height=\(user.height)cm/\(user.heightInches)in, Weight=\(user.weight)kg/\(user.weightLbs)lbs, Goal=\(user.fitnessGoal ?? "nil"), Level=\(user.experienceLevel ?? "nil")", category: .network)
     }
     
     // MARK: - Custom Exercises
@@ -2196,7 +2153,7 @@ class SupabaseManager: ObservableObject {
             .insert(exercise)
             .execute()
         
-        print("✅ Custom exercise created: \(name)")
+        AppLogger.info("Custom exercise created: \(name)", category: .network)
     }
     
     // MARK: - Exercise Migration
@@ -2219,13 +2176,13 @@ class SupabaseManager: ObservableObject {
         if let cached = SupabaseManager.cachedExercises,
            let timestamp = SupabaseManager.cacheTimestamp,
            Date().timeIntervalSince(timestamp) < SupabaseManager.exerciseCacheTTL {
-            print("⚡️ [EXERCISES] Returning \(cached.count) cached exercises")
+            AppLogger.debug("[EXERCISES] Returning \(cached.count) cached exercises", category: .network)
             return cached
         }
         
         // ⚡️ PERFORMANCE: Reuse in-flight request if one exists
         if let existingTask = SupabaseManager.exerciseFetchTask {
-            print("⚡️ [EXERCISES] Reusing in-flight fetch request")
+            AppLogger.debug("[EXERCISES] Reusing in-flight fetch request", category: .network)
             return try await existingTask.value
         }
         
@@ -2256,7 +2213,7 @@ class SupabaseManager: ObservableObject {
         var offset = 0
         var hasMoreData = true
         
-        print("📥 Starting paginated fetch of all exercises...")
+        AppLogger.debug("Starting paginated fetch of all exercises...", category: .network)
         
         // Try materialized view first (much faster), fallback to regular table
         let tableName = "mv_public_exercises"
@@ -2275,10 +2232,10 @@ class SupabaseManager: ObservableObject {
                 
                 allExercises.append(contentsOf: response)
                 if usingMaterializedView {
-                    print("⚡️ Using cached view for faster performance")
+                    AppLogger.debug("Using cached view for faster performance", category: .network)
                     usingMaterializedView = false // Only log once
                 }
-                print("✅ Fetched \(response.count) exercises (total: \(allExercises.count))")
+                AppLogger.debug("Fetched \(response.count) exercises (total: \(allExercises.count))", category: .network)
                 
                 if response.count < pageSize {
                     hasMoreData = false
@@ -2287,7 +2244,7 @@ class SupabaseManager: ObservableObject {
                 }
             } catch {
                 // Fallback to regular table if materialized view doesn't exist
-                print("ℹ️ Materialized view not available, using regular table")
+                AppLogger.info("Materialized view not available, using regular table", category: .network)
                 let response: [ExerciseDTO] = try await client
                     .from(fallbackTable)
                     .select()
@@ -2297,7 +2254,7 @@ class SupabaseManager: ObservableObject {
                     .value
                 
                 allExercises.append(contentsOf: response)
-                print("✅ Fetched \(response.count) exercises (total: \(allExercises.count))")
+                AppLogger.debug("Fetched \(response.count) exercises (total: \(allExercises.count))", category: .network)
                 
                 if response.count < pageSize {
                     hasMoreData = false
@@ -2310,7 +2267,7 @@ class SupabaseManager: ObservableObject {
             }
         }
         
-        print("✅ Fetched ALL \(allExercises.count) exercises from cloud")
+        AppLogger.info("Fetched ALL \(allExercises.count) exercises from cloud", category: .network)
         return allExercises
     }
     
@@ -2321,7 +2278,7 @@ class SupabaseManager: ObservableObject {
         var offset = 0
         var hasMoreData = true
         
-        print("📥 [AUDIT] Fetching all exercises for audit...")
+        AppLogger.debug("[AUDIT] Fetching all exercises for audit...", category: .network)
         
         while hasMoreData {
             let response: [ExerciseDTO] = try await client
@@ -2341,7 +2298,7 @@ class SupabaseManager: ObservableObject {
             }
         }
         
-        print("✅ [AUDIT] Fetched \(allExercises.count) exercises for audit")
+        AppLogger.info("[AUDIT] Fetched \(allExercises.count) exercises for audit", category: .network)
         return allExercises
     }
     
@@ -2446,24 +2403,7 @@ class SupabaseManager: ObservableObject {
             home_gym_friendly: ExplicitNull(exercise.homeGymFriendly)
         )
         
-        print("📤 ═══════════════════════════════════════")
-        print("📤 SENDING FULL UPDATE TO SUPABASE")
-        print("📤 ID: \(exerciseId)")
-        print("📤 Name: \(exercise.name)")
-        print("📤 Category: \(exercise.category)")
-        print("📤 Equipment: \(exercise.equipment ?? "nil")")
-        print("📤 Primary Muscles: \(primaryMusclesArray ?? [])")
-        print("📤 Secondary Muscles: \(secondaryMusclesArray ?? [])")
-        print("📤 Movement Pattern: \(exercise.movementPattern ?? "nil")")
-        print("📤 Force Type: \(exercise.forceType ?? "nil")")
-        print("📤 Movement Type: \(exercise.movementType ?? "nil")")
-        print("📤 Laterality: \(exercise.laterality ?? "nil")")
-        print("📤 Body Position: \(exercise.bodyPosition ?? "nil")")
-        print("📤 Grip Type: \(exercise.gripType ?? "nil")")
-        print("📤 Grip Width: \(exercise.gripWidth ?? "nil")")
-        print("📤 Difficulty: \(exercise.difficultyLevel ?? -1)")
-        print("📤 Home Gym Friendly: \(exercise.homeGymFriendly ?? false)")
-        print("📤 ═══════════════════════════════════════")
+        AppLogger.debug("SENDING FULL UPDATE TO SUPABASE - ID: \(exerciseId), Name: \(exercise.name), Category: \(exercise.category), Equipment: \(exercise.equipment ?? "nil"), Primary: \(primaryMusclesArray ?? []), Secondary: \(secondaryMusclesArray ?? []), Movement: \(exercise.movementPattern ?? "nil"), Force: \(exercise.forceType ?? "nil"), Difficulty: \(exercise.difficultyLevel ?? -1)", category: .network)
         
         do {
             let response = try await client
@@ -2472,18 +2412,9 @@ class SupabaseManager: ObservableObject {
                 .eq("id", value: exerciseId)
                 .execute()
             
-            print("✅ ═══════════════════════════════════════")
-            print("✅ SUPABASE UPDATE SUCCESS!")
-            print("✅ HTTP Status: \(response.status)")
-            print("✅ Exercise: \(exercise.name)")
-            print("✅ ID: \(exerciseId)")
-            print("✅ ═══════════════════════════════════════")
+            AppLogger.info("SUPABASE UPDATE SUCCESS! HTTP Status: \(response.status), Exercise: \(exercise.name), ID: \(exerciseId)", category: .network)
         } catch {
-            print("❌ ═══════════════════════════════════════")
-            print("❌ SUPABASE UPDATE FAILED!")
-            print("❌ Error: \(error)")
-            print("❌ ID: \(exerciseId)")
-            print("❌ ═══════════════════════════════════════")
+            AppLogger.error("SUPABASE UPDATE FAILED! Error: \(error), ID: \(exerciseId)", category: .network)
             throw error
         }
     }
@@ -2496,14 +2427,14 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: id)
             .execute()
         
-        print("🗑️ Deleted exercise ID: \(id)")
+        AppLogger.debug("Deleted exercise ID: \(id)", category: .network)
     }
     
     /// @deprecated - exercise_pairings table was replaced by exercises table
     /// Exercise pairing logic is now handled by SmartExercisePairingEngine locally
     func fetchExercisePairings() async throws -> [ExercisePairingDTO] {
         // Table deprecated - return empty array
-        print("⚠️ exercise_pairings table deprecated, using local SmartExercisePairingEngine instead")
+        AppLogger.warning("exercise_pairings table deprecated, using local SmartExercisePairingEngine instead", category: .network)
         return []
     }
     
@@ -2515,7 +2446,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ Fetched \(response.count) equipment substitutions")
+        AppLogger.debug("Fetched \(response.count) equipment substitutions", category: .network)
         return response
     }
     
@@ -2529,7 +2460,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ Fetched \(response.count) custom exercises")
+        AppLogger.debug("Fetched \(response.count) custom exercises", category: .network)
         return response
     }
     
@@ -2587,7 +2518,7 @@ class SupabaseManager: ObservableObject {
             try await updateUserProgress(xpEarned: xpEarned)
         }
         
-        print("✅ Workout saved: \(name)")
+        AppLogger.info("Workout saved: \(name)", category: .network)
     }
     
     private func saveWorkoutExercise(workoutId: String, exerciseName: String, setsCompleted: Int) async throws {
@@ -2621,7 +2552,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ Fetched \(response.count) recent workouts")
+        AppLogger.debug("Fetched \(response.count) recent workouts", category: .network)
         return response
     }
     
@@ -2716,10 +2647,10 @@ class SupabaseManager: ObservableObject {
         
         do {
             try await client.rpc("create_user_progress", params: CreateProgressParams(user_id: userId.uuidString)).execute()
-            print("✅ User progress created via RPC function")
+            AppLogger.info("User progress created via RPC function", category: .network)
         } catch {
             // Fallback to direct insert if RPC function doesn't exist
-            print("⚠️ RPC function not available for progress, trying direct insert: \(error.localizedDescription)")
+            AppLogger.warning("RPC function not available for progress, trying direct insert: \(error.localizedDescription)", category: .network)
             
             struct ProgressInsert: Encodable {
                 let user_id: String
@@ -2789,7 +2720,7 @@ class SupabaseManager: ObservableObject {
             .eq("user_id", value: userId.uuidString)
             .execute()
         
-        print("✅ User progress updated: +\(xpEarned) XP")
+        AppLogger.info("User progress updated: +\(xpEarned) XP", category: .network)
     }
     
     func fetchUserProgress() async throws -> UserProgressDTO? {
@@ -2847,7 +2778,7 @@ class SupabaseManager: ObservableObject {
                 .insert(favorite)
                 .execute()
             
-            print("✅ Added to favorites: \(exerciseName ?? exerciseId)")
+            AppLogger.info("Added to favorites: \(exerciseName ?? exerciseId)", category: .network)
         } else {
             // Remove favorite
             try await client
@@ -2856,7 +2787,7 @@ class SupabaseManager: ObservableObject {
                 .eq("id", value: existing.first!.id)
                 .execute()
             
-            print("✅ Removed from favorites: \(exerciseName ?? exerciseId)")
+            AppLogger.info("Removed from favorites: \(exerciseName ?? exerciseId)", category: .network)
         }
     }
     
@@ -2921,7 +2852,7 @@ class SupabaseManager: ObservableObject {
             .insert(favoriteWorkout)
             .execute()
         
-        print("✅ Favorite workout saved to cloud: \(workoutName)")
+        AppLogger.info("Favorite workout saved to cloud: \(workoutName)", category: .network)
     }
     
     /// Remove a favorite workout from cloud
@@ -2935,7 +2866,7 @@ class SupabaseManager: ObservableObject {
             .eq("original_workout_id", value: originalWorkoutId)
             .execute()
         
-        print("✅ Favorite workout removed from cloud")
+        AppLogger.info("Favorite workout removed from cloud", category: .network)
     }
     
     /// Fetch all favorite workouts from cloud
@@ -2950,7 +2881,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ Fetched \(response.count) favorite workouts from cloud")
+        AppLogger.debug("Fetched \(response.count) favorite workouts from cloud", category: .network)
         return response
     }
     
@@ -3153,7 +3084,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ Fetched \(response.count) days of step data from cloud")
+        AppLogger.debug("Fetched \(response.count) days of step data from cloud", category: .network)
         return response
     }
     
@@ -3177,7 +3108,7 @@ class SupabaseManager: ObservableObject {
             .eq("id", value: userId.uuidString)
             .execute()
         
-        print("✅ Step goal updated to \(goal)")
+        AppLogger.info("Step goal updated to \(goal)", category: .network)
     }
     
     /// Fetch user's step goal from cloud
@@ -3240,7 +3171,7 @@ class SupabaseManager: ObservableObject {
     /// Save a completed cardio workout to the cloud
     func saveCardioWorkout(_ workout: CardioWorkoutData) async throws -> String? {
         guard let userId = currentUser?.id else {
-            print("⚠️ [CARDIO] Cannot save - no user logged in")
+            AppLogger.warning("[CARDIO] Cannot save - no user logged in", category: .network)
             return nil
         }
         
@@ -3310,7 +3241,7 @@ class SupabaseManager: ObservableObject {
             .value
         
         let workoutId = response.first?.id
-        print("✅ [CARDIO] Workout saved: \(workout.activityType) - \(workout.durationSeconds)s")
+        AppLogger.info("[CARDIO] Workout saved: \(workout.activityType) - \(workout.durationSeconds)s", category: .network)
         
         // Check for PRs after saving workout
         if let id = workoutId {
@@ -3400,9 +3331,9 @@ class SupabaseManager: ObservableObject {
                     workoutId: workoutId,
                     previousValue: existingPRs.first { $0.recordType == pr.type }?.value
                 )
-                print("🏆 [CARDIO PR] New \(pr.type): \(pr.value) \(pr.unit)")
+                AppLogger.info("[CARDIO PR] New \(pr.type): \(pr.value) \(pr.unit)", category: .network)
             } catch {
-                print("⚠️ [CARDIO PR] Failed to save \(pr.type): \(error)")
+                AppLogger.warning("[CARDIO PR] Failed to save \(pr.type): \(error)", category: .network)
             }
         }
     }
@@ -3482,7 +3413,7 @@ class SupabaseManager: ObservableObject {
             
             return response
         } catch {
-            print("⚠️ [CARDIO] Failed to fetch PRs: \(error)")
+            AppLogger.warning("[CARDIO] Failed to fetch PRs: \(error)", category: .network)
             return []
         }
     }
@@ -3506,7 +3437,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ [CARDIO] Fetched \(response.count) workouts")
+        AppLogger.debug("[CARDIO] Fetched \(response.count) workouts", category: .network)
         return response
     }
     
@@ -3579,7 +3510,7 @@ class SupabaseManager: ObservableObject {
             
             return response.first
         } catch {
-            print("⚠️ [CARDIO] Failed to fetch streak: \(error)")
+            AppLogger.warning("[CARDIO] Failed to fetch streak: \(error)", category: .network)
             return nil
         }
     }
@@ -3651,7 +3582,7 @@ class SupabaseManager: ObservableObject {
             .insert(insert)
             .execute()
         
-        print("✅ [CARDIO] Goal created: \(name)")
+        AppLogger.info("[CARDIO] Goal created: \(name)", category: .network)
     }
     
     /// Fetch active cardio goals
@@ -3684,14 +3615,14 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("✅ [NICKNAMES] Fetched \(response.count) exercise nicknames")
+        AppLogger.debug("[NICKNAMES] Fetched \(response.count) exercise nicknames", category: .network)
         return response
     }
     
     /// Save or update an exercise nickname
     func saveExerciseNickname(officialName: String, nickname: String, exerciseId: UUID? = nil) async throws {
         guard let userId = currentUser?.id else {
-            print("⚠️ [NICKNAMES] Cannot save - no user logged in")
+            AppLogger.warning("[NICKNAMES] Cannot save - no user logged in", category: .network)
             return
         }
         
@@ -3716,7 +3647,7 @@ class SupabaseManager: ObservableObject {
             .upsert(upsert, onConflict: "user_id,official_name")
             .execute()
         
-        print("✅ [NICKNAMES] Saved: '\(officialName)' -> '\(nickname)'")
+        AppLogger.info("[NICKNAMES] Saved: '\(officialName)' -> '\(nickname)'", category: .network)
     }
     
     /// Delete an exercise nickname (revert to official name)
@@ -3730,7 +3661,7 @@ class SupabaseManager: ObservableObject {
             .eq("official_name", value: officialName)
             .execute()
         
-        print("✅ [NICKNAMES] Deleted nickname for '\(officialName)'")
+        AppLogger.info("[NICKNAMES] Deleted nickname for '\(officialName)'", category: .network)
     }
     
     // MARK: - Comprehensive Data Sync
@@ -3745,14 +3676,14 @@ class SupabaseManager: ObservableObject {
     func syncAllDataFromCloud() async {
         // 🛡️ DEDUPLICATION: Prevent concurrent syncs
         guard !SupabaseManager.isSyncInProgress else {
-            print("⚠️ [SYNC] Skipping - sync already in progress")
+            AppLogger.warning("[SYNC] Skipping - sync already in progress", category: .network)
             return
         }
         
         // 🛡️ THROTTLING: Prevent too-frequent syncs
         if let lastSync = SupabaseManager.lastSyncTime,
            Date().timeIntervalSince(lastSync) < SupabaseManager.minSyncInterval {
-            print("⚠️ [SYNC] Skipping - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (min: \(Int(SupabaseManager.minSyncInterval))s)")
+            AppLogger.warning("[SYNC] Skipping - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (min: \(Int(SupabaseManager.minSyncInterval))s)", category: .network)
             return
         }
         
@@ -3768,7 +3699,7 @@ class SupabaseManager: ObservableObject {
             HeavyWorkSentinel.shared.endHeavyWork(reason: "Data sync from cloud")
         }
         
-        print("🔄 Starting comprehensive data sync from cloud...")
+        AppLogger.debug("Starting comprehensive data sync from cloud...", category: .network)
         
         do {
             // FIRST: Sync user profile from cloud to Core Data
@@ -3781,7 +3712,7 @@ class SupabaseManager: ObservableObject {
             if !WorkoutManager.shared.isWorkoutActive {
                 await ExerciseLibraryService.shared.syncExercisesFromCloud()
             } else {
-                print("⚠️ [SYNC] Skipping exercise sync during active workout")
+                AppLogger.warning("[SYNC] Skipping exercise sync during active workout", category: .network)
             }
             
             // Sync exercise favorites (using names for reliable matching)
@@ -3807,9 +3738,9 @@ class SupabaseManager: ObservableObject {
             // Sync exercise nicknames
             await ExerciseNicknameService.shared.loadNicknames()
             
-            print("✅ Comprehensive data sync completed!")
+            AppLogger.info("Comprehensive data sync completed!", category: .network)
         } catch {
-            print("❌ Error during comprehensive sync: \(error)")
+            AppLogger.error("Error during comprehensive sync: \(error)", category: .network)
         }
     }
     
@@ -3827,12 +3758,12 @@ class SupabaseManager: ObservableObject {
                 
                 if let existingUser = existingUsers.first {
                     user = existingUser
-                    print("📝 Updating existing user from cloud profile")
+                    AppLogger.debug("Updating existing user from cloud profile", category: .network)
                 } else {
                     user = User(context: viewContext)
                     user.id = UUID(uuidString: profile.id) ?? UUID()
                     user.createdAt = Date()
-                    print("👤 Creating new user from cloud profile")
+                    AppLogger.debug("Creating new user from cloud profile", category: .network)
                 }
                 
                 // Update ALL user fields from cloud
@@ -3920,13 +3851,7 @@ class SupabaseManager: ObservableObject {
                 )
                 
                 try viewContext.save()
-                print("✅ Full user profile synced from cloud:")
-                print("   Name: \(profile.name ?? "nil"), Age: \(profile.age ?? 0)")
-                print("   Height: \(profile.heightCm ?? 0)cm, Weight: \(profile.weightKg ?? 0)kg")
-                print("   Goal: \(profile.fitnessGoal ?? "nil"), Level: \(profile.experienceLevel ?? "nil")")
-                print("   Equipment: \(profile.equipment ?? []), Days: \(profile.availableDays ?? 0)")
-                print("   XP: \(profile.xp ?? 0), Streak: \(profile.currentStreak ?? 0), Workouts: \(profile.totalWorkouts ?? 0)")
-                print("   Units: Weight=\(profile.weightUnit ?? "default"), Height=\(profile.heightUnit ?? "default")")
+                AppLogger.info("Full user profile synced from cloud: Name=\(profile.name ?? "nil"), Age=\(profile.age ?? 0), Height=\(profile.heightCm ?? 0)cm, Weight=\(profile.weightKg ?? 0)kg, Goal=\(profile.fitnessGoal ?? "nil"), Level=\(profile.experienceLevel ?? "nil"), Equipment=\(profile.equipment ?? []), Days=\(profile.availableDays ?? 0), XP=\(profile.xp ?? 0), Streak=\(profile.currentStreak ?? 0), Workouts=\(profile.totalWorkouts ?? 0)", category: .network)
                 
                 // CRITICAL: Notify UserManager to reload its state
                 // This ensures hasCompletedOnboarding is updated after login sync
@@ -3937,7 +3862,7 @@ class SupabaseManager: ObservableObject {
                 UserManager.shared.checkAndBreakStreakIfNeeded()
                 
             } catch {
-                print("❌ Error syncing user profile to Core Data: \(error)")
+                AppLogger.error("Error syncing user profile to Core Data: \(error)", category: .network)
             }
         }
     }
@@ -3948,11 +3873,11 @@ class SupabaseManager: ObservableObject {
     func saveWorkoutToCloud(workout: Workout) async throws {
         guard let userId = currentUser?.id,
               let workoutId = workout.id?.uuidString else { 
-            print("⚠️ [WORKOUT SAVE] Cannot save - no user or workout ID")
+            AppLogger.warning("[WORKOUT SAVE] Cannot save - no user or workout ID", category: .network)
             return 
         }
         
-        print("💾 [WORKOUT SAVE] Saving workout '\(workout.name ?? "Unnamed")' for user \(userId.uuidString.prefix(8))...")
+        AppLogger.debug("[WORKOUT SAVE] Saving workout '\(workout.name ?? "Unnamed")' for user \(userId.uuidString.prefix(8))...", category: .network)
         
         // Build exercise data
         var exerciseDTOs: [WorkoutExerciseDTO] = []
@@ -4002,17 +3927,17 @@ class SupabaseManager: ObservableObject {
             .upsert(workoutDTO)
             .execute()
         
-        print("☁️ Workout saved to cloud: \(workout.name ?? "Workout")")
+        AppLogger.debug("Workout saved to cloud: \(workout.name ?? "Workout")", category: .network)
     }
     
     /// Fetches workout history from cloud
     func fetchWorkoutHistory() async throws -> [WorkoutHistoryDTO] {
         guard let userId = currentUser?.id else { 
-            print("⚠️ [WORKOUT SYNC] No authenticated user - cannot fetch workout history")
+            AppLogger.warning("[WORKOUT SYNC] No authenticated user - cannot fetch workout history", category: .network)
             return [] 
         }
         
-        print("🔍 [WORKOUT SYNC] Fetching workouts for user: \(userId.uuidString)")
+        AppLogger.debug("[WORKOUT SYNC] Fetching workouts for user: \(userId.uuidString)", category: .network)
         
         let response: [WorkoutHistoryDTO] = try await client
             .from("workout_history")
@@ -4022,7 +3947,7 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("📥 [WORKOUT SYNC] Fetched \(response.count) workouts from cloud for user \(userId.uuidString.prefix(8))...")
+        AppLogger.debug("[WORKOUT SYNC] Fetched \(response.count) workouts from cloud for user \(userId.uuidString.prefix(8))...", category: .network)
         return response
     }
     
@@ -4036,7 +3961,7 @@ class SupabaseManager: ObservableObject {
             userRequest.fetchLimit = 1
             
             guard let user = try? viewContext.fetch(userRequest).first else {
-                print("⚠️ No user found for workout history sync")
+                AppLogger.warning("No user found for workout history sync", category: .network)
                 return
             }
             
@@ -4057,7 +3982,7 @@ class SupabaseManager: ObservableObject {
                         
                         // Only sync exercises if they're missing (cloud has more than local)
                         if cloudExerciseCount > existingExerciseCount {
-                            print("🔄 Syncing \(cloudExerciseCount) exercises for existing workout '\(workout.name ?? "")'")
+                            AppLogger.debug("Syncing \(cloudExerciseCount) exercises for existing workout '\(workout.name ?? "")'", category: .network)
                             
                             // Remove old exercises if any
                             if let oldExercises = workout.exercises?.allObjects as? [WorkoutExercise] {
@@ -4090,7 +4015,7 @@ class SupabaseManager: ObservableObject {
                                 
                                 if exercise == nil {
                                     #if DEBUG
-                                    print("⚠️ [WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry relationship later")
+                                    AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry relationship later", category: .network)
                                     #endif
                                 }
                                 
@@ -4142,7 +4067,7 @@ class SupabaseManager: ObservableObject {
                             
                             if exercise == nil {
                                 #if DEBUG
-                                print("⚠️ [WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry later")
+                                AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry later", category: .network)
                                 #endif
                             }
                             
@@ -4160,15 +4085,15 @@ class SupabaseManager: ObservableObject {
                         }
                     }
                 } catch {
-                    print("❌ Error checking existing workout: \(error)")
+                    AppLogger.error("Error checking existing workout: \(error)", category: .network)
                 }
             }
             
             do {
                 try viewContext.save()
-                print("✅ Synced \(workouts.count) workouts from cloud")
+                AppLogger.info("Synced \(workouts.count) workouts from cloud", category: .network)
             } catch {
-                print("❌ Error saving workout history: \(error)")
+                AppLogger.error("Error saving workout history: \(error)", category: .network)
             }
         }
     }
@@ -4200,7 +4125,7 @@ class SupabaseManager: ObservableObject {
             .upsert(mealDTO)
             .execute()
         
-        print("☁️ Meal saved to cloud: \(meal.foodName ?? "Unknown")")
+        AppLogger.debug("Meal saved to cloud: \(meal.foodName ?? "Unknown")", category: .network)
     }
     
     /// Fetches meal logs from cloud
@@ -4215,14 +4140,14 @@ class SupabaseManager: ObservableObject {
             .execute()
             .value
         
-        print("📥 Fetched \(response.count) meals from cloud")
+        AppLogger.debug("Fetched \(response.count) meals from cloud", category: .network)
         return response
     }
     
     /// Deletes a meal entry from the cloud
     func deleteMealFromCloud(mealId: UUID) async throws {
         guard let userId = currentUser?.id else { 
-            print("⚠️ [CLOUD] No user - skipping cloud delete")
+            AppLogger.warning("[CLOUD] No user - skipping cloud delete", category: .network)
             return 
         }
         
@@ -4233,7 +4158,7 @@ class SupabaseManager: ObservableObject {
             .eq("user_id", value: userId.uuidString)
             .execute()
         
-        print("🗑️ [CLOUD] Meal deleted from cloud: \(mealId)")
+        AppLogger.debug("[CLOUD] Meal deleted from cloud: \(mealId)", category: .network)
     }
     
     /// Syncs meal logs from cloud to Core Data
@@ -4246,7 +4171,7 @@ class SupabaseManager: ObservableObject {
             userRequest.fetchLimit = 1
             
             guard let user = try? viewContext.fetch(userRequest).first else {
-                print("⚠️ No user found for meal logs sync")
+                AppLogger.warning("No user found for meal logs sync", category: .network)
                 return
             }
             
@@ -4274,15 +4199,15 @@ class SupabaseManager: ObservableObject {
                         meal.user = user
                     }
                 } catch {
-                    print("❌ Error checking existing meal: \(error)")
+                    AppLogger.error("Error checking existing meal: \(error)", category: .network)
                 }
             }
             
             do {
                 try viewContext.save()
-                print("✅ Synced \(meals.count) meals from cloud")
+                AppLogger.info("Synced \(meals.count) meals from cloud", category: .network)
             } catch {
-                print("❌ Error saving meal logs: \(error)")
+                AppLogger.error("Error saving meal logs: \(error)", category: .network)
             }
         }
     }
@@ -4313,9 +4238,9 @@ class SupabaseManager: ObservableObject {
                 }
                 
                 try viewContext.save()
-                print("✅ Synced \(matchedCount)/\(favoriteNames.count) favorites to Core Data (matched by name)")
+                AppLogger.info("Synced \(matchedCount)/\(favoriteNames.count) favorites to Core Data (matched by name)", category: .network)
             } catch {
-                print("❌ Error syncing favorites to Core Data: \(error)")
+                AppLogger.error("Error syncing favorites to Core Data: \(error)", category: .network)
             }
         }
     }
@@ -4355,18 +4280,18 @@ class SupabaseManager: ObservableObject {
                             exercise.instructions = customMarker
                         }
                         
-                        print("✅ Added custom exercise from cloud: \(customExercise.name)")
+                        AppLogger.info("Added custom exercise from cloud: \(customExercise.name)", category: .network)
                     }
                 } catch {
-                    print("❌ Error syncing custom exercise: \(error)")
+                    AppLogger.error("Error syncing custom exercise: \(error)", category: .network)
                 }
             }
             
             do {
                 try viewContext.save()
-                print("✅ Synced \(customExercises.count) custom exercises to Core Data")
+                AppLogger.info("Synced \(customExercises.count) custom exercises to Core Data", category: .network)
             } catch {
-                print("❌ Error saving custom exercises to Core Data: \(error)")
+                AppLogger.error("Error saving custom exercises to Core Data: \(error)", category: .network)
             }
         }
     }
@@ -4396,9 +4321,9 @@ class SupabaseManager: ObservableObject {
                 }
                 
                 try viewContext.save()
-                print("✅ Synced \(favoriteWorkouts.count) favorite workouts to Core Data")
+                AppLogger.info("Synced \(favoriteWorkouts.count) favorite workouts to Core Data", category: .network)
             } catch {
-                print("❌ Error syncing favorite workouts to Core Data: \(error)")
+                AppLogger.error("Error syncing favorite workouts to Core Data: \(error)", category: .network)
             }
         }
     }

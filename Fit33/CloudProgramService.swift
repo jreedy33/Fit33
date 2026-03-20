@@ -273,7 +273,7 @@ class CloudProgramService: ObservableObject {
     func cacheExercises(_ exercises: [ExerciseData], for dayNumber: Int) {
         generatedExercisesCache[dayNumber] = exercises
         #if DEBUG
-        print("💾 Cached \(exercises.count) exercises for day \(dayNumber)")
+        AppLogger.debug("Cached \(exercises.count) exercises for day \(dayNumber)", category: .workout)
         #endif
     }
     
@@ -283,7 +283,7 @@ class CloudProgramService: ObservableObject {
         exercises[index] = newExercise
         generatedExercisesCache[dayNumber] = exercises
         #if DEBUG
-        print("🔄 Updated exercise at index \(index) for day \(dayNumber)")
+        AppLogger.debug("Updated exercise at index \(index) for day \(dayNumber)", category: .workout)
         #endif
     }
     
@@ -291,7 +291,7 @@ class CloudProgramService: ObservableObject {
     func clearExerciseCache() {
         generatedExercisesCache.removeAll()
         #if DEBUG
-        print("🗑️ Cleared exercise cache")
+        AppLogger.debug("Cleared exercise cache", category: .workout)
         #endif
     }
     
@@ -300,7 +300,7 @@ class CloudProgramService: ObservableObject {
     /// Force clear all caches and refresh - call this to fix stale data issues
     func forceRefreshAllData() async {
         #if DEBUG
-        print("🔄 Force refreshing all program data...")
+        AppLogger.debug("Force refreshing all program data...", category: .workout)
         #endif
         
         // Clear all caches
@@ -316,7 +316,7 @@ class CloudProgramService: ObservableObject {
         await loadActiveProgram()
         
         #if DEBUG
-        print("✅ Force refresh complete")
+        AppLogger.info("Successfully completed force refresh", category: .workout)
         #endif
     }
     
@@ -326,7 +326,7 @@ class CloudProgramService: ObservableObject {
         activeProgramDetails = nil
         clearCache()
         #if DEBUG
-        print("🗑️ Active program cache cleared")
+        AppLogger.debug("Active program cache cleared", category: .workout)
         #endif
     }
     
@@ -348,12 +348,12 @@ class CloudProgramService: ObservableObject {
             
             allPrograms = response
             #if DEBUG
-            print("✅ Fetched \(response.count) programs from cloud")
+            AppLogger.info("Successfully fetched \(response.count) programs from cloud", category: .workout)
             #endif
         } catch {
             self.error = "Failed to load programs: \(error.localizedDescription)"
             #if DEBUG
-            print("❌ Error fetching programs: \(error)")
+            AppLogger.error("Error fetching programs: \(error.localizedDescription)", category: .workout)
             #endif
             
             // Fall back to local programs if cloud fails
@@ -366,7 +366,7 @@ class CloudProgramService: ObservableObject {
     /// Get recommended programs for current user
     func fetchRecommendedPrograms() async {
         guard let userId = supabase.currentUser?.id else {
-            print("⚠️ No authenticated user for recommendations")
+            AppLogger.warning("No authenticated user for recommendations", category: .workout)
             return
         }
         
@@ -375,7 +375,7 @@ class CloudProgramService: ObservableObject {
         
         // Get user profile for recommendation parameters
         guard let userProfile = try? await supabase.fetchUserProfile() else {
-            print("⚠️ Could not fetch user profile for recommendations")
+            AppLogger.warning("Could not fetch user profile for recommendations", category: .workout)
             isLoading = false
             return
         }
@@ -417,10 +417,10 @@ class CloudProgramService: ObservableObject {
                 .value
             
             recommendedPrograms = response
-            print("✅ Fetched \(response.count) recommended programs")
+            AppLogger.info("Successfully fetched \(response.count) recommended programs", category: .workout)
         } catch {
             self.error = "Failed to get recommendations: \(error.localizedDescription)"
-            print("❌ Error fetching recommendations: \(error)")
+            AppLogger.error("Error fetching recommendations: \(error.localizedDescription)", category: .workout)
         }
         
         isLoading = false
@@ -431,7 +431,7 @@ class CloudProgramService: ObservableObject {
     /// Start a new program
     func startProgram(_ programId: String) async -> Bool {
         guard let userId = supabase.currentUser?.id else {
-            print("⚠️ No authenticated user to start program")
+            AppLogger.warning("No authenticated user to start program", category: .workout)
             return false
         }
         
@@ -492,13 +492,13 @@ class CloudProgramService: ObservableObject {
                     )
                 }
                 
-                print("✅ Started program: \(programId)")
+                AppLogger.info("Successfully started program: \(programId)", category: .workout)
                 isLoading = false
                 return true
             }
         } catch {
             self.error = "Failed to start program: \(error.localizedDescription)"
-            print("❌ Error starting program: \(error)")
+            AppLogger.error("Error starting program: \(error.localizedDescription)", category: .workout)
         }
         
         isLoading = false
@@ -508,7 +508,7 @@ class CloudProgramService: ObservableObject {
     /// Load user's active program
     func loadActiveProgram() async {
         guard let userId = supabase.currentUser?.id else {
-            print("⚠️ No authenticated user")
+            AppLogger.warning("No authenticated user", category: .workout)
             return
         }
         
@@ -524,7 +524,7 @@ class CloudProgramService: ObservableObject {
             
             if let active = response.first {
                 activeProgram = active
-                print("✅ Found active program: \(active.programId)")
+                AppLogger.info("Successfully found active program: \(active.programId)", category: .workout)
                 
                 // Check if cache is valid (has days)
                 let cacheIsValid = cachedFullProgram != nil && 
@@ -533,21 +533,19 @@ class CloudProgramService: ObservableObject {
                 
                 if cacheIsValid {
                     activeProgramDetails = cachedFullProgram
-                    print("📦 Using cached program details (\(cachedFullProgram?.days.count ?? 0) days)")
+                    AppLogger.debug("Using cached program details (\(cachedFullProgram?.days.count ?? 0) days)", category: .workout)
                 } else {
                     // Cache is invalid or empty - fetch fresh
                     if cachedFullProgram != nil && (cachedFullProgram?.days.count ?? 0) == 0 {
-                        print("⚠️ Cache has 0 days - clearing and re-fetching")
+                        AppLogger.warning("Cache has 0 days - clearing and re-fetching", category: .workout)
                         clearCache()
                         cachedFullProgram = nil
                     }
-                    print("📥 Fetching full program details...")
+                    AppLogger.debug("Fetching full program details...", category: .workout)
                     await fetchAndCacheFullProgram(programId: active.programId)
                 }
                 
-                print("✅ Loaded active program")
-                print("   activeProgramDetails: \(activeProgramDetails != nil ? "✅ loaded" : "❌ nil")")
-                print("   days count: \(activeProgramDetails?.days.count ?? 0)")
+                AppLogger.info("Successfully loaded active program (details: \(activeProgramDetails != nil ? "loaded" : "nil"), days: \(activeProgramDetails?.days.count ?? 0))", category: .workout)
                 
                 // 🚀 Smart prefetch: Preload videos for today + next 2 days
                 if let programDetails = activeProgramDetails {
@@ -559,15 +557,15 @@ class CloudProgramService: ObservableObject {
             } else {
                 activeProgram = nil
                 activeProgramDetails = nil
-                print("⚠️ No active program found for user")
+                AppLogger.warning("No active program found for user", category: .workout)
             }
         } catch {
-            print("❌ Error loading active program: \(error)")
+            AppLogger.error("Error loading active program: \(error.localizedDescription)", category: .workout)
             
             // Try to use cached data
             if let cached = cachedFullProgram {
                 activeProgramDetails = cached
-                print("📦 Using cached program data")
+                AppLogger.debug("Using cached program data", category: .workout)
             }
         }
     }
@@ -576,11 +574,11 @@ class CloudProgramService: ObservableObject {
     @MainActor
     func completeDay(_ dayNumber: Int, xpEarned: Int = 0) async {
         guard var active = activeProgram else { 
-            print("⚠️ No active program to complete day for")
+            AppLogger.warning("No active program to complete day for", category: .workout)
             return 
         }
         
-        print("📅 Completing day \(dayNumber) for program...")
+        AppLogger.debug("Completing day \(dayNumber) for program...", category: .workout)
         
         // Update local state
         if !active.completedDays.contains(dayNumber) {
@@ -599,7 +597,7 @@ class CloudProgramService: ObservableObject {
         
         // Update published property on main thread (triggers UI update)
         self.activeProgram = active
-        print("✅ Local state updated - completed days: \(active.completedDays)")
+        AppLogger.debug("Local state updated - completed days: \(active.completedDays)", category: .workout)
         
         // Sync to cloud
         do {
@@ -623,14 +621,14 @@ class CloudProgramService: ObservableObject {
                 .eq("id", value: active.id)
                 .execute()
             
-            print("☁️ Day \(dayNumber) synced to cloud")
+            AppLogger.debug("Day \(dayNumber) synced to cloud", category: .workout)
         } catch {
-            print("❌ Error syncing day completion: \(error)")
+            AppLogger.error("Error syncing day completion: \(error.localizedDescription)", category: .workout)
         }
         
         // Update cache
         saveProgramToCache()
-        print("💾 Program cache updated")
+        AppLogger.debug("Program cache updated", category: .workout)
         
         // Update daily quest progress for program day completion
         await DailyQuestService.shared.onProgramDayCompleted()
@@ -652,7 +650,7 @@ class CloudProgramService: ObservableObject {
         // Clear exercise cache for both days so exercises regenerate with correct focus
         generatedExercisesCache.removeValue(forKey: originalDay)
         generatedExercisesCache.removeValue(forKey: newDay)
-        print("🗑️ Cleared exercise cache for days \(originalDay) and \(newDay)")
+        AppLogger.debug("Cleared exercise cache for days \(originalDay) and \(newDay)", category: .workout)
         
         // Sync to cloud
         do {
@@ -666,9 +664,9 @@ class CloudProgramService: ObservableObject {
                 .eq("id", value: active.id)
                 .execute()
             
-            print("✅ Swapped days \(originalDay) and \(newDay)")
+            AppLogger.info("Successfully swapped days \(originalDay) and \(newDay)", category: .workout)
         } catch {
-            print("❌ Error syncing day swap: \(error)")
+            AppLogger.error("Error syncing day swap: \(error.localizedDescription)", category: .workout)
         }
         
         saveProgramToCache()
@@ -693,9 +691,9 @@ class CloudProgramService: ObservableObject {
                 .eq("id", value: active.id)
                 .execute()
             
-            print("✅ Swapped exercise \(exerciseId) for \(substituteExerciseName)")
+            AppLogger.info("Successfully swapped exercise \(exerciseId) for \(substituteExerciseName)", category: .workout)
         } catch {
-            print("❌ Error syncing exercise swap: \(error)")
+            AppLogger.error("Error syncing exercise swap: \(error.localizedDescription)", category: .workout)
         }
         
         saveProgramToCache()
@@ -722,9 +720,9 @@ class CloudProgramService: ObservableObject {
             clearCache()
             clearExerciseCache()
             
-            print("✅ Program cancelled and history saved")
+            AppLogger.info("Successfully cancelled program and saved history", category: .workout)
         } catch {
-            print("❌ Error cancelling program: \(error)")
+            AppLogger.error("Error cancelling program: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -749,9 +747,9 @@ class CloudProgramService: ObservableObject {
             clearCache()
             clearExerciseCache()
             
-            print("✅ Program completed and history saved")
+            AppLogger.info("Successfully completed program and saved history", category: .workout)
         } catch {
-            print("❌ Error completing program: \(error)")
+            AppLogger.error("Error completing program: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -800,9 +798,9 @@ class CloudProgramService: ObservableObject {
                 .insert(entry)
                 .execute()
             
-            print("📊 Program history saved: \(program.completedDays.count) days, \(Int(completionPercentage))% complete")
+            AppLogger.info("Program history saved: \(program.completedDays.count) days, \(Int(completionPercentage))% complete", category: .workout)
         } catch {
-            print("⚠️ Could not save program history: \(error)")
+            AppLogger.warning("Could not save program history: \(error.localizedDescription)", category: .workout)
             // Don't fail the entire operation if history save fails
         }
     }
@@ -816,7 +814,7 @@ class CloudProgramService: ObservableObject {
         let completedWorkoutDays = active.completedDays.count
         
         if completedWorkoutDays >= totalWorkoutDays {
-            print("🎉 Program complete! All \(totalWorkoutDays) workout days finished!")
+            AppLogger.info("Program complete! All \(totalWorkoutDays) workout days finished!", category: .workout)
             await completeProgram()
         }
     }
@@ -825,11 +823,11 @@ class CloudProgramService: ObservableObject {
     
     /// Fetch complete program details and cache locally
     private func fetchAndCacheFullProgram(programId: String) async {
-        print("🔄 fetchAndCacheFullProgram started for: \(programId)")
+        AppLogger.debug("fetchAndCacheFullProgram started for: \(programId)", category: .workout)
         
         do {
             // Fetch program
-            print("   Fetching program from database...")
+            AppLogger.verbose("Fetching program from database...", category: .workout)
             let programs: [CloudProgram] = try await supabase.supabaseClient
                 .from("programs")
                 .select()
@@ -838,17 +836,17 @@ class CloudProgramService: ObservableObject {
                 .execute()
                 .value
             
-            print("   Found \(programs.count) programs")
+            AppLogger.debug("Found \(programs.count) programs", category: .workout)
             
             guard let program = programs.first else {
-                print("❌ Program not found: \(programId)")
+                AppLogger.error("Program not found: \(programId)", category: .workout)
                 return
             }
             
-            print("   ✅ Program: \(program.name), type: \(program.programType), duration: \(program.durationDays) days")
+            AppLogger.debug("Program: \(program.name), type: \(program.programType), duration: \(program.durationDays) days", category: .workout)
             
             // Fetch days
-            print("   Fetching days from database...")
+            AppLogger.verbose("Fetching days from database...", category: .workout)
             var days: [CloudProgramDay] = try await supabase.supabaseClient
                 .from("program_days")
                 .select()
@@ -857,13 +855,13 @@ class CloudProgramService: ObservableObject {
                 .execute()
                 .value
             
-            print("   Found \(days.count) days in database")
+            AppLogger.debug("Found \(days.count) days in database", category: .workout)
             
             // If no days found in database, generate them dynamically
             if days.isEmpty {
-                print("⚠️ No days found in database for \(programId), generating dynamically")
+                AppLogger.warning("No days found in database for \(programId), generating dynamically", category: .workout)
                 days = generateDynamicDays(for: program)
-                print("   Generated \(days.count) dynamic days")
+                AppLogger.debug("Generated \(days.count) dynamic days", category: .workout)
             }
             
             // Fetch exercises for all days
@@ -909,12 +907,10 @@ class CloudProgramService: ObservableObject {
             // Save to disk for offline access
             saveProgramToCache()
             
-            print("✅ Fetched and cached full program: \(program.name)")
-            print("   - \(days.count) days")
-            print("   - \(fullDays.flatMap { $0.exercises }.count) predefined exercises")
+            AppLogger.info("Successfully fetched and cached full program: \(program.name) (\(days.count) days, \(fullDays.flatMap { $0.exercises }.count) predefined exercises)", category: .workout)
             
         } catch {
-            print("❌ Error fetching full program: \(error)")
+            AppLogger.error("Error fetching full program: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -925,9 +921,7 @@ class CloudProgramService: ObservableObject {
         
         // Analyze program to determine focus
         let programFocus = analyzeProgramFocus(program)
-        print("📊 Program analysis for '\(program.name)':")
-        print("   Focus type: \(programFocus.type)")
-        print("   Primary muscles: \(programFocus.primaryMuscles)")
+        AppLogger.debug("Program analysis for '\(program.name)': focus=\(programFocus.type), muscles=\(programFocus.primaryMuscles)", category: .workout)
         
         // Get workout patterns that match the program's focus
         let workoutPatterns = getSmartWorkoutPatterns(for: program, focus: programFocus)
@@ -1214,9 +1208,9 @@ class CloudProgramService: ObservableObject {
                 UserDefaults.standard.set(activeData, forKey: "\(cacheKey)_active")
             }
             
-            print("💾 Program cached locally")
+            AppLogger.debug("Program cached locally", category: .workout)
         } catch {
-            print("❌ Error caching program: \(error)")
+            AppLogger.error("Error caching program: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -1228,16 +1222,16 @@ class CloudProgramService: ObservableObject {
                 
                 // Validate cache - must have days
                 if cached.days.isEmpty {
-                    print("⚠️ Cached program has 0 days - discarding invalid cache")
+                    AppLogger.warning("Cached program has 0 days - discarding invalid cache", category: .workout)
                     clearCache()
                     return
                 }
                 
                 cachedFullProgram = cached
                 activeProgramDetails = cached
-                print("📦 Loaded cached program: \(cached.program.name) with \(cached.days.count) days")
+                AppLogger.info("Successfully loaded cached program: \(cached.program.name) with \(cached.days.count) days", category: .workout)
             } catch {
-                print("❌ Error loading cached program: \(error)")
+                AppLogger.error("Error loading cached program: \(error.localizedDescription)", category: .workout)
                 clearCache()
             }
         }
@@ -1246,9 +1240,9 @@ class CloudProgramService: ObservableObject {
             do {
                 let decoder = JSONDecoder()
                 activeProgram = try decoder.decode(UserActiveProgram.self, from: activeData)
-                print("📦 Loaded cached active program state")
+                AppLogger.info("Successfully loaded cached active program state", category: .workout)
             } catch {
-                print("❌ Error loading cached active program: \(error)")
+                AppLogger.error("Error loading cached active program: \(error.localizedDescription)", category: .workout)
             }
         }
     }
@@ -1256,7 +1250,7 @@ class CloudProgramService: ObservableObject {
     private func clearCache() {
         UserDefaults.standard.removeObject(forKey: cacheKey)
         UserDefaults.standard.removeObject(forKey: "\(cacheKey)_active")
-        print("🗑️ Program cache cleared")
+        AppLogger.debug("Program cache cleared", category: .workout)
     }
     
     // MARK: - Helper Methods
@@ -1277,14 +1271,12 @@ class CloudProgramService: ObservableObject {
     /// Debug version with full logging (call only when debugging)
     func getDayDetailsDebug(for dayNumber: Int) -> FullProgramDay? {
         let actualDay = getActualDay(dayNumber)
-        print("🔍 getDayDetails called for day \(dayNumber) (actual: \(actualDay))")
-        print("   activeProgramDetails: \(activeProgramDetails != nil ? "exists" : "nil")")
-        print("   days count: \(activeProgramDetails?.days.count ?? 0)")
+        AppLogger.debug("getDayDetails for day \(dayNumber) (actual: \(actualDay)), details: \(activeProgramDetails != nil ? "exists" : "nil"), days: \(activeProgramDetails?.days.count ?? 0)", category: .workout)
         if let details = activeProgramDetails {
-            print("   available days: \(details.days.map { $0.day.dayNumber })")
+            AppLogger.verbose("Available days: \(details.days.map { $0.day.dayNumber })", category: .workout)
         }
         let result = activeProgramDetails?.days.first { $0.day.dayNumber == actualDay }
-        print("   result: \(result != nil ? "found" : "nil")")
+        AppLogger.verbose("getDayDetails result: \(result != nil ? "found" : "nil")", category: .workout)
         return result
     }
     
@@ -1318,7 +1310,7 @@ class CloudProgramService: ObservableObject {
                 return equipment.map { $0.lowercased() }
             }
         } catch {
-            print("❌ Error fetching user equipment: \(error)")
+            AppLogger.error("Error fetching user equipment: \(error.localizedDescription)", category: .workout)
         }
         
         return ["bodyweight"]
@@ -1336,7 +1328,7 @@ class CloudProgramService: ObservableObject {
                 return Int(user.availableDays)
             }
         } catch {
-            print("❌ Error fetching user available days: \(error)")
+            AppLogger.error("Error fetching user available days: \(error.localizedDescription)", category: .workout)
         }
         
         return 3
@@ -1373,7 +1365,7 @@ class CloudProgramService: ObservableObject {
                 isFeatured: false
             )
         }
-        print("📦 Loaded \(allPrograms.count) local fallback programs")
+        AppLogger.info("Loaded \(allPrograms.count) local fallback programs", category: .workout)
     }
     
     // MARK: - Generate Exercises for Day
@@ -1381,13 +1373,11 @@ class CloudProgramService: ObservableObject {
     /// Generate exercises for a program day - ALWAYS returns exercises, never empty
     /// Uses SMART distribution to ensure exercises match the day's focus
     func generateExercisesForDay(_ day: FullProgramDay) -> [ExerciseData] {
-        print("🏋️ Smart generating exercises for: \(day.day.name)")
-        print("   Focus areas: \(day.day.focusAreas)")
-        print("   Equipment: \(day.day.requiredEquipment)")
+        AppLogger.debug("Smart generating exercises for: \(day.day.name), focus: \(day.day.focusAreas), equipment: \(day.day.requiredEquipment)", category: .workout)
         
         // Skip rest days
         if day.day.isRestDay {
-            print("   📅 Rest day - no exercises needed")
+            AppLogger.debug("Rest day - no exercises needed", category: .workout)
             return []
         }
         
@@ -1409,15 +1399,14 @@ class CloudProgramService: ObservableObject {
             }
             
             if !exercises.isEmpty {
-                print("   ✅ Found \(exercises.count) predefined exercises")
+                AppLogger.debug("Found \(exercises.count) predefined exercises", category: .workout)
                 return exercises
             }
         }
         
         // SMART GENERATION: Analyze day name and focus to create balanced workout
         let dayType = analyzeDayType(dayName: day.day.name, focusAreas: day.day.focusAreas)
-        print("   📊 Day type analysis: \(dayType.name)")
-        print("   📊 Muscle distribution: \(dayType.muscleDistribution)")
+        AppLogger.debug("Day type: \(dayType.name), distribution: \(dayType.muscleDistribution)", category: .workout)
         
         // Generate exercises with BALANCED distribution across muscle groups
         var selectedExercises: [ExerciseData] = []
@@ -1456,7 +1445,7 @@ class CloudProgramService: ObservableObject {
         
         // Emergency fallback - still try to match the day type
         if selectedExercises.isEmpty {
-            print("   🆘 Emergency fallback - matching day type: \(dayType.name)")
+            AppLogger.warning("Emergency fallback - matching day type: \(dayType.name)", category: .workout)
             let targetCategories = focusMuscles
             let emergencyExercises = allExercises.filter { ex in
                 targetCategories.contains(ex.category.lowercased()) ||
@@ -1471,10 +1460,7 @@ class CloudProgramService: ObservableObject {
             }
         }
         
-        print("   ✅ Generated \(selectedExercises.count) exercises with smart distribution")
-        for ex in selectedExercises {
-            print("      - \(ex.name) (\(ex.category))")
-        }
+        AppLogger.debug("Generated \(selectedExercises.count) exercises with smart distribution", category: .workout)
         
         return selectedExercises
     }
@@ -1703,7 +1689,7 @@ class CloudProgramService: ObservableObject {
             return equipmentMatch && (muscleMatch || secondaryMatch)
         }
         
-        print("      🎯 Finding \(count) \(targetMuscle) exercises - found \(matchingExercises.count) candidates")
+        AppLogger.verbose("Finding \(count) \(targetMuscle) exercises - found \(matchingExercises.count) candidates", category: .workout)
         
         // Shuffle and take requested count
         return Array(matchingExercises.shuffled().prefix(count))
@@ -1761,7 +1747,7 @@ class CloudProgramService: ObservableObject {
             (a.secondaryMuscles.count + 1) > (b.secondaryMuscles.count + 1)
         }
         
-        print("      💪 Finding \(count) compound exercises - found \(sortedCompound.count) candidates")
+        AppLogger.verbose("Finding \(count) compound exercises - found \(sortedCompound.count) candidates", category: .workout)
         
         // Take top compound exercises, shuffle among the best ones for variety
         let topCandidates = Array(sortedCompound.prefix(count * 3))

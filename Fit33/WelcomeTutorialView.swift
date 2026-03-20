@@ -207,8 +207,8 @@ struct WelcomeTutorialView: View {
             subtitle: "Start your free trial",
             description: "Get unlimited AI workouts, advanced analytics,\ncustom meal plans, and more.",
             icon: "crown.fill",
-            iconColor: .purple,
-            gradient: [Color.purple, Color.blue],
+            iconColor: .yellow,
+            gradient: [Color.yellow, Color.orange],
             animationType: .celebrate,
             useTrialCTA: true
         )
@@ -302,7 +302,7 @@ struct WelcomeTutorialView: View {
                                 Text("Continue")
                                     .font(.system(size: 17, weight: .bold))
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.ds_bodySmall).fontWeight(.bold)
                             }
                             .foregroundStyle(
                                 LinearGradient(
@@ -604,7 +604,7 @@ struct TutorialPageView: View {
                         .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color.black.opacity(0.55))
                         .multilineTextAlignment(.center)
                         .lineSpacing(5)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, Spacing.xl)
                         .fixedSize(horizontal: false, vertical: true)
                         .opacity(animateContent ? 1 : 0)
                         .offset(y: animateContent ? 0 : 10)
@@ -868,7 +868,7 @@ struct TutorialProgramWidget: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary)
             }
             .padding(Spacing.md)
@@ -1143,7 +1143,7 @@ struct TutorialHealthAppsWidget: View {
                     .shadow(color: app.colors[0].opacity(0.4), radius: 8, x: 0, y: 4)
                 
                 Image(systemName: app.icon)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -1165,13 +1165,13 @@ struct TutorialHealthAppsWidget: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .padding(.horizontal, Spacing.md)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.xs)
                 .background(
                     LinearGradient(colors: app.colors, startPoint: .leading, endPoint: .trailing)
                 )
                 .clipShape(Capsule())
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 14)
         .background(TutorialCardBackground(gradient: app.colors))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
@@ -1222,7 +1222,7 @@ struct TutorialTrialCTA: View {
                 ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundStyle(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         Text(feature.text)
                             .font(.subheadline)
@@ -1232,7 +1232,7 @@ struct TutorialTrialCTA: View {
                     }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
 
             Button(action: {
                 HapticManager.tap()

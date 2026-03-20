@@ -288,7 +288,7 @@ struct ProgramCustomizationView: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "wand.and.stars")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                 }
                 
                 Text(customizationService.isGenerating ? "Generating..." : "Generate My Program")
@@ -355,7 +355,7 @@ struct EquipmentChip: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: equipment.icon)
-                    .font(.system(size: 18))
+                    .font(.ds_heading3)
                 
                 Text(equipment.rawValue)
                     .font(.caption2)
@@ -388,7 +388,7 @@ struct PresetButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                 Text(title)
                     .font(.caption2)
                     .fontWeight(.medium)
@@ -439,7 +439,7 @@ struct QuickOptionChip: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text(title)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -504,7 +504,7 @@ struct CustomProgramPreviewView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Preview")
                             .font(.headline)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Spacing.xxs)
                         
                         ForEach(program.days.prefix(7)) { day in
                             DayPreviewCard(day: day, programColor: programColor)
@@ -586,7 +586,7 @@ struct DayPreviewCard: View {
                 
                 if day.isRestDay {
                     Image(systemName: "moon.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.gray)
                 } else {
                     Text("\(day.dayNumber)")

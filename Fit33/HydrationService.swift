@@ -271,7 +271,7 @@ class HydrationService: ObservableObject {
     }
     
     private func loadTodaySummary(userId: UUID) async {
-        let today = dateFormatter.string(from: Date())
+        let today = Self.dateFormatter.string(from: Date())
         
         do {
             let summaries: [HydrationDailySummary] = try await supabase.supabaseClient
@@ -363,7 +363,7 @@ class HydrationService: ObservableObject {
                 .from("hydration_daily_summary")
                 .select()
                 .eq("user_id", value: userId.uuidString)
-                .gte("date", value: dateFormatter.string(from: weekAgo))
+                .gte("date", value: Self.dateFormatter.string(from: weekAgo))
                 .order("date", ascending: true)
                 .execute()
                 .value
@@ -638,10 +638,10 @@ class HydrationService: ObservableObject {
     
     // MARK: - Helpers
     
-    private var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }
+    }()
 }
 

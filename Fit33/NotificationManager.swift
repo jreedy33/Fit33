@@ -367,12 +367,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             if granted {
                 setupNotificationCategories()
                 scheduleAllNotifications()
-                print("✅ [NOTIFICATIONS] Authorization granted")
+                AppLogger.info("Authorization granted", category: .general)
             }
             
             return granted
         } catch {
-            print("❌ [NOTIFICATIONS] Authorization error: \(error)")
+            AppLogger.error("Notification authorization error: \(error.localizedDescription)", category: .general)
             return false
         }
     }
@@ -392,9 +392,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     func clearBadge() {
         UNUserNotificationCenter.current().setBadgeCount(0) { error in
             if let error = error {
-                print("❌ [BADGE] Failed to clear badge: \(error)")
+                AppLogger.error("Failed to clear badge: \(error.localizedDescription)", category: .general)
             } else {
-                print("✅ [BADGE] Badge cleared")
+                AppLogger.debug("Badge cleared", category: .general)
             }
         }
     }
@@ -412,9 +412,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         UNUserNotificationCenter.current().setBadgeCount(total) { error in
             if let error = error {
-                print("❌ [BADGE] Failed to update badge: \(error)")
+                AppLogger.error("Failed to update badge: \(error.localizedDescription)", category: .general)
             } else {
-                print("📛 [BADGE] Updated to \(total) (friends=\(pendingFriendRequests), challenges=\(pendingChallengeInvites), private=\(pendingPrivateChallengeInvites), workouts=\(unreadWorkouts))")
+                AppLogger.debug("Badge updated to \(total) (friends=\(pendingFriendRequests), challenges=\(pendingChallengeInvites), private=\(pendingPrivateChallengeInvites), workouts=\(unreadWorkouts))", category: .general)
             }
         }
     }
@@ -454,7 +454,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     func enableAllDefaultNotifications() {
         enabledNotifications = Set(NotificationType.allCases.filter { $0.defaultEnabled }.map { $0.rawValue })
         saveEnabledNotifications()
-        print("📬 [NOTIFICATIONS] Enabled all default notifications: \(enabledNotifications.count) types")
+        AppLogger.info("Enabled all default notifications: \(enabledNotifications.count) types", category: .general)
     }
     
     /// Check if this is a returning user who previously had notifications enabled
@@ -608,7 +608,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             scheduleMorningMotivation()
         }
         
-        print("📅 [NOTIFICATIONS] Scheduled all notifications")
+        AppLogger.debug("Scheduled all notifications", category: .general)
     }
     
     // MARK: - Workout Reminder
@@ -1120,7 +1120,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Record workout date
         UserDefaults.standard.set(Date(), forKey: "last_workout_date")
         
-        print("✅ [NOTIFICATIONS] Workout completed - cancelled today's reminders")
+        AppLogger.info("Workout completed - cancelled today's reminders", category: .general)
     }
     
     /// Food logged - update reminder state
@@ -1158,8 +1158,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
         }
         
-        // Check for comeback reminder
-        if let lastWorkout = UserDefaults.standard.object(forKey: "last_workout_date") as? Date {
+        // Check for comeback reminder — only if user did NOT work out today
+        if let lastWorkout = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
+           !Calendar.current.isDateInToday(lastWorkout) {
             let daysSince = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
             if daysSince >= 3 && daysSince <= 7 {
                 sendComebackReminder(daysAway: daysSince)
@@ -1171,7 +1172,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     private func sendImmediateNotification(content: UNMutableNotificationContent, identifier: String) {
         // Check quiet hours
         if quietHoursEnabled && isInQuietHours() {
-            print("🌙 [NOTIFICATIONS] Skipped - quiet hours active")
+            AppLogger.debug("Notification skipped - quiet hours active", category: .general)
             return
         }
         
@@ -1183,7 +1184,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("❌ [NOTIFICATIONS] Failed to send: \(error)")
+                AppLogger.error("Failed to send notification: \(error.localizedDescription)", category: .general)
             }
         }
     }
@@ -1222,35 +1223,35 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     "type": notificationType,
                     "title": notification.request.content.title
                 ])
-                print("🔔 [NOTIFICATIONS] Received \(notificationType) while app in foreground - refreshing data")
+                AppLogger.debug("Received \(notificationType) while app in foreground - refreshing data", category: .general)
                 
                 switch notificationType {
                 case "challenge_accepted", "challenge_declined", "challenge_cancelled":
-                    print("🔄 [SENDER FLOW] Step 1: Received \(notificationType) - starting refresh")
+                    AppLogger.debug("[SENDER FLOW] Step 1: Received \(notificationType) - starting refresh", category: .general)
                     await ChallengeService.shared.fetchPendingSentChallenges()
                     await ChallengeService.shared.fetchPendingInvites()
                     await ChallengeService.shared.fetchActiveGroupChallenges()
                     
                     // Fetch active immediately to show the challenge widget (even with 0 progress)
-                    print("🔄 [SENDER FLOW] Step 2: Initial fetch of active challenges...")
+                    AppLogger.debug("[SENDER FLOW] Step 2: Initial fetch of active challenges...", category: .general)
                     await ChallengeService.shared.fetchActiveChallenges()
                     let initialChallenge = ChallengeService.shared.activeChallenges.first
-                    print("📊 [SENDER FLOW] Step 2 result: myToday=\(initialChallenge?.myTodayProgress ?? -1), oppToday=\(initialChallenge?.opponentTodayProgress ?? -1)")
+                    AppLogger.debug("[SENDER FLOW] Step 2 result: myToday=\(initialChallenge?.myTodayProgress ?? -1), oppToday=\(initialChallenge?.opponentTodayProgress ?? -1)", category: .general)
                     
                     // Sync OUR HealthKit data to any newly active challenges FIRST
-                    print("🔄 [SENDER FLOW] Step 3: Syncing OUR HealthKit data...")
+                    AppLogger.debug("[SENDER FLOW] Step 3: Syncing OUR HealthKit data...", category: .general)
                     await ChallengeService.shared.syncHealthKitDataToChallenges()
                     
                     // Wait for accepter's progress sync to finish writing to DB
-                    print("⏳ [SENDER FLOW] Step 4: Waiting 2s for accepter's sync to complete...")
+                    AppLogger.debug("[SENDER FLOW] Step 4: Waiting 2s for accepter's sync to complete...", category: .general)
                     try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
                     
                     // Final fetch - should now have BOTH users' progress
-                    print("🔄 [SENDER FLOW] Step 5: Final fetch with both users' progress...")
+                    AppLogger.debug("[SENDER FLOW] Step 5: Final fetch with both users' progress...", category: .general)
                     await ChallengeService.shared.fetchActiveChallenges()
                     let finalChallenge = ChallengeService.shared.activeChallenges.first
-                    print("📊 [SENDER FLOW] Step 5 result: myToday=\(finalChallenge?.myTodayProgress ?? -1), oppToday=\(finalChallenge?.opponentTodayProgress ?? -1)")
-                    print("✅ [SENDER FLOW] Complete - widget should show real-time progress")
+                    AppLogger.debug("[SENDER FLOW] Step 5 result: myToday=\(finalChallenge?.myTodayProgress ?? -1), oppToday=\(finalChallenge?.opponentTodayProgress ?? -1)", category: .general)
+                    AppLogger.info("[SENDER FLOW] Complete - widget should show real-time progress", category: .general)
                     
                 case "challenge_invite":
                     await ChallengeService.shared.fetchPendingInvites()
@@ -1258,31 +1259,31 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     await ChallengeService.shared.fetchActiveGroupChallenges()
                     
                 case "group_challenge_invite":
-                    print("🔄 [NOTIFICATIONS] Group challenge invite received - refreshing group challenges")
+                    AppLogger.debug("Group challenge invite received - refreshing group challenges", category: .general)
                     await ChallengeService.shared.fetchActiveGroupChallenges()
                     
                 case "group_challenge_started":
-                    print("🔄 [NOTIFICATIONS] Group challenge started - refreshing and syncing progress")
+                    AppLogger.debug("Group challenge started - refreshing and syncing progress", category: .general)
                     await ChallengeService.shared.fetchActiveGroupChallenges()
                     await ChallengeService.shared.fetchActiveChallenges()
                     // Sync existing health data to the newly started challenge
                     await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
-                    print("✅ [NOTIFICATIONS] Group challenges refreshed + progress synced")
+                    AppLogger.info("Group challenges refreshed + progress synced", category: .general)
                     
                 case "community_friend_joined":
-                    print("🔄 [NOTIFICATIONS] Community friend joined - refreshing discoverable")
+                    AppLogger.debug("Community friend joined - refreshing discoverable", category: .general)
                     await CommunityChallengeService.shared.fetchDiscoverableChallenges()
                     
                 case "private_challenge_invite":
-                    print("🔄 [NOTIFICATIONS] Private challenge invite received - refreshing")
+                    AppLogger.debug("Private challenge invite received - refreshing", category: .general)
                     await PrivateChallengeService.shared.fetchPendingInvites()
                     
                 case "private_challenge_member_joined", "private_challenge_progress":
-                    print("🔄 [NOTIFICATIONS] Private challenge update - refreshing")
+                    AppLogger.debug("Private challenge update - refreshing", category: .general)
                     await PrivateChallengeService.shared.refreshAll(force: true)
                     
                 case "private_challenge_message":
-                    print("🔄 [NOTIFICATIONS] Private challenge message - refreshing")
+                    AppLogger.debug("Private challenge message - refreshing", category: .general)
                     await PrivateChallengeService.shared.fetchMyChallenges()
                     
                 case "friend_request", "friend_request_received":
@@ -1324,28 +1325,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             case "START_WORKOUT":
                 // Deep link to workout tab
                 DeepLinkManager.shared.pendingDestination = .workout
-                print("🏋️ [NOTIFICATIONS] User tapped Start Workout")
+                AppLogger.debug("User tapped Start Workout", category: .general)
                 
             case "LOG_FOOD":
                 // Deep link to meals tab
                 DeepLinkManager.shared.pendingDestination = .mealsTab
-                print("🍎 [NOTIFICATIONS] User tapped Log Food - navigating to meals")
+                AppLogger.debug("User tapped Log Food - navigating to meals", category: .general)
                 
             case "ADD_FRIEND":
                 // Navigate to friend suggestions/requests when "Add Friend" tapped
                 DeepLinkManager.shared.pendingDestination = .friendRequests
-                print("👥 [NOTIFICATIONS] User tapped Add Friend from contact joined notification")
+                AppLogger.debug("User tapped Add Friend from contact joined notification", category: .general)
                 
             case "ACCEPT_PRIVATE_CHALLENGE", "VIEW_PRIVATE_CHALLENGE":
                 // Navigate to dashboard so user sees the private challenge invite widget
                 await PrivateChallengeService.shared.fetchPendingInvites()
                 DeepLinkManager.shared.pendingDestination = .dashboard
-                print("🔒 [NOTIFICATIONS] User tapped private challenge action")
+                AppLogger.debug("User tapped private challenge action", category: .general)
                 
             case "SNOOZE_1H":
                 // Reschedule notification for 1 hour later
                 self.snoozeNotification(categoryIdentifier: categoryIdentifier, hours: 1)
-                print("⏰ [NOTIFICATIONS] Snoozed for 1 hour")
+                AppLogger.debug("Snoozed for 1 hour", category: .general)
                 
             case "VIEW_SHARED_WORKOUT", UNNotificationDefaultActionIdentifier:
                 // Handle notification tap based on type or category
@@ -1381,36 +1382,36 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "shared_workout":
             if let workoutId = userInfo["workout_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .receivedWorkout(workoutId: workoutId)
-                print("📬 [NOTIFICATIONS] Opening received workout: \(workoutId)")
+                AppLogger.debug("Opening received workout: \(workoutId)", category: .general)
             } else {
                 DeepLinkManager.shared.pendingDestination = .receivedWorkouts
-                print("📬 [NOTIFICATIONS] Opening received workouts list")
+                AppLogger.debug("Opening received workouts list", category: .general)
             }
             
         case "friend_request":
             await FriendService.shared.fetchPendingRequests()
             DeepLinkManager.shared.pendingDestination = .friendRequests
-            print("👥 [NOTIFICATIONS] Opening friend requests tab")
+            AppLogger.debug("Opening friend requests tab", category: .general)
             
         case "friend_request_accepted":
             await FriendService.shared.fetchFriends()
             DeepLinkManager.shared.pendingDestination = .friends
-            print("🎉 [NOTIFICATIONS] Opening friends list - request accepted!")
+            AppLogger.debug("Opening friends list - request accepted!", category: .general)
             
         case "contact_joined":
             DeepLinkManager.shared.pendingDestination = .friendRequests
-            print("👥 [NOTIFICATIONS] Contact joined Fit33 - opening friend requests tab")
+            AppLogger.debug("Contact joined Fit33 - opening friend requests tab", category: .general)
             
         case "community_friend_joined":
             // Deep link to the community join sheet so the user can join too
             if let slug = userInfo["invite_slug"] as? String {
                 DeepLinkManager.shared.pendingCommunitySlug = slug
                 DeepLinkManager.shared.showCommunityJoinSheet = true
-                print("🌍 [NOTIFICATIONS] Friend joined community — opening join sheet for: \(slug)")
+                AppLogger.debug("Friend joined community — opening join sheet for: \(slug)", category: .general)
             } else {
                 // Fallback: browse communities
                 DeepLinkManager.shared.pendingDestination = .communityChallengeBrowse
-                print("🌍 [NOTIFICATIONS] Friend joined community — opening browse")
+                AppLogger.debug("Friend joined community — opening browse", category: .general)
             }
             
         case "challenge_invite":
@@ -1420,20 +1421,20 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchActiveGroupChallenges()
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeInvite(challengeId: challengeId)
-                print("🏆 [NOTIFICATIONS] Opening challenge invite: \(challengeId) (\(ChallengeService.shared.pendingInvites.count) invites)")
+                AppLogger.debug("Opening challenge invite: \(challengeId) (\(ChallengeService.shared.pendingInvites.count) invites)", category: .general)
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
-                print("🏆 [NOTIFICATIONS] Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites, \(ChallengeService.shared.activeGroupChallenges.count) group)")
+                AppLogger.debug("Opening home screen for challenge invite widget (\(ChallengeService.shared.pendingInvites.count) invites, \(ChallengeService.shared.activeGroupChallenges.count) group)", category: .general)
             }
             
         case "group_challenge_invite":
             await ChallengeService.shared.fetchActiveGroupChallenges()
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                print("🏆 [NOTIFICATIONS] Opening group challenge invite detail: \(challengeId)")
+                AppLogger.debug("Opening group challenge invite detail: \(challengeId)", category: .general)
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
-                print("🏆 [NOTIFICATIONS] Opening home screen for group challenge invite")
+                AppLogger.debug("Opening home screen for group challenge invite", category: .general)
             }
             
         case "group_challenge_started":
@@ -1442,10 +1443,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.syncHealthKitDataToGroupChallenges()
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                print("🏆 [NOTIFICATIONS] Group challenge started — opening detail: \(challengeId)")
+                AppLogger.debug("Group challenge started — opening detail: \(challengeId)", category: .general)
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
-                print("🏆 [NOTIFICATIONS] Group challenge started - syncing progress + opening dashboard")
+                AppLogger.debug("Group challenge started - syncing progress + opening dashboard", category: .general)
             }
             
         case "private_challenge_invite":
@@ -1455,7 +1456,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
             }
-            print("🔒 [NOTIFICATIONS] Opening dashboard for private challenge invite")
+            AppLogger.debug("Opening dashboard for private challenge invite", category: .general)
             
         case "private_challenge_member_joined", "private_challenge_progress":
             await PrivateChallengeService.shared.refreshAll(force: true)
@@ -1464,7 +1465,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
             }
-            print("🔒 [NOTIFICATIONS] Private challenge update — opening detail")
+            AppLogger.debug("Private challenge update — opening detail", category: .general)
             
         case "private_challenge_message":
             await PrivateChallengeService.shared.fetchMyChallenges()
@@ -1473,7 +1474,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
             }
-            print("🔒 [NOTIFICATIONS] Private challenge message — opening detail")
+            AppLogger.debug("Private challenge message — opening detail", category: .general)
             
         case "challenge_accepted", "challenge_progress", "challenge_completed":
             await ChallengeService.shared.fetchPendingSentChallenges()
@@ -1483,10 +1484,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             // Navigate to specific challenge detail if ID available, else dashboard carousel
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
-                print("🏆 [NOTIFICATIONS] Challenge \(type) — opening challenge detail: \(challengeId)")
+                AppLogger.debug("Challenge \(type) — opening challenge detail: \(challengeId)", category: .general)
             } else {
                 DeepLinkManager.shared.pendingDestination = .dashboard
-                print("🏆 [NOTIFICATIONS] Challenge \(type) — opening dashboard with active widget")
+                AppLogger.debug("Challenge \(type) — opening dashboard with active widget", category: .general)
             }
             
         case "challenge_cancelled":
@@ -1495,49 +1496,49 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchPendingSentChallenges()
             await ChallengeService.shared.fetchActiveGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
-            print("🏆 [NOTIFICATIONS] Challenge cancelled, all lists refreshed")
+            AppLogger.debug("Challenge cancelled, all lists refreshed", category: .general)
             
         // Achievement notifications
         case "personal_record":
             DeepLinkManager.shared.pendingDestination = .personalRecord
-            print("🏆 [NOTIFICATIONS] Opening personal records")
+            AppLogger.debug("Opening personal records", category: .general)
             
         case "streak_milestone":
             DeepLinkManager.shared.pendingDestination = .streakInfo
-            print("🔥 [NOTIFICATIONS] Opening streak info")
+            AppLogger.debug("Opening streak info", category: .general)
             
         case "level_up", "goal_achieved":
             DeepLinkManager.shared.pendingDestination = .statsTab
-            print("⭐️ [NOTIFICATIONS] Opening stats tab for achievement")
+            AppLogger.debug("Opening stats tab for achievement", category: .general)
             
         // Health/Nutrition notifications
         case "nutrition_reminder", "protein_goal":
             DeepLinkManager.shared.pendingDestination = .mealsTab
-            print("🍎 [NOTIFICATIONS] Opening meals tab")
+            AppLogger.debug("Opening meals tab", category: .general)
             
         case "water_reminder":
             DeepLinkManager.shared.pendingDestination = .hydration
-            print("💧 [NOTIFICATIONS] Opening hydration widget")
+            AppLogger.debug("Opening hydration widget", category: .general)
             
         case "steps_goal":
             DeepLinkManager.shared.pendingDestination = .stepTracker
-            print("👟 [NOTIFICATIONS] Opening step tracker")
+            AppLogger.debug("Opening step tracker", category: .general)
             
         // Workout notifications
         case "daily_workout_reminder", "streak_protection", "comeback_reminder", "morning_motivation":
             DeepLinkManager.shared.pendingDestination = .workout
-            print("🏋️ [NOTIFICATIONS] Opening workout tab")
+            AppLogger.debug("Opening workout tab", category: .general)
             
         case "workout_complete":
             DeepLinkManager.shared.pendingDestination = .workoutHistory
-            print("✅ [NOTIFICATIONS] Opening workout history")
+            AppLogger.info("Opening workout history", category: .general)
             
         case "weekly_progress":
             DeepLinkManager.shared.pendingDestination = .statsTab
-            print("📊 [NOTIFICATIONS] Opening stats tab for weekly progress")
+            AppLogger.debug("Opening stats tab for weekly progress", category: .general)
             
         default:
-            print("📱 [NOTIFICATIONS] Unhandled notification type: \(type)")
+            AppLogger.debug("Unhandled notification type: \(type)", category: .general)
         }
     }
     
@@ -1546,34 +1547,34 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         switch category {
         case "WORKOUT_REMINDER":
             DeepLinkManager.shared.pendingDestination = .workout
-            print("🏋️ [NOTIFICATIONS] Opening workout tab from reminder")
+            AppLogger.debug("Opening workout tab from reminder", category: .general)
             
         case "NUTRITION_REMINDER":
             DeepLinkManager.shared.pendingDestination = .mealsTab
-            print("🍎 [NOTIFICATIONS] Opening meals tab from nutrition reminder")
+            AppLogger.debug("Opening meals tab from nutrition reminder", category: .general)
             
         case "SHARED_WORKOUT":
             DeepLinkManager.shared.pendingDestination = .receivedWorkouts
-            print("📬 [NOTIFICATIONS] Opening received workouts")
+            AppLogger.debug("Opening received workouts", category: .general)
             
         case "HYDRATION_REMINDER":
             DeepLinkManager.shared.pendingDestination = .hydration
-            print("💧 [NOTIFICATIONS] Opening hydration widget")
+            AppLogger.debug("Opening hydration widget", category: .general)
             
         case "STEPS_REMINDER":
             DeepLinkManager.shared.pendingDestination = .stepTracker
-            print("👟 [NOTIFICATIONS] Opening step tracker")
+            AppLogger.debug("Opening step tracker", category: .general)
             
         case "ACHIEVEMENT":
             DeepLinkManager.shared.pendingDestination = .statsTab
-            print("🏆 [NOTIFICATIONS] Opening stats for achievement")
+            AppLogger.debug("Opening stats for achievement", category: .general)
             
         case "CONTACT_JOINED":
             DeepLinkManager.shared.pendingDestination = .friendRequests
-            print("👥 [NOTIFICATIONS] Opening friend requests from contact joined notification")
+            AppLogger.debug("Opening friend requests from contact joined notification", category: .general)
             
         default:
-            print("📱 [NOTIFICATIONS] User opened notification: \(category)")
+            AppLogger.debug("User opened notification: \(category)", category: .general)
         }
     }
     
@@ -1610,14 +1611,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     func sendCommunityFriendJoinedNotification(friendName: String, challengeTitle: String, challengeEmoji: String, inviteSlug: String) {
         guard isNotificationEnabled(.communityFriendJoined) else {
-            print("⚠️ [NOTIFICATIONS] Community friend joined notifications disabled")
+            AppLogger.warning("Community friend joined notifications disabled", category: .general)
             return
         }
         
         // Throttle: max 1 notification per 6 hours to avoid being annoying
         let lastSent = UserDefaults.standard.double(forKey: Self.communityFriendJoinedThrottleKey)
         if lastSent > 0 && Date().timeIntervalSince1970 - lastSent < Self.communityFriendJoinedThrottleInterval {
-            print("⏳ [NOTIFICATIONS] Community friend joined throttled — last sent \(Int((Date().timeIntervalSince1970 - lastSent) / 60))min ago")
+            AppLogger.debug("Community friend joined throttled — last sent \(Int((Date().timeIntervalSince1970 - lastSent) / 60))min ago", category: .general)
             return
         }
         
@@ -1642,12 +1643,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Record the send time for throttling
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.communityFriendJoinedThrottleKey)
         
-        print("📬 [NOTIFICATIONS] Sent community friend joined notification: \(friendName) → \(challengeTitle)")
+        AppLogger.debug("Sent community friend joined notification: \(friendName) → \(challengeTitle)", category: .general)
     }
     
     func sendContactJoinedNotification(contactName: String, newUserId: String) {
         guard isNotificationEnabled(.contactJoined) else {
-            print("⚠️ [NOTIFICATIONS] Contact joined notifications disabled")
+            AppLogger.warning("Contact joined notifications disabled", category: .general)
             return
         }
         
@@ -1669,6 +1670,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             identifier: "contact_joined_\(newUserId)_\(Date().timeIntervalSince1970)"
         )
         
-        print("📬 [NOTIFICATIONS] Sent contact joined notification for \(contactName)")
+        AppLogger.debug("Sent contact joined notification for \(contactName)", category: .general)
     }
 }

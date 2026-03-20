@@ -298,6 +298,11 @@ struct ExerciseDetailView: View {
             
             if let name = exercise.name {
                 VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
+                
+                if !VideoThumbnailService.shared.hasPosterFrame(for: name),
+                   let url = VideoStreamingService.shared.getVideoURL(for: name) {
+                    VideoThumbnailService.shared.generatePosterFrame(exerciseName: name, videoURL: url)
+                }
             }
         }
     }
@@ -372,7 +377,7 @@ struct ExerciseDetailView: View {
         Button(action: addToWorkout) {
             HStack(spacing: 12) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.ds_heading3).fontWeight(.semibold)
                 
                 Text("Add to Workout")
                     .font(.system(size: 17, weight: .semibold))
@@ -380,7 +385,7 @@ struct ExerciseDetailView: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.white.opacity(0.7))
             }
             .foregroundColor(.white)
@@ -537,13 +542,13 @@ struct ExerciseDetailView: View {
                 Spacer()
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private var categoryBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: categoryIcon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.ds_labelMedium)
             Text(exercise.category ?? "General")
                 .font(.ds_labelMedium)
         }
@@ -575,7 +580,7 @@ struct ExerciseDetailView: View {
     private var equipmentBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "dumbbell.fill")
-                .font(.system(size: 12))
+                .font(.ds_bodySmall)
             Text(exercise.equipment ?? "Bodyweight")
                 .font(.system(size: 13, weight: .medium))
         }
@@ -595,7 +600,7 @@ struct ExerciseDetailView: View {
     private var performedBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 12))
+                .font(.ds_bodySmall)
             Text("\(totalTimesPerformed)×")
                 .font(.ds_labelMedium)
         }
@@ -631,7 +636,7 @@ struct ExerciseDetailView: View {
                         .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
                     
                     Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.white)
                 }
                 
@@ -686,14 +691,14 @@ struct ExerciseDetailView: View {
             // PR Label with flame
             HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.orange)
                 Text("PR")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(.orange)
             }
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(Color.orange.opacity(0.15))
@@ -705,12 +710,12 @@ struct ExerciseDetailView: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 Text("lbs")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             
             Text("× \(reps) reps")
-                .font(.system(size: 14, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
             
             // Date
@@ -741,14 +746,14 @@ struct ExerciseDetailView: View {
             // Recent Label
             HStack(spacing: 4) {
                 Image(systemName: "clock.fill")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                     .foregroundColor(categoryColor)
                 Text("Recent")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(categoryColor)
             }
             .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, Spacing.xxs)
             .background(
                 Capsule()
                     .fill(categoryColor.opacity(0.15))
@@ -760,12 +765,12 @@ struct ExerciseDetailView: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 Text("lbs")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
             
             Text("\(sets) sets × \(reps) reps")
-                .font(.system(size: 14, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
             
             // Date
@@ -801,7 +806,7 @@ struct ExerciseDetailView: View {
                         .fill(categoryColor.opacity(0.15))
                         .frame(width: 32, height: 32)
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(categoryColor)
                 }
                 Text("About")
@@ -856,7 +861,7 @@ struct ExerciseDetailView: View {
                         .fill(categoryColor.opacity(0.15))
                         .frame(width: 32, height: 32)
                     Image(systemName: "list.number")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(categoryColor)
                 }
                 Text("How To Perform")
@@ -884,7 +889,7 @@ struct ExerciseDetailView: View {
                                     .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
                                 
                                 Text("\(index + 1)")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                                     .foregroundColor(.white)
                             }
                             
@@ -950,10 +955,10 @@ struct ExerciseDetailView: View {
             // Header
             HStack(spacing: 6) {
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
                 Text("Muscles")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(.primary)
             }
             
@@ -970,7 +975,7 @@ struct ExerciseDetailView: View {
             // Secondary (compact)
             if !secondaryMuscles.isEmpty {
                 Text(secondaryMuscles.prefix(2).joined(separator: ", "))
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
@@ -1003,10 +1008,10 @@ struct ExerciseDetailView: View {
             // Header
             HStack(spacing: 6) {
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(categoryColor)
                 Text("Equipment")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.ds_bodySmall).fontWeight(.bold)
                     .foregroundColor(.primary)
             }
             

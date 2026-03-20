@@ -126,7 +126,7 @@ class PushNotificationService: ObservableObject {
             
             try await SupabaseManager.shared.supabaseClient
                 .from("user_push_tokens")
-                .upsert(record, onConflict: "user_id")
+                .upsert(record, onConflict: "user_id, device_token")
                 .execute()
             
             logger.log(.info, category: .pushNotification, message: "Token saved to Supabase", metadata: [
@@ -175,12 +175,14 @@ class PushNotificationService: ObservableObject {
     /// Remove device token from Supabase (call on logout)
     func removeDeviceToken() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        guard let token = deviceToken ?? UserDefaults.standard.string(forKey: "apns_device_token") else { return }
         
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("user_push_tokens")
                 .delete()
                 .eq("user_id", value: userId)
+                .eq("device_token", value: token)
                 .execute()
             
             self.deviceToken = nil

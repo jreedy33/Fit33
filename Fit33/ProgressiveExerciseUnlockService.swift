@@ -367,8 +367,15 @@ class ProgressiveExerciseUnlockService: ObservableObject {
             return tier <= profile.currentUnlockTier
         }
         
-        // Non-foundational exercise - allow based on variety percentage
-        return Double.random(in: 0...1) < profile.varietyPercentage
+        // Non-foundational exercise - allow based on variety percentage (deterministic per day)
+        let dateString = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date())
+        }()
+        let seed = abs((exerciseName + dateString).hashValue) % 1000
+        let value = Double(seed) / 1000.0
+        return value < profile.varietyPercentage
     }
     
     /// Get penalty for frequently swapped exercises
@@ -404,17 +411,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
     // MARK: - Helper Methods
     
     private func normalizeEquipment(_ equipment: String) -> String {
-        let lowered = equipment.lowercased()
-        
-        if lowered.contains("dumbbell") { return "dumbbells" }
-        if lowered.contains("barbell") { return "barbell" }
-        if lowered.contains("cable") { return "cables" }
-        if lowered.contains("machine") || lowered.contains("lever") { return "machines" }
-        if lowered.contains("kettlebell") { return "kettlebell" }
-        if lowered.contains("band") { return "bands" }
-        if lowered.contains("body") || lowered.isEmpty { return "bodyweight" }
-        
-        return lowered
+        ExerciseFilterService.normalizeEquipment(equipment)
     }
     
     // MARK: - Debug Methods

@@ -172,7 +172,7 @@ struct ChallengeDetailView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .red))
                 } else {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                 }
                 
                 Text(isCancelling ? "Cancelling..." : "Cancel Challenge")
@@ -224,7 +224,7 @@ struct ChallengeDetailView: View {
             // Challenge type badge with emoji
             HStack(spacing: 6) {
                 Text(challengeType.emoji)
-                    .font(.system(size: 16))
+                    .font(.ds_bodyRegular)
                 Text(challengeType.displayName)
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -270,7 +270,7 @@ struct ChallengeDetailView: View {
                                 .frame(width: 70, height: 70)
                                 .overlay(
                                     Image(systemName: "person.fill")
-                                        .font(.system(size: 28))
+                                        .font(.ds_heading1)
                                         .foregroundColor(.white)
                                 )
                         }
@@ -278,7 +278,7 @@ struct ChallengeDetailView: View {
                         // Winning crown
                         if challenge.amWinning && challenge.myTotalProgress > 0 {
                             Image(systemName: "crown.fill")
-                                .font(.system(size: 20))
+                                .font(.ds_heading3)
                                 .foregroundColor(.yellow)
                                 .offset(y: -40)
                         }
@@ -341,7 +341,7 @@ struct ChallengeDetailView: View {
                         // Winning crown
                         if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
                             Image(systemName: "crown.fill")
-                                .font(.system(size: 20))
+                                .font(.ds_heading3)
                                 .foregroundColor(.yellow)
                                 .offset(y: -40)
                         }
@@ -390,7 +390,7 @@ struct ChallengeDetailView: View {
                 
                 HStack(spacing: 12) {
                     Image(systemName: notifyOnOpponentComplete ? "bell.fill" : "bell.slash")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(notifyOnOpponentComplete ? challengeType.color : .secondary)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -421,7 +421,7 @@ struct ChallengeDetailView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .sleekCard(cornerRadius: 24, accentColor: challengeType.color)
     }
     
@@ -446,7 +446,7 @@ struct ChallengeDetailView: View {
                         .frame(width: 42, height: 42)
                     
                     Text(isCompetition ? "🗣️" : "⚡")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                 }
                 
                 VStack(alignment: .leading, spacing: 3) {
@@ -465,7 +465,7 @@ struct ChallengeDetailView: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundStyle(
                         LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
                     )
@@ -483,7 +483,7 @@ struct ChallengeDetailView: View {
             Text("Progress")
                 .font(.headline)
                 .foregroundColor(.primary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             VStack(spacing: 16) {
                 // My progress bar — type-colored with live data
@@ -578,7 +578,7 @@ struct ChallengeDetailView: View {
             Text("Stats")
                 .font(.headline)
                 .foregroundColor(.primary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 ChallengeStatCard(
@@ -623,7 +623,7 @@ struct ChallengeDetailView: View {
             Text("Daily Progress")
                 .font(.headline)
                 .foregroundColor(.primary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
             
             if let details = details, let participants = details.participants {
                 let myProgress = participants.first { $0.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString }
@@ -894,7 +894,7 @@ private struct ChallengeStatCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(color)
                 
                 Text(title)
@@ -979,7 +979,7 @@ struct DailyProgressRow: View {
                     .foregroundColor(isToday ? .blue : .secondary)
                 
                 Text(dayLabel)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
             }
             .frame(width: 50, alignment: .leading)
@@ -990,11 +990,11 @@ struct DailyProgressRow: View {
             HStack(spacing: 6) {
                 if isFuture {
                     Image(systemName: "circle")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(.gray.opacity(0.3))
                 } else if myCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.green)
                 } else if myValue > 0 {
                     // Partial progress
@@ -1011,7 +1011,7 @@ struct DailyProgressRow: View {
                     }
                 } else {
                     Image(systemName: "xmark.circle")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.red.opacity(0.6))
                 }
             }
@@ -1021,11 +1021,11 @@ struct DailyProgressRow: View {
             HStack(spacing: 6) {
                 if isFuture {
                     Image(systemName: "circle")
-                        .font(.system(size: 20))
+                        .font(.ds_heading3)
                         .foregroundColor(.gray.opacity(0.3))
                 } else if opponentCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.green)
                 } else if opponentValue > 0 {
                     // Partial progress
@@ -1042,7 +1042,7 @@ struct DailyProgressRow: View {
                     }
                 } else {
                     Image(systemName: "xmark.circle")
-                        .font(.system(size: 22))
+                        .font(.ds_heading2)
                         .foregroundColor(.red.opacity(0.6))
                 }
             }

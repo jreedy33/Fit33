@@ -195,6 +195,31 @@ grep -r "\.padding([0-9]" Fit33/*.swift | wc -l           # Spacing
 
 ---
 
+## Logic Audit Updates (March 2026)
+
+### Additional Scope
+- Shadow token migration: 660 instances across 98 files need standardization
+- Component deduplication: own the tracking process, defer code changes to Product Engineer Agent
+- `AlternativeExerciseEngine.swift` has been deleted — removed from any component inventories
+
+### Updated Metrics
+- Color violations: recount needed (previously cited as both "97" and "141 in 46 files")
+- ScaleButtonStyle duplicates: was 6, verify current count after consolidation
+
+### Workout Flow Fixes (March 2026)
+- `ExerciseCardRow.swift` added as shared component — uses `ds_bodyLarge`, `ds_bodySmall`, `ds_labelSmall`, `Spacing.*`, `CornerRadius.lg` tokens throughout
+- `CustomWorkoutBuilderView.swift` and `ExerciseLibraryView.swift` exercise card code consolidated — card duplication eliminated
+- `ActiveWorkoutView.swift` replacement toast uses `ds_labelMedium`, `Spacing.md`, `Spacing.sm`, `Spacing.xxl` — fully compliant
+- Priority audit files added: `ExerciseCardRow.swift`, `CustomWorkoutBuilderView.swift`, `ActiveWorkoutView.swift`
+
+### Active Workout Review (March 2026)
+- `ActiveWorkoutView.swift` has 29 typography violations — remains a priority audit file for Phase 3 (Typography Tokens)
+- New UI from set pre-fill (weight/reps text fields showing values instead of placeholders) must use `ds_stat` or `ds_statSmall` for numeric displays
+- `syncSetsWithPreviousData()` helper and `shuffleExercise()` create new `WorkoutSetData` views — ensure any new set row UI uses `Spacing.*` and `CornerRadius.*` tokens
+- Shuffle feedback UI (replacement toast with green border glow) already fully compliant from prior fix
+
+---
+
 ## Rules of Engagement
 
 1. **Never change token definitions** — If you think a token value is wrong, raise it with the Design Agent
@@ -222,3 +247,109 @@ During UI-5/UI-6/UI-7 sprints:
 
 ### Reference
 - `ONBOARDING_AUDIT.md` — Sections 10 (text field styling), 12 (design tokens)
+
+---
+
+## PRO / Premium Paywall Badge Standard (March 2026)
+
+All premium/paywall indicators **MUST** use the yellow gold crown style. No purple, blue, or green gradients.
+
+### Canonical PRO Badge Style
+
+**Small badge** (inline, on cards/widgets):
+```swift
+HStack(spacing: 3) {
+    Image(systemName: "crown.fill")
+        .font(.system(size: 9, weight: .bold))
+    Text("PRO")
+        .font(.system(size: 9, weight: .bold))
+        .tracking(0.5)
+}
+.foregroundColor(.black.opacity(0.8))
+.padding(.horizontal, 6)
+.padding(.vertical, 3)
+.background(
+    Capsule().fill(
+        LinearGradient(
+            colors: [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.75, blue: 0.3)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    )
+)
+```
+
+**Standalone crown icon** (on locked content overlays):
+```swift
+Image(systemName: "crown.fill")
+    .foregroundColor(.yellow)
+```
+
+**Crown with text indicator** (light background contexts):
+```swift
+HStack(spacing: 3) {
+    Image(systemName: "crown.fill")
+        .foregroundColor(.yellow)
+    Text("PRO")
+        .foregroundColor(.yellow)
+}
+```
+
+### Rules
+- Crown icon: always `"crown.fill"`, always **yellow** (`.yellow` or gold gradient `[1.0/0.84/0 → 1.0/0.75/0.3]`)
+- Badge capsule background: **gold gradient** (never purple, blue, or green)
+- Text on gold capsule: **dark** (`.black.opacity(0.8)`) for contrast
+- Text on dark/transparent background: **yellow** (`.yellow`)
+- The reusable `PremiumBadge` view in `PremiumUpgradeView.swift` uses this standard
+- Challenge "winning" crowns are also yellow — this is fine, they share the gold crown visual language
+- Level/milestone crowns (non-premium) may use different colors as they represent achievement tiers, not paywalls
+
+---
+
+## Side Panel Pattern (March 2026)
+
+Reusable pattern for half-width settings/option panels that slide from the screen edge. First used in `ActiveWorkoutView` for workout settings.
+
+### Spec
+- **Width**: 55% of screen (`UIScreen.main.bounds.width * 0.55`)
+- **Animation**: `.spring(response: 0.35, dampingFraction: 0.85)`
+- **Transition**: `.move(edge: .leading)` (or `.trailing` for right-side panels)
+- **Backdrop**: `Color.black.opacity(0.4)` overlay, tappable to dismiss
+- **Background**: `Color(red: 0.08, green: 0.08, blue: 0.10)` dark mode / `Color(UIColor.systemGroupedBackground)` light mode
+- **Z-index**: `.zIndex(100)` to ensure it sits above all content
+- **Hit testing**: Backdrop captures taps; panel content is interactive
+
+### Structure
+```swift
+.overlay {
+    if showingPanel {
+        ZStack(alignment: .leading) {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { /* dismiss */ }
+            PanelContent()
+                .frame(width: UIScreen.main.bounds.width * 0.55)
+                .transition(.move(edge: .leading))
+        }
+        .transition(.opacity)
+        .zIndex(100)
+    }
+}
+```
+
+### Typography inside panels
+- Section headers: `.ds_labelSmall` uppercased, `.secondary` color
+- Row labels: `.ds_bodyRegular`, `.primary` color
+- Row icons: `.ds_bodySmall`, `.blue` color, 22pt frame width
+- Sections wrapped in `RoundedRectangle(cornerRadius: CornerRadius.lg).fill(Color.cardBackground)`
+
+## Countdown Glow Pattern (2026-03-19)
+
+### Token Compliance
+The countdown glow overlay on `ExerciseCard` uses:
+- Corner radius: `CornerRadius.xl` (matches `.sleekCard()` radius) — compliant
+- Timer badge font: `.system(.caption, design: .monospaced)` — acceptable for monospaced timer display (not a standard `ds_` token, but monospaced is an intentional design choice)
+- Timer badge capsule padding: `horizontal: 8, vertical: 3` — acceptable for inline badge component
+
+### Electric Blue Color
+The countdown glow uses a custom electric blue `Color(red: 0.0, green: 0.7, blue: 1.0)`. This is NOT a design system token yet. If this color is reused elsewhere, it should be extracted to a named color (e.g., `Color.timerGlow` or `Color.electricBlue`). Currently used in two places: the border stroke and the timer badge.

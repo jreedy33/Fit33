@@ -454,7 +454,7 @@ struct StepTrackerDetailView: View {
             .background(Color.blue.opacity(0.15))
             .cornerRadius(10)
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(20)
     }

@@ -68,7 +68,7 @@ struct ProgressPhotoCaptureView: View {
     private var photoPreviewArea: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(white: 0.12) : Color.gray.opacity(0.08))
+                .fill(Color.cardBackground)
                 .frame(height: 400)
             
             if let image = capturedImage {
@@ -80,11 +80,11 @@ struct ProgressPhotoCaptureView: View {
                     .overlay(
                         Button(action: { capturedImage = nil }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 28))
+                                .font(.ds_heading1)
                                 .foregroundStyle(.white)
                                 .shadow(radius: 4)
                         }
-                        .padding(12),
+                        .padding(Spacing.sm),
                         alignment: .topTrailing
                     )
             } else {
@@ -104,10 +104,10 @@ struct ProgressPhotoCaptureView: View {
                                     .fontWeight(.medium)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
+                                    .padding(.vertical, Spacing.xxs)
                                     .background(Capsule().fill(.black.opacity(0.5)))
                             }
-                            .padding(12),
+                            .padding(Spacing.sm),
                             alignment: .topLeading
                         )
                 } else {
@@ -294,7 +294,7 @@ struct ProgressPhotoGalleryView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingCapture = true }) {
                     Image(systemName: "camera.fill")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.ds_bodyRegular).fontWeight(.medium)
                 }
             }
         }
@@ -325,7 +325,7 @@ struct ProgressPhotoGalleryView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.sm)
                     .background(
                         LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing)
@@ -402,7 +402,7 @@ struct ProgressPhotoGalleryView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(.black.opacity(0.5)))
-                            .padding(4),
+                            .padding(Spacing.xxs),
                         alignment: .bottomLeading
                     )
             } else {

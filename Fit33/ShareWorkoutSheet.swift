@@ -68,7 +68,7 @@ struct ShareWorkoutSheet: View {
                             }
                         }) {
                             Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.ds_labelLarge)
                         }
                     }
                 }
@@ -143,7 +143,7 @@ struct ShareWorkoutSheet: View {
                             Spacer()
                             
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.ds_bodySmall).fontWeight(.medium)
                                 .foregroundColor(.secondary)
                         }
                         .padding(Spacing.md)
@@ -190,7 +190,7 @@ struct ShareWorkoutSheet: View {
                             Spacer()
                             
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.ds_bodySmall).fontWeight(.medium)
                                 .foregroundColor(.secondary)
                         }
                         .padding(Spacing.md)
@@ -217,8 +217,8 @@ struct ShareWorkoutSheet: View {
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
-                    .padding(.vertical, 24)
-                    .padding(.horizontal, 32)
+                    .padding(.vertical, Spacing.lg)
+                    .padding(.horizontal, Spacing.xl)
                 }
             }
             .padding(.bottom, 32)
@@ -303,7 +303,7 @@ struct ShareWorkoutSheet: View {
                                         .tint(.white)
                                 } else {
                                     Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.ds_labelLarge)
                                     Text("Send Workout")
                                         .font(.headline)
                                         .fontWeight(.bold)
@@ -347,7 +347,7 @@ struct ShareWorkoutSheet: View {
                         
                         Spacer()
                     }
-                    .padding(32)
+                    .padding(Spacing.xl)
                 } else {
                     List {
                         // Top Friends section (ranked 1-3)
@@ -461,7 +461,7 @@ struct ShareWorkoutSheet: View {
                     )
                     .clipShape(Capsule())
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Spacing.xl)
             .padding(.bottom, 32)
         }
     }
@@ -669,10 +669,10 @@ private struct FriendSelectionRow: View {
             Spacer()
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private var avatarPlaceholder: some View {
@@ -717,7 +717,7 @@ private struct RankedFriendSelectionRow: View {
                 
                 // Rank badge
                 Text(rankEmoji)
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .offset(x: 4, y: 4)
             }
             
@@ -768,10 +768,10 @@ private struct RankedFriendSelectionRow: View {
             Spacer()
             
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.ds_bodySmall).fontWeight(.medium)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private var rankEmoji: String {

@@ -101,7 +101,7 @@ struct StravaSettingsView: View {
                         integrationBullet("Elevation gain")
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
             } header: {
                 Label("About", systemImage: "info.circle")
             }
@@ -151,7 +151,7 @@ struct StravaSettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                         Text("Connected")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -185,7 +185,7 @@ struct StravaSettingsView: View {
                 .foregroundColor(.red)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     private var stravaPlaceholderAvatar: some View {
@@ -238,7 +238,7 @@ struct StravaSettingsView: View {
                 .cornerRadius(10)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     // MARK: - Weekly Stats View
@@ -273,7 +273,7 @@ struct StravaSettingsView: View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .foregroundColor(.orange)
-                .font(.system(size: 16))
+                .font(.ds_bodyRegular)
             
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
@@ -296,7 +296,7 @@ struct StravaSettingsView: View {
     private func activityRow(_ activity: StravaActivity) -> some View {
         HStack(spacing: 12) {
             Image(systemName: activity.activityIcon)
-                .font(.system(size: 18))
+                .font(.ds_heading3)
                 .foregroundColor(.orange)
                 .frame(width: 32)
             
@@ -327,7 +327,7 @@ struct StravaSettingsView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
     
     // MARK: - Helper Views

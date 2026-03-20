@@ -112,7 +112,7 @@ struct SharedWorkoutView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Spacing.xl)
             
             Button(action: { dismiss() }) {
                 Text("Close")
@@ -123,7 +123,7 @@ struct SharedWorkoutView: View {
                     .background(Color.blue)
                     .cornerRadius(CornerRadius.md)
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Spacing.xl)
         }
     }
     
@@ -204,7 +204,7 @@ struct SharedWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, Spacing.lg)
         .padding(.horizontal, 20)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -427,7 +427,7 @@ struct SharedWorkoutStatCard: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundColor(color)
             
             Text(value)
@@ -480,7 +480,7 @@ struct SharedExerciseRow: View {
                     .frame(width: 36, height: 36)
                 
                 Text("\(index)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.white)
             }
             

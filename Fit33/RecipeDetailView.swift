@@ -300,7 +300,7 @@ struct RecipeDetailView: View {
                                 .fill(Color.white.opacity(servings > 1 ? 0.18 : 0.07))
                                 .frame(width: 32, height: 32)
                             Image(systemName: "minus")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(servings > 1 ? .white : .white.opacity(0.3))
                         }
                     }
@@ -321,7 +321,7 @@ struct RecipeDetailView: View {
                                 .fill(Color.white.opacity(servings < detail.servings ? 0.18 : 0.07))
                                 .frame(width: 32, height: 32)
                             Image(systemName: "plus")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(servings < detail.servings ? .white : .white.opacity(0.3))
                         }
                     }
@@ -628,7 +628,7 @@ struct RecipeDetailView: View {
                 Label("Try Again", systemImage: "arrow.clockwise")
                     .font(.headline)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.sm)
                     .background(Color.orange)
                     .cornerRadius(CornerRadius.md)

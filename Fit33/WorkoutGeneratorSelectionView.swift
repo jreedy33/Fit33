@@ -262,7 +262,7 @@ struct WorkoutGeneratorSelectionView: View {
             }
         }
         .frame(height: 6)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.lg)
     }
     
     @ViewBuilder
@@ -286,7 +286,7 @@ struct WorkoutGeneratorSelectionView: View {
             // Back button (grey circular)
             Button(action: handleBackAction) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
                     .frame(width: 52, height: 52)
                     .background(
@@ -395,12 +395,12 @@ struct WorkoutGeneratorSelectionView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: equipmentLocation.icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ds_labelLarge)
                 Text(equipmentLocation.rawValue)
                     .font(.headline)
                     .fontWeight(.semibold)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
             }
             .foregroundColor(.blue)
             .padding(.horizontal, Spacing.md)
@@ -938,7 +938,7 @@ struct WelcomeStepView: View {
                         description: "Receive a custom workout tailored to you"
                     )
                 }
-                .padding(24)
+                .padding(Spacing.lg)
                 .sleekCard(cornerRadius: 20, accentColor: .cyan)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(.horizontal, 20)
@@ -1074,7 +1074,7 @@ struct DurationStepView: View {
                         .fill(Color.gray.opacity(0.2))
                         .frame(height: 1)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.xs)
                 
                 // Custom duration tiles - 3x2 grid
@@ -1126,7 +1126,7 @@ struct DurationStepView: View {
                 // Back button (circular hollow, inline height)
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.purple, .blue],
@@ -1211,7 +1211,7 @@ struct DurationCard: View {
                         .frame(width: 40, height: 40)
                     
                     Image(systemName: duration.icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(isSelected ? .white : .gray)
                 }
                 
@@ -1350,7 +1350,7 @@ struct PrimaryMuscleStepView: View {
                 // Back button (circular hollow, inline height)
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.purple, .blue],
@@ -1612,7 +1612,7 @@ struct SecondaryMuscleStepView: View {
                                         .fontWeight(.semibold)
                                         .foregroundColor(group.color)
                                 }
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, Spacing.xxs)
                                 
                                 // Options Grid
                                 LazyVGrid(columns: [
@@ -1664,7 +1664,7 @@ struct SecondaryMuscleStepView: View {
                 // Back button (circular hollow, inline height)
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.purple, .blue],
@@ -1755,7 +1755,7 @@ struct SecondaryMuscleCard: View {
                             .clipShape(Circle())
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(isSelected ? .white : .gray)
                     }
                 }
@@ -1822,7 +1822,7 @@ struct SmallSecondaryMuscleCard: View {
                             .clipShape(Circle())
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.ds_heading3).fontWeight(.semibold)
                             .foregroundColor(isSelected ? .white : .gray)
                     }
                 }
@@ -1982,12 +1982,12 @@ struct EquipmentStepView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: selectedLocation.icon)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                         Text(selectedLocation.rawValue)
                             .font(.headline)
                             .fontWeight(.semibold)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     .foregroundColor(.blue)
                     .padding(.horizontal, Spacing.md)
@@ -2063,7 +2063,7 @@ struct EquipmentStepView: View {
                 // Back button (circular hollow, inline height)
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.purple, .blue],
@@ -2178,7 +2178,7 @@ struct AutoWorkoutEquipmentCard: View {
                         .frame(width: 46, height: 46)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.ds_heading3).fontWeight(.semibold)
                         .foregroundColor(isSelected ? .white : .gray)
                 }
                 
@@ -2272,7 +2272,7 @@ struct DurationStepContentView: View {
                     Text("or custom").font(.caption).foregroundColor(.secondary)
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.xs)
                 
                 // Custom duration tiles - 3x2 grid
@@ -2564,12 +2564,12 @@ struct EquipmentContentView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: selectedLocation.icon)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                         Text(selectedLocation.rawValue)
                             .font(.headline)
                             .fontWeight(.semibold)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.ds_labelMedium)
                     }
                     .foregroundColor(.blue)
                     .padding(.horizontal, Spacing.md)
@@ -2798,7 +2798,7 @@ struct PrimaryMuscleTilesView: View {
                         .fill(Color.gray.opacity(0.3))
                         .frame(height: 1)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 
                 // Muscle tiles grid - 3x2 for 6 muscles
                 LazyVGrid(columns: [
@@ -2999,12 +2999,12 @@ struct EquipmentTilesView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: selectedLocation.icon)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_labelMedium)
                             Text(selectedLocation.rawValue)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.ds_caption).fontWeight(.semibold)
                         }
                         .foregroundColor(.blue)
                         .padding(.horizontal, Spacing.sm)
@@ -3029,7 +3029,7 @@ struct EquipmentTilesView: View {
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: isAllSelected ? "checkmark.square.fill" : "square")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                             Text("Select All")
                                 .font(.subheadline)
                                 .fontWeight(.medium)

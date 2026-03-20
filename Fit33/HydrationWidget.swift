@@ -37,7 +37,7 @@ struct HydrationWidget: View {
             // Header row (OUTSIDE the card - matches other sections)
             HStack {
                 Image(systemName: "drop.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -60,7 +60,7 @@ struct HydrationWidget: View {
                     .foregroundColor(.blue)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Card content - swipeable cards matching other carousels
             GeometryReader { geometry in
@@ -403,7 +403,7 @@ struct HydrationWidget: View {
                         .font(.ds_caption)
                 }
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
                 .background(hydrationStatusColor.opacity(0.15))
                 .cornerRadius(10)
             }
@@ -485,17 +485,17 @@ struct HydrationWidget: View {
                     if let streak = hydrationService.streaks?.currentStreak, streak > 0 {
                         HStack(spacing: 3) {
                             Image(systemName: "flame.fill")
-                                .font(.system(size: 14))
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.orange)
                             Text("\(streak)")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                         }
                         Text("day streak")
                             .font(.system(size: 8))
                             .foregroundColor(.secondary)
                     } else {
                         Image(systemName: "flame")
-                            .font(.system(size: 14))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.gray.opacity(0.5))
                         Text("No streak")
                             .font(.system(size: 8))
@@ -543,7 +543,7 @@ struct HydrationWidget: View {
             // Motivational tip with icon
             HStack(spacing: 6) {
                 Text(motivationalEmoji)
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                 Text(motivationalText)
                     .font(.ds_caption)
                     .foregroundColor(.secondary)
@@ -866,7 +866,7 @@ struct AddWaterSheet: View {
                                 .cornerRadius(CornerRadius.sm)
                         }
                     }
-                    .padding(4)
+                    .padding(Spacing.xxs)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color(.systemGray6))
@@ -1101,7 +1101,7 @@ struct WaterIntakeDetailView: View {
             .background(Color.blue.opacity(0.15))
             .cornerRadius(10)
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(20)
     }
@@ -1410,7 +1410,7 @@ struct WaterRing: View {
             VStack(spacing: 0) {
                 if goalMet {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.green)
                 } else {
                     Text("\(Int(progress * 100))%")
@@ -1447,7 +1447,7 @@ struct WeekStatItem: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(.ds_bodySmall)
                 .foregroundColor(color)
             Text(value)
                 .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -1473,11 +1473,11 @@ struct HydrationBadge: View {
         VStack(spacing: 6) {
             // Floating icon - no background
             Image(systemName: icon)
-                .font(.system(size: 22))
+                .font(.ds_heading2)
                 .foregroundColor(color)
             
             Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
             
             Text(title)
                 .font(.ds_caption)

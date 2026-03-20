@@ -149,6 +149,7 @@ struct PreviousSetInfo: Codable {
     let reps: Int
     var isFailure: Bool = false
     var isDropset: Bool = false
+    var isWarmup: Bool = false
     
     enum CodingKeys: String, CodingKey {
         case setNumber = "set_number"
@@ -156,6 +157,7 @@ struct PreviousSetInfo: Codable {
         case reps
         case isFailure = "is_failure"
         case isDropset = "is_dropset"
+        case setType = "set_type"
     }
     
     // Custom decoder to handle missing fields
@@ -166,15 +168,28 @@ struct PreviousSetInfo: Codable {
         reps = try container.decode(Int.self, forKey: .reps)
         isFailure = try container.decodeIfPresent(Bool.self, forKey: .isFailure) ?? false
         isDropset = try container.decodeIfPresent(Bool.self, forKey: .isDropset) ?? false
+        let setType = try container.decodeIfPresent(String.self, forKey: .setType) ?? "Normal"
+        isWarmup = setType == "Warmup"
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(setNumber, forKey: .setNumber)
+        try container.encode(weight, forKey: .weight)
+        try container.encode(reps, forKey: .reps)
+        try container.encode(isFailure, forKey: .isFailure)
+        try container.encode(isDropset, forKey: .isDropset)
+        try container.encode(isWarmup ? "Warmup" : "Normal", forKey: .setType)
     }
     
     // Manual initializer for creating instances in code
-    init(setNumber: Int, weight: Double, reps: Int, isFailure: Bool = false, isDropset: Bool = false) {
+    init(setNumber: Int, weight: Double, reps: Int, isFailure: Bool = false, isDropset: Bool = false, isWarmup: Bool = false) {
         self.setNumber = setNumber
         self.weight = weight
         self.reps = reps
         self.isFailure = isFailure
         self.isDropset = isDropset
+        self.isWarmup = isWarmup
     }
     
     var displayString: String {
@@ -256,26 +271,28 @@ class ExerciseHistoryService: ObservableObject {
             
             print("🔍 [ExerciseHistory] Found performance_id: \(performanceId), fetching sets...")
             
-            // Now get all sets from that workout
+            // Now get all sets from that workout (excluding warmup sets)
             struct SetHistoryRow: Decodable {
                 let set_number: Int
                 let weight: Double
                 let reps: Int
+                let set_type: String?
             }
             
             let setRows: [SetHistoryRow] = try await supabase
                 .from("exercise_set_history")
-                .select("set_number, weight, reps")
+                .select("set_number, weight, reps, set_type")
                 .eq("performance_id", value: performanceId)
+                .neq("set_type", value: "Warmup")
                 .order("set_number", ascending: true)
                 .execute()
                 .value
             
-            print("🔍 [ExerciseHistory] Found \(setRows.count) set rows for performance_id: \(performanceId)")
+            print("🔍 [ExerciseHistory] Found \(setRows.count) working set rows for performance_id: \(performanceId)")
             
-            let response = setRows.map { row in
+            let response = setRows.enumerated().map { index, row in
                 PreviousSetInfo(
-                    setNumber: row.set_number,
+                    setNumber: index + 1,
                     weight: row.weight,
                     reps: row.reps
                 )
@@ -386,14 +403,16 @@ class ExerciseHistoryService: ObservableObject {
             return
         }
         
-        // Calculate aggregate metrics
-        let totalSets = completedSets.count
-        let totalReps = completedSets.reduce(0) { $0 + $1.reps }
-        let totalVolume = completedSets.reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
-        let maxWeight = completedSets.map { $0.weight }.max() ?? 0
-        let maxReps = completedSets.map { $0.reps }.max() ?? 0
-        let avgWeight = completedSets.isEmpty ? 0 : completedSets.reduce(0.0) { $0 + $1.weight } / Double(completedSets.count)
-        let avgReps = completedSets.isEmpty ? 0 : Double(totalReps) / Double(completedSets.count)
+        // Calculate aggregate metrics (exclude warmup sets from aggregates)
+        let workingSets = completedSets.filter { !$0.isWarmup }
+        let setsForMetrics = workingSets.isEmpty ? completedSets : workingSets
+        let totalSets = setsForMetrics.count
+        let totalReps = setsForMetrics.reduce(0) { $0 + $1.reps }
+        let totalVolume = setsForMetrics.reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
+        let maxWeight = setsForMetrics.map { $0.weight }.max() ?? 0
+        let maxReps = setsForMetrics.map { $0.reps }.max() ?? 0
+        let avgWeight = setsForMetrics.isEmpty ? 0 : setsForMetrics.reduce(0.0) { $0 + $1.weight } / Double(setsForMetrics.count)
+        let avgReps = setsForMetrics.isEmpty ? 0 : Double(totalReps) / Double(setsForMetrics.count)
         let totalRestTime = Int(completedSets.reduce(0.0) { $0 + $1.restTime })
         let hadFailure = completedSets.contains { $0.isFailure }
         let hadDropset = completedSets.contains { $0.isDropset }
@@ -436,16 +455,19 @@ class ExerciseHistoryService: ObservableObject {
         // Insert individual set records
         print("💾 [ExerciseHistory] Inserting \(completedSets.count) sets into exercise_set_history...")
         for (index, set) in completedSets.enumerated() {
+            let weightKg = (set.weight * 0.453592 * 10).rounded() / 10
             let setData: [String: AnyJSON] = [
                 "performance_id": .string(performanceId.uuidString),
                 "user_id": .string(userId.uuidString),
                 "exercise_name": .string(exerciseName),
                 "set_number": .integer(index + 1),
                 "weight": .double(set.weight),
+                "weight_kg": .double(weightKg),
                 "reps": .integer(set.reps),
                 "is_completed": .bool(true),
                 "is_failure": .bool(set.isFailure),
                 "is_dropset": .bool(set.isDropset),
+                "set_type": .string(set.setType.rawValue),
                 "rest_time_seconds": .integer(Int(set.restTime))
             ]
             

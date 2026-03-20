@@ -78,7 +78,7 @@ struct WhatToEatView: View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "chart.pie.fill")
-                    .font(.system(size: 14))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                 Text("Today's Progress")
                     .font(.subheadline)
@@ -103,7 +103,7 @@ struct WhatToEatView: View {
     private func macroBar(label: String, eaten: Int, target: Int, color: Color, unit: String) -> some View {
         VStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary)
             
             ZStack(alignment: .bottom) {
@@ -133,7 +133,7 @@ struct WhatToEatView: View {
                         .fill(Color.green.opacity(0.12))
                         .frame(width: 40, height: 40)
                     Image(systemName: mealIcon(for: suggestion.mealType))
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.green)
                 }
                 
@@ -169,7 +169,7 @@ struct WhatToEatView: View {
             Text("\(value)")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
             Text(label)
-                .font(.system(size: 10))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
         }
         .foregroundColor(color)
@@ -221,7 +221,7 @@ struct WhatToEatDashboardCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "fork.knife.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.ds_bodyRegular)
                         .foregroundColor(.green)
                     Text("What to Eat Now")
                         .font(.subheadline)
@@ -229,7 +229,7 @@ struct WhatToEatDashboardCard: View {
                         .foregroundColor(.primary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
                 

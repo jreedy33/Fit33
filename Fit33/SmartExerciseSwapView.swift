@@ -85,7 +85,7 @@ struct SmartExerciseSwapView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.ds_labelMedium)
                             .foregroundColor(.primary)
                             .frame(width: 32, height: 32)
                             .background(Circle().fill(Color.cardBackground))
@@ -269,7 +269,7 @@ struct SmartExerciseSwapView: View {
             // Section header
             HStack(spacing: 8) {
                 Image(systemName: section.icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.blue)
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -289,7 +289,7 @@ struct SmartExerciseSwapView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(Capsule().fill(Color.secondary.opacity(0.1)))
             }
             .padding(.horizontal, Spacing.md)
@@ -334,7 +334,7 @@ struct SmartExerciseSwapView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: suggestion.swapType.icon)
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? .white : typeColor)
                 }
                 

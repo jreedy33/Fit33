@@ -83,6 +83,7 @@ class WorkoutManager: ObservableObject {
     @Published var currentProgramDayNumber: Int? = nil
     @Published var currentProgramDayFocus: String? = nil
     @Published var currentSmartProgramId: String? = nil
+    @Published var currentProgramWeek: Int? = nil
     
     // Rest timer settings (adjusted based on workout duration)
     @Published var restTimeBetweenSets: Int = 60 // Default 60 seconds
@@ -106,7 +107,7 @@ class WorkoutManager: ObservableObject {
     
     // Initialize sets for an exercise if not already present (call this BEFORE rendering)
     // UPDATED: Now creates 3 sets by default instead of 1
-    func initializeSetsForExercise(id: String, exerciseName: String = "") {
+    @MainActor func initializeSetsForExercise(id: String, exerciseName: String = "") {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
             // Check previous workout set count from cache
             var setCount = 3 // Default
@@ -174,7 +175,7 @@ class WorkoutManager: ObservableObject {
     // Ensure all exercises have initialized sets (call on workout start)
     // OPTIMIZED: Batch all updates to trigger only ONE SwiftUI re-render
     // SMART: Creates sets matching previous workout count (or 3 by default)
-    func initializeSetsForExercises(_ exercises: [Exercise]) {
+    @MainActor func initializeSetsForExercises(_ exercises: [Exercise]) {
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
         #endif
@@ -279,6 +280,9 @@ class WorkoutManager: ObservableObject {
     // Clear all sets data (when workout ends)
     func clearAllSetsData() {
         exerciseSetsData.removeAll()
+        Task { @MainActor in
+            ExerciseSwapService.shared.clearSwapCache()
+        }
     }
     
     var canGenerateWorkout: Bool {
@@ -307,7 +311,7 @@ class WorkoutManager: ObservableObject {
         print("🎯 [PROGRAM] Started program: \(program.name)")
     }
     
-    func startProgramWorkout(day: Int, context: NSManagedObjectContext) {
+    @MainActor func startProgramWorkout(day: Int, context: NSManagedObjectContext) {
         guard let program = activeProgram,
               let programDay = program.schedule[day] else {
             print("❌ No program day found for day \(day)")
@@ -330,7 +334,7 @@ class WorkoutManager: ObservableObject {
         print("✅ Started fresh workout for Day \(day) with \(exercises.count) exercises")
     }
     
-    func startPreviewWorkout(context: NSManagedObjectContext) {
+    @MainActor func startPreviewWorkout(context: NSManagedObjectContext) {
         guard let program = previewProgram,
               let day = previewDay,
               let programDay = program.schedule[day] else {
@@ -621,7 +625,7 @@ class WorkoutManager: ObservableObject {
             // Create a new placeholder workout to continue
             let newWorkout = Workout(context: context)
             newWorkout.id = UUID(uuidString: state.workoutId) ?? UUID()
-            newWorkout.name = "Resumed Workout"
+            newWorkout.name = "Workout"
             newWorkout.date = state.startTime
             newWorkout.isCompleted = false
             
@@ -770,6 +774,7 @@ class WorkoutManager: ObservableObject {
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil
+        currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
         shouldNavigateToHomeTab = false
         
@@ -853,7 +858,7 @@ class WorkoutManager: ObservableObject {
         timer = nil
     }
     
-    func startWorkout(workout: Workout, exercises: [Exercise], insights: WorkoutInsights? = nil, programDay: Int? = nil, programDayFocus: String? = nil, smartProgramId: String? = nil) {
+    @MainActor func startWorkout(workout: Workout, exercises: [Exercise], insights: WorkoutInsights? = nil, programDay: Int? = nil, programDayFocus: String? = nil, smartProgramId: String? = nil, programWeek: Int? = nil) {
         #if DEBUG
         let totalStartTime = CFAbsoluteTimeGetCurrent()
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -904,6 +909,23 @@ class WorkoutManager: ObservableObject {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
+        // Pre-compute swap suggestions for all exercises (eliminates per-shuffle latency)
+        let exercisesForCache = exercises
+        Task { @MainActor in
+            let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
+            let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
+            ExerciseSwapService.shared.precomputeSwapGraph(
+                for: exercisesForCache,
+                userGoal: userGoal,
+                userEquipment: userEquipment
+            )
+        }
+        
+        #if DEBUG
+        print("   Swap graph: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        checkpoint = CFAbsoluteTimeGetCurrent()
+        #endif
+        
         // ⚡️ INSTANT TRANSITION: Set ALL state synchronously in one batch
         // This ensures the ActiveWorkoutView has everything it needs IMMEDIATELY
         // No delays, no staggering - just instant activation
@@ -914,6 +936,7 @@ class WorkoutManager: ObservableObject {
         currentProgramDayNumber = programDay
         currentProgramDayFocus = programDayFocus
         currentSmartProgramId = smartProgramId
+        currentProgramWeek = programWeek
         
         // Clear navigation and switch tab
         shouldClearWorkoutTabNav = true
@@ -1084,6 +1107,7 @@ class WorkoutManager: ObservableObject {
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil
+        currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
         clearAllSetsData() // Clear persistent sets data
         
@@ -1123,6 +1147,7 @@ class WorkoutManager: ObservableObject {
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil
+        currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
         clearAllSetsData() // Clear persistent sets data
         
@@ -1135,7 +1160,7 @@ class WorkoutManager: ObservableObject {
     }
     
     /// Replace an exercise in the current workout with a new one
-    func replaceExercise(_ oldExercise: Exercise, with newExercise: Exercise) {
+    @MainActor func replaceExercise(_ oldExercise: Exercise, with newExercise: Exercise) {
         guard let index = currentExercises.firstIndex(where: { $0.id == oldExercise.id }) else {
             #if DEBUG
             print("⚠️ WorkoutManager: Could not find exercise to replace: \(oldExercise.name ?? "?")")

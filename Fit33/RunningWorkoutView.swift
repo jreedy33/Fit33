@@ -51,7 +51,7 @@ struct RunningWorkoutView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
@@ -219,7 +219,7 @@ struct RunningWorkoutView: View {
                 
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_labelMedium)
                         .foregroundColor(color)
                 }
             }
@@ -247,7 +247,7 @@ struct RunningWorkoutView: View {
             // GPS Status
             HStack(spacing: 6) {
                 Image(systemName: runningManager.gpsAccuracy.icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(gpsStatusColor)
                 
                 Text(gpsStatusText)
@@ -270,7 +270,7 @@ struct RunningWorkoutView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: runningManager.isMapFollowing ? "location.fill" : "location")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_labelMedium)
                     
                     Text(runningManager.isMapFollowing ? "Following" : "Free")
                         .font(.system(size: 11, weight: .semibold))
@@ -311,11 +311,11 @@ struct RunningWorkoutView: View {
             // Last Mile
             HStack(spacing: 6) {
                 Text("Last mi")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.white.opacity(0.6))
                 
                 Text(runningManager.formattedLastSplitPace ?? "--:--")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(.white)
             }
             
@@ -327,11 +327,11 @@ struct RunningWorkoutView: View {
             // Best Mile
             HStack(spacing: 6) {
                 Text("Best")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
                     .foregroundColor(.white.opacity(0.6))
                 
                 Text(runningManager.formattedBestSplit ?? "--:--")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(accentColor)
             }
         }
@@ -370,7 +370,7 @@ struct RunningWorkoutView: View {
                     }
                 }
             }
-            .padding(4)
+            .padding(Spacing.xxs)
             .background(
                 Capsule()
                     .fill(.ultraThinMaterial.opacity(0.5))
@@ -428,7 +428,7 @@ struct RunningWorkoutView: View {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .foregroundColor(.white.opacity(0.4))
                     Text("Pace trend will appear here")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.white.opacity(0.4))
                 }
             }
@@ -442,7 +442,7 @@ struct RunningWorkoutView: View {
                     Image(systemName: "chart.bar.fill")
                         .foregroundColor(.white.opacity(0.4))
                     Text("Complete your first mile to see splits")
-                        .font(.system(size: 12))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.white.opacity(0.4))
                 }
             } else {
@@ -471,19 +471,19 @@ struct RunningWorkoutView: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("GAIN")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.ds_caption).fontWeight(.semibold)
                     .foregroundColor(.white.opacity(0.5))
                 Text(runningManager.formattedElevationGain)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(.white)
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text("CURRENT")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.ds_caption).fontWeight(.semibold)
                     .foregroundColor(.white.opacity(0.5))
                 Text(String(format: "%.0f ft", runningManager.currentElevation * 3.28084))
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.ds_statSmall)
                     .foregroundColor(.white)
             }
                     
@@ -500,7 +500,7 @@ struct RunningWorkoutView: View {
         VStack(spacing: 8) {
             HStack {
                 Image(systemName: "target")
-                    .font(.system(size: 12))
+                    .font(.ds_bodySmall)
                     .foregroundColor(accentColor)
                 
                 Text("GOAL")
@@ -548,11 +548,11 @@ struct RunningWorkoutView: View {
             }) {
                 VStack(spacing: 4) {
                     Image(systemName: runningManager.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(runningManager.audioCuesEnabled ? accentColor : .white.opacity(0.5))
                     
                     Text("Audio")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
@@ -566,11 +566,11 @@ struct RunningWorkoutView: View {
             }) {
                 VStack(spacing: 4) {
                     Image(systemName: "stopwatch.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(.orange)
                     
                     Text("Lap")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
@@ -584,16 +584,16 @@ struct RunningWorkoutView: View {
             }) {
                 VStack(spacing: 4) {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 18))
+                        .font(.ds_heading3)
                         .foregroundColor(.white.opacity(0.5))
                     
                     Text("Lock")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.lg)
     }
     
     // MARK: - Main Control Buttons
@@ -720,7 +720,7 @@ struct RunningWorkoutView: View {
                     .foregroundColor(.white.opacity(0.8))
                 
                 Text("Controls Locked")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
                 
                 // Swipe to unlock
@@ -733,7 +733,7 @@ struct RunningWorkoutView: View {
                             Image(systemName: "chevron.right.2")
                                 .foregroundColor(.white.opacity(0.5))
                             Text("Swipe to unlock")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.ds_bodySmall).fontWeight(.medium)
                                 .foregroundColor(.white.opacity(0.5))
                         }
                     }
@@ -908,7 +908,7 @@ struct RunningWorkoutView: View {
                     }
                 }
             }
-            .padding(24)
+            .padding(Spacing.lg)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1270,7 +1270,7 @@ struct GoalSetupSheet: View {
                 Image(systemName: icon)
                     .font(.system(size: 24))
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_bodySmall).fontWeight(.medium)
             }
             .foregroundColor(selectedGoalType == type ? .black : .white)
             .frame(maxWidth: .infinity)
@@ -1472,7 +1472,7 @@ struct RunCompletionView: View {
     private func statBox(value: String, label: String, icon: String, color: Color) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.ds_heading3)
                 .foregroundColor(color)
             
             Text(value)
@@ -1780,14 +1780,14 @@ struct RunChallengeCard: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: challenge.icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.ds_heading3)
                         .foregroundColor(isCompleted ? challenge.completedColor : .white.opacity(0.4))
                 }
                 
                 // Text
                 VStack(alignment: .leading, spacing: 2) {
                     Text(challenge.rawValue)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(isCompleted ? .white : .white.opacity(0.5))
                     
                     Text(challenge.subtitle)

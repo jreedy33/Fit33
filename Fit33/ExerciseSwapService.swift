@@ -57,8 +57,67 @@ struct SwapSection: Identifiable {
 final class ExerciseSwapService: ObservableObject {
     static let shared = ExerciseSwapService()
     
+    /// Pre-computed swap graph: exerciseId -> (equipmentVariants, complementary, fallback)
+    private var swapCache: [UUID: CachedSwaps] = [:]
+    private var cacheUserGoal: String = ""
+    private var cacheUserEquipment: [String] = []
+    
+    struct CachedSwaps {
+        let equipmentVariants: [SwapSuggestion]
+        let complementary: [SwapSuggestion]
+        let fallback: [SwapSuggestion]
+    }
+    
     private init() {
         print("🔄 [SWAP SERVICE] Initialized")
+    }
+    
+    /// Pre-compute swap candidates for all exercises in a workout (call at workout start)
+    func precomputeSwapGraph(
+        for exercises: [Exercise],
+        userGoal: String = "Build Muscle",
+        userLocation: String = "gym",
+        userEquipment: [String] = []
+    ) {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        swapCache.removeAll()
+        cacheUserGoal = userGoal
+        cacheUserEquipment = userEquipment
+        
+        for exercise in exercises {
+            guard let exerciseId = exercise.id else { continue }
+            let family = exercise.value(forKey: "exerciseFamily") as? String ?? ""
+            let complementaryFamilies = exercise.value(forKey: "complementaryFamilies") as? String ?? ""
+            
+            let variants = getEquipmentVariants(
+                for: exercise, family: family,
+                userGoal: userGoal, userLocation: userLocation,
+                userEquipment: userEquipment, excludeIds: [], limit: 5
+            )
+            let comps = getComplementaryExercises(
+                for: exercise, complementaryFamilies: complementaryFamilies,
+                userGoal: userGoal, userLocation: userLocation,
+                userEquipment: userEquipment, excludeIds: [], limit: 5
+            )
+            let falls = getFallbackSuggestions(
+                for: exercise, userEquipment: userEquipment,
+                excludeIds: [], limit: 5
+            )
+            
+            swapCache[exerciseId] = CachedSwaps(
+                equipmentVariants: variants,
+                complementary: comps,
+                fallback: falls
+            )
+        }
+        
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        print("🔄 [SWAP SERVICE] Pre-computed swap graph for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms")
+    }
+    
+    /// Clear the cache (call on workout end)
+    func clearSwapCache() {
+        swapCache.removeAll()
     }
     
     // MARK: - Main Swap API
@@ -147,6 +206,7 @@ final class ExerciseSwapService: ObservableObject {
     }
     
     /// Get a single best swap (for quick shuffle button)
+    /// Uses pre-computed cache when available for instant results
     func getQuickSwap(
         for exercise: Exercise,
         swapCount: Int,
@@ -155,13 +215,19 @@ final class ExerciseSwapService: ObservableObject {
         userEquipment: [String] = [],
         previousSwapIds: Set<UUID> = []
     ) -> Exercise? {
-        let family = exercise.value(forKey: "exerciseFamily") as? String ?? ""
-        let complementaryFamiliesString = exercise.value(forKey: "complementaryFamilies") as? String ?? ""
-        
         var excludeIds = previousSwapIds
         if let id = exercise.id {
             excludeIds.insert(id)
         }
+        
+        // Try cache first for instant results
+        if let exerciseId = exercise.id, let cached = swapCache[exerciseId] {
+            return getQuickSwapFromCache(cached, swapCount: swapCount, excludeIds: excludeIds)
+        }
+        
+        // Cache miss: compute on-demand (original behavior)
+        let family = exercise.value(forKey: "exerciseFamily") as? String ?? ""
+        let complementaryFamiliesString = exercise.value(forKey: "complementaryFamilies") as? String ?? ""
         
         // Swap 1-2: Equipment variants
         if swapCount < 3 {
@@ -208,6 +274,36 @@ final class ExerciseSwapService: ObservableObject {
         return fallback.first?.exercise
     }
     
+    /// Select best swap from pre-computed cache, respecting tier logic and exclusions
+    private func getQuickSwapFromCache(_ cached: CachedSwaps, swapCount: Int, excludeIds: Set<UUID>) -> Exercise? {
+        let filterExcluded: (SwapSuggestion) -> Bool = { suggestion in
+            guard let id = suggestion.exercise.id else { return false }
+            return !excludeIds.contains(id)
+        }
+        
+        // Swap 1-2: prefer equipment variants
+        if swapCount < 3 {
+            if let match = cached.equipmentVariants.first(where: filterExcluded) {
+                print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Equipment variant - \(match.exercise.name ?? "")")
+                return match.exercise
+            }
+        }
+        
+        // Swap 3+: prefer complementary
+        if let match = cached.complementary.first(where: filterExcluded) {
+            print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Complementary - \(match.exercise.name ?? "")")
+            return match.exercise
+        }
+        
+        // Fallback from cache
+        if let match = cached.fallback.first(where: filterExcluded) {
+            print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Fallback - \(match.exercise.name ?? "")")
+            return match.exercise
+        }
+        
+        return nil
+    }
+    
     // MARK: - Private Methods
     
     /// Get equipment variants (same family, different equipment)
@@ -246,23 +342,26 @@ final class ExerciseSwapService: ObservableObject {
             }
         }
         
-        // Sort by priority score
+        // Sort by priority score adjusted by swap history penalty
         variants.sort { a, b in
-            let aPriority = (a.value(forKey: priorityKey) as? Int) ?? 70
-            let bPriority = (b.value(forKey: priorityKey) as? Int) ?? 70
-            return aPriority > bPriority
+            let aPriority = Double((a.value(forKey: priorityKey) as? Int) ?? 70)
+            let bPriority = Double((b.value(forKey: priorityKey) as? Int) ?? 70)
+            let aPenalty = UserBehaviorLearningEngine.swapPenalty(for: a.name ?? "")
+            let bPenalty = UserBehaviorLearningEngine.swapPenalty(for: b.name ?? "")
+            return (aPriority - aPenalty) > (bPriority - bPenalty)
         }
         
         // Convert to SwapSuggestions
         return variants.prefix(limit).map { candidate in
             let equipCat = candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight"
-            let priority = (candidate.value(forKey: priorityKey) as? Int) ?? 70
+            let basePriority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
+            let penalty = UserBehaviorLearningEngine.swapPenalty(for: candidate.name ?? "")
             
             return SwapSuggestion(
                 exercise: candidate,
                 swapType: .equipmentVariant,
                 reason: "\(equipCat.capitalized) variation",
-                priorityScore: priority
+                priorityScore: Int(basePriority - penalty)
             )
         }
     }
@@ -325,52 +424,57 @@ final class ExerciseSwapService: ObservableObject {
             }
         }
         
-        // Combine and sort
+        // Combine and sort (factoring in swap history penalty)
         let combined = primaryFirst + others
         let sorted = combined.sorted { a, b in
-            let aPriority = (a.value(forKey: priorityKey) as? Int) ?? 70
-            let bPriority = (b.value(forKey: priorityKey) as? Int) ?? 70
-            return aPriority > bPriority
+            let aPriority = Double((a.value(forKey: priorityKey) as? Int) ?? 70)
+            let bPriority = Double((b.value(forKey: priorityKey) as? Int) ?? 70)
+            let aPenalty = UserBehaviorLearningEngine.swapPenalty(for: a.name ?? "")
+            let bPenalty = UserBehaviorLearningEngine.swapPenalty(for: b.name ?? "")
+            return (aPriority - aPenalty) > (bPriority - bPenalty)
         }
         
         // Convert to SwapSuggestions
         return sorted.prefix(limit).map { candidate in
-            let family = candidate.value(forKey: "exerciseFamily") as? String ?? "exercise"
             let baseName = candidate.value(forKey: "baseExerciseName") as? String ?? candidate.name ?? ""
-            let priority = (candidate.value(forKey: priorityKey) as? Int) ?? 70
+            let basePriority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
+            let penalty = UserBehaviorLearningEngine.swapPenalty(for: candidate.name ?? "")
             
             return SwapSuggestion(
                 exercise: candidate,
                 swapType: .complementary,
                 reason: baseName,
-                priorityScore: priority
+                priorityScore: Int(basePriority - penalty)
             )
         }
     }
     
-    /// Fallback to algorithmic matching
+    /// Fallback to algorithmic matching (adjusted by swap history)
     private func getFallbackSuggestions(
         for exercise: Exercise,
         userEquipment: [String],
         excludeIds: Set<UUID>,
         limit: Int
     ) -> [SwapSuggestion] {
-        // Use existing AlternativeExerciseEngine as fallback
-        let alternatives = AlternativeExerciseEngine.shared.getAlternatives(
+        let alternatives = SmartExercisePairingEngine.shared.getAlternatives(
             for: exercise,
             userEquipment: userEquipment,
             excludeIds: excludeIds,
-            maxResults: limit
+            maxResults: limit + 3
         )
         
         return alternatives.map { alt in
-            SwapSuggestion(
+            let penalty = UserBehaviorLearningEngine.swapPenalty(for: alt.exercise.name ?? "")
+            return SwapSuggestion(
                 exercise: alt.exercise,
                 swapType: .similar,
                 reason: alt.reasonsSummary,
-                priorityScore: alt.score
+                priorityScore: alt.score - Int(penalty)
             )
         }
+        .sorted { $0.priorityScore > $1.priorityScore }
+        .prefix(limit)
+        .map { $0 }
     }
     
     /// Get the priority key based on user context

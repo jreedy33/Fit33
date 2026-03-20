@@ -11,6 +11,9 @@ import SwiftUI
 // - Community success data
 // - Body type and preferences
 
+/// Canonical program recommendation engine. Other recommendation entry points
+/// (ProgramLibraryService.getRecommendedPrograms, CollaborativeLearningEngine.getRecommendedPrograms,
+/// CommunityIntelligenceService.getRecommendedPrograms) should eventually delegate here.
 class SmartProgramRecommender {
     static let shared = SmartProgramRecommender()
     
@@ -212,7 +215,7 @@ class SmartProgramRecommender {
     ) -> Double {
         
         switch userGoal {
-        case .strength:
+        case .gainStrength, .powerlifting:
             switch programFocus {
             case .strength, .powerbuilding:
                 return 100
@@ -222,7 +225,7 @@ class SmartProgramRecommender {
                 return 20
             }
             
-        case .hypertrophy:
+        case .buildMuscle, .bodybuilding:
             switch programFocus {
             case .hypertrophy:
                 return 100
@@ -234,7 +237,7 @@ class SmartProgramRecommender {
                 return 20
             }
             
-        case .fatLoss:
+        case .loseWeight:
             switch programFocus {
             case .endurance, .fullBody:
                 return 80
@@ -248,7 +251,7 @@ class SmartProgramRecommender {
                 return 30
             }
             
-        case .toning:
+        case .toneUp:
             switch programFocus {
             case .hypertrophy, .fullBody:
                 return 80
@@ -258,7 +261,7 @@ class SmartProgramRecommender {
                 return 40
             }
             
-        case .endurance:
+        case .improveEndurance, .athletic:
             switch programFocus {
             case .endurance:
                 return 100
@@ -268,7 +271,7 @@ class SmartProgramRecommender {
                 return 20
             }
             
-        case .generalFitness:
+        case .generalFitness, .flexibility:
             switch programFocus {
             case .fullBody:
                 return 100
@@ -360,15 +363,15 @@ class SmartProgramRecommender {
         
         // Goal alignment
         switch (profile.fitnessGoal, program.focus) {
-        case (.strength, .strength), (.strength, .powerbuilding):
+        case (.gainStrength, .strength), (.gainStrength, .powerbuilding), (.powerlifting, .strength):
             reasons.append("Perfect for your strength goals 💪")
-        case (.hypertrophy, .hypertrophy):
+        case (.buildMuscle, .hypertrophy), (.bodybuilding, .hypertrophy):
             reasons.append("Optimized for muscle building 📈")
-        case (.fatLoss, .endurance), (.fatLoss, .fullBody):
+        case (.loseWeight, .endurance), (.loseWeight, .fullBody):
             reasons.append("Designed for fat loss 🔥")
-        case (.toning, .hypertrophy), (.toning, .fullBody):
+        case (.toneUp, .hypertrophy), (.toneUp, .fullBody):
             reasons.append("Great for toning and definition ✨")
-        case (.endurance, .endurance):
+        case (.improveEndurance, .endurance), (.athletic, .endurance):
             reasons.append("Perfect for building endurance 🏃")
         case (.generalFitness, .fullBody):
             reasons.append("Well-rounded for general fitness 🌟")
@@ -505,23 +508,23 @@ extension SmartProgramRecommender {
     
     private func colorForGoal(_ goal: FitnessGoal) -> Color {
         switch goal {
-        case .strength: return Color.red
-        case .hypertrophy: return Color.blue
-        case .fatLoss: return Color.orange
-        case .toning: return Color.purple
-        case .endurance: return Color.green
-        case .generalFitness: return Color.cyan
+        case .gainStrength, .powerlifting: return Color.red
+        case .buildMuscle, .bodybuilding: return Color.blue
+        case .loseWeight: return Color.orange
+        case .toneUp: return Color.purple
+        case .improveEndurance, .athletic: return Color.green
+        case .generalFitness, .flexibility: return Color.cyan
         }
     }
     
     private func iconForGoal(_ goal: FitnessGoal) -> String {
         switch goal {
-        case .strength: return "figure.strengthtraining.traditional"
-        case .hypertrophy: return "figure.arms.open"
-        case .fatLoss: return "flame.fill"
-        case .toning: return "sparkles"
-        case .endurance: return "heart.fill"
-        case .generalFitness: return "figure.run"
+        case .gainStrength, .powerlifting: return "figure.strengthtraining.traditional"
+        case .buildMuscle, .bodybuilding: return "figure.arms.open"
+        case .loseWeight: return "flame.fill"
+        case .toneUp: return "sparkles"
+        case .improveEndurance, .athletic: return "heart.fill"
+        case .generalFitness, .flexibility: return "figure.run"
         }
     }
 }

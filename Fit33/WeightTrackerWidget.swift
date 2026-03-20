@@ -57,7 +57,7 @@ struct WeightTrackerWidget: View {
             // Header row (OUTSIDE the card - matches other sections)
             HStack {
                 Image(systemName: "scalemass.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -80,7 +80,7 @@ struct WeightTrackerWidget: View {
                     .foregroundColor(.orange)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Card content
             TabView(selection: $currentPage) {
@@ -165,7 +165,7 @@ struct WeightTrackerWidget: View {
             // Header row (OUTSIDE the card - matches other sections)
             HStack {
                 Image(systemName: "scalemass.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -182,7 +182,7 @@ struct WeightTrackerWidget: View {
                     Image(systemName: "star.fill")
                         .font(.ds_caption)
                     Text("PRO")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.ds_bodySmall).fontWeight(.bold)
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
@@ -196,7 +196,7 @@ struct WeightTrackerWidget: View {
                         ))
                 )
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Spacing.xxs)
             
             // Card content with lock overlay
             ZStack {
@@ -295,7 +295,7 @@ struct WeightTrackerWidget: View {
                             .foregroundColor(.primary)
                         
                         Text(weightService.weightUnitSuffix)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary)
                     }
                     
@@ -322,7 +322,7 @@ struct WeightTrackerWidget: View {
                     }
                     .foregroundColor(weeklyChangeColor)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                     .background(weeklyChangeColor.opacity(0.15))
                     .cornerRadius(CornerRadius.sm)
                 }
@@ -376,7 +376,7 @@ struct WeightTrackerWidget: View {
                     // Goal stats
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(Int(weightService.goalProgress * 100))%")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(primaryColor)
                         
                         Text("\(formatWeight(goal.targetWeight)) goal")
@@ -399,7 +399,7 @@ struct WeightTrackerWidget: View {
                             .font(.ds_bodyRegular)
                             .foregroundColor(.orange)
                         Text("\(weightService.statistics?.streakDays ?? 0)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     }
                     Text("day streak")
                         .font(.system(size: 9))
@@ -413,10 +413,10 @@ struct WeightTrackerWidget: View {
                     let range = weeklyRange(from: Array(weeklyData))
                     HStack(spacing: 2) {
                         Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.blue)
                         Text(range)
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     }
                     Text("weekly range")
                         .font(.system(size: 9))
@@ -429,10 +429,10 @@ struct WeightTrackerWidget: View {
                     let consistency = calculateLoggingConsistency()
                     HStack(spacing: 2) {
                         Image(systemName: consistency >= 70 ? "checkmark.circle.fill" : "circle.dashed")
-                            .font(.system(size: 12))
+                            .font(.ds_bodySmall)
                             .foregroundColor(consistency >= 70 ? .green : .gray)
                         Text("\(consistency)%")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     }
                     Text("consistency")
                         .font(.system(size: 9))
@@ -756,7 +756,7 @@ struct MiniStatBadge: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                 .foregroundColor(color)
             Text(title)
                 .font(.ds_caption)
@@ -778,7 +778,7 @@ struct WeightStatPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundColor(color)
             
             VStack(alignment: .leading, spacing: 0) {
@@ -1158,7 +1158,7 @@ struct WeightDetailView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(CornerRadius.xl)
     }

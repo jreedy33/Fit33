@@ -3536,12 +3536,12 @@ struct DashboardView: View {
             // Daily progress ring — type-colored with live percentage
             ZStack {
                 Circle()
-                    .stroke(Color.gray.opacity(0.15), lineWidth: 3)
-                    .frame(width: 36, height: 36)
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 2.5)
+                    .frame(width: 28, height: 28)
                 Circle()
                     .trim(from: 0, to: livePercent)
-                    .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .frame(width: 36, height: 36)
+                    .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .frame(width: 28, height: 28)
                     .rotationEffect(.degrees(-90))
                 
                 if myDone && oppDone {
@@ -3686,30 +3686,30 @@ struct DashboardView: View {
                     Image(uiImage: cachedImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 30, height: 30)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                        .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 1.5))
                 } else {
                     CachedFriendPhoto(
                         friendId: SupabaseManager.shared.currentUser?.id.uuidString ?? "me",
                         photoUrl: nil,
                         name: name ?? "You",
-                        size: 36,
+                        size: 30,
                         showGradientRing: false,
                         gradientColors: gradientColors
                     )
-                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                    .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 1.5))
                 }
             } else {
                 CachedFriendPhoto(
                     friendId: userId ?? UUID().uuidString,
                     photoUrl: photoUrl,
                     name: name ?? "Friend",
-                    size: 36,
+                    size: 30,
                     showGradientRing: false,
                     gradientColors: gradientColors
                 )
-                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 2))
+                .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 1.5))
             }
         }
     }

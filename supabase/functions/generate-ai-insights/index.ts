@@ -56,245 +56,297 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
   const d30 = new Date(now.getTime() - 30 * 86400000).toISOString();
   const d90 = new Date(now.getTime() - 90 * 86400000).toISOString();
 
-  const results: Record<string, unknown> = {};
+  // deno-lint-ignore no-explicit-any
+  type R = Record<string, any>;
+  const r: Record<string, unknown> = {};
 
-  // ── Users & Demographics ──
-  const [totalUsers, newUsers7d, newUsers30d, activeUsers7d, activeUsers30d] = await Promise.all([
-    safeCount(() => supabase.from("user_profiles").select("id", { count: "exact", head: true })),
-    safeCount(() => supabase.from("user_profiles").select("id", { count: "exact", head: true }).gte("created_at", d7)),
-    safeCount(() => supabase.from("user_profiles").select("id", { count: "exact", head: true }).gte("created_at", d30)),
-    safeCount(() => supabase.from("user_profiles").select("id", { count: "exact", head: true }).gte("last_workout_date", d7)),
-    safeCount(() => supabase.from("user_profiles").select("id", { count: "exact", head: true }).gte("last_workout_date", d30)),
-  ]);
-
-  results.users = { total: totalUsers, new_7d: newUsers7d, new_30d: newUsers30d, active_7d: activeUsers7d, active_30d: activeUsers30d };
-
-  const profiles = await safeQuery(() =>
-    supabase.from("user_profiles")
-      .select("fitness_goal, experience_level, gender, age, workout_environment, has_completed_onboarding, current_streak, longest_streak, total_workouts, xp, created_at, last_workout_date")
-  );
-
-  if (profiles && Array.isArray(profiles)) {
-    const goals: Record<string, number> = {};
-    const levels: Record<string, number> = {};
-    const genders: Record<string, number> = {};
-    let onboarded = 0;
-    let totalXp = 0;
-    let totalWorkoutsSum = 0;
-    const activeProfiles = (profiles as Array<Record<string, unknown>>).filter((p) => ((p.total_workouts as number) || 0) > 0);
-
-    for (const p of profiles as Array<Record<string, unknown>>) {
-      if (p.fitness_goal) goals[p.fitness_goal as string] = (goals[p.fitness_goal as string] || 0) + 1;
-      if (p.experience_level) levels[p.experience_level as string] = (levels[p.experience_level as string] || 0) + 1;
-      if (p.gender) genders[p.gender as string] = (genders[p.gender as string] || 0) + 1;
-      if (p.has_completed_onboarding) onboarded++;
-      totalXp += (p.xp as number) || 0;
-      totalWorkoutsSum += (p.total_workouts as number) || 0;
-    }
-
-    results.demographics = { fitness_goals: goals, experience_levels: levels, genders, onboarding_completion_rate: profiles.length > 0 ? Math.round((onboarded / profiles.length) * 100) : 0 };
-    results.user_engagement = {
-      users_with_workouts: activeProfiles.length,
-      total_workouts_all_users: totalWorkoutsSum,
-      avg_workouts_per_active_user: activeProfiles.length > 0 ? Math.round(totalWorkoutsSum / activeProfiles.length * 10) / 10 : 0,
-      avg_current_streak: activeProfiles.length > 0 ? Math.round(activeProfiles.reduce((a, b) => a + ((b.current_streak as number) || 0), 0) / activeProfiles.length * 10) / 10 : 0,
-      best_streak_ever: activeProfiles.length > 0 ? Math.max(...activeProfiles.map((p) => (p.longest_streak as number) || 0)) : 0,
-      total_platform_xp: totalXp,
-    };
+  // Helper to aggregate a field into counts
+  function countBy(rows: R[], field: string): Record<string, number> {
+    const c: Record<string, number> = {};
+    for (const row of rows) { if (row[field]) c[row[field]] = (c[row[field]] || 0) + 1; }
+    return c;
   }
 
-  // ── Workouts ──
-  const [totalWorkouts, workouts7d, workouts30d] = await Promise.all([
-    safeCount(() => supabase.from("workouts").select("id", { count: "exact", head: true })),
-    safeCount(() => supabase.from("workouts").select("id", { count: "exact", head: true }).gte("created_at", d7)),
-    safeCount(() => supabase.from("workouts").select("id", { count: "exact", head: true }).gte("created_at", d30)),
-  ]);
+  // ══════════════════════════════════════════════════════════
+  // 1. USER PROFILES (all columns)
+  // ══════════════════════════════════════════════════════════
+  const profiles = (await safeQuery(() => supabase.from("user_profiles")
+    .select("id, name, username, email, gender, age, fitness_goal, experience_level, strength_level, workout_environment, equipment, available_days, current_streak, longest_streak, total_workouts, xp, has_completed_onboarding, created_at, last_workout_date, weight_unit, height_unit, daily_calorie_goal, daily_protein_goal")) || []) as R[];
 
-  results.workouts = { total: totalWorkouts, last_7d: workouts7d, last_30d: workouts30d };
+  const active = profiles.filter(p => (p.total_workouts || 0) > 0);
+  r.users = {
+    total: profiles.length,
+    new_7d: profiles.filter(p => p.created_at >= d7).length,
+    new_30d: profiles.filter(p => p.created_at >= d30).length,
+    active_7d: profiles.filter(p => p.last_workout_date && p.last_workout_date >= d7).length,
+    active_30d: profiles.filter(p => p.last_workout_date && p.last_workout_date >= d30).length,
+    onboarded: profiles.filter(p => p.has_completed_onboarding).length,
+    onboarding_rate_pct: profiles.length > 0 ? Math.round(profiles.filter(p => p.has_completed_onboarding).length / profiles.length * 100) : 0,
+  };
+  r.demographics = {
+    fitness_goals: countBy(profiles, "fitness_goal"),
+    experience_levels: countBy(profiles, "experience_level"),
+    genders: countBy(profiles, "gender"),
+    workout_environments: countBy(profiles, "workout_environment"),
+    strength_levels: countBy(profiles, "strength_level"),
+    weight_units: countBy(profiles, "weight_unit"),
+  };
+  r.engagement = {
+    users_with_workouts: active.length,
+    total_workouts_all_users: active.reduce((a, p) => a + (p.total_workouts || 0), 0),
+    avg_workouts_per_active_user: active.length > 0 ? Math.round(active.reduce((a, p) => a + (p.total_workouts || 0), 0) / active.length * 10) / 10 : 0,
+    avg_current_streak: active.length > 0 ? Math.round(active.reduce((a, p) => a + (p.current_streak || 0), 0) / active.length * 10) / 10 : 0,
+    best_streak_ever: active.length > 0 ? Math.max(...active.map(p => p.longest_streak || 0)) : 0,
+    total_platform_xp: profiles.reduce((a, p) => a + (p.xp || 0), 0),
+  };
+  r.top_users_by_xp = profiles.sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 10).map(p => ({
+    name: p.name, username: p.username, xp: p.xp, total_workouts: p.total_workouts, current_streak: p.current_streak, longest_streak: p.longest_streak
+  }));
 
-  const recentWorkouts = await safeQuery(() =>
-    supabase.from("workouts")
-      .select("date, duration_seconds, xp_earned, user_id, name")
-      .order("date", { ascending: false })
-      .limit(200)
-  );
+  // ══════════════════════════════════════════════════════════
+  // 2. WORKOUTS
+  // ══════════════════════════════════════════════════════════
+  const workouts = (await safeQuery(() => supabase.from("workouts")
+    .select("id, date, duration_seconds, xp_earned, user_id, name, created_at").order("created_at", { ascending: false }).limit(500)) || []) as R[];
+  r.workouts = {
+    total: workouts.length,
+    last_7d: workouts.filter(w => w.created_at >= d7).length,
+    last_30d: workouts.filter(w => w.created_at >= d30).length,
+    avg_duration_min: workouts.length > 0 ? Math.round(workouts.reduce((a, w) => a + (w.duration_seconds || 0), 0) / workouts.length / 60) : 0,
+    unique_users: new Set(workouts.map(w => w.user_id)).size,
+  };
 
-  if (recentWorkouts && Array.isArray(recentWorkouts)) {
-    const avgDuration = recentWorkouts.length > 0
-      ? Math.round(recentWorkouts.reduce((a, b) => a + ((b as Record<string, unknown>).duration_seconds as number || 0), 0) / recentWorkouts.length / 60)
-      : 0;
-    const uniqueUsers = new Set(recentWorkouts.map((w) => (w as Record<string, unknown>).user_id)).size;
-    results.workout_details = { avg_duration_minutes: avgDuration, unique_users_recent_200: uniqueUsers };
-  }
+  // ══════════════════════════════════════════════════════════
+  // 3. WORKOUT EXERCISES & SETS
+  // ══════════════════════════════════════════════════════════
+  const wxRows = (await safeQuery(() => supabase.from("workout_exercises")
+    .select("exercise_name, exercise_order, workout_id").order("created_at", { ascending: false }).limit(1000)) || []) as R[];
+  r.popular_exercises = Object.entries(countBy(wxRows, "exercise_name")).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([name, count]) => ({ name, count }));
 
-  // ── Exercise Performance ──
-  const exercisePerf = await safeQuery(() =>
-    supabase.from("exercise_performance_history")
-      .select("exercise_name, exercise_category, user_id, workout_date, total_volume, max_weight, total_sets, total_reps")
-      .order("workout_date", { ascending: false })
-      .limit(500)
-  );
+  // ══════════════════════════════════════════════════════════
+  // 4. EXERCISE PERFORMANCE HISTORY (progression data)
+  // ══════════════════════════════════════════════════════════
+  const perfRows = (await safeQuery(() => supabase.from("exercise_performance_history")
+    .select("exercise_name, exercise_category, user_id, workout_date, total_volume, max_weight, total_sets, total_reps")
+    .order("workout_date", { ascending: false }).limit(500)) || []) as R[];
+  r.exercise_performance = {
+    total_records: perfRows.length,
+    by_category: countBy(perfRows, "exercise_category"),
+    top_by_volume: Object.entries(
+      perfRows.reduce((acc: Record<string, number>, e) => { acc[e.exercise_name] = (acc[e.exercise_name] || 0) + (e.total_volume || 0); return acc; }, {})
+    ).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, vol]) => ({ name, total_volume: vol })),
+    unique_users: new Set(perfRows.map(e => e.user_id)).size,
+  };
 
-  if (exercisePerf && Array.isArray(exercisePerf)) {
-    const exCounts: Record<string, number> = {};
-    const catCounts: Record<string, number> = {};
-    for (const e of exercisePerf as Array<Record<string, unknown>>) {
-      if (e.exercise_name) exCounts[e.exercise_name as string] = (exCounts[e.exercise_name as string] || 0) + 1;
-      if (e.exercise_category) catCounts[e.exercise_category as string] = (catCounts[e.exercise_category as string] || 0) + 1;
-    }
-    results.popular_exercises = Object.entries(exCounts).sort((a, b) => b[1] - a[1]).slice(0, 25).map(([name, count]) => ({ name, count }));
-    results.muscle_group_distribution = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).map(([category, count]) => ({ category, count }));
-  }
+  // ══════════════════════════════════════════════════════════
+  // 5. CHALLENGES (group + community + private + daily quests)
+  // ══════════════════════════════════════════════════════════
+  const groupChallenges = (await safeQuery(() => supabase.from("group_challenges")
+    .select("id, challenge_type, mode, status, duration_days, created_at").order("created_at", { ascending: false }).limit(200)) || []) as R[];
+  const challengeParts = (await safeQuery(() => supabase.from("challenge_participants")
+    .select("challenge_id, status, user_id").limit(500)) || []) as R[];
+  const challengeDaily = (await safeQuery(() => supabase.from("challenge_daily_progress")
+    .select("challenge_id, user_id, progress_value, progress_date").order("progress_date", { ascending: false }).limit(500)) || []) as R[];
+  r.group_challenges = {
+    total: groupChallenges.length, by_status: countBy(groupChallenges, "status"),
+    by_type: countBy(groupChallenges, "challenge_type"), by_mode: countBy(groupChallenges, "mode"),
+    participants: challengeParts.length, participant_statuses: countBy(challengeParts, "status"),
+    daily_progress_entries: challengeDaily.length,
+  };
 
-  // ── Challenges ──
-  const challenges = await safeQuery(() =>
-    supabase.from("group_challenges")
-      .select("id, challenge_type, mode, status, duration_days, created_at")
-      .order("created_at", { ascending: false })
-      .limit(100)
-  );
+  const commChallenges = (await safeQuery(() => supabase.from("community_challenges")
+    .select("id, title, challenge_type, status, created_at").limit(100)) || []) as R[];
+  const commParts = (await safeQuery(() => supabase.from("community_challenge_participants")
+    .select("challenge_id, status").limit(500)) || []) as R[];
+  r.community_challenges = { total: commChallenges.length, by_status: countBy(commChallenges, "status"), participants: commParts.length };
 
-  const challengeParticipants = await safeQuery(() =>
-    supabase.from("challenge_participants")
-      .select("challenge_id, status")
-      .limit(500)
-  );
+  const privateChallenges = (await safeQuery(() => supabase.from("private_challenges")
+    .select("id, status, challenge_type, created_at").limit(100)) || []) as R[];
+  r.private_challenges = { total: privateChallenges.length, by_status: countBy(privateChallenges, "status") };
 
-  if (challenges && Array.isArray(challenges)) {
-    const statusCounts: Record<string, number> = {};
-    const typeCounts: Record<string, number> = {};
-    for (const c of challenges as Array<Record<string, unknown>>) {
-      statusCounts[c.status as string] = (statusCounts[c.status as string] || 0) + 1;
-      typeCounts[c.challenge_type as string] = (typeCounts[c.challenge_type as string] || 0) + 1;
-    }
-    results.challenges = { total: challenges.length, by_status: statusCounts, by_type: typeCounts, total_participants: challengeParticipants ? (challengeParticipants as unknown[]).length : 0 };
-  }
+  // ══════════════════════════════════════════════════════════
+  // 6. DAILY QUESTS
+  // ══════════════════════════════════════════════════════════
+  const quests = (await safeQuery(() => supabase.from("user_daily_quests")
+    .select("quest_type, status, xp_reward, completed_at").order("created_at", { ascending: false }).limit(300)) || []) as R[];
+  const questStreaks = (await safeQuery(() => supabase.from("user_quest_streaks")
+    .select("current_streak, longest_streak, total_quests_completed").limit(100)) || []) as R[];
+  r.daily_quests = {
+    total_assigned: quests.length, by_status: countBy(quests, "status"), by_type: countBy(quests, "quest_type"),
+    streaks: questStreaks.length > 0 ? {
+      avg_current: Math.round(questStreaks.reduce((a, s) => a + (s.current_streak || 0), 0) / questStreaks.length * 10) / 10,
+      best_ever: Math.max(...questStreaks.map(s => s.longest_streak || 0)),
+    } : null,
+  };
 
-  // ── Social ──
-  const friendships = await safeQuery(() =>
-    supabase.from("friendships")
-      .select("status, created_at")
-      .order("created_at", { ascending: false })
-      .limit(500)
-  );
+  // ══════════════════════════════════════════════════════════
+  // 7. SOCIAL (friendships, shared workouts, activity feed, reactions)
+  // ══════════════════════════════════════════════════════════
+  const friendships = (await safeQuery(() => supabase.from("friendships")
+    .select("status, created_at").order("created_at", { ascending: false }).limit(500)) || []) as R[];
+  r.friendships = { total: friendships.length, by_status: countBy(friendships, "status"), new_30d: friendships.filter(f => f.created_at >= d30).length };
 
-  if (friendships && Array.isArray(friendships)) {
-    const fStatusCounts: Record<string, number> = {};
-    let recent30d = 0;
-    for (const f of friendships as Array<Record<string, unknown>>) {
-      fStatusCounts[f.status as string] = (fStatusCounts[f.status as string] || 0) + 1;
-      if (f.created_at && (f.created_at as string) >= d30) recent30d++;
-    }
-    results.social = { total_friendships: friendships.length, by_status: fStatusCounts, new_last_30d: recent30d };
-  }
-
-  const [sharedWorkoutsCount, sharedWorkouts30d] = await Promise.all([
+  const [sharedTotal, shared30d] = await Promise.all([
     safeCount(() => supabase.from("shared_workouts").select("id", { count: "exact", head: true })),
     safeCount(() => supabase.from("shared_workouts").select("id", { count: "exact", head: true }).gte("created_at", d30)),
   ]);
-  results.shared_workouts = { total: sharedWorkoutsCount, last_30d: sharedWorkouts30d };
+  r.shared_workouts = { total: sharedTotal, last_30d: shared30d };
 
-  // ── Nutrition ──
-  const meals = await safeQuery(() =>
-    supabase.from("meal_logs")
-      .select("meal_type, calories, protein, carbs, fat, date")
-      .order("date", { ascending: false })
-      .limit(300)
-  );
+  const activityFeed = (await safeQuery(() => supabase.from("friend_activity_feed")
+    .select("activity_type, created_at").order("created_at", { ascending: false }).limit(200)) || []) as R[];
+  r.activity_feed = { total_entries: activityFeed.length, by_type: countBy(activityFeed, "activity_type") };
 
-  if (meals && Array.isArray(meals)) {
-    const mealTypes: Record<string, number> = {};
-    let totalCal = 0;
-    for (const m of meals as Array<Record<string, unknown>>) {
-      if (m.meal_type) mealTypes[m.meal_type as string] = (mealTypes[m.meal_type as string] || 0) + 1;
-      totalCal += (m.calories as number) || 0;
-    }
-    results.nutrition = { total_meals_logged: meals.length, by_meal_type: mealTypes, avg_calories: meals.length > 0 ? Math.round(totalCal / meals.length) : 0 };
-  }
+  const reactions = (await safeQuery(() => supabase.from("activity_reactions")
+    .select("emoji, created_at").limit(300)) || []) as R[];
+  r.reactions = { total: reactions.length, by_emoji: countBy(reactions, "emoji") };
 
-  // ── Programs ──
-  const [activePrograms, programHistory] = await Promise.all([
-    safeQuery(() => supabase.from("user_active_programs").select("program_id, status, current_day, completed_days, total_workouts_completed").limit(200)),
-    safeQuery(() => supabase.from("program_history").select("program_name, status, days_completed, total_workouts, completion_percentage").order("start_date", { ascending: false }).limit(100)),
-  ]);
+  // ══════════════════════════════════════════════════════════
+  // 8. NUTRITION (meals, food history, food frequency)
+  // ══════════════════════════════════════════════════════════
+  const meals = (await safeQuery(() => supabase.from("meal_logs")
+    .select("meal_type, calories, protein, carbs, fat, date, user_id").order("date", { ascending: false }).limit(500)) || []) as R[];
+  r.nutrition = {
+    total_meals: meals.length, by_type: countBy(meals, "meal_type"),
+    avg_calories: meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.calories || 0), 0) / meals.length) : 0,
+    avg_protein: meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.protein || 0), 0) / meals.length) : 0,
+    unique_users: new Set(meals.map(m => m.user_id)).size,
+  };
 
-  if (activePrograms && Array.isArray(activePrograms)) {
-    results.programs = {
-      active_enrollments: activePrograms.length,
-      history: programHistory ? (programHistory as unknown[]).length : 0,
-    };
-  }
+  const foodFreq = (await safeQuery(() => supabase.from("user_food_frequency")
+    .select("food_name, times_logged").order("times_logged", { ascending: false }).limit(20)) || []) as R[];
+  if (foodFreq.length > 0) r.top_foods = foodFreq.map(f => ({ name: f.food_name, times: f.times_logged }));
 
-  // ── Health (steps, weight, cardio) ──
-  const [stepsData, weightData, cardioData] = await Promise.all([
-    safeQuery(() => supabase.from("step_tracking").select("steps, date, user_id").gte("date", d30).order("date", { ascending: false }).limit(300)),
-    safeQuery(() => supabase.from("weight_logs").select("weight_lbs, date, user_id").order("date", { ascending: false }).limit(200)),
-    safeQuery(() => supabase.from("cardio_workouts").select("activity_type, duration_seconds, distance_meters, calories_burned, source").gte("date", d30).limit(200)),
-  ]);
+  // ══════════════════════════════════════════════════════════
+  // 9. PROGRAMS
+  // ══════════════════════════════════════════════════════════
+  const activePrograms = (await safeQuery(() => supabase.from("user_active_programs")
+    .select("program_id, status, current_day, completed_days, total_workouts_completed, total_xp_earned").limit(200)) || []) as R[];
+  const progHistory = (await safeQuery(() => supabase.from("program_history")
+    .select("program_name, status, days_completed, total_workouts, completion_percentage").order("start_date", { ascending: false }).limit(100)) || []) as R[];
+  r.programs = {
+    active: activePrograms.length, active_by_status: countBy(activePrograms, "status"),
+    history_total: progHistory.length, history_by_status: countBy(progHistory, "status"),
+    avg_completion_pct: progHistory.length > 0 ? Math.round(progHistory.reduce((a, p) => a + (p.completion_percentage || 0), 0) / progHistory.length) : 0,
+  };
 
-  if (stepsData && Array.isArray(stepsData) && stepsData.length > 0) {
-    const avgSteps = Math.round(stepsData.reduce((a, s) => a + ((s as Record<string, unknown>).steps as number || 0), 0) / stepsData.length);
-    const stepUsers = new Set(stepsData.map((s) => (s as Record<string, unknown>).user_id)).size;
-    results.health_steps = { entries_30d: stepsData.length, avg_steps_per_entry: avgSteps, unique_users: stepUsers };
-  }
+  // ══════════════════════════════════════════════════════════
+  // 10. HEALTH (steps, weight, hydration, cardio)
+  // ══════════════════════════════════════════════════════════
+  const steps = (await safeQuery(() => supabase.from("step_tracking")
+    .select("steps, date, user_id").gte("date", d30).order("date", { ascending: false }).limit(500)) || []) as R[];
+  r.steps = {
+    entries_30d: steps.length, unique_users: new Set(steps.map(s => s.user_id)).size,
+    avg_daily: steps.length > 0 ? Math.round(steps.reduce((a, s) => a + (s.steps || 0), 0) / steps.length) : 0,
+  };
 
-  if (cardioData && Array.isArray(cardioData) && cardioData.length > 0) {
-    const activityTypes: Record<string, number> = {};
-    for (const c of cardioData as Array<Record<string, unknown>>) {
-      if (c.activity_type) activityTypes[c.activity_type as string] = (activityTypes[c.activity_type as string] || 0) + 1;
-    }
-    results.cardio = { sessions_30d: cardioData.length, by_activity: activityTypes };
-  }
+  const weights = (await safeQuery(() => supabase.from("weight_logs")
+    .select("weight_lbs, date, user_id").order("date", { ascending: false }).limit(200)) || []) as R[];
+  r.weight_tracking = { entries: weights.length, unique_users: new Set(weights.map(w => w.user_id)).size };
 
-  // ── Onboarding ──
-  const onboardingData = await safeQuery(() =>
-    supabase.from("onboarding_analytics").select("step_name, completed, drop_off").gte("created_at", d90)
-  );
+  const hydration = (await safeQuery(() => supabase.from("hydration_logs")
+    .select("amount_ml, date, user_id").order("date", { ascending: false }).limit(300)) || []) as R[];
+  r.hydration = {
+    entries: hydration.length, unique_users: new Set(hydration.map(h => h.user_id)).size,
+    avg_daily_ml: hydration.length > 0 ? Math.round(hydration.reduce((a, h) => a + (h.amount_ml || 0), 0) / hydration.length) : 0,
+  };
 
-  if (onboardingData && Array.isArray(onboardingData) && onboardingData.length > 0) {
+  const cardio = (await safeQuery(() => supabase.from("cardio_workouts")
+    .select("activity_type, duration_seconds, distance_meters, calories_burned, source, date").gte("date", d30).limit(200)) || []) as R[];
+  r.cardio = { sessions_30d: cardio.length, by_activity: countBy(cardio, "activity_type"), by_source: countBy(cardio, "source") };
+
+  // ══════════════════════════════════════════════════════════
+  // 11. STREAKS & STREAK TRACKING
+  // ══════════════════════════════════════════════════════════
+  const streakTracking = (await safeQuery(() => supabase.from("user_streak_tracking")
+    .select("user_id, streak_date, workout_completed, rest_day").order("streak_date", { ascending: false }).limit(300)) || []) as R[];
+  r.streak_tracking = {
+    entries: streakTracking.length,
+    workout_days: streakTracking.filter(s => s.workout_completed).length,
+    rest_days: streakTracking.filter(s => s.rest_day).length,
+  };
+
+  // ══════════════════════════════════════════════════════════
+  // 12. USER FAVORITES
+  // ══════════════════════════════════════════════════════════
+  const favorites = (await safeQuery(() => supabase.from("user_favorites")
+    .select("exercise_id, created_at").limit(300)) || []) as R[];
+  r.favorites = { total: favorites.length };
+
+  // ══════════════════════════════════════════════════════════
+  // 13. ACHIEVEMENTS
+  // ══════════════════════════════════════════════════════════
+  const userAchievements = (await safeQuery(() => supabase.from("user_achievements")
+    .select("achievement_id, unlocked_at").limit(500)) || []) as R[];
+  r.achievements = { total_unlocked: userAchievements.length };
+
+  // ══════════════════════════════════════════════════════════
+  // 14. PROGRESS PHOTOS
+  // ══════════════════════════════════════════════════════════
+  const photos = (await safeQuery(() => supabase.from("progress_photos")
+    .select("id, user_id, created_at").limit(200)) || []) as R[];
+  r.progress_photos = { total: photos.length, unique_users: new Set(photos.map(p => p.user_id)).size };
+
+  // ══════════════════════════════════════════════════════════
+  // 15. LEAGUES
+  // ══════════════════════════════════════════════════════════
+  const leagueMembers = (await safeQuery(() => supabase.from("league_members")
+    .select("league_group_id, user_id, xp_earned").limit(200)) || []) as R[];
+  r.leagues = { total_members: leagueMembers.length };
+
+  // ══════════════════════════════════════════════════════════
+  // 16. NOTIFICATIONS
+  // ══════════════════════════════════════════════════════════
+  const notifs = (await safeQuery(() => supabase.from("app_notifications")
+    .select("type, is_read, created_at").order("created_at", { ascending: false }).limit(300)) || []) as R[];
+  r.notifications = { total: notifs.length, by_type: countBy(notifs, "type"), unread: notifs.filter(n => !n.is_read).length };
+
+  // ══════════════════════════════════════════════════════════
+  // 17. ONBOARDING ANALYTICS
+  // ══════════════════════════════════════════════════════════
+  const onboarding = (await safeQuery(() => supabase.from("onboarding_analytics")
+    .select("step_name, completed, drop_off").gte("created_at", d90)) || []) as R[];
+  if (onboarding.length > 0) {
     const stepStats: Record<string, { total: number; completed: number; dropped: number }> = {};
-    for (const row of onboardingData as Array<Record<string, unknown>>) {
-      const step = row.step_name as string;
-      if (!stepStats[step]) stepStats[step] = { total: 0, completed: 0, dropped: 0 };
-      stepStats[step].total++;
-      if (row.completed) stepStats[step].completed++;
-      if (row.drop_off) stepStats[step].dropped++;
+    for (const row of onboarding) {
+      if (!stepStats[row.step_name]) stepStats[row.step_name] = { total: 0, completed: 0, dropped: 0 };
+      stepStats[row.step_name].total++;
+      if (row.completed) stepStats[row.step_name].completed++;
+      if (row.drop_off) stepStats[row.step_name].dropped++;
     }
-    results.onboarding = stepStats;
+    r.onboarding = stepStats;
   }
 
-  // ── Retention ──
+  // ══════════════════════════════════════════════════════════
+  // 18. RETENTION (week over week)
+  // ══════════════════════════════════════════════════════════
   try {
-    const [activeThisWeek, activeLastWeek] = await Promise.all([
+    const [w1Res, w2Res] = await Promise.all([
       supabase.from("workouts").select("user_id").gte("created_at", d7),
       supabase.from("workouts").select("user_id").gte("created_at", d14).lt("created_at", d7),
     ]);
-    const w1 = new Set((activeThisWeek.data || []).map((r: { user_id: string }) => r.user_id));
-    const w2 = new Set((activeLastWeek.data || []).map((r: { user_id: string }) => r.user_id));
+    const w1 = new Set((w1Res.data || []).map((x: R) => x.user_id));
+    const w2 = new Set((w2Res.data || []).map((x: R) => x.user_id));
     const retained = [...w2].filter(id => w1.has(id));
-    results.retention = {
-      active_this_week: w1.size, active_last_week: w2.size, retained_both_weeks: retained.length,
-      retention_rate_pct: w2.size > 0 ? Math.round((retained.length / w2.size) * 100) : null,
-    };
-  } catch { results.retention = null; }
+    r.retention = { active_this_week: w1.size, active_last_week: w2.size, retained: retained.length, rate_pct: w2.size > 0 ? Math.round(retained.length / w2.size * 100) : null };
+  } catch { r.retention = null; }
 
-  // ── Streaks & XP Leaderboard ──
-  const topUsers = await safeQuery(() =>
-    supabase.from("user_profiles")
-      .select("name, username, current_streak, longest_streak, total_workouts, xp, last_workout_date")
-      .order("xp", { ascending: false })
-      .limit(10)
-  );
-  if (topUsers) results.top_users_by_xp = topUsers;
-
-  // ── Bug & Crash Reports ──
-  const [bugCount, crashCount] = await Promise.all([
+  // ══════════════════════════════════════════════════════════
+  // 19. BUGS & CRASHES
+  // ══════════════════════════════════════════════════════════
+  const [openBugs, newCrashes] = await Promise.all([
     safeCount(() => supabase.from("bug_reports").select("id", { count: "exact", head: true }).eq("status", "open")),
     safeCount(() => supabase.from("crash_reports").select("id", { count: "exact", head: true }).eq("status", "new")),
   ]);
-  results.open_issues = { open_bugs: bugCount, new_crashes: crashCount };
+  r.issues = { open_bugs: openBugs, new_crashes: newCrashes };
 
-  return results;
+  // ══════════════════════════════════════════════════════════
+  // 20. CHALLENGE REACTIONS
+  // ══════════════════════════════════════════════════════════
+  const challengeReactions = (await safeQuery(() => supabase.from("challenge_reactions")
+    .select("reaction_type, created_at").limit(200)) || []) as R[];
+  r.challenge_reactions = { total: challengeReactions.length, by_type: countBy(challengeReactions, "reaction_type") };
+
+  return r;
 }
 
 // ═══════════════════════════════════════════════════

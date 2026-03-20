@@ -346,6 +346,101 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
     .select("reaction_type, created_at").limit(200)) || []) as R[];
   r.challenge_reactions = { total: challengeReactions.length, by_type: countBy(challengeReactions, "reaction_type") };
 
+  // ══════════════════════════════════════════════════════════
+  // 21. CROSS-TABLE ANALYTICS (pre-computed joins)
+  // ══════════════════════════════════════════════════════════
+
+  // Build user lookup maps from already-fetched data
+  const profileMap = new Map<string, R>();
+  for (const p of profiles) profileMap.set(p.id, p);
+
+  // Social × Workout correlation
+  const friendships_arr = (await safeQuery(() => supabase.from("friendships")
+    .select("requester_id, addressee_id, status").eq("status", "accepted")) || []) as R[];
+  const friendCountByUser: Record<string, number> = {};
+  for (const f of friendships_arr) {
+    friendCountByUser[f.requester_id] = (friendCountByUser[f.requester_id] || 0) + 1;
+    friendCountByUser[f.addressee_id] = (friendCountByUser[f.addressee_id] || 0) + 1;
+  }
+
+  const socialUsers = profiles.filter(p => (friendCountByUser[p.id] || 0) > 0);
+  const soloUsers = profiles.filter(p => (friendCountByUser[p.id] || 0) === 0 && (p.total_workouts || 0) > 0);
+  r.cross_social_vs_workout = {
+    users_with_friends: socialUsers.length,
+    avg_workouts_social_users: socialUsers.length > 0 ? Math.round(socialUsers.reduce((a, p) => a + (p.total_workouts || 0), 0) / socialUsers.length * 10) / 10 : 0,
+    avg_workouts_solo_users: soloUsers.length > 0 ? Math.round(soloUsers.reduce((a, p) => a + (p.total_workouts || 0), 0) / soloUsers.length * 10) / 10 : 0,
+    avg_streak_social: socialUsers.length > 0 ? Math.round(socialUsers.reduce((a, p) => a + (p.current_streak || 0), 0) / socialUsers.length * 10) / 10 : 0,
+    avg_streak_solo: soloUsers.length > 0 ? Math.round(soloUsers.reduce((a, p) => a + (p.current_streak || 0), 0) / soloUsers.length * 10) / 10 : 0,
+  };
+
+  // Demographics × Performance
+  const goalPerformance: Record<string, { users: number; avg_workouts: number; avg_streak: number }> = {};
+  for (const p of active) {
+    const goal = (p.fitness_goal as string) || "unset";
+    if (!goalPerformance[goal]) goalPerformance[goal] = { users: 0, avg_workouts: 0, avg_streak: 0 };
+    goalPerformance[goal].users++;
+    goalPerformance[goal].avg_workouts += (p.total_workouts || 0);
+    goalPerformance[goal].avg_streak += (p.current_streak || 0);
+  }
+  for (const goal of Object.keys(goalPerformance)) {
+    const g = goalPerformance[goal];
+    g.avg_workouts = Math.round(g.avg_workouts / g.users * 10) / 10;
+    g.avg_streak = Math.round(g.avg_streak / g.users * 10) / 10;
+  }
+  r.cross_goal_vs_performance = goalPerformance;
+
+  // Experience Level × Engagement
+  const levelEngagement: Record<string, { users: number; avg_workouts: number; avg_xp: number }> = {};
+  for (const p of active) {
+    const level = (p.experience_level as string) || "unset";
+    if (!levelEngagement[level]) levelEngagement[level] = { users: 0, avg_workouts: 0, avg_xp: 0 };
+    levelEngagement[level].users++;
+    levelEngagement[level].avg_workouts += (p.total_workouts || 0);
+    levelEngagement[level].avg_xp += (p.xp || 0);
+  }
+  for (const lv of Object.keys(levelEngagement)) {
+    const l = levelEngagement[lv];
+    l.avg_workouts = Math.round(l.avg_workouts / l.users * 10) / 10;
+    l.avg_xp = Math.round(l.avg_xp / l.users);
+  }
+  r.cross_level_vs_engagement = levelEngagement;
+
+  // Challenge completion × user demographics
+  const challengeUserIds = new Set(challengeParts.map(cp => cp.user_id));
+  const challengeUsers = profiles.filter(p => challengeUserIds.has(p.id));
+  const nonChallengeActive = active.filter(p => !challengeUserIds.has(p.id));
+  r.cross_challenge_vs_retention = {
+    challenge_users: challengeUsers.length,
+    non_challenge_active_users: nonChallengeActive.length,
+    avg_workouts_challenge_users: challengeUsers.length > 0 ? Math.round(challengeUsers.reduce((a, p) => a + (p.total_workouts || 0), 0) / challengeUsers.length * 10) / 10 : 0,
+    avg_workouts_non_challenge: nonChallengeActive.length > 0 ? Math.round(nonChallengeActive.reduce((a, p) => a + (p.total_workouts || 0), 0) / nonChallengeActive.length * 10) / 10 : 0,
+    avg_streak_challenge: challengeUsers.length > 0 ? Math.round(challengeUsers.reduce((a, p) => a + (p.current_streak || 0), 0) / challengeUsers.length * 10) / 10 : 0,
+    avg_streak_non_challenge: nonChallengeActive.length > 0 ? Math.round(nonChallengeActive.reduce((a, p) => a + (p.current_streak || 0), 0) / nonChallengeActive.length * 10) / 10 : 0,
+  };
+
+  // Nutrition × Workout correlation (by user)
+  const mealUserIds = new Set(meals.map(m => m.user_id));
+  const nutritionTrackers = active.filter(p => mealUserIds.has(p.id));
+  const nonTrackers = active.filter(p => !mealUserIds.has(p.id));
+  r.cross_nutrition_vs_workout = {
+    users_tracking_nutrition: nutritionTrackers.length,
+    users_not_tracking: nonTrackers.length,
+    avg_workouts_nutrition_trackers: nutritionTrackers.length > 0 ? Math.round(nutritionTrackers.reduce((a, p) => a + (p.total_workouts || 0), 0) / nutritionTrackers.length * 10) / 10 : 0,
+    avg_workouts_non_trackers: nonTrackers.length > 0 ? Math.round(nonTrackers.reduce((a, p) => a + (p.total_workouts || 0), 0) / nonTrackers.length * 10) / 10 : 0,
+  };
+
+  // User lifecycle stages
+  const stages = { new_inactive: 0, beginner: 0, developing: 0, established: 0, power_user: 0 };
+  for (const p of profiles) {
+    const w = (p.total_workouts as number) || 0;
+    if (w === 0) stages.new_inactive++;
+    else if (w < 5) stages.beginner++;
+    else if (w < 20) stages.developing++;
+    else if (w < 50) stages.established++;
+    else stages.power_user++;
+  }
+  r.user_lifecycle_stages = stages;
+
   return r;
 }
 

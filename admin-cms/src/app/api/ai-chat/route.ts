@@ -68,7 +68,8 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }), {
+    console.error('[ai-chat] ANTHROPIC_API_KEY missing from environment')
+    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured. Add it in Vercel > Settings > Environment Variables and redeploy.' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     })

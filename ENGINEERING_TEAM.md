@@ -15,6 +15,7 @@
 | **Staff Quality & Performance** | `QUALITY_PERFORMANCE_AGENT.md` | Testing, memory, performance, accessibility, error handling | "How it stays stable" |
 | **Staff Design System Enforcement** | `DESIGN_SYSTEM_AGENT.md` | Token migration, deduplication, metrics tracking | "How the design gets into the code" |
 | **Staff Fitness Expert** | `FITNESS_EXPERT_AGENT.md` | Exercise science, program design, workout validation, training recommendations | "What the workout should actually be" |
+| **Staff Device Compatibility** | `DEVICE_COMPATIBILITY_AGENT.md` | Responsive layout, cross-device sizing, iPad support, Apple Watch planning | "How it fits every screen" |
 
 ---
 
@@ -47,6 +48,12 @@ When a task comes in, route it to the right agent:
 | Exercise database curation | Fitness Expert | Data (migrations) |
 | Auto-gen workout validation | Fitness Expert | Quality (regression tests) |
 | Rep/set/weight recommendations | Fitness Expert | Data (user strength data) |
+| Fix layout on specific device | Device Compatibility | Product Engineer (implementation) |
+| iPad layout adaptation | Device Compatibility | Design (visual spec), Product Engineer |
+| Responsive spacing/sizing audit | Device Compatibility | Design System (token enforcement) |
+| Cross-device testing matrix | Device Compatibility | Quality (test execution) |
+| Apple Watch feature planning | Device Compatibility | Fitness Expert (workout logic) |
+| Safe area / Dynamic Island fixes | Device Compatibility | Product Engineer (implementation) |
 
 ---
 
@@ -81,6 +88,9 @@ When one agent needs something from another:
 | `PhoneVerificationSheet.swift` | Product Engineer | Infra Security | PE owns UI; Infra owns verification security |
 | `ContactsService.swift` | Data Backend | Product Engineer | Data owns normalization; PE owns UI |
 | `ONBOARDING_AUDIT.md` | All Agents | — | Reference doc for onboarding work |
+| `OrientationManager.swift` | Device Compatibility | Product Engineer | Device detection, screen dims, DeviceTier |
+| `DEVICE_COMPATIBILITY_AGENT.md` | Device Compatibility | — | Agent spec, device matrix, patterns |
+| `DEVICE_COMPATIBILITY_TASKS.md` | Device Compatibility | All Agents | Retroactive fix tracker, Watch log |
 
 ---
 
@@ -208,6 +218,9 @@ When you're an agent and unsure what to do, check this:
 - Testing/performance → Quality & Performance Agent
 - Token migration → Design System Enforcement Agent
 - Exercise/workout/program logic → Fitness Expert Agent
+- Layout/spacing/device issues → Device Compatibility Agent
+- iPad adaptation → Device Compatibility Agent
+- Apple Watch planning → Device Compatibility Agent
 
 ---
 
@@ -235,3 +248,37 @@ When you're an agent and unsure what to do, check this:
 4. Infra Agent owns the API key rotation and security review
 5. To add a new insight category: update the SQL CHECK constraint + Edge Function + CMS filter tabs
 ```
+
+---
+
+## Performance Audit Remediation (March 2026)
+
+**Audit date**: March 20, 2026
+**Overall grade**: B+ → targeting A after SQL migrations are executed
+
+### Blocking Issues Created & Resolved
+| Issue | Migration File | Status |
+|-------|---------------|--------|
+| `exercise_performance_history` missing columns | `20260320_fix_performance_history.sql` | Created — needs SQL execution |
+| `collaborative_workout_data` missing `program_id` | `20260320_fix_performance_history.sql` | Created — needs SQL execution |
+| 7 analytics tables missing RLS | `20260320_fix_rls_policies.sql` | Created — needs SQL execution |
+| PR detection not implemented | `ActiveWorkoutView.swift` | FIXED in code |
+| Friend search not wired | `ShareWorkoutSheet.swift` | FIXED in code |
+
+### Remaining Items (Not Blocking)
+- 3 TODO comments: AdMob production ID (external), 2x SmartProgramRecommender delegation (architecture)
+- 14 duplicate SQL function definitions (cleanup task)
+- Performance baseline verification (Dec 2025 vs current)
+- APM monitoring not yet implemented
+
+---
+
+## Smart Treadmill Auto-Connect (March 2026)
+
+| Component | Owner | File |
+|-----------|-------|------|
+| RSSI averaging + auto-suggest logic | Product Engineer | `BluetoothFitnessManager.swift` |
+| Device memory persistence | Product Engineer | `BluetoothFitnessManager.swift` (AppStorage) |
+| Auto-suggest banner + signal UI | Product Engineer + Design | `FitnessEquipmentView.swift` |
+| BLE permissions review | Infra & Security | Advisory |
+| Battery impact validation | Quality & Performance | Advisory |

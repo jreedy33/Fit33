@@ -111,13 +111,12 @@ export async function POST(req: NextRequest) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of stream) {
-            if (event.type === 'content_block_delta' && 'delta' in event && 'text' in (event.delta as Record<string, unknown>)) {
-              const text = (event.delta as { text: string }).text
-              fullResponse += text
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
-            }
-          }
+          stream.on('text', (text) => {
+            fullResponse += text
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
+          })
+
+          await stream.finalMessage()
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
 

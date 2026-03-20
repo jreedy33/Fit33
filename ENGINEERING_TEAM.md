@@ -16,6 +16,7 @@
 | **Staff Design System Enforcement** | `DESIGN_SYSTEM_AGENT.md` | Token migration, deduplication, metrics tracking | "How the design gets into the code" |
 | **Staff Fitness Expert** | `FITNESS_EXPERT_AGENT.md` | Exercise science, program design, workout validation, training recommendations | "What the workout should actually be" |
 | **Staff Device Compatibility** | `DEVICE_COMPATIBILITY_AGENT.md` | Responsive layout, cross-device sizing, iPad support, Apple Watch planning | "How it fits every screen" |
+| **Staff Supabase Database Expert** | `SUPABASE_AGENT.md` | Database architecture, table relationships, data integrity, schema optimization, growth data strategy | "How the database stays clean, smart, and efficient" |
 
 ---
 
@@ -54,6 +55,14 @@ When a task comes in, route it to the right agent:
 | Cross-device testing matrix | Device Compatibility | Quality (test execution) |
 | Apple Watch feature planning | Device Compatibility | Fitness Expert (workout logic) |
 | Safe area / Dynamic Island fixes | Device Compatibility | Product Engineer (implementation) |
+| New database table design | Supabase Database Expert | Data & Backend (implementation) |
+| Database schema audit | Supabase Database Expert | — |
+| Data duplication check | Supabase Database Expert | — |
+| FK/RLS constraint review | Supabase Database Expert | Infra (security review) |
+| New feature data requirements | Supabase Database Expert | Product Engineer (feature spec) |
+| Data growth/monetization strategy | Supabase Database Expert | Product Engineer |
+| Dead table cleanup | Supabase Database Expert | Data & Backend |
+| Cross-table relationship design | Supabase Database Expert | Data & Backend |
 
 ---
 
@@ -75,7 +84,9 @@ When one agent needs something from another:
 | `SharedUtilities.swift` | Product Engineer | Design System Agent | PE defines utilities; DSE consolidates duplicates |
 | `SupabaseManager.swift` | Data Agent | Infra Agent | Data owns operations; Infra owns credentials/auth |
 | `AppConfig.swift` | Infra Agent | — | Single owner for configuration |
-| `SECURITY_CHECKLIST.md` | Infra Agent | Data Agent | Infra defines policy; Data implements in SQL |
+| `SECURITY_CHECKLIST.md` | Infra Agent | Data Agent, Supabase Agent | Infra defines policy; Data implements; Supabase validates |
+| `SUPABASE_AGENT.md` | Supabase Database Expert | Data Agent | Supabase Expert owns schema design; Data Agent implements |
+| `DATABASE_AUDIT_REPORT.md` | Supabase Database Expert | All Agents | Reference doc for database health |
 | `MASTER_TODO.md` | All Agents | — | Everyone updates their section |
 | `WorkoutComboRules.swift` | Fitness Expert | Product Engineer | Fitness Expert defines rules; PE implements |
 | `SmartExerciseSelectionEngine.swift` | Product Engineer | Fitness Expert | PE owns selection logic; Fitness Expert validates scoring |
@@ -101,7 +112,9 @@ Step 1: Product Engineer reads the feature requirements
 Step 2: Product Engineer reads DESIGN_AGENT.md for visual specs
 Step 3: Product Engineer selects components from the shared inventory
 Step 4: If the feature touches data:
-        → Data Agent defines/updates schema, DTOs, RLS
+        → Supabase Agent checks for existing tables/columns that can serve the need
+        → Supabase Agent designs minimal schema (FK, RLS, indexes, cascades)
+        → Data Agent implements schema, DTOs, sync logic
         → Infra Agent reviews security implications
 Step 5: Product Engineer builds the feature using shared components
 Step 6: Design System Agent audits token usage (no hardcoded values)
@@ -215,6 +228,7 @@ When you're an agent and unsure what to do, check this:
 - Navigation patterns → Product Engineer Agent
 - Security/secrets → Infra & Security Agent
 - Database/schema → Data & Backend Agent
+- Database architecture/optimization/new tables → Supabase Database Expert Agent
 - Testing/performance → Quality & Performance Agent
 - Token migration → Design System Enforcement Agent
 - Exercise/workout/program logic → Fitness Expert Agent

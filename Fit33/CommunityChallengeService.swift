@@ -1106,10 +1106,9 @@ class CommunityChallengeService: ObservableObject {
                 #endif
                 return true
             } catch {
+                guard !Task.isCancelled else { return false }
                 let nsError = error as NSError
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
-                    // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections
-                    // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
                     AppLogger.warning("log_community_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)

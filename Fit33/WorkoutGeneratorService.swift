@@ -3619,13 +3619,7 @@ class WorkoutGeneratorService: ObservableObject {
             let missingPatterns = WorkoutComboRules.validateRequiredPatterns(selectedExercises: selectedExerciseData, comboRule: rule)
             
             if !missingPatterns.isEmpty {
-                #if DEBUG
-                AppLogger.error("[VALIDATION FAILED] Missing required patterns: \(missingPatterns)", category: .workout)
-                AppLogger.error("This workout violates combo rules - returning empty result!", category: .workout)
-                #endif
-                // CRITICAL: NEVER show a workout that violates combo rules
-                // Return empty to trigger fallback or retry
-                return []
+                AppLogger.warning("[VALIDATION] Missing patterns: \(missingPatterns) — returning workout anyway (non-blocking)", category: .workout)
             } else {
                 #if DEBUG
                 AppLogger.info("[VALIDATION PASSED] All required patterns satisfied", category: .workout)

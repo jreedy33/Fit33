@@ -466,10 +466,10 @@ class ChallengeService: ObservableObject {
     // MARK: - Retry Helper (handles -999 cancelled errors from network congestion)
     
     /// Retries an async operation up to `maxRetries` times if it fails with a URLError.cancelled (-999).
-    /// This is critical at startup when many concurrent requests compete for the network layer.
+    /// Only retries during active app state — stops immediately if app is backgrounded or task is cancelled.
     private func withCancelRetry<T>(
         label: String,
-        maxRetries: Int = 4,
+        maxRetries: Int = 2,
         operation: () async throws -> T
     ) async throws -> T {
         var lastError: Error?
@@ -478,10 +478,9 @@ class ChallengeService: ObservableObject {
                 return try await operation()
             } catch {
                 lastError = error
+                guard !Task.isCancelled else { throw error }
                 let nsError = error as NSError
-                // Only retry on -999 cancelled errors (network congestion)
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
-                    // Exponential backoff: 1s, 2s, 4s, 8s — gives startup storm time to settle
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
                     AppLogger.warning("\(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
@@ -1681,10 +1680,12 @@ class ChallengeService: ObservableObject {
                 
                 return true
             } catch {
+                guard !Task.isCancelled else {
+                    AppLogger.debug("log_challenge_progress task cancelled, stopping retries", category: .social)
+                    return false
+                }
                 let nsError = error as NSError
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
-                    // Request was cancelled (NSURLErrorDomain -999) — too many concurrent connections at startup
-                    // Use increasing backoff: 1s, 2s, 4s, 8s to let the request storm settle
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
                     AppLogger.warning("log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)

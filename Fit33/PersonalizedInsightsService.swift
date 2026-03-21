@@ -60,7 +60,7 @@ struct PersonalizedInsight: Identifiable, Codable {
     let title: String
     let message: String
     let detailMessage: String?
-    let dataPoints: [String: Double]?
+    let dataPoints: String?
     let relatedGoal: String?
     let timePeriod: String?
     let priority: Int

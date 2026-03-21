@@ -141,7 +141,7 @@ class CollaborativeLearningEngine: ObservableObject {
                 "id": .string(UUID().uuidString),
                 "user_id": .string(userId),
                 "workout_type": .string(workoutType),
-                "program_id": .string(programId ?? ""),
+                "program_id": .string(programId ?? UUID().uuidString),
                 "exercises": .array(exercises.map { exercise in
                     .object([
                         "name": .string(exercise.name),

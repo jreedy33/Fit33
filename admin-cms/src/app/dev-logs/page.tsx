@@ -227,20 +227,62 @@ export default function DevLogsPage() {
         lines.push('```')
         lines.push('')
       }
+
+      // Find related log entries and show before/during/after context
+      const keywords = [
+        ...(s.title || '').toLowerCase().split(/\s+/).filter((w: string) => w.length > 4),
+        ...(s.file_path || '').split('/').pop()?.replace('.swift', '').split(/(?=[A-Z])/).map((w: string) => w.toLowerCase()) || [],
+      ]
+      const relatedEntries = entries.filter(e => {
+        const detail = (e.detail || '').toLowerCase()
+        return e.type === 'error' && keywords.some((k: string) => detail.includes(k))
+      })
+
+      if (relatedEntries.length > 0) {
+        lines.push('**Log context (before / during / after):**')
+        lines.push('')
+        lines.push('```')
+        for (const re of relatedEntries.slice(0, 5)) {
+          const reIdx = entries.indexOf(re)
+          const contextStart = Math.max(0, reIdx - 3)
+          const contextEnd = Math.min(entries.length, reIdx + 4)
+          for (let ci = contextStart; ci < contextEnd; ci++) {
+            const ce = entries[ci]
+            const marker = ci === reIdx ? '>>>' : '   '
+            const time = new Date(ce.ts).toLocaleTimeString()
+            lines.push(`${marker} ${time} [${ce.type.toUpperCase()}] ${ce.screen ? `[${ce.screen}] ` : ''}${ce.detail}${ce.duration_ms ? ` (${ce.duration_ms}ms)` : ''}`)
+          }
+          lines.push('   ...')
+        }
+        lines.push('```')
+        lines.push('')
+      }
+
       lines.push('---')
       lines.push('')
     }
 
-    // Session error summary from entries
+    // Full session error summary
     const errors = entries.filter(e => e.type === 'error')
     if (errors.length > 0) {
-      lines.push('## Raw Errors from Session Log')
+      lines.push('## All Errors from Session Log')
       lines.push('')
-      for (const e of errors.slice(0, 30)) {
+      for (const e of errors.slice(0, 50)) {
         lines.push(`- \`${new Date(e.ts).toLocaleTimeString()}\` ${e.screen ? `[${e.screen}]` : ''} ${e.detail}`)
       }
       lines.push('')
     }
+
+    // Full session timeline summary
+    lines.push('## Session Timeline Summary')
+    lines.push('')
+    lines.push(`- **Total log entries:** ${entries.length}`)
+    lines.push(`- **Screens visited:** ${new Set(entries.filter(e => e.type === 'screen').map(e => e.detail)).size}`)
+    lines.push(`- **Errors:** ${errors.length}`)
+    lines.push(`- **Slow operations (>500ms):** ${entries.filter(e => e.duration_ms && e.duration_ms > 500).length}`)
+    const duration = entries.length > 1 ? Math.round((entries[entries.length - 1].ts - entries[0].ts) / 1000) : 0
+    lines.push(`- **Session duration:** ${duration}s`)
+    lines.push('')
 
     const content = lines.join('\n')
     const blob = new Blob([content], { type: 'text/markdown' })

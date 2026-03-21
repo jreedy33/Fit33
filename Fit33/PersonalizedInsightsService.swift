@@ -66,8 +66,8 @@ struct PersonalizedInsight: Identifiable, Codable {
     let priority: Int
     let icon: String
     let accentColor: String
-    let isRead: Bool
-    let isDismissed: Bool
+    let isRead: Bool?
+    let isDismissed: Bool?
     let createdAt: Date
     
     enum CodingKeys: String, CodingKey {

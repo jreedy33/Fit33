@@ -271,13 +271,11 @@ class FoodDatabaseService: ObservableObject {
         do {
             struct RecentFoodRow: Codable {
                 let foodItemId: Int
-                let lastLogged: String
-                let logFrequency: Int
+                let loggedAt: String?
                 
                 enum CodingKeys: String, CodingKey {
                     case foodItemId = "food_item_id"
-                    case lastLogged = "last_logged"
-                    case logFrequency = "log_frequency"
+                    case loggedAt = "logged_at"
                 }
             }
             

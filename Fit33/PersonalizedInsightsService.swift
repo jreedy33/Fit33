@@ -89,6 +89,34 @@ struct PersonalizedInsight: Identifiable, Codable {
         case createdAt = "created_at"
     }
     
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        userId = try container.decodeIfPresent(UUID.self, forKey: .userId)
+        type = try container.decode(String.self, forKey: .type)
+        category = try container.decode(String.self, forKey: .category)
+        title = try container.decode(String.self, forKey: .title)
+        message = try container.decode(String.self, forKey: .message)
+        detailMessage = try container.decodeIfPresent(String.self, forKey: .detailMessage)
+        relatedGoal = try container.decodeIfPresent(String.self, forKey: .relatedGoal)
+        timePeriod = try container.decodeIfPresent(String.self, forKey: .timePeriod)
+        priority = try container.decodeIfPresent(Int.self, forKey: .priority) ?? 0
+        icon = try container.decodeIfPresent(String.self, forKey: .icon) ?? "lightbulb"
+        accentColor = try container.decodeIfPresent(String.self, forKey: .accentColor) ?? "blue"
+        isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead)
+        isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        // data_points can be String OR Dictionary in the DB — handle both
+        if let str = try? container.decodeIfPresent(String.self, forKey: .dataPoints) {
+            dataPoints = str
+        } else if let dict = try? container.decode([String: Double].self, forKey: .dataPoints),
+                  let jsonData = try? JSONEncoder().encode(dict) {
+            dataPoints = String(data: jsonData, encoding: .utf8)
+        } else {
+            dataPoints = nil
+        }
+    }
+    
     var insightType: InsightType {
         InsightType(rawValue: type) ?? .tip
     }

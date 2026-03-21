@@ -31,4 +31,13 @@ DO $$ BEGIN
   RAISE NOTICE '2. Added matched_user_id UUID to user_synced_contacts';
 END $$;
 
+-- 3. user_similarity_profiles missing age_range
+-- CollaborativeLearningEngine tries to update this column
+ALTER TABLE user_similarity_profiles
+  ADD COLUMN IF NOT EXISTS age_range TEXT;
+
+DO $$ BEGIN
+  RAISE NOTICE '3. Added age_range TEXT to user_similarity_profiles';
+END $$;
+
 COMMIT;

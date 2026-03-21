@@ -91,6 +91,21 @@ enum AppLogger {
         function: String = #function,
         line: Int = #line
     ) {
+        // Forward ALL levels to advanced session logger when active (before minimum level gate)
+        if AdvancedSessionLogger.isActive {
+            let text = message()
+            let capturedCategory = category.rawValue
+            let capturedLevel = level
+            Task { @MainActor in
+                let logType = capturedLevel >= .error ? "error" : (capturedLevel >= .warning ? "warning" : "log")
+                AdvancedSessionLogger.shared.log(
+                    type: logType,
+                    detail: "[\(capturedCategory)] \(text)",
+                    screen: nil
+                )
+            }
+        }
+
         guard level >= minimumLevel else { return }
 
         let text = message()
@@ -99,22 +114,11 @@ enum AppLogger {
         let filename = (file as NSString).lastPathComponent
         Swift.print("\(level.emoji) [\(category.rawValue)] [\(filename):\(line)] \(text)")
         #else
-        // Production: route through os_log for error+ only
         if level >= .error {
             let log = OSLog(subsystem: subsystem, category: category.rawValue)
             os_log("%{public}@", log: log, type: level.osLogType, text)
         }
         #endif
-        
-        // Forward to advanced session logger when active
-        if AdvancedSessionLogger.shared.isEnabled {
-            let logType = level >= .error ? "error" : (level >= .warning ? "warning" : "log")
-            AdvancedSessionLogger.shared.log(
-                type: logType,
-                detail: "[\(category.rawValue)] \(text)",
-                screen: nil
-            )
-        }
         
         // 🛡️ Auto-report errors and critical issues to crash reporting service
         if level >= .error {

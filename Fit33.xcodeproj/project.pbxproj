@@ -180,6 +180,7 @@
 		7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */; };
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
+		7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */; };
 		7CAA1F1B2F3ACBB2008200B9 /* VideoStreamingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */; };
 		7CAA1F1F2F3ACBCB008200B9 /* VideoThumbnailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */; };
 		7CAA1F812F424534008200B9 /* AppHealthDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */; };
@@ -505,6 +506,7 @@
 		7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLogManager.swift; sourceTree = "<group>"; };
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
+		7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSessionLogger.swift; sourceTree = "<group>"; };
 		7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoStreamingService.swift; sourceTree = "<group>"; };
 		7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoThumbnailService.swift; sourceTree = "<group>"; };
 		7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppHealthDiagnostics.swift; sourceTree = "<group>"; };
@@ -712,6 +714,7 @@
 			isa = PBXGroup;
 			children = (
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
+				7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */,
 				7CB08C942EDB830200236ECB /* ActivityRingsView.swift */,
 				7CB08C942EDBA01000236ECB /* ActivityRingsView.swift */,
 				7CB08C792ED8178000236ECB /* AdaptiveColors.swift */,
@@ -1262,6 +1265,7 @@
 				7C81611E2EF86F29007556A7 /* RunningActivityAttributes.swift in Sources */,
 				F1B8335D6A4949F6A5A7D290 /* ExerciseIntelligenceService.swift in Sources */,
 				7C98FABC2EEBC75A001AE1F3 /* ProgressiveExerciseUnlockService.swift in Sources */,
+				7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */,
 				7C8405CC2EE73ED70009ED0F /* StepTrackerView.swift in Sources */,
 				7CAA1F812F424534008200B9 /* AppHealthDiagnostics.swift in Sources */,
 				7C6DE3EF2F5C932900BCA276 /* OnboardingTestHelper.swift in Sources */,

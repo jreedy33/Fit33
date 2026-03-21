@@ -693,6 +693,7 @@ struct Fit33App: App {
                         // ⚡️ PERSISTENCE: Save workout state before app becomes inactive
                         WorkoutManager.shared.saveWorkoutStateOnBackground()
                     case .background:
+                        AdvancedSessionLogger.shared.deactivate()
                         SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
                         // 🔧 DEV: Mark clean shutdown before going to background
                         #if DEBUG

@@ -268,6 +268,7 @@ struct FoodPortion: Identifiable {
 
 // MARK: - USDA Food Service
 
+@MainActor
 class USDAFoodService: ObservableObject {
     static let shared = USDAFoodService()
     
@@ -291,36 +292,26 @@ class USDAFoodService: ObservableObject {
     private init() {
         AppLogger.debug("Initializing USDAFoodService", category: .nutrition)
         
-        // Load local common foods database
         loadLocalFoods()
         
-        // Subscribe to cloud service updates
         cloudService.$recentFoods
-            .map { foods in
-                AppLogger.debug("Converting \(foods.count) recent foods", category: .nutrition)
-                return foods.map { $0.toProcessedFoodItem() }
-            }
+            .receive(on: DispatchQueue.main)
+            .map { foods in foods.map { $0.toProcessedFoodItem() } }
             .assign(to: &$recentFoods)
         
         cloudService.$favoriteFoods
-            .map { foods in
-                AppLogger.debug("Converting \(foods.count) favorite foods", category: .nutrition)
-                return foods.map { $0.toProcessedFoodItem() }
-            }
+            .receive(on: DispatchQueue.main)
+            .map { foods in foods.map { $0.toProcessedFoodItem() } }
             .assign(to: &$favoriteFoods)
         
         cloudService.$popularFoods
-            .map { foods in
-                AppLogger.debug("Converting \(foods.count) popular foods", category: .nutrition)
-                return foods.map { $0.toProcessedFoodItem() }
-            }
+            .receive(on: DispatchQueue.main)
+            .map { foods in foods.map { $0.toProcessedFoodItem() } }
             .assign(to: &$popularFoods)
         
         cloudService.$frequentFoods
-            .map { foods in
-                AppLogger.debug("Converting \(foods.count) frequent foods", category: .nutrition)
-                return foods.map { $0.toProcessedFoodItem() }
-            }
+            .receive(on: DispatchQueue.main)
+            .map { foods in foods.map { $0.toProcessedFoodItem() } }
             .assign(to: &$frequentFoods)
         
         AppLogger.info("Successfully initialized USDAFoodService with \(localFoods.count) local foods", category: .nutrition)
@@ -928,7 +919,7 @@ class USDAFoodService: ObservableObject {
                 let frequentIds = Set(self.frequentFoods.map { $0.id })
                 
                 // Helper to check if food matches query and add to appropriate bucket
-                func categorizeFood(_ food: ProcessedFoodItem, isHardcoded: Bool) {
+                @MainActor func categorizeFood(_ food: ProcessedFoodItem, isHardcoded: Bool) {
                     guard !seenIds.contains(food.id) else { return }
                     
                     let simpleName = self.simplifyFoodName(food.name)

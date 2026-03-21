@@ -10,6 +10,9 @@ import Supabase
 final class AdvancedSessionLogger: ObservableObject {
     static let shared = AdvancedSessionLogger()
     
+    /// Thread-safe flag readable from any context (avoids actor isolation for hot path checks)
+    nonisolated(unsafe) static var isActive = false
+    
     @Published private(set) var isEnabled = false
     @Published private(set) var entryCount = 0
     
@@ -46,6 +49,7 @@ final class AdvancedSessionLogger: ObservableObject {
     private func activate() {
         guard !isEnabled else { return }
         isEnabled = true
+        Self.isActive = true
         sessionId = "\(UUID().uuidString.prefix(8))-\(Int(Date().timeIntervalSince1970))"
         batchIndex = 0
         pendingEntries = []
@@ -78,6 +82,7 @@ final class AdvancedSessionLogger: ObservableObject {
     
     func deactivate() {
         guard isEnabled else { return }
+        Self.isActive = false
         log(type: "system", detail: "Session ending", screen: "App")
         
         Task { await flush() }

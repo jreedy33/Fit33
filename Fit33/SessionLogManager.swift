@@ -1718,10 +1718,13 @@ final class SessionLogManager: ObservableObject {
             if self.screenHistory.count > 100 { self.screenHistory.removeFirst() }
             
             // Forward to advanced logger when active
-            if AdvancedSessionLogger.shared.isEnabled {
-                AdvancedSessionLogger.shared.logScreenView(screen.displayName)
-                if let t = transitionMs {
-                    AdvancedSessionLogger.shared.logPerformance("screen_transition:\(screen.displayName)", durationMs: t, screen: screen.displayName)
+            let screenName = screen.displayName
+            let transMs = transitionMs
+            Task { @MainActor in
+                guard AdvancedSessionLogger.isActive else { return }
+                AdvancedSessionLogger.shared.logScreenView(screenName)
+                if let t = transMs {
+                    AdvancedSessionLogger.shared.logPerformance("screen_transition:\(screenName)", durationMs: t, screen: screenName)
                 }
             }
             

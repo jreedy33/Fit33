@@ -1081,6 +1081,8 @@ class WorkoutManager: ObservableObject {
         // ADVANCED SESSION LOGGER: Full workout snapshot for AI analysis
         // ═══════════════════════════════════════════════════════════════════
         if AdvancedSessionLogger.isActive, let workout = currentWorkout, let user = UserManager.shared.currentUser {
+            let activeLimitations = LimitationsService.shared.activeLimitations
+            let limitationsSummary = activeLimitations.map { "\($0.limitationType.rawValue): \($0.affectedArea.rawValue) (\($0.severity.rawValue))" }.joined(separator: ", ")
             let userProfile: [String: Any] = [
                 "name": user.name ?? "unknown",
                 "goal": user.fitnessGoal ?? "unknown",
@@ -1089,6 +1091,7 @@ class WorkoutManager: ObservableObject {
                 "total_workouts": user.totalWorkouts,
                 "current_streak": user.currentStreak,
                 "xp": user.xp,
+                "injuries_limitations": limitationsSummary.isEmpty ? "none" : limitationsSummary,
             ]
             var exerciseDetails: [[String: Any]] = []
             if let captured = capturedSetsData {

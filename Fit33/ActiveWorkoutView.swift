@@ -1317,6 +1317,23 @@ struct ActiveWorkoutView: View {
         let oldExerciseName = oldExercise.name ?? "Unknown"
         let newExerciseName = newExercise.name ?? "Unknown"
         
+        // Log swap for dev session analytics
+        if AdvancedSessionLogger.isActive {
+            Task { @MainActor in
+                AdvancedSessionLogger.shared.log(
+                    type: "exercise_swap",
+                    detail: "SWAP: \(oldExerciseName) -> \(newExerciseName)",
+                    screen: "ActiveWorkout",
+                    extra: [
+                        "old_exercise": oldExerciseName,
+                        "new_exercise": newExerciseName,
+                        "swap_index": index,
+                        "swap_count": shuffleCount,
+                    ]
+                )
+            }
+        }
+        
         // Replace exercise in list
         withAnimation(.easeInOut(duration: 0.3)) {
             exercises[index] = newExercise

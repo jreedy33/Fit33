@@ -413,20 +413,27 @@ class WorkoutGeneratorService: ObservableObject {
         
         // Log to advanced session logger for AI analysis
         if AdvancedSessionLogger.isActive {
-            let genTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)
+            let currentUser = UserManager.shared.currentUser
+            let activeLimitations = LimitationsService.shared.activeLimitations
+            let limitationsSummary = activeLimitations.map { "\($0.limitationType.rawValue): \($0.affectedArea.rawValue) (\($0.severity.rawValue))" }.joined(separator: ", ")
             let userProfile: [String: Any] = [
-                "name": user?.name ?? "unknown",
-                "goal": user?.fitnessGoal ?? "unknown",
-                "experience": user?.experienceLevel ?? "unknown",
-                "environment": user?.workoutEnvironment ?? "unknown",
-                "available_days": user?.availableDays ?? 0,
-                "weight_kg": user?.weightKg ?? 0,
-                "height_cm": user?.heightCm ?? 0,
-                "age": user?.age ?? 0,
-                "gender": user?.gender ?? "unknown",
-                "total_workouts": user?.totalWorkouts ?? 0,
-                "current_streak": user?.currentStreak ?? 0,
+                "name": currentUser?.name ?? "unknown",
+                "goal": currentUser?.fitnessGoal ?? "unknown",
+                "experience": currentUser?.experienceLevel ?? "unknown",
+                "environment": currentUser?.workoutEnvironment ?? "unknown",
+                "available_days": currentUser?.availableDays ?? 0,
+                "weight_kg": currentUser?.weightKg ?? 0,
+                "height_cm": currentUser?.heightCm ?? 0,
+                "age": currentUser?.age ?? 0,
+                "gender": currentUser?.gender ?? "unknown",
+                "total_workouts": currentUser?.totalWorkouts ?? 0,
+                "current_streak": currentUser?.currentStreak ?? 0,
+                "injuries_limitations": limitationsSummary.isEmpty ? "none" : limitationsSummary,
+                "exercises_to_avoid": activeLimitations.flatMap { $0.exercisesToAvoid }.joined(separator: ", "),
+                "movements_to_avoid": activeLimitations.flatMap { $0.movementPatternsToAvoid }.joined(separator: ", "),
+                "equipment_to_avoid": activeLimitations.flatMap { $0.equipmentToAvoid }.joined(separator: ", "),
             ]
+            let allTargets = primaryMuscles + secondaryMuscles
             let exerciseDetails = sorted.map { ex -> [String: Any] in
                 ["name": ex.name, "equipment": ex.equipment, "primary_muscle": ex.primaryMuscle, "category": ex.category, "difficulty": ex.difficulty]
             }
@@ -434,9 +441,9 @@ class WorkoutGeneratorService: ObservableObject {
                 AdvancedSessionLogger.shared.logAutogenWorkout(
                     userProfile: userProfile,
                     equipment: equipment,
-                    targetMuscles: allTargetMuscles,
+                    targetMuscles: allTargets,
                     generatedExercises: exerciseDetails,
-                    generationTimeMs: genTimeMs
+                    generationTimeMs: 0
                 )
             }
         }

@@ -187,6 +187,71 @@ export default function DevLogsPage() {
     setBatchingPR(false)
   }
 
+  function downloadSuggestionsAsMD() {
+    const sessionInfo = sessions.find(s => s.session_id === selectedSession)
+    const lines = [
+      '# Dev Session Log — Claude Analysis Report',
+      '',
+      `**Session:** ${selectedSession}`,
+      `**Date:** ${new Date().toISOString().split('T')[0]}`,
+      `**Device:** ${sessionInfo?.device_info ? JSON.stringify(sessionInfo.device_info) : 'Unknown'}`,
+      `**Total suggestions:** ${suggestions.length}`,
+      '',
+      '---',
+      '',
+      '## Instructions',
+      '',
+      'Drag this file into Cursor and ask: "Fix all the issues in this report."',
+      'Each issue below includes the severity, description, suggested file, and code diff.',
+      '',
+      '---',
+      '',
+    ]
+
+    for (let i = 0; i < suggestions.length; i++) {
+      const s = suggestions[i]
+      lines.push(`## ${i + 1}. ${s.title}`)
+      lines.push('')
+      lines.push(`**Severity:** ${s.severity}`)
+      if (s.file_path) lines.push(`**Suggested file:** \`${s.file_path}\``)
+      lines.push('')
+      lines.push(s.description)
+      lines.push('')
+      if (s.code_diff) {
+        lines.push('**Suggested fix:**')
+        lines.push('')
+        lines.push('```diff')
+        lines.push(s.code_diff)
+        lines.push('```')
+        lines.push('')
+      }
+      lines.push('---')
+      lines.push('')
+    }
+
+    // Session error summary from entries
+    const errors = entries.filter(e => e.type === 'error')
+    if (errors.length > 0) {
+      lines.push('## Raw Errors from Session Log')
+      lines.push('')
+      for (const e of errors.slice(0, 30)) {
+        lines.push(`- \`${new Date(e.ts).toLocaleTimeString()}\` ${e.screen ? `[${e.screen}]` : ''} ${e.detail}`)
+      }
+      lines.push('')
+    }
+
+    const content = lines.join('\n')
+    const blob = new Blob([content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `dev-session-report-${(selectedSession || 'unknown').slice(0, 8)}-${new Date().toISOString().split('T')[0]}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   async function loadUnifiedFeed() {
     const data = await adminAction('get_dev_sessions')
     const allSessions = data.sessions || []
@@ -436,15 +501,23 @@ export default function DevLogsPage() {
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <h3 style={{ fontSize: 14, fontWeight: 600 }}>Claude Suggestions ({suggestions.length})</h3>
-                    {suggestions.some(s => s.status === 'new' && s.file_path && s.code_diff) && (
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <button
-                        onClick={createBatchPR}
-                        disabled={batchingPR}
-                        style={{ padding: '6px 16px', borderRadius: 8, background: '#22c55e', color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', opacity: batchingPR ? 0.5 : 1 }}
+                        onClick={() => downloadSuggestionsAsMD()}
+                        style={{ padding: '6px 16px', borderRadius: 8, background: '#7c3aed', color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer' }}
                       >
-                        {batchingPR ? 'Creating...' : `Create PR for All (${suggestions.filter(s => s.status === 'new' && s.file_path && s.code_diff).length})`}
+                        Download .md Report
                       </button>
-                    )}
+                      {suggestions.some(s => s.status === 'new' && s.file_path && s.code_diff) && (
+                        <button
+                          onClick={createBatchPR}
+                          disabled={batchingPR}
+                          style={{ padding: '6px 16px', borderRadius: 8, background: '#22c55e', color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', opacity: batchingPR ? 0.5 : 1 }}
+                        >
+                          {batchingPR ? 'Creating...' : `Create PR for All (${suggestions.filter(s => s.status === 'new' && s.file_path && s.code_diff).length})`}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {suggestions.map(s => (
                     <div key={s.id} style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 16, marginBottom: 8, border: `1px solid ${s.severity === 'critical' ? '#ef4444' : s.severity === 'high' ? '#f59e0b' : 'var(--border)'}` }}>

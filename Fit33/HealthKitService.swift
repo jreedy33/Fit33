@@ -336,6 +336,11 @@ final class HealthKitService: ObservableObject {
     private func syncSleep() async {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
         
+        let authStatus = healthStore.authorizationStatus(for: sleepType)
+        guard authStatus != .notDetermined else {
+            return
+        }
+        
         let calendar = Calendar.current
         let yesterday = calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date()
         let startOfYesterday = calendar.startOfDay(for: yesterday)

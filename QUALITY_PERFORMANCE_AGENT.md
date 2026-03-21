@@ -360,6 +360,11 @@ do {
 ## Remaining Tasks
 
 - Expand accessibility labels to remaining screens (5 critical screens done: ContentView, DashboardView, ActiveWorkoutView, NewOnboardingView, MealPlanView)
+
+### Startup Performance Notes (March 2026)
+- **Video mapping cache build moved off main thread** — `VideoStreamingService.loadVideoMappingsFromDatabase()` now builds all 6428-entry caches on background thread, then assigns in one quick main-thread update. Previously processed all 6428 entries inside `MainActor.run`, causing 8.1s UI freeze.
+- **HealthKit sleep sync guards auth status** — `syncSleep()` now returns immediately when auth is `.notDetermined`, eliminating repeated log spam.
+- **Exercise pairing map has CPU guard** — `ExerciseMappingService.buildPairingMapOptimized()` already checks `CPUProtection.shared.isCPUTooHigh()` and skips if busy. Do not remove this guard.
 - Add UI tests for critical flows (start workout, log food, complete challenge)
 - Performance baseline verification: run `EXPLAIN ANALYZE` on top 10 queries
 

@@ -54,7 +54,7 @@ enum InsightPriority: Int, Comparable {
 
 struct PersonalizedInsight: Identifiable, Codable {
     let id: UUID
-    let userId: UUID
+    let userId: UUID?
     let type: String
     let category: String
     let title: String

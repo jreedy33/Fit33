@@ -233,53 +233,56 @@ class VideoStreamingService: ObservableObject {
             
             let mappings = allMappings
             
-            await MainActor.run {
-                // Build gender-aware cache
-                for mapping in mappings {
-                    guard let filename = mapping.video_filename, !filename.isEmpty else { continue }
-                    
-                    let exerciseKey = mapping.name.lowercased()
-                    let isMale = mapping.gender?.lowercased() == "male"
-                    let isFemale = mapping.gender?.lowercased() == "female"
-                    
-                    // Get or create gender info
-                    var info = self.genderVideoCache[exerciseKey] ?? GenderVideoInfo()
-                    
-                    if isMale {
-                        info.maleFilename = filename
-                    } else if isFemale {
-                        info.femaleFilename = filename
-                    } else {
-                        // No gender specified - use as default for both
-                        if info.maleFilename == nil { info.maleFilename = filename }
-                        if info.femaleFilename == nil { info.femaleFilename = filename }
-                    }
-                    
-                    self.genderVideoCache[exerciseKey] = info
-                    
-                    // Also keep legacy cache (using preferred gender)
-                    if let preferredFilename = info.filenameWithFallback(preferred: self.preferredVideoGender) {
-                        self.videoFilenameCache[exerciseKey] = preferredFilename
-                    }
-                    
-                    // Cache by video code
-                    if let code = mapping.video_code, !code.isEmpty {
-                        self.videoCodeCache[code] = filename
-                    }
-                    
-                    if let extractedCode = self.extractVideoCode(from: filename) {
-                        self.videoCodeCache[extractedCode] = filename
-                    }
+            // Build caches off main thread to avoid freezing UI
+            var newGenderCache: [String: GenderVideoInfo] = [:]
+            var newFilenameCache: [String: String] = [:]
+            var newCodeCache: [String: String] = [:]
+            let preferredGender = await MainActor.run { self.preferredVideoGender }
+            
+            for mapping in mappings {
+                guard let filename = mapping.video_filename, !filename.isEmpty else { continue }
+                
+                let exerciseKey = mapping.name.lowercased()
+                let isMale = mapping.gender?.lowercased() == "male"
+                let isFemale = mapping.gender?.lowercased() == "female"
+                
+                var info = newGenderCache[exerciseKey] ?? GenderVideoInfo()
+                
+                if isMale {
+                    info.maleFilename = filename
+                } else if isFemale {
+                    info.femaleFilename = filename
+                } else {
+                    if info.maleFilename == nil { info.maleFilename = filename }
+                    if info.femaleFilename == nil { info.femaleFilename = filename }
                 }
                 
+                newGenderCache[exerciseKey] = info
+                
+                if let preferredFilename = info.filenameWithFallback(preferred: preferredGender) {
+                    newFilenameCache[exerciseKey] = preferredFilename
+                }
+                
+                if let code = mapping.video_code, !code.isEmpty {
+                    newCodeCache[code] = filename
+                }
+                
+                if let extractedCode = self.extractVideoCode(from: filename) {
+                    newCodeCache[extractedCode] = filename
+                }
+            }
+            
+            // Assign all caches in one quick main-thread update
+            await MainActor.run {
+                self.genderVideoCache = newGenderCache
+                self.videoFilenameCache = newFilenameCache
+                self.videoCodeCache.merge(newCodeCache) { _, new in new }
                 self.videosLoaded = true
                 
-                // Record fetch timestamp so we can skip on next launch
                 UserDefaults.standard.set(Date(), forKey: "lastVideoMappingFetch")
                 
                 AppLogger.info("Loaded \(mappings.count) video mappings from database, \(self.genderVideoCache.count) gender-aware, \(self.genderVideoCache.values.filter { $0.hasBothGenders }.count) with both genders", category: .general)
                 
-                // 🔄 Refresh GenderFilterService cache now that we have video mappings
                 GenderFilterService.shared.refreshCache()
             }
         } catch {

@@ -118,6 +118,12 @@
 - Phone number redaction in Twilio edge function logs (M-10, co-owned with Infra)
 - Connect real workout volume data to hydration-performance correlation in `PersonalizedInsightsService`
 
+### Schema Rules Learned (March 2026 Session Log Analysis)
+- **Never drop tables with active writers** — `crash_reports` was dropped (0 rows at audit) but `CrashReportingService.swift` writes to it on every error. Always grep the codebase for table references before dropping.
+- **`user_push_tokens` requires UNIQUE(user_id, device_token)** — the `onConflict` in `PushNotificationService.swift` depends on this constraint.
+- **`collaborative_workout_data` has `user_equipment JSONB`** — added via `20260321_schema_fixes.sql`
+- **`PersonalizedInsight.userId` is optional** — the RPC may return rows without `user_id` in some edge cases
+
 ---
 
 ## Developer Logging System (March 2026)

@@ -1078,8 +1078,53 @@ class WorkoutManager: ObservableObject {
         }
         
         // ═══════════════════════════════════════════════════════════════════════
-        // QUICK WINS: Record performance history, context, and proficiency
+        // ADVANCED SESSION LOGGER: Full workout snapshot for AI analysis
         // ═══════════════════════════════════════════════════════════════════
+        if AdvancedSessionLogger.isActive, let workout = currentWorkout, let user = UserManager.shared.currentUser {
+            let userProfile: [String: Any] = [
+                "name": user.name ?? "unknown",
+                "goal": user.fitnessGoal ?? "unknown",
+                "experience": user.experienceLevel ?? "unknown",
+                "weight_kg": user.weightKg,
+                "total_workouts": user.totalWorkouts,
+                "current_streak": user.currentStreak,
+                "xp": user.xp,
+            ]
+            var exerciseDetails: [[String: Any]] = []
+            if let captured = capturedSetsData {
+                for (exerciseId, sets) in captured {
+                    let completedSets = sets.filter { $0.isCompleted }
+                    if !completedSets.isEmpty {
+                        let name = exercises.first(where: { $0.id?.uuidString == exerciseId.uuidString })?.name ?? "Unknown"
+                        exerciseDetails.append([
+                            "name": name,
+                            "sets": completedSets.count,
+                            "reps": completedSets.map { $0.reps }.reduce(0, +),
+                            "weight": completedSets.first?.weight ?? 0,
+                        ])
+                    }
+                }
+            }
+            let totalSets = exerciseDetails.reduce(0) { $0 + ($1["sets"] as? Int ?? 0) }
+            let totalReps = exerciseDetails.reduce(0) { $0 + ($1["reps"] as? Int ?? 0) }
+            Task { @MainActor in
+                AdvancedSessionLogger.shared.logWorkoutCompleted(
+                    userProfile: userProfile,
+                    workoutName: workout.name ?? "Workout",
+                    durationMinutes: actualDuration,
+                    exercises: exerciseDetails,
+                    totalSets: totalSets,
+                    totalReps: totalReps,
+                    totalVolume: totalVolume,
+                    caloriesBurned: Int(workout.caloriesBurned),
+                    personalRecords: []
+                )
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // QUICK WINS: Record performance history, context, and proficiency
+        // ═══════════════════════════════════════════════════════════════════════
         if let workout = currentWorkout {
             // Save enhanced workout stats to Core Data first (synchronous)
             saveEnhancedWorkoutStats()

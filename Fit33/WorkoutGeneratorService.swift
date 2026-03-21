@@ -409,7 +409,39 @@ class WorkoutGeneratorService: ObservableObject {
         
         // 🎯 Apply smart exercise ordering
         let generated = result.map { GeneratedExercise(from: $0) }
-        return sortExercisesStrategically(generated)
+        let sorted = sortExercisesStrategically(generated)
+        
+        // Log to advanced session logger for AI analysis
+        if AdvancedSessionLogger.isActive {
+            let genTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)
+            let userProfile: [String: Any] = [
+                "name": user?.name ?? "unknown",
+                "goal": user?.fitnessGoal ?? "unknown",
+                "experience": user?.experienceLevel ?? "unknown",
+                "environment": user?.workoutEnvironment ?? "unknown",
+                "available_days": user?.availableDays ?? 0,
+                "weight_kg": user?.weightKg ?? 0,
+                "height_cm": user?.heightCm ?? 0,
+                "age": user?.age ?? 0,
+                "gender": user?.gender ?? "unknown",
+                "total_workouts": user?.totalWorkouts ?? 0,
+                "current_streak": user?.currentStreak ?? 0,
+            ]
+            let exerciseDetails = sorted.map { ex -> [String: Any] in
+                ["name": ex.name, "equipment": ex.equipment, "primary_muscle": ex.primaryMuscle, "category": ex.category, "difficulty": ex.difficulty]
+            }
+            Task { @MainActor in
+                AdvancedSessionLogger.shared.logAutogenWorkout(
+                    userProfile: userProfile,
+                    equipment: equipment,
+                    targetMuscles: allTargetMuscles,
+                    generatedExercises: exerciseDetails,
+                    generationTimeMs: genTimeMs
+                )
+            }
+        }
+        
+        return sorted
     }
     
     func generateSurpriseWorkout(equipment: [String] = [], count: Int = 5) async throws -> [GeneratedExercise] {

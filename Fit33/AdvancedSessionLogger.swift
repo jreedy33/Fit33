@@ -166,6 +166,70 @@ final class AdvancedSessionLogger: ObservableObject {
         log(type: "perf", detail: operation, screen: screen, durationMs: durationMs)
     }
     
+    // MARK: - Workout Intelligence Logging
+    
+    func logAutogenWorkout(
+        userProfile: [String: Any],
+        equipment: [String],
+        targetMuscles: [String],
+        generatedExercises: [[String: Any]],
+        generationTimeMs: Int
+    ) {
+        log(type: "autogen", detail: "AUTOGEN_WORKOUT_GENERATED", screen: "WorkoutGenerator", durationMs: generationTimeMs, extra: [
+            "user_name": userProfile["name"] ?? "unknown",
+            "user_goal": userProfile["goal"] ?? "unknown",
+            "user_experience": userProfile["experience"] ?? "unknown",
+            "user_environment": userProfile["environment"] ?? "unknown",
+            "user_available_days": userProfile["available_days"] ?? 0,
+            "user_weight_kg": userProfile["weight_kg"] ?? 0,
+            "user_height_cm": userProfile["height_cm"] ?? 0,
+            "user_age": userProfile["age"] ?? 0,
+            "user_gender": userProfile["gender"] ?? "unknown",
+            "user_total_workouts": userProfile["total_workouts"] ?? 0,
+            "user_current_streak": userProfile["current_streak"] ?? 0,
+            "equipment": equipment.joined(separator: ", "),
+            "target_muscles": targetMuscles.joined(separator: ", "),
+            "exercise_count": generatedExercises.count,
+            "exercises": generatedExercises.prefix(20).map { ex in
+                "\(ex["name"] ?? "?") (\(ex["equipment"] ?? "?")) [\(ex["primary_muscle"] ?? "?")]"
+            }.joined(separator: " | "),
+            "generation_time_ms": generationTimeMs,
+        ])
+    }
+    
+    func logWorkoutCompleted(
+        userProfile: [String: Any],
+        workoutName: String,
+        durationMinutes: Int,
+        exercises: [[String: Any]],
+        totalSets: Int,
+        totalReps: Int,
+        totalVolume: Double,
+        caloriesBurned: Int,
+        personalRecords: [String]
+    ) {
+        log(type: "workout_complete", detail: "WORKOUT_COMPLETED: \(workoutName)", screen: "WorkoutCompletion", extra: [
+            "user_name": userProfile["name"] ?? "unknown",
+            "user_goal": userProfile["goal"] ?? "unknown",
+            "user_experience": userProfile["experience"] ?? "unknown",
+            "user_weight_kg": userProfile["weight_kg"] ?? 0,
+            "user_total_workouts": userProfile["total_workouts"] ?? 0,
+            "user_current_streak": userProfile["current_streak"] ?? 0,
+            "user_xp": userProfile["xp"] ?? 0,
+            "workout_name": workoutName,
+            "duration_minutes": durationMinutes,
+            "exercise_count": exercises.count,
+            "total_sets": totalSets,
+            "total_reps": totalReps,
+            "total_volume_lbs": Int(totalVolume),
+            "calories_burned": caloriesBurned,
+            "personal_records": personalRecords.joined(separator: " | "),
+            "exercises_detail": exercises.prefix(20).map { ex in
+                "\(ex["name"] ?? "?") \(ex["sets"] ?? 0)x\(ex["reps"] ?? 0) @\(ex["weight"] ?? 0)lbs"
+            }.joined(separator: " | "),
+        ])
+    }
+    
     // MARK: - Memory Snapshot
     
     private func logMemorySnapshot() {

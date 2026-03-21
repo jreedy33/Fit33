@@ -41,7 +41,7 @@ class RecipeRecommendationLogger {
            \(dietaryRestrictions.isEmpty ? "None" : dietaryRestrictions.joined(separator: ", "))
         ═══════════════════════════════════════════════════════════════
         """
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -73,7 +73,7 @@ class RecipeRecommendationLogger {
         Requesting: \(count) recipes, offset: \(offset)
         ───────────────────────────────────────────────────────────────
         """
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -104,7 +104,7 @@ class RecipeRecommendationLogger {
         \(recipeList.isEmpty ? "   No recipes returned!" : recipeList)
         ───────────────────────────────────────────────────────────────
         """
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -160,7 +160,7 @@ class RecipeRecommendationLogger {
         \(recipeList.isEmpty ? "   ⚠️ NO RECIPES TO SHOW!" : recipeList)
         ═══════════════════════════════════════════════════════════════
         """
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
         
         // Alert if quality is poor
@@ -172,7 +172,7 @@ class RecipeRecommendationLogger {
     /// Log a warning
     func logWarning(_ message: String) {
         let log = "\n⚠️ WARNING @ \(timestamp): \(message)\n"
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -180,21 +180,21 @@ class RecipeRecommendationLogger {
     func logError(_ message: String, error: Error? = nil) {
         let errorDetail = error.map { " - \($0.localizedDescription)" } ?? ""
         let log = "\n❌ ERROR @ \(timestamp): \(message)\(errorDetail)\n"
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
     /// Log successful operation
     func logSuccess(_ message: String) {
         let log = "✅ \(timestamp): \(message)"
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
     /// Log info
     func logInfo(_ message: String) {
         let log = "ℹ️ \(timestamp): \(message)"
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -210,7 +210,7 @@ class RecipeRecommendationLogger {
         Should Refresh: \(shouldRefresh ? "Yes" : "No")
         ───────────────────────────────────────────────────────────────
         """
-        print(log)
+        AppLogger.debug("\(log)", category: .nutrition)
         addToSession(log)
     }
     
@@ -243,7 +243,7 @@ class RecipeRecommendationLogger {
     /// Clear session logs
     func clearSessionLogs() {
         sessionLogs.removeAll()
-        print("🗑️ Session logs cleared")
+        AppLogger.debug("🗑️ Session logs cleared", category: .nutrition)
     }
     
     /// Export logs as string

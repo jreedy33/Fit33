@@ -488,7 +488,8 @@ struct MainTabView: View {
                         } icon: {
                             Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
                         }
-                        .accessibilityLabel("Home tab")
+                        .accessibilityLabel(badgeCounter.count > 0 ? "Home tab, \(badgeCounter.count) notifications" : "Home tab")
+                        .accessibilityHint("View your dashboard and daily summary")
                     }
                     .tag(0)
                     .badge(badgeCounter.count)
@@ -505,6 +506,7 @@ struct MainTabView: View {
                         Image(systemName: selectedTab == 1 ? tabs[1].selectedIcon : tabs[1].icon)
                     }
                     .accessibilityLabel("Exercises tab")
+                    .accessibilityHint("Browse exercise library")
                 }
                 .tag(1)
                 
@@ -523,7 +525,8 @@ struct MainTabView: View {
                                 .withTintColor(.red, renderingMode: .alwaysOriginal))
                         }
                         .foregroundColor(.red)
-                        .accessibilityLabel("Workout tab")
+                        .accessibilityLabel("Workout tab, workout in progress")
+                        .accessibilityHint("Return to your active workout")
                     } else {
                         Label {
                             Text(tabs[2].title)
@@ -531,6 +534,7 @@ struct MainTabView: View {
                             Image(systemName: selectedTab == 2 ? tabs[2].selectedIcon : tabs[2].icon)
                         }
                         .accessibilityLabel("Workout tab")
+                        .accessibilityHint("Start or manage workouts")
                     }
                 }
                 .tag(2)
@@ -547,6 +551,7 @@ struct MainTabView: View {
                         Image(systemName: selectedTab == 3 ? tabs[3].selectedIcon : tabs[3].icon)
                     }
                     .accessibilityLabel("Nutrition tab")
+                    .accessibilityHint("Track meals and macros")
                 }
                 .tag(3)
                 
@@ -564,6 +569,7 @@ struct MainTabView: View {
                         Image(systemName: selectedTab == 4 ? tabs[4].selectedIcon : tabs[4].icon)
                     }
                     .accessibilityLabel("Friends tab")
+                    .accessibilityHint("View friends and social activity")
                 }
                 .tag(4)
             }
@@ -2240,7 +2246,7 @@ struct SimpleMealPlanView: View {
         let proteinProgress = proteinGoal > 0 ? Double(consumedProtein) / Double(proteinGoal) : 0
         if proteinProgress < 0.6 && hour >= 14 {
             let quickFixes = ["Greek yogurt (20g)", "chicken breast (30g)", "protein shake (25g)", "3 eggs (18g)", "cottage cheese (14g)"]
-            insights.append(InsightItem(icon: "arrow.up.circle.fill", text: "Need \(proteinRemaining)g protein still! Quick fix: \(quickFixes.randomElement()!)", color: .blue))
+            insights.append(InsightItem(icon: "arrow.up.circle.fill", text: "Need \(proteinRemaining)g protein still! Quick fix: \(quickFixes.randomElement() ?? "Greek yogurt (20g)")", color: .blue))
         } else if proteinRemaining > 0 {
             insights.append(InsightItem(icon: "arrow.up.circle", text: "Add \(proteinRemaining)g more protein – your muscles are waiting! 💪", color: .blue))
         } else {
@@ -2702,7 +2708,7 @@ struct SmartDailySummaryWidget: View {
             ]
             insights.append(DailyInsight(
                 icon: "checkmark.seal.fill",
-                text: messages.randomElement()!,
+                text: messages.randomElement() ?? messages[0],
                 color: .green
             ))
         }
@@ -2731,7 +2737,7 @@ struct SmartDailySummaryWidget: View {
             ]
             insights.append(DailyInsight(
                 icon: "drop.fill",
-                text: messages.randomElement()!,
+                text: messages.randomElement() ?? messages[0],
                 color: .cyan
             ))
         }
@@ -2791,7 +2797,7 @@ struct SmartDailySummaryWidget: View {
             let quickFixes = ["Greek yogurt (20g)", "chicken breast (30g)", "protein shake (25g)", "3 eggs (18g)", "cottage cheese (14g)"]
             suggestions.append(DailyInsight(
                 icon: "arrow.up.circle.fill",
-                text: "Need \(remaining)g protein still! Quick fix: \(quickFixes.randomElement()!)",
+                text: "Need \(remaining)g protein still! Quick fix: \(quickFixes.randomElement() ?? "Greek yogurt (20g)")",
                 color: .blue
             ))
         } else if proteinProgress < 0.8 {
@@ -3465,7 +3471,7 @@ struct SwipeableMealCard: View {
                     // Add more button
                     Button(action: onAddFood) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: gradientColors,
@@ -3709,7 +3715,7 @@ struct MealRowCard: View {
                     if meals.isEmpty {
                         // Add button (solid color)
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.ds_heading3)
                             .foregroundColor(mealColor)
                     } else {
                         // Calorie badge

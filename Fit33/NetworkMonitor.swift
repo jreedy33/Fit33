@@ -61,7 +61,7 @@ struct OfflineBanner: View {
                     .font(.ds_labelMedium)
                 Spacer()
                 Text("Changes will sync when reconnected")
-                    .font(.system(size: 11))
+                    .font(.ds_caption)
                     .foregroundColor(.white.opacity(0.7))
             }
             .foregroundColor(.white)

@@ -154,11 +154,12 @@ class HealthKitManager: ObservableObject {
                 self.lastSavedWorkoutName = workoutName
                 self.showHealthSaveConfirmation = true
                 
-                // Auto-hide confirmation after 3 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
                     self.showHealthSaveConfirmation = false
                 }
-                
+
                 NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
             }
         } catch {
@@ -216,10 +217,12 @@ class HealthKitManager: ObservableObject {
                 self.lastSavedWorkoutName = "Outdoor Run"
                 self.showHealthSaveConfirmation = true
                 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
                     self.showHealthSaveConfirmation = false
                 }
-                
+
                 NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
             }
         } catch {

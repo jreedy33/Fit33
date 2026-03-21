@@ -183,14 +183,14 @@ extension ChallengeService {
                 .value
             
             if response.success {
-                print("✅ [REACTIONS] Sent reaction: \(preset.emoji) \(preset.text)")
+                AppLogger.info("✅ [REACTIONS] Sent reaction: \(preset.emoji) \(preset.text)", category: .social)
                 return (true, response.remainingToday)
             } else {
-                print("⚠️ [REACTIONS] Send failed: \(response.error ?? "unknown")")
+                AppLogger.warning("⚠️ [REACTIONS] Send failed: \(response.error ?? "unknown")", category: .social)
                 return (false, nil)
             }
         } catch {
-            print("❌ [REACTIONS] Error sending reaction: \(error)")
+            AppLogger.error("❌ [REACTIONS] Error sending reaction: \(error)", category: .social)
             return (false, nil)
         }
     }
@@ -211,10 +211,10 @@ extension ChallengeService {
                 .execute()
                 .value
             
-            print("✅ [REACTIONS] Fetched \(reactions.count) reactions")
+            AppLogger.info("✅ [REACTIONS] Fetched \(reactions.count) reactions", category: .social)
             return reactions
         } catch {
-            print("❌ [REACTIONS] Error fetching reactions: \(error)")
+            AppLogger.error("❌ [REACTIONS] Error fetching reactions: \(error)", category: .social)
             return []
         }
     }
@@ -235,7 +235,7 @@ extension ChallengeService {
             
             return count
         } catch {
-            print("❌ [REACTIONS] Error getting reaction count: \(error)")
+            AppLogger.error("❌ [REACTIONS] Error getting reaction count: \(error)", category: .social)
             return 0
         }
     }
@@ -448,8 +448,9 @@ struct ReactionPickerSheet: View {
                     }
                     HapticManager.notification(.success)
                     
-                    // Auto-dismiss after delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        guard !Task.isCancelled else { return }
                         withAnimation(.easeOut(duration: 0.3)) {
                             sentConfirmation = false
                         }
@@ -576,7 +577,7 @@ struct ReactionFeedView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Text(isCompetition ? "🤐" : "💬")
-                .font(.system(size: 32))
+                .font(.ds_heading1)
             
             Text(isCompetition ? "No smack talk yet..." : "No messages yet...")
                 .font(.subheadline)
@@ -735,7 +736,9 @@ struct ReactionQuickButton: View {
                     withAnimation(.easeInOut(duration: 0.8).repeatCount(3)) {
                         pulseAnimation = true
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2.5))
+                        guard !Task.isCancelled else { return }
                         pulseAnimation = false
                     }
                 }
@@ -764,7 +767,7 @@ struct ReactionToast: View {
         if isVisible {
             HStack(spacing: 10) {
                 Text(emoji)
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(senderName)

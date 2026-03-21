@@ -98,9 +98,16 @@ class CommunityIntelligenceService {
         }
         
         // PRIORITY 4: Fallback to algorithm
+        guard let user = getUserFromContext(userId: userId, context: context) else {
+            return SmartRecommendationResult(
+                weight: 0, reps: 10, sets: 3,
+                priorityLevel: .algorithm, confidence: 0.3,
+                note: "Default recommendation", dataSource: "FALLBACK"
+            )
+        }
         let algorithmRec = StrengthProfileRecommendationEngine.shared.getRecommendation(
             for: exerciseName,
-            user: getUserFromContext(userId: userId, context: context)!,
+            user: user,
             setNumber: 1,
             context: context
         )
@@ -153,9 +160,9 @@ class CommunityIntelligenceService {
                 .insert(progression)
                 .execute()
             
-            print("📊 [COMMUNITY] Tracked progression: \(exerciseName) \(Int(fromWeight))→\(Int(toWeight))lbs")
+            AppLogger.debug("📊 [COMMUNITY] Tracked progression: \(exerciseName) \(Int(fromWeight))→\(Int(toWeight))lbs", category: .social)
         } catch {
-            print("❌ [COMMUNITY] Failed to track progression: \(error)")
+            AppLogger.error("❌ [COMMUNITY] Failed to track progression: \(error)", category: .social)
             throw error
         }
     }
@@ -202,9 +209,9 @@ class CommunityIntelligenceService {
                 .insert(analytics)
                 .execute()
             
-            print("📊 [COMMUNITY] Tracked program completion: \(programName)")
+            AppLogger.debug("📊 [COMMUNITY] Tracked program completion: \(programName)", category: .social)
         } catch {
-            print("❌ [COMMUNITY] Failed to track program: \(error)")
+            AppLogger.error("❌ [COMMUNITY] Failed to track program: \(error)", category: .social)
             throw error
         }
     }
@@ -247,9 +254,9 @@ class CommunityIntelligenceService {
                 .upsert(effectiveness)
                 .execute()
             
-            print("📊 [COMMUNITY] Tracked effectiveness: \(exerciseName)")
+            AppLogger.debug("📊 [COMMUNITY] Tracked effectiveness: \(exerciseName)", category: .social)
         } catch {
-            print("❌ [COMMUNITY] Failed to track effectiveness: \(error)")
+            AppLogger.error("❌ [COMMUNITY] Failed to track effectiveness: \(error)", category: .social)
             throw error
         }
     }
@@ -284,7 +291,7 @@ class CommunityIntelligenceService {
                 )
             }
         } catch {
-            print("❌ [COMMUNITY] Failed to fetch program recommendations: \(error)")
+            AppLogger.error("❌ [COMMUNITY] Failed to fetch program recommendations: \(error)", category: .social)
             return []
         }
     }
@@ -320,7 +327,7 @@ class CommunityIntelligenceService {
                 )
             }
         } catch {
-            print("❌ [COMMUNITY] Failed to fetch exercise recommendations: \(error)")
+            AppLogger.error("❌ [COMMUNITY] Failed to fetch exercise recommendations: \(error)", category: .social)
             return []
         }
     }
@@ -367,7 +374,7 @@ class CommunityIntelligenceService {
                 sampleSize: response.count
             )
         } catch {
-            print("❌ Failed to fetch user history: \(error)")
+            AppLogger.error("❌ Failed to fetch user history: \(error)", category: .social)
             return nil
         }
     }
@@ -411,7 +418,7 @@ class CommunityIntelligenceService {
                 sampleSize: result.sampleCount
             )
         } catch {
-            print("❌ Failed to fetch similar users data: \(error)")
+            AppLogger.error("❌ Failed to fetch similar users data: \(error)", category: .social)
             return nil
         }
     }
@@ -453,7 +460,7 @@ class CommunityIntelligenceService {
                 sampleSize: result.userCount
             )
         } catch {
-            print("❌ Failed to fetch community data: \(error)")
+            AppLogger.error("❌ Failed to fetch community data: \(error)", category: .social)
             return nil
         }
     }
@@ -471,7 +478,7 @@ class CommunityIntelligenceService {
         do {
             return try context.fetch(request).first
         } catch {
-            print("❌ Failed to fetch user: \(error)")
+            AppLogger.error("❌ Failed to fetch user: \(error)", category: .social)
             return nil
         }
     }

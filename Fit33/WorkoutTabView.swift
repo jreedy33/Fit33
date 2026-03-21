@@ -89,7 +89,7 @@ struct WorkoutTabView: View {
             if shouldNavigate {
                 navigationPath.append("CustomWorkout")
                 workoutManager.shouldNavigateToCustomWorkoutBuilder = false
-                print("➕ Navigating to Custom Workout Builder with pre-selected exercise")
+                AppLogger.debug("➕ Navigating to Custom Workout Builder with pre-selected exercise", category: .workout)
             }
         }
         .onReceive(deepLinkManager.$pendingDestination) { destination in
@@ -100,27 +100,27 @@ struct WorkoutTabView: View {
             case .running:
                 navigationPath.append("OutdoorRun")
                 deepLinkManager.pendingDestination = nil
-                print("🏃 Deep link: Navigating to running workout")
+                AppLogger.debug("🏃 Deep link: Navigating to running workout", category: .workout)
             case .workout:
                 navigationPath.append("WorkoutGenerator")
                 deepLinkManager.pendingDestination = nil
-                print("🏋️ Deep link: Navigating to workout generator")
+                AppLogger.debug("🏋️ Deep link: Navigating to workout generator", category: .workout)
             case .sharedWorkout:
                 deepLinkManager.pendingDestination = nil
-                print("🔗 Deep link: Shared workout will be displayed in sheet")
+                AppLogger.debug("🔗 Deep link: Shared workout will be displayed in sheet", category: .workout)
             case .receivedWorkout(let workoutId):
                 deepLinkManager.pendingReceivedWorkoutId = workoutId
                 navigationPath.append("ReceivedWorkouts")
                 deepLinkManager.pendingDestination = nil
-                print("📬 Deep link: Navigating to received workout \(workoutId)")
+                AppLogger.debug("📬 Deep link: Navigating to received workout \(workoutId)", category: .workout)
             case .receivedWorkouts:
                 navigationPath.append("ReceivedWorkouts")
                 deepLinkManager.pendingDestination = nil
-                print("📬 Deep link: Navigating to received workouts")
+                AppLogger.debug("📬 Deep link: Navigating to received workouts", category: .workout)
             case .communityChallengeBrowse:
                 navigationPath.append("CommunityChallenges")
                 deepLinkManager.pendingDestination = nil
-                print("🌍 Deep link: Navigating to community challenges")
+                AppLogger.debug("🌍 Deep link: Navigating to community challenges", category: .workout)
                 
             // These destinations are handled by ContentView + DashboardView/FriendsTabView
             // Don't handle or clear them here — let the correct tab consume them
@@ -170,7 +170,9 @@ struct WorkoutTabView: View {
             // 🔧 Navigate to Program Overview from Dashboard
             if shouldNavigate {
                 navigationPath = NavigationPath()  // Clear first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
+                    guard !Task.isCancelled else { return }
                     navigationPath.append("SmartProgramOverview")
                     workoutManager.shouldNavigateToProgramOverview = false
                 }
@@ -180,7 +182,9 @@ struct WorkoutTabView: View {
             // 🔧 Navigate to Program Day from Dashboard
             if shouldNavigate {
                 navigationPath = NavigationPath()  // Clear first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
+                    guard !Task.isCancelled else { return }
                     navigationPath.append("SmartProgramDay")
                     workoutManager.shouldNavigateToProgramDay = false
                 }
@@ -368,7 +372,6 @@ struct WorkoutHomeView: View {
                 scrollProxy.scrollTo("top", anchor: .top)
             }
         }
-        topFadeOverlay
         }
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {
@@ -423,8 +426,8 @@ struct WorkoutHomeView: View {
                 Button(action: {
                     guard !isNavigating else { return }
                     isNavigating = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
-                    
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
                     HapticManager.impact(.medium)
                     showingCardioLanding = true
                 }) {
@@ -480,8 +483,8 @@ struct WorkoutHomeView: View {
                 Button(action: {
                     guard !isNavigating else { return }
                     isNavigating = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
-                    
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
                     HapticManager.impact(.medium)
                     showingStretchMode = true
                 }) {
@@ -558,7 +561,7 @@ struct WorkoutHomeView: View {
                         // 🔧 Debounce: Prevent double-taps
                         guard !isNavigating else { return }
                         isNavigating = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
                         
                         // 🔧 Clear any pending home tab navigation
                         WorkoutManager.shared.shouldNavigateToHomeTab = false
@@ -579,7 +582,7 @@ struct WorkoutHomeView: View {
                         // 🔧 Debounce: Prevent double-taps
                         guard !isNavigating else { return }
                         isNavigating = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
                         
                         // 🔧 Clear any pending home tab navigation (prevents race condition)
                         WorkoutManager.shared.shouldNavigateToHomeTab = false
@@ -599,8 +602,8 @@ struct WorkoutHomeView: View {
                     action: {
                         guard !isNavigating else { return }
                         isNavigating = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
-                        
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
                         SessionLogManager.shared.logTap("Training Programs", screen: .workoutTab)
                         SessionLogManager.shared.beginTransition(to: .programsList, action: "training_programs_tap")
                         navigationPath.append("PersonalizedPrograms")
@@ -616,7 +619,7 @@ struct WorkoutHomeView: View {
                     action: {
                         guard !isNavigating else { return }
                         isNavigating = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
                         
                         navigationPath.append("FavoriteRoutines")
                     }
@@ -699,7 +702,7 @@ struct WorkoutHomeView: View {
                             .rotationEffect(.degrees(-90))
                         
                         Text("\(Int(displayInfo.progressPercentage))%")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.ds_caption)
                             .foregroundColor(programColor)
                     }
                 }
@@ -925,7 +928,7 @@ struct WorkoutHomeView: View {
         switch action {
         case .startWorkout(let focus):
             isNavigating = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isNavigating = false }
+            Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
             // Navigate to workout generator with optional muscle focus
             navigationPath.append("WorkoutGenerator")
         case .viewAchievements, .viewProgress:
@@ -1118,7 +1121,7 @@ struct WorkoutHomeView: View {
                 self.cardioWorkoutsThisWeek = cardioWorkouts
             }
         } catch {
-            print("⚠️ [GOALS] Failed to load cardio workouts: \(error)")
+            AppLogger.warning("⚠️ [GOALS] Failed to load cardio workouts: \(error)", category: .workout)
         }
     }
     
@@ -1510,11 +1513,6 @@ struct DepthQuickActionCard: View {
     let gradient: [Color]
     let action: () -> Void
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color.darkCardBackground, Color.darkSurface]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: {
@@ -1572,11 +1570,7 @@ struct DepthQuickActionCard: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -2448,7 +2442,7 @@ struct NextGoalCard: View {
                         Image(systemName: "star.fill")
                             .font(.system(size: 9))
                         Text("+\(xp) XP")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ds_caption)
                     }
                     .foregroundColor(gradientColors[0])
                     .padding(.horizontal, Spacing.xs)
@@ -2459,7 +2453,7 @@ struct NextGoalCard: View {
                     )
                 } else {
                     Text("\(Int(goal.progress * 100))%")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.ds_caption)
                         .foregroundStyle(
                             LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
                         )
@@ -2561,7 +2555,7 @@ struct EmptyNextGoalsCard: View {
                 Image(systemName: "star.fill")
                     .font(.system(size: 9))
                 Text("Great job!")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
             }
             .foregroundColor(.green)
             .padding(.horizontal, Spacing.xs)
@@ -3112,11 +3106,17 @@ struct SmartInsightsCard: View {
                 
                 for set in sets where set.isCompleted {
                     let currentBest = bestSets[exerciseName]
-                    let isNewPR = currentBest == nil || set.weight > currentBest!.weight || (set.weight == currentBest!.weight && set.reps > currentBest!.reps)
+                    let isNewPR: Bool
+                    if let best = currentBest {
+                        isNewPR = set.weight > best.weight || (set.weight == best.weight && set.reps > best.reps)
+                    } else {
+                        isNewPR = true
+                    }
                     
                     if isNewPR {
                         bestSets[exerciseName] = (weight: set.weight, reps: Int(set.reps))
-                        if let date = workout.date, date > Calendar.current.date(byAdding: .day, value: -14, to: Date())! {
+                        let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+                        if let date = workout.date, date > twoWeeksAgo {
                             prs.removeAll { $0.exercise == exerciseName }
                             prs.append((exercise: exerciseName, weight: set.weight, reps: Int(set.reps), date: date))
                         }
@@ -3601,7 +3601,7 @@ struct TrainingInsightRow: View {
                 .frame(width: 20)
             
             Text(insight.text)
-                .font(.system(size: 13, weight: .medium))
+                .font(.ds_bodySmall)
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -3671,7 +3671,7 @@ struct MuscleRecoveryBadge: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     Text("\(daysRested)d")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.ds_caption)
                         .foregroundColor(status.color)
                 )
             
@@ -3840,7 +3840,7 @@ struct WorkoutTabProgramCard: View {
             // Header
             HStack(spacing: 8) {
                 Image(systemName: program.icon)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [programColor, programColor.opacity(0.7)],

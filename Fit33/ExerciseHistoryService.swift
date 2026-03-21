@@ -225,19 +225,19 @@ class ExerciseHistoryService: ObservableObject {
         // Check cache first - INSTANT return if cached
         if let cached = previousSetsCache[exerciseName] {
             #if DEBUG
-            print("⚡ [ExerciseHistory] CACHE HIT for '\(exerciseName)' (\(cached.count) sets)")
+            AppLogger.debug("⚡ [ExerciseHistory] CACHE HIT for '\(exerciseName)' (\(cached.count) sets)", category: .workout)
             #endif
             return cached
         }
         
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [ExerciseHistory] No authenticated user")
+            AppLogger.warning("⚠️ [ExerciseHistory] No authenticated user", category: .workout)
             return []
         }
         
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
-        print("🔍 [ExerciseHistory] Fetching previous sets for '\(exerciseName)' user: \(userId.uuidString)")
+        AppLogger.debug("🔍 [ExerciseHistory] Fetching previous sets for '\(exerciseName)' user: \(userId.uuidString)", category: .workout)
         #endif
         
         do {
@@ -248,7 +248,7 @@ class ExerciseHistoryService: ObservableObject {
                 let workout_date: String?
             }
             
-            print("🔍 [ExerciseHistory] Querying exercise_performance_history for '\(exerciseName)'...")
+            AppLogger.debug("🔍 [ExerciseHistory] Querying exercise_performance_history for '\(exerciseName)'...", category: .workout)
             
             let recentPerformance: [PerformanceRow] = try await supabase
                 .from("exercise_performance_history")
@@ -261,7 +261,7 @@ class ExerciseHistoryService: ObservableObject {
                 .value
             
             guard let performanceId = recentPerformance.first?.id else {
-                print("📭 [ExerciseHistory] No previous performance found for '\(exerciseName)'")
+                AppLogger.debug("📭 [ExerciseHistory] No previous performance found for '\(exerciseName)'", category: .workout)
                 // Cache empty result to avoid repeated lookups
                 await MainActor.run {
                     self.previousSetsCache[exerciseName] = []
@@ -269,7 +269,7 @@ class ExerciseHistoryService: ObservableObject {
                 return []
             }
             
-            print("🔍 [ExerciseHistory] Found performance_id: \(performanceId), fetching sets...")
+            AppLogger.debug("🔍 [ExerciseHistory] Found performance_id: \(performanceId), fetching sets...", category: .workout)
             
             // Now get all sets from that workout (excluding warmup sets)
             struct SetHistoryRow: Decodable {
@@ -288,7 +288,7 @@ class ExerciseHistoryService: ObservableObject {
                 .execute()
                 .value
             
-            print("🔍 [ExerciseHistory] Found \(setRows.count) working set rows for performance_id: \(performanceId)")
+            AppLogger.debug("🔍 [ExerciseHistory] Found \(setRows.count) working set rows for performance_id: \(performanceId)", category: .workout)
             
             let response = setRows.enumerated().map { index, row in
                 PreviousSetInfo(
@@ -305,16 +305,16 @@ class ExerciseHistoryService: ObservableObject {
             
             #if DEBUG
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("✅ [ExerciseHistory] Found \(response.count) previous sets for '\(exerciseName)' in \(String(format: "%.0f", elapsed))ms")
+            AppLogger.info("✅ [ExerciseHistory] Found \(response.count) previous sets for '\(exerciseName)' in \(String(format: "%.0f", elapsed))ms", category: .workout)
             for set in response {
-                print("   Set \(set.setNumber): \(Int(set.weight))lbs × \(set.reps) reps")
+                AppLogger.debug("   Set \(set.setNumber): \(Int(set.weight))lbs × \(set.reps) reps", category: .workout)
             }
             #endif
             return response
             
         } catch {
-            print("❌ [ExerciseHistory] Error fetching previous sets for '\(exerciseName)': \(error)")
-            print("❌ [ExerciseHistory] Full error details: \(String(describing: error))")
+            AppLogger.error("❌ [ExerciseHistory] Error fetching previous sets for '\(exerciseName)': \(error)", category: .workout)
+            AppLogger.error("❌ [ExerciseHistory] Full error details: \(String(describing: error))", category: .workout)
             return []
         }
     }
@@ -343,7 +343,7 @@ class ExerciseHistoryService: ObservableObject {
         }
         
         #if DEBUG
-        print("📦 [ExerciseHistory] Batch: \(cacheHits) cache hits, \(namesToFetch.count) need fetch")
+        AppLogger.debug("📦 [ExerciseHistory] Batch: \(cacheHits) cache hits, \(namesToFetch.count) need fetch", category: .workout)
         #endif
         
         // Fetch remaining in parallel (only if needed)
@@ -367,7 +367,7 @@ class ExerciseHistoryService: ObservableObject {
         
         #if DEBUG
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("📦 [ExerciseHistory] Batch complete: \(results.count) exercises in \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("📦 [ExerciseHistory] Batch complete: \(results.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .workout)
         #endif
         
         return results
@@ -383,23 +383,23 @@ class ExerciseHistoryService: ObservableObject {
         sets: [WorkoutSetData],
         workoutDurationSeconds: Int? = nil
     ) async throws {
-        print("💾 [ExerciseHistory] saveExercisePerformance called for '\(exerciseName)'")
-        print("💾 [ExerciseHistory] Input sets count: \(sets.count)")
+        AppLogger.debug("💾 [ExerciseHistory] saveExercisePerformance called for '\(exerciseName)'", category: .workout)
+        AppLogger.debug("💾 [ExerciseHistory] Input sets count: \(sets.count)", category: .workout)
         
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("❌ [ExerciseHistory] No authenticated user - cannot save")
+            AppLogger.error("❌ [ExerciseHistory] No authenticated user - cannot save", category: .workout)
             throw ExerciseHistoryError.notAuthenticated
         }
         
-        print("💾 [ExerciseHistory] User ID: \(userId.uuidString)")
+        AppLogger.debug("💾 [ExerciseHistory] User ID: \(userId.uuidString)", category: .workout)
         
         // Filter to only completed sets with actual data
         let completedSets = sets.filter { $0.isCompleted && ($0.weight > 0 || $0.reps > 0) }
         
-        print("💾 [ExerciseHistory] Completed sets with data: \(completedSets.count)")
+        AppLogger.debug("💾 [ExerciseHistory] Completed sets with data: \(completedSets.count)", category: .workout)
         
         guard !completedSets.isEmpty else {
-            print("⚠️ [ExerciseHistory] No completed sets to save for '\(exerciseName)'")
+            AppLogger.warning("⚠️ [ExerciseHistory] No completed sets to save for '\(exerciseName)'", category: .workout)
             return
         }
         
@@ -440,20 +440,20 @@ class ExerciseHistoryService: ObservableObject {
         ]
         
         // Insert performance record
-        print("💾 [ExerciseHistory] Inserting into exercise_performance_history...")
+        AppLogger.debug("💾 [ExerciseHistory] Inserting into exercise_performance_history...", category: .workout)
         do {
             try await supabase
                 .from("exercise_performance_history")
                 .insert(performanceData)
                 .execute()
-            print("✅ [ExerciseHistory] Saved performance for '\(exerciseName)' - \(totalSets) sets, \(totalReps) reps, \(Int(totalVolume)) volume")
+            AppLogger.info("✅ [ExerciseHistory] Saved performance for '\(exerciseName)' - \(totalSets) sets, \(totalReps) reps, \(Int(totalVolume)) volume", category: .workout)
         } catch {
-            print("❌ [ExerciseHistory] FAILED to insert performance: \(error)")
+            AppLogger.error("❌ [ExerciseHistory] FAILED to insert performance: \(error)", category: .workout)
             throw error
         }
         
         // Insert individual set records
-        print("💾 [ExerciseHistory] Inserting \(completedSets.count) sets into exercise_set_history...")
+        AppLogger.debug("💾 [ExerciseHistory] Inserting \(completedSets.count) sets into exercise_set_history...", category: .workout)
         for (index, set) in completedSets.enumerated() {
             let weightKg = (set.weight * 0.453592 * 10).rounded() / 10
             let setData: [String: AnyJSON] = [
@@ -476,14 +476,14 @@ class ExerciseHistoryService: ObservableObject {
                     .from("exercise_set_history")
                     .insert(setData)
                     .execute()
-                print("   ✅ Set \(index + 1) saved")
+                AppLogger.info("   ✅ Set \(index + 1) saved", category: .workout)
             } catch {
-                print("   ❌ Set \(index + 1) FAILED: \(error)")
+                AppLogger.error("   ❌ Set \(index + 1) FAILED: \(error)", category: .workout)
                 throw error
             }
         }
         
-        print("✅ [ExerciseHistory] Saved \(completedSets.count) set records for '\(exerciseName)'")
+        AppLogger.info("✅ [ExerciseHistory] Saved \(completedSets.count) set records for '\(exerciseName)'", category: .workout)
         
         // Update personal records
         try await updatePersonalRecords(
@@ -560,25 +560,25 @@ class ExerciseHistoryService: ObservableObject {
             if maxWeight > existing.maxWeight {
                 updates["max_weight"] = .double(maxWeight)
                 updates["max_weight_date"] = .string(isoNow)
-                print("🏆 [ExerciseHistory] NEW PR! Max weight for '\(exerciseName)': \(Int(maxWeight)) lbs")
+                AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max weight for '\(exerciseName)': \(Int(maxWeight)) lbs", category: .workout)
             }
             
             if maxReps > existing.maxReps {
                 updates["max_reps"] = .integer(maxReps)
                 updates["max_reps_date"] = .string(isoNow)
-                print("🏆 [ExerciseHistory] NEW PR! Max reps for '\(exerciseName)': \(maxReps)")
+                AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max reps for '\(exerciseName)': \(maxReps)", category: .workout)
             }
             
             if maxVolumeSingleSet > existing.maxVolumeSingleSet {
                 updates["max_volume_single_set"] = .double(maxVolumeSingleSet)
                 updates["max_volume_single_set_date"] = .string(isoNow)
-                print("🏆 [ExerciseHistory] NEW PR! Max volume single set for '\(exerciseName)': \(Int(maxVolumeSingleSet))")
+                AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max volume single set for '\(exerciseName)': \(Int(maxVolumeSingleSet))", category: .workout)
             }
             
             if totalVolume > existing.maxVolumeSession {
                 updates["max_volume_session"] = .double(totalVolume)
                 updates["max_volume_session_date"] = .string(isoNow)
-                print("🏆 [ExerciseHistory] NEW PR! Max volume session for '\(exerciseName)': \(Int(totalVolume))")
+                AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max volume session for '\(exerciseName)': \(Int(totalVolume))", category: .workout)
             }
             
             if totalSets > existing.maxSetsSession {
@@ -591,7 +591,7 @@ class ExerciseHistoryService: ObservableObject {
                 updates["estimated_1rm_date"] = .string(isoNow)
                 updates["estimated_1rm_weight"] = .double(best1rmWeight)
                 updates["estimated_1rm_reps"] = .integer(best1rmReps)
-                print("🏆 [ExerciseHistory] NEW PR! Estimated 1RM for '\(exerciseName)': \(Int(best1rm)) lbs")
+                AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Estimated 1RM for '\(exerciseName)': \(Int(best1rm)) lbs", category: .workout)
             }
             
             try await supabase
@@ -634,7 +634,7 @@ class ExerciseHistoryService: ObservableObject {
                 .insert(newRecord)
                 .execute()
             
-            print("✅ [ExerciseHistory] Created new PR record for '\(exerciseName)'")
+            AppLogger.info("✅ [ExerciseHistory] Created new PR record for '\(exerciseName)'", category: .workout)
         }
     }
     
@@ -667,7 +667,7 @@ class ExerciseHistoryService: ObservableObject {
             }
             
         } catch {
-            print("❌ [ExerciseHistory] Error fetching PR: \(error)")
+            AppLogger.error("❌ [ExerciseHistory] Error fetching PR: \(error)", category: .workout)
         }
         
         return nil
@@ -698,7 +698,7 @@ class ExerciseHistoryService: ObservableObject {
             return records
             
         } catch {
-            print("❌ [ExerciseHistory] Error fetching all PRs: \(error)")
+            AppLogger.error("❌ [ExerciseHistory] Error fetching all PRs: \(error)", category: .workout)
             return []
         }
     }

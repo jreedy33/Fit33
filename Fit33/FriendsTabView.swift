@@ -141,20 +141,23 @@ struct FriendsTabView: View {
         // MARK: - Deep Link Route Handling
         .onChange(of: deepLinkManager.pendingFriendsRoute) { _, route in
             guard let route = route else { return }
-            // Small delay to ensure NavigationStack is ready after tab switch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.15))
+                guard !Task.isCancelled else { return }
                 navigationPath.append(route)
                 deepLinkManager.pendingFriendsRoute = nil
-                print("👥 [DEEPLINK] Friends tab pushed route: \(route)")
+                AppLogger.debug("👥 [DEEPLINK] Friends tab pushed route: \(route)", category: .social)
             }
         }
         .onAppear {
             // Handle pending deep link route if FriendsTabView was just mounted
             if let route = deepLinkManager.pendingFriendsRoute {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.3))
+                    guard !Task.isCancelled else { return }
                     navigationPath.append(route)
                     deepLinkManager.pendingFriendsRoute = nil
-                    print("👥 [DEEPLINK] Friends tab pushed route on appear: \(route)")
+                    AppLogger.debug("👥 [DEEPLINK] Friends tab pushed route on appear: \(route)", category: .social)
                 }
             }
         }
@@ -186,7 +189,7 @@ struct FriendsTabView: View {
                 
                 // ⚡️ PERF FIX: Only do a FULL refresh if stale (> 30s since last).
                 // Quick tab switches (< 30s apart) just re-start the timer.
-                let isStale = lastRefreshedAt == nil || Date().timeIntervalSince(lastRefreshedAt!) > 30
+                let isStale = lastRefreshedAt.map { Date().timeIntervalSince($0) > 30 } ?? true
                 if isStale {
                     Task {
                         await refreshAllFriendsData(force: false)
@@ -209,7 +212,7 @@ struct FriendsTabView: View {
                 // App foregrounded → only refresh if stale (> 30s).
                 // Heavy sync (HealthKit push + pull) is already handled by Fit33App's
                 // foreground handler. We just need to refresh the display data here.
-                let isStale = lastRefreshedAt == nil || Date().timeIntervalSince(lastRefreshedAt!) > 30
+                let isStale = lastRefreshedAt.map { Date().timeIntervalSince($0) > 30 } ?? true
                 if isStale {
                     Task {
                         await refreshAllFriendsData(force: false)
@@ -266,12 +269,14 @@ struct FriendsTabView: View {
     /// scroll tracking or tab switch animations — preventing UI freezes.
     private func startAutoRefreshTimer() {
         stopAutoRefreshTimer() // Prevent duplicates
-        let timer = Timer.scheduledTimer(withTimeInterval: autoRefreshInterval, repeats: true) { _ in
+        var fireCount = 0
+        let timer = Timer.scheduledTimer(withTimeInterval: autoRefreshInterval, repeats: true) { timer in
+            fireCount += 1
+            if fireCount >= 60 {
+                timer.invalidate()
+                return
+            }
             Task { @MainActor in
-                // ⚡️ PERF FIX: Only refresh 1v1 challenges here (lightweight).
-                // Community + Private challenges are already refreshed by the RealtimeService
-                // cadence timer. Running refreshAll(force: true) here was redundant and caused
-                // duplicate network calls every 60s on top of the cadence timer's 90s fetches.
                 async let active: () = challengeService.fetchActiveChallenges()
                 async let groups: () = challengeService.fetchActiveGroupChallenges()
                 async let league: () = leagueService.fetchOrJoinLeague(force: false)
@@ -279,12 +284,6 @@ struct FriendsTabView: View {
                 lastRefreshedAt = Date()
             }
         }
-        // ⚡️ PERFORMANCE FIX: Do NOT add to .common mode.
-        // Timer.scheduledTimer already adds to .default mode, which won't fire
-        // during UI tracking (scrolling, tab switch animations).
-        // Previously: RunLoop.main.add(timer, forMode: .common) caused the timer
-        // to fire mid-animation, triggering 5 network requests that resolved on
-        // @MainActor and caused rendering storms that froze tab navigation.
         autoRefreshTimer = timer
     }
     
@@ -319,7 +318,7 @@ struct FriendsTabView: View {
         
         // Batch 3: Contacts + PYMK — HEAVY operations, only run when forced (pull-to-refresh)
         // or every 5 minutes. Tab switches should NOT re-scan contacts from the device.
-        if force || lastContactsRefreshAt == nil || Date().timeIntervalSince(lastContactsRefreshAt!) > 300 {
+        if force || (lastContactsRefreshAt.map { Date().timeIntervalSince($0) > 300 } ?? true) {
             lastContactsRefreshAt = Date()
             async let pymk: () = contactsService.fetchPeopleYouMayKnow()
             if contactsService.canAccessContacts {
@@ -455,7 +454,7 @@ struct FriendsTabView: View {
                                         )
                                     
                                     Image(systemName: "person.badge.plus")
-                                        .font(.system(size: 22, weight: .semibold))
+                                        .font(.ds_heading2)
                                         .foregroundStyle(
                                             LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
                                         )
@@ -576,7 +575,7 @@ struct FriendsTabView: View {
                         
                         VStack(spacing: 2) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.green)
                             Text("Sent")
                                 .font(.system(size: 9, weight: .bold))
@@ -636,7 +635,7 @@ struct FriendsTabView: View {
                 .frame(width: 58, height: 58)
             
             Text(suggestion.initials)
-                .font(.system(size: 18, weight: .bold))
+                .font(.ds_heading3)
                 .foregroundColor(.white)
         }
     }
@@ -776,7 +775,7 @@ struct FriendsTabView: View {
                         )
                     
                     Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.ds_heading3)
                         .foregroundColor(.gray.opacity(0.5))
                 }
                 
@@ -804,7 +803,7 @@ struct FriendsTabView: View {
                     .frame(width: 72, height: 72)
                 
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 30))
+                    .font(.ds_heading1)
                     .foregroundStyle(
                         LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -973,6 +972,8 @@ struct FriendsTabView: View {
                                 Capsule()
                                     .fill(safePageIndex == index ? Color.blue : Color.gray.opacity(0.3))
                                     .frame(width: safePageIndex == index ? 20 : 8, height: 6)
+                                    .padding(.vertical, 19)
+                                    .contentShape(Rectangle())
                                     .animation(.easeOut(duration: 0.2), value: safePageIndex)
                                     .onTapGesture {
                                         HapticManager.impact(.light)
@@ -1028,6 +1029,8 @@ struct FriendsTabView: View {
                                     .fill(singleSafeIndex == index ? Color.orange : Color.gray.opacity(0.3))
                                     .frame(width: 6, height: 6)
                                     .scaleEffect(singleSafeIndex == index ? 1.0 : 0.8)
+                                    .padding(.vertical, 19)
+                                    .contentShape(Rectangle())
                                     .animation(.easeOut(duration: 0.2), value: singleSafeIndex)
                                     .onTapGesture {
                                         HapticManager.impact(.light)
@@ -1915,7 +1918,7 @@ struct FriendsTabView: View {
                             .shadow(color: recommendedType.color.opacity(0.3), radius: 8, x: 0, y: 2)
                         
                         Text(recommendedType.emoji)
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -1966,8 +1969,9 @@ struct FriendsTabView: View {
                             sentRecommendedChallenge = true
                             showingSentConfirmation = true
                             
-                            // Auto-dismiss confirmation after 2.5s
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(2.5))
+                                guard !Task.isCancelled else { return }
                                 showingSentConfirmation = false
                             }
                             
@@ -2285,7 +2289,7 @@ struct FriendsTabView: View {
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.ds_caption)
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -2514,7 +2518,7 @@ struct FriendsTabView: View {
                             .shadow(color: .green.opacity(0.4), radius: 15, x: 0, y: 0)
                         
                         Image(systemName: "checkmark")
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     }
                     

@@ -301,9 +301,9 @@ class UnitSettingsManager: ObservableObject {
                 .update(update)
                 .eq("id", value: userId.uuidString)
                 .execute()
-            print("☁️ [UNITS] Synced preferences to cloud")
+            AppLogger.debug("☁️ [UNITS] Synced preferences to cloud", category: .general)
         } catch {
-            print("⚠️ [UNITS] Failed to sync to cloud: \(error.localizedDescription)")
+            AppLogger.warning("⚠️ [UNITS] Failed to sync to cloud: \(error.localizedDescription)", category: .general)
         }
     }
     

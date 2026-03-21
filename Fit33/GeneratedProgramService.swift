@@ -35,7 +35,7 @@ class GeneratedProgramService: ObservableObject {
             self.savePrograms()
         }
         
-        print("✅ Generated \(programs.count) programs for user")
+        AppLogger.info("✅ Generated \(programs.count) programs for user", category: .workout)
         return programs
     }
     
@@ -68,7 +68,7 @@ class GeneratedProgramService: ObservableObject {
         savePrograms()
         saveActiveProgram()
         
-        print("🏋️ Started program: \(program.name)")
+        AppLogger.debug("🏋️ Started program: \(program.name)", category: .workout)
     }
     
     /// Stop current program
@@ -77,7 +77,7 @@ class GeneratedProgramService: ObservableObject {
         currentDay = nil
         UserDefaults.standard.removeObject(forKey: activeKey)
         
-        print("⏹️ Stopped current program")
+        AppLogger.debug("⏹️ Stopped current program", category: .workout)
     }
     
     // MARK: - Day Progression
@@ -129,7 +129,7 @@ class GeneratedProgramService: ObservableObject {
         let isProgramComplete = completedDays >= totalDays
         
         if isProgramComplete {
-            print("🎉 Program '\(program.name)' COMPLETED!")
+            AppLogger.debug("🎉 Program '\(program.name)' COMPLETED!", category: .workout)
             // Generate sequel/continuation program
             Task {
                 await generateSequelProgram(for: program, user: user)
@@ -143,7 +143,7 @@ class GeneratedProgramService: ObservableObject {
                 completedExercises: completedExercises
             ) {
                 currentDay = nextDay
-                print("✅ Generated Day \(nextDay.dayNumber): \(nextDay.name)")
+                AppLogger.info("✅ Generated Day \(nextDay.dayNumber): \(nextDay.name)", category: .workout)
             }
         }
         
@@ -171,7 +171,7 @@ class GeneratedProgramService: ObservableObject {
     /// Generate a sequel/continuation program when user completes one
     /// Creates a progression program that builds on completed work
     private func generateSequelProgram(for completedProgram: DynamicProgramGenerator.GeneratedProgram, user: User) async {
-        print("🎬 Generating sequel program for '\(completedProgram.name)'")
+        AppLogger.debug("🎬 Generating sequel program for '\(completedProgram.name)'", category: .workout)
         
         let profile = DynamicProgramGenerator.shared.createProfileFromUser(user)
         
@@ -187,7 +187,7 @@ class GeneratedProgramService: ObservableObject {
             await MainActor.run {
                 generatedPrograms.append(newProgram)
                 savePrograms()
-                print("✅ Created sequel: '\(newProgram.name)'")
+                AppLogger.info("✅ Created sequel: '\(newProgram.name)'", category: .workout)
             }
         }
     }
@@ -391,7 +391,7 @@ class GeneratedProgramService: ObservableObject {
         UserDefaults.standard.removeObject(forKey: storageKey)
         UserDefaults.standard.removeObject(forKey: activeKey)
         UserDefaults.standard.removeObject(forKey: "\(activeKey)_currentDay")
-        print("🗑️ Cleared all generated programs")
+        AppLogger.debug("🗑️ Cleared all generated programs", category: .workout)
     }
     
     /// Delete a specific program

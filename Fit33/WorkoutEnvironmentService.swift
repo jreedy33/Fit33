@@ -138,7 +138,7 @@ final class WorkoutEnvironmentService {
             _userEnvironment = newValue
             UserDefaults.standard.set(newValue.rawValue, forKey: "preferred_workout_environment")
             #if DEBUG
-            print("📍 [ENVIRONMENT] Set to: \(newValue.displayName)")
+            AppLogger.debug("📍 [ENVIRONMENT] Set to: \(newValue.displayName)", category: .workout)
             #endif
         }
     }
@@ -330,14 +330,14 @@ extension WorkoutEnvironmentService {
 extension WorkoutEnvironmentService {
     func printClassification(for exerciseName: String, equipment: String) {
         let rating = getEnvironmentRating(exerciseName: exerciseName, equipment: equipment)
-        print("""
+        AppLogger.debug("""
         📍 Environment Classification: \(exerciseName)
         ├── Equipment: \(equipment)
         ├── Gym Score: \(rating.gymScore)
         ├── Home Score: \(rating.homeScore)
         ├── Outdoor Score: \(rating.outdoorScore)
         └── Best Environment: \(rating.bestEnvironment.displayName)
-        """)
+        """, category: .workout)
     }
 }
 #endif

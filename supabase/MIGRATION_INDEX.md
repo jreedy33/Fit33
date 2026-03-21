@@ -72,6 +72,47 @@ The **canonical version** is the one in the latest file listed below.
 
 ---
 
+## Database Audit Remediation (2026-03-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 28 | `audit_before.sql` | 🆕 Ready | Baseline snapshot (read-only, run first) |
+| 29 | `20260320_drop_dead_tables.sql` | 🆕 Ready | DROP 13 dead tables (0 rows, 0 code refs) with safety guards |
+| 30 | `20260320_add_missing_fk_constraints.sql` | 🆕 Ready | FK CASCADE on 11 analytics tables + exercise_videos + indexes |
+| 31 | `20260320_sync_profiles_progress.sql` | 🆕 Ready | Bidirectional sync trigger for user_profiles <-> user_progress |
+| 32 | `20260320_consolidate_food_history.sql` | 🆕 Ready | user_food_history_v view from meal_logs |
+| 33 | `audit_after.sql` | 🆕 Ready | 7-test verification suite (read-only, run last) |
+
+**Run order**: 28 → 29 → 30 → 31 → 32 → 33
+
+## Smart Insights Enhancement (2026-03-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 34 | `20260320_smart_insights_schema.sql` | 🆕 Ready | Phase 1: completion_rate, opened_at, referral_source columns + subscription_events table |
+| 35 | `20260320_smart_insights_views.sql` | 🆕 Ready | Phase 2: 5 cross-table correlation views (nutrition, hydration, social, challenge, sleep) |
+| 36 | `20260320_smart_nudge_notifications.sql` | 🆕 Ready | Phase 4.3: generate_smart_nudges() RPC for targeted push notifications |
+
+**Run order**: 34 → 35 → 36
+
+## USDA Food Search Integrity (2026-03-21)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 37 | `20260321_food_search_integrity.sql` | 🆕 Ready | Cache TTL column, frequent foods RPC, user_food_history index, user_favorite_foods UNIQUE |
+
+**Run order**: 37 (standalone, no dependencies on 28-36)
+
+## Notification Preferences (2026-03-21)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 38 | `20260321_notification_preferences.sql` | 🆕 Ready | user_notification_preferences table + RLS for server-side push preference enforcement |
+
+**Run order**: 38 (standalone)
+
+---
+
 ## Process for New Migrations
 
 1. Create a new file: `YYYY_MM_DD_description.sql`

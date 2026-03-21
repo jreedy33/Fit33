@@ -56,7 +56,7 @@ class InBodyService: ObservableObject {
     func getAuthorizationURL() -> URL? {
         // Guard against using placeholder credentials
         guard isConfigured else {
-            print("⚠️ [InBody] Cannot start OAuth — using placeholder credentials. Set real credentials in AppConfig.swift")
+            AppLogger.warning("⚠️ [InBody] Cannot start OAuth — using placeholder credentials. Set real credentials in AppConfig.swift", category: .health)
             connectionError = "InBody integration not configured"
             return nil
         }
@@ -106,7 +106,7 @@ class InBodyService: ObservableObject {
             // Update integration status in database
             await SupabaseManager.shared.updateIntegrationStatus(integration: "inbody", isConnected: true)
             
-            print("✅ [INBODY] Successfully connected and synced")
+            AppLogger.info("✅ [INBODY] Successfully connected and synced", category: .health)
             
         } catch {
             await MainActor.run {
@@ -236,7 +236,7 @@ class InBodyService: ObservableObject {
             // Save last sync time
             UserDefaults.standard.set(Date(), forKey: "inbody_last_sync")
             
-            print("✅ [INBODY] Synced \(response.measurements.count) measurements")
+            AppLogger.info("✅ [INBODY] Synced \(response.measurements.count) measurements", category: .health)
             
         } catch {
             await MainActor.run {
@@ -411,7 +411,7 @@ class InBodyService: ObservableObject {
                 try await loadRecentScans()
                 
             } catch {
-                print("ℹ️ [INBODY] No active connection found")
+                AppLogger.debug("ℹ️ [INBODY] No active connection found", category: .health)
             }
         }
     }
@@ -470,7 +470,7 @@ class InBodyService: ObservableObject {
             // Update integration status in database
             await SupabaseManager.shared.updateIntegrationStatus(integration: "inbody", isConnected: false)
             
-            print("✅ [INBODY] Disconnected")
+            AppLogger.info("✅ [INBODY] Disconnected", category: .health)
         }
     }
 }

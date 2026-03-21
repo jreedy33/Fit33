@@ -60,7 +60,7 @@ struct RecipeImportSheet: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                             .foregroundStyle(.secondary)
                             .symbolRenderingMode(.hierarchical)
                     }

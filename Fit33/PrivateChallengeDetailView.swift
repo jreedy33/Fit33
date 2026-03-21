@@ -242,7 +242,7 @@ struct PrivateChallengeDetailView: View {
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Text("+\(challenge.memberCount - 8)")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                     .foregroundColor(.white)
                             )
                             .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
@@ -653,7 +653,7 @@ struct PrivateChallengeDetailView: View {
             if chatMessages.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(.white.opacity(0.3))
                     Text("No messages yet")
                         .font(.subheadline)

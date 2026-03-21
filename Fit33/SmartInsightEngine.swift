@@ -151,7 +151,7 @@ class SmartInsightEngine: ObservableObject {
                 type: .suggestion,
                 icon: "arrow.up.circle.fill",
                 title: "Protein Check-In",
-                message: "You need \(remaining)g more protein today. Try \(suggestions.randomElement()!).",
+                message: "You need \(remaining)g more protein today. Try \(suggestions.randomElement() ?? "a protein shake").",
                 color: .orange,
                 priority: 2,
                 actionable: true,

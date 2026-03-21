@@ -109,10 +109,10 @@ class QRCodeService: ObservableObject {
                 .value
             
             self.myQRCode = result.first
-            print("✅ Fetched QR code: \(myQRCode?.qrCodeId ?? "none")")
+            AppLogger.info("✅ Fetched QR code: \(myQRCode?.qrCodeId ?? "none")", category: .social)
         } catch {
             self.error = "Failed to fetch QR code: \(error.localizedDescription)"
-            print("❌ Error fetching QR code: \(error)")
+            AppLogger.error("❌ Error fetching QR code: \(error)", category: .social)
         }
         
         isLoading = false
@@ -128,10 +128,10 @@ class QRCodeService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ Found user by QR code: \(result.first?.displayName ?? "none")")
+            AppLogger.info("✅ Found user by QR code: \(result.first?.displayName ?? "none")", category: .social)
             return result.first
         } catch {
-            print("❌ Error looking up user by QR code: \(error)")
+            AppLogger.error("❌ Error looking up user by QR code: \(error)", category: .social)
             return nil
         }
     }
@@ -152,7 +152,7 @@ class QRCodeService: ObservableObject {
                 .value
             
             let result = results.first
-            print("✅ Add friend result: \(result?.status ?? "unknown") - \(result?.message ?? "")")
+            AppLogger.info("✅ Add friend result: \(result?.status ?? "unknown") - \(result?.message ?? "")", category: .social)
             
             // Refresh friend data if successful
             if result?.success == true {
@@ -161,7 +161,7 @@ class QRCodeService: ObservableObject {
             
             return result
         } catch {
-            print("❌ Error adding friend by QR code: \(error)")
+            AppLogger.error("❌ Error adding friend by QR code: \(error)", category: .social)
             return AddFriendResult(
                 success: false,
                 message: "Failed to send friend request: \(error.localizedDescription)",

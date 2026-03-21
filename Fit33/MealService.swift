@@ -87,30 +87,10 @@ class MealService: ObservableObject {
                 }
             }
             
-            // Log to cloud database for history tracking
-            if let fdcId = foodEntry.fdcId {
-                Task {
-                    AppLogger.debug("Logging food to cloud: \(trimmedName) (FDC: \(fdcId))", category: .nutrition)
-                    do {
-                        try await foodDatabase.logFoodToHistory(
-                            fdcId: fdcId,
-                            foodName: trimmedName,
-                            mealType: mealType,
-                            quantity: Double(foodEntry.quantity),
-                            servingUnit: foodEntry.unit,
-                            calories: foodEntry.calories,
-                            protein: foodEntry.protein,
-                            carbs: foodEntry.carbs,
-                            fat: foodEntry.fat
-                        )
-                        AppLogger.info("Successfully logged food to cloud", category: .nutrition)
-                    } catch {
-                        AppLogger.error("Failed to log to cloud: \(error.localizedDescription)", category: .nutrition)
-                    }
-                }
-            } else {
-                AppLogger.warning("No FDC ID - skipping cloud logging", category: .nutrition)
-            }
+            // DEPRECATED: logFoodToHistory() wrote duplicate data to user_food_history.
+            // meal_logs (written above via saveMealToCloud) is now the single source of truth.
+            // The user_food_history_v view derives food history from meal_logs.
+            // See: DATABASE_AUDIT_REPORT.md Section 3.2
             
             // Track food addition for recipe recommendations
             // This helps personalize recipe suggestions based on what users eat

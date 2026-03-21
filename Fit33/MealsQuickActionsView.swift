@@ -9,11 +9,6 @@ struct MealsQuickActionsView: View {
     @Binding var showRestaurantSearch: Bool  // Kept for compatibility but not used here
     @Binding var showShoppingList: Bool
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark
-            ? [Color(white: 0.14), Color(white: 0.09)]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -62,11 +57,6 @@ struct MealQuickActionTile: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark
-            ? [Color(white: 0.14), Color(white: 0.09)]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: {
@@ -87,7 +77,7 @@ struct MealQuickActionTile: View {
                         .shadow(color: gradient[0].opacity(0.5), radius: 8, x: 0, y: 4)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -117,11 +107,7 @@ struct MealQuickActionTile: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -166,11 +152,6 @@ struct MealQuickActionButton: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark
-            ? [Color(white: 0.14), Color(white: 0.09)]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: {
@@ -229,11 +210,7 @@ struct MealQuickActionButton: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -431,7 +408,7 @@ struct MealPlanGeneratorSheet: View {
                     .shadow(color: .mint.opacity(0.4), radius: 10, x: 0, y: 5)
                 
                 Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             

@@ -127,7 +127,7 @@ struct FavoriteRoutinesView: View {
     private func startFavoriteWorkout(_ workout: Workout) {
         // Get exercises from the favorite workout
         guard let workoutExercises = workout.exercises?.allObjects as? [WorkoutExercise] else {
-            print("❌ No exercises found in favorite workout")
+            AppLogger.error("❌ No exercises found in favorite workout", category: .workout)
             return
         }
         
@@ -137,7 +137,7 @@ struct FavoriteRoutinesView: View {
             .compactMap { $0.exercise }
         
         guard !sortedExercises.isEmpty else {
-            print("❌ No valid exercises in favorite workout")
+            AppLogger.error("❌ No valid exercises in favorite workout", category: .workout)
             return
         }
         
@@ -150,7 +150,7 @@ struct FavoriteRoutinesView: View {
         newWorkout.isFavorite = true // Keep it favorited
         newWorkout.user = userManager.currentUser
         
-        print("⭐ Starting favorite workout: \(newWorkout.name ?? "") with \(sortedExercises.count) exercises")
+        AppLogger.debug("⭐ Starting favorite workout: \(newWorkout.name ?? "") with \(sortedExercises.count) exercises", category: .workout)
         
         // Start workout using WorkoutManager
         workoutManager.startWorkout(workout: newWorkout, exercises: sortedExercises)
@@ -178,7 +178,7 @@ struct FavoriteRoutinesView: View {
                                     originalWorkoutId: workoutId
                                 )
                             } catch {
-                                print("⚠️ Failed to sync workout unfavorite to cloud: \(error)")
+                                AppLogger.warning("⚠️ Failed to sync workout unfavorite to cloud: \(error)", category: .workout)
                             }
                         }
                     }
@@ -187,9 +187,9 @@ struct FavoriteRoutinesView: View {
             
             do {
                 try viewContext.save()
-                print("⭐ Unfavorited all workouts named: \(cleanName)")
+                AppLogger.debug("⭐ Unfavorited all workouts named: \(cleanName)", category: .workout)
             } catch {
-                print("❌ Error unfavoriting workout: \(error)")
+                AppLogger.error("❌ Error unfavoriting workout: \(error)", category: .workout)
             }
         }
     }
@@ -328,7 +328,8 @@ struct FavoriteWorkoutCard: View {
         HapticManager.impact(.light)
         showingDeleteConfirmation = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
             isProcessing = false
         }
     }
@@ -359,7 +360,7 @@ struct FavoriteWorkoutCard: View {
                                 .frame(width: 48, height: 48)
                             
                             Image(systemName: "checkmark")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.ds_heading3)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: workoutGradient,
@@ -386,7 +387,7 @@ struct FavoriteWorkoutCard: View {
                         // Favorite star button - always yellow (these are favorites)
                         Button(action: { toggleFavorite() }) {
                             Image(systemName: "star.fill")
-                                .font(.system(size: 20, weight: .medium))
+                                .font(.ds_heading3)
                                 .foregroundColor(.yellow)
                         }
                         .buttonStyle(PlainButtonStyle())

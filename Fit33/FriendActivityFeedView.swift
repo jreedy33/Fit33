@@ -138,7 +138,7 @@ class ActivityFeedService: ObservableObject {
                 self.isLoading = false
             }
         } catch {
-            print("❌ Failed to fetch activity feed: \(error)")
+            AppLogger.error("❌ Failed to fetch activity feed: \(error)", category: .social)
             await MainActor.run { self.isLoading = false }
         }
     }
@@ -160,7 +160,7 @@ class ActivityFeedService: ObservableObject {
             await fetchFeed()
             return true
         } catch {
-            print("❌ Failed to send reaction: \(error)")
+            AppLogger.error("❌ Failed to send reaction: \(error)", category: .social)
             return false
         }
     }
@@ -188,7 +188,7 @@ class ActivityFeedService: ObservableObject {
                 ))
                 .execute()
         } catch {
-            print("❌ Failed to post workout activity: \(error)")
+            AppLogger.error("❌ Failed to post workout activity: \(error)", category: .social)
         }
     }
     
@@ -206,7 +206,7 @@ class ActivityFeedService: ObservableObject {
                 self.myReactions = result
             }
         } catch {
-            print("❌ Failed to fetch my reactions: \(error)")
+            AppLogger.error("❌ Failed to fetch my reactions: \(error)", category: .social)
         }
     }
 }
@@ -446,7 +446,7 @@ struct FriendActivityCard: View {
             .frame(width: 48, height: 48)
             .overlay(
                 Text(String(activity.displayName.prefix(2)).uppercased())
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(muscleGradient.first ?? .blue)
             )
     }
@@ -456,7 +456,7 @@ struct FriendActivityCard: View {
             Image(systemName: levelIcon(for: activity.userLevel))
                 .font(.system(size: 9))
             Text("Lv.\(activity.userLevel)")
-                .font(.system(size: 10, weight: .bold))
+                .font(.ds_caption)
         }
         .foregroundColor(levelColor(for: activity.userLevel))
         .padding(.horizontal, 6)
@@ -501,7 +501,7 @@ struct FriendActivityCard: View {
         VStack(spacing: 3) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.ds_caption)
                     .foregroundColor(iconColor ?? muscleGradient.first ?? .blue)
                 Text(value)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -556,7 +556,7 @@ struct FriendActivityCard: View {
                     }
                 } label: {
                     Text(emoji)
-                        .font(.system(size: 26))
+                        .font(.ds_heading2)
                 }
                 .buttonStyle(.plain)
                 .scaleEffect(isSendingReaction ? 0.8 : 1.0)

@@ -98,7 +98,7 @@ struct SmartMealPlannerView: View {
                             .shadow(color: .mint.opacity(0.4), radius: 12, x: 0, y: 6)
                         
                         Image(systemName: "calendar.badge.plus")
-                            .font(.system(size: 34, weight: .semibold))
+                            .font(.ds_heading1)
                             .foregroundColor(.white)
                     }
                     
@@ -1039,7 +1039,9 @@ struct PlanMealDetailSheet: View {
         HapticManager.notification(.success)
         
         withAnimation(.spring(response: 0.4)) { addedToMeal = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
             withAnimation { addedToMeal = false }
         }
     }

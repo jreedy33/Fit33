@@ -174,7 +174,7 @@ struct DailyQuestsWidget: View {
                         .frame(width: 40, height: 40)
                     
                     Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.ds_bodyMedium)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.green, .mint],
@@ -223,7 +223,7 @@ struct DailyQuestsWidget: View {
                 
                 if quest.isCompleted {
                     Text(completionSummary(for: quest))
-                        .font(.system(size: 11))
+                        .font(.ds_caption)
                         .foregroundColor(.green.opacity(0.8))
                         .lineLimit(1)
                 } else if quest.questKey == QuestKey.watchAds.rawValue {
@@ -441,7 +441,7 @@ struct DailyQuestsWidget: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 9, weight: .bold))
                     Text("Watch \(quest.currentValue + 1)/\(quest.targetValue)")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.ds_caption)
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
@@ -519,7 +519,7 @@ struct DailyQuestsWidget: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.ds_caption)
                     Text("Watch Video \(quest.currentValue + 1)/\(quest.targetValue)")
                         .font(.ds_bodySmall).fontWeight(.bold)
                 }
@@ -599,7 +599,7 @@ struct DailyQuestsWidget: View {
                 Text(questService.allComplete
                     ? "All quests done! 🎉"
                     : "\(questService.completedCount)/\(questService.totalCount) complete")
-                    .font(.system(size: 11))
+                    .font(.ds_caption)
                     .foregroundColor(questService.allComplete ? .green.opacity(0.8) : .secondary.opacity(0.6))
             }
         }
@@ -632,7 +632,7 @@ struct DailyQuestsWidget: View {
                     .frame(width: 56, height: 56)
                 
                 Image(systemName: "star.fill")
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: accentGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -744,7 +744,7 @@ struct QuestBonusCelebration: View {
                             .frame(width: 40, height: 40)
                         
                         Image(systemName: "gift.fill")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.ds_heading3)
                             .foregroundColor(.white)
                     }
                     
@@ -894,7 +894,7 @@ private struct AdQuestPreviewCard: View {
                     
                     if quest.isCompleted {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.ds_bodySmall)
                             .foregroundColor(.white)
                     } else {
                         Image(systemName: quest.icon)
@@ -952,7 +952,7 @@ private struct AdQuestPreviewCard: View {
                         Button {} label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.ds_caption)
                                 Text("Watch Video \(quest.currentValue + 1)/\(quest.targetValue)")
                                     .font(.ds_bodySmall).fontWeight(.bold)
                             }

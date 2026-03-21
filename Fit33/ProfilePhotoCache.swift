@@ -40,14 +40,14 @@ final class ProfilePhotoCache {
         if let url = cacheURL {
             try? fileManager.removeItem(at: url)
         }
-        print("🗑️ Profile photo cache cleared")
+        AppLogger.debug("🗑️ Profile photo cache cleared", category: .general)
     }
     
     /// ⚡️ MEMORY FIX: Clear only in-memory image (disk stays for fast reload).
     /// Called by MemoryPressureHandler during emergency cleanup.
     func clearMemoryOnly() {
         memoryCache = nil
-        print("💾 Profile photo memory cache cleared (disk retained)")
+        AppLogger.debug("💾 Profile photo memory cache cleared (disk retained)", category: .general)
     }
     
     private func loadFromDisk() {
@@ -58,7 +58,7 @@ final class ProfilePhotoCache {
             return
         }
         memoryCache = image
-        print("📸 Profile photo loaded from disk cache")
+        AppLogger.debug("📸 Profile photo loaded from disk cache", category: .general)
     }
     
     private func saveToDisk(_ image: UIImage) {
@@ -67,6 +67,6 @@ final class ProfilePhotoCache {
             return
         }
         try? data.write(to: url)
-        print("💾 Profile photo saved to disk cache")
+        AppLogger.debug("💾 Profile photo saved to disk cache", category: .general)
     }
 }

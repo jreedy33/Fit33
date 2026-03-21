@@ -16,12 +16,30 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const USDA_API_KEY = Deno.env.get("USDA_API_KEY")!;
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 
+const CACHE_TTL_DAYS = 30;
+
 // CORS headers
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+// Best-effort per-IP rate limiter (resets per edge function cold start)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 30;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= RATE_LIMIT_MAX;
+}
 
 interface SearchRequest {
   query: string;
@@ -40,6 +58,17 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Best-effort rate limiting per IP
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("cf-connecting-ip")
+    || "unknown";
+  if (!checkRateLimit(clientIp)) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please try again later.", foods: [], totalHits: 0, query: "" }),
+      { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const { action, ...params } = await req.json();
 
@@ -54,8 +83,27 @@ serve(async (req) => {
         return await handleSearch(supabaseClient, params as SearchRequest);
       case "details":
         return await handleDetails(supabaseClient, params as FoodDetailsRequest);
-      case "cache_food":
+      case "cache_food": {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader) {
+          return new Response(
+            JSON.stringify({ error: "Authorization required for cache_food" }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const token = authHeader.replace("Bearer ", "");
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+        if (token !== serviceKey) {
+          const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+          if (authError || !user) {
+            return new Response(
+              JSON.stringify({ error: "Unauthorized" }),
+              { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
         return await handleCacheFood(supabaseClient, params);
+      }
       default:
         return new Response(
           JSON.stringify({ error: "Invalid action" }),
@@ -117,12 +165,14 @@ async function handleSearch(supabase: any, params: SearchRequest) {
 
   console.log(`🔍 Searching USDA API for: "${query}"`);
 
-  // Step 1: Check local cache first
+  // Step 1: Check local cache first (with TTL — ignore entries older than 30 days)
   const normalizedQuery = query.toLowerCase().trim();
+  const cacheCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { data: cachedSearch } = await supabase
     .from("food_search_cache")
-    .select("result_ids")
+    .select("result_ids, created_at")
     .eq("normalized_query", normalizedQuery)
+    .gte("created_at", cacheCutoff)
     .single();
 
   if (cachedSearch && cachedSearch.result_ids.length > 0) {
@@ -203,7 +253,6 @@ async function handleSearch(supabase: any, params: SearchRequest) {
       const data = await (foundationResponse as Response).json();
       foundationFoods = data.foods || [];
       console.log(`🌿 FOUNDATION FOODS: ${foundationFoods.length} results (totalHits: ${data.totalHits})`);
-      // Log ALL Foundation Foods found
       foundationFoods.forEach((f: any, i: number) => {
         console.log(`🌿 Foundation ${i+1}: "${f.description}" (FDC ${f.fdcId}, dataType: ${f.dataType})`);
       });
@@ -212,6 +261,9 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     }
   } else {
     const status = (foundationResponse as any).status || 'unknown';
+    if (status === 401) {
+      console.error(`🚨 USDA_API_KEY_INVALID: Foundation API returned 401 — key may need rotation`);
+    }
     const text = foundationResponse.text ? await (foundationResponse as Response).text() : '';
     console.log(`⚠️ Foundation Foods fetch failed - status: ${status}, body: ${text.substring(0, 200)}`);
   }
@@ -229,6 +281,9 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     }
   } else {
     const status = (srLegacyResponse as any).status || 'unknown';
+    if (status === 401) {
+      console.error(`🚨 USDA_API_KEY_INVALID: SR Legacy API returned 401 — key may need rotation`);
+    }
     console.log(`⚠️ SR Legacy Foods fetch failed - status: ${status}`);
   }
   
@@ -242,6 +297,9 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     }
   } else {
     const status = (brandedResponse as any).status || 'unknown';
+    if (status === 401) {
+      console.error(`🚨 USDA_API_KEY_INVALID: Branded API returned 401 — key may need rotation`);
+    }
     console.log(`⚠️ Branded Foods fetch failed - status: ${status}`);
   }
   
@@ -281,7 +339,7 @@ async function handleSearch(supabase: any, params: SearchRequest) {
     // Transform database rows to API format (camelCase with foodNutrients array)
     const transformedFoods = rankedFoods.map(transformToApiFormat);
     
-    // Cache the search query with ranked IDs
+    // Cache the search query with ranked IDs (created_at resets TTL on re-fetch)
     const rankedIds = rankedFoods.map((f: any) => f.id);
     await supabase
       .from("food_search_cache")
@@ -291,7 +349,8 @@ async function handleSearch(supabase: any, params: SearchRequest) {
         result_ids: rankedIds,
         result_count: rankedIds.length,
         search_count: 1,
-        last_searched_at: new Date().toISOString()
+        last_searched_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
       }, {
         onConflict: "normalized_query"
       });
@@ -355,7 +414,10 @@ async function handleDetails(supabase: any, params: FoodDetailsRequest) {
   const usdaResponse = await fetch(usdaUrl);
 
   if (!usdaResponse.ok) {
-    throw new Error(`USDA API error: ${usdaResponse.statusText}`);
+    if (usdaResponse.status === 401) {
+      console.error(`🚨 USDA_API_KEY_INVALID: Details API returned 401 for fdcId ${fdcId} — key may need rotation`);
+    }
+    throw new Error(`USDA API error: ${usdaResponse.status} ${usdaResponse.statusText}`);
   }
 
   const usdaData = await usdaResponse.json();
@@ -662,75 +724,97 @@ function calculateFoodScore(food: any, normalizedQuery: string, originalQuery: s
 // ============================================================================
 // HELPER: CACHE USDA FOODS
 // ============================================================================
+function prepareFoodRow(food: any): any {
+  const nutrients = food.foodNutrients || [];
+  const getNutrient = (number: string) => {
+    const nutrient = nutrients.find((n: any) => 
+      (n.nutrientNumber === number || n.nutrient?.number === number)
+    );
+    return nutrient ? (nutrient.value || nutrient.amount || 0) : 0;
+  };
+
+  const portions = food.foodPortions?.map((p: any) => ({
+    id: p.id,
+    amount: p.amount,
+    unit: p.measureUnit?.name || p.measureUnit?.abbreviation || "serving",
+    gramWeight: p.gramWeight,
+    description: p.modifier
+  })) || [];
+
+  return {
+    fdc_id: food.fdcId,
+    name: food.description,
+    brand_name: food.brandName,
+    brand_owner: food.brandOwner,
+    description: food.description,
+    category: food.foodCategory || food.foodCategory?.description,
+    data_type: food.dataType,
+    serving_size: food.servingSize || 100,
+    serving_unit: food.servingSizeUnit || "g",
+    household_serving: food.householdServingFullText,
+    calories: getNutrient("208"),
+    protein: getNutrient("203"),
+    carbohydrates: getNutrient("205"),
+    total_fat: getNutrient("204"),
+    saturated_fat: getNutrient("606"),
+    fiber: getNutrient("291"),
+    sugar: getNutrient("269"),
+    sodium: getNutrient("307"),
+    cholesterol: getNutrient("601"),
+    calcium: getNutrient("301"),
+    iron: getNutrient("303"),
+    vitamin_c: getNutrient("401"),
+    nutrition_data: nutrients,
+    portions: portions
+  };
+}
+
 async function cacheUSDAFoods(supabase: any, foods: any[]): Promise<number[]> {
+  // Prepare all rows up-front so we can attempt a single batch upsert
+  const rows = foods
+    .map(f => { try { return prepareFoodRow(f); } catch { return null; } })
+    .filter(Boolean);
+
+  if (rows.length === 0) return [];
+
+  // Attempt batch upsert (single round-trip)
+  try {
+    const { data: batchResult, error } = await supabase
+      .from("food_items")
+      .upsert(rows, { onConflict: "fdc_id", returning: "representation" })
+      .select("id");
+
+    if (!error && batchResult) {
+      const ids = batchResult.map((r: any) => r.id);
+      console.log(`✅ Batch-cached ${ids.length} foods`);
+      return ids;
+    }
+    console.warn(`⚠️ Batch upsert failed (${error?.message}), falling back to per-item`);
+  } catch (e) {
+    console.warn(`⚠️ Batch upsert threw (${e}), falling back to per-item`);
+  }
+
+  // Fallback: per-item upsert (preserves partial success)
   const cachedIds: number[] = [];
-
-  for (const food of foods) {
+  for (const row of rows) {
     try {
-      // Extract nutrition data
-      const nutrients = food.foodNutrients || [];
-      const getNutrient = (number: string) => {
-        const nutrient = nutrients.find((n: any) => 
-          (n.nutrientNumber === number || n.nutrient?.number === number)
-        );
-        return nutrient ? (nutrient.value || nutrient.amount || 0) : 0;
-      };
-
-      // Prepare food portions
-      const portions = food.foodPortions?.map((p: any) => ({
-        id: p.id,
-        amount: p.amount,
-        unit: p.measureUnit?.name || p.measureUnit?.abbreviation || "serving",
-        gramWeight: p.gramWeight,
-        description: p.modifier
-      })) || [];
-
-      // Upsert food item
       const { data: upsertedFood, error } = await supabase
         .from("food_items")
-        .upsert({
-          fdc_id: food.fdcId,
-          name: food.description,
-          brand_name: food.brandName,
-          brand_owner: food.brandOwner,
-          description: food.description,
-          category: food.foodCategory || food.foodCategory?.description,
-          data_type: food.dataType,
-          serving_size: food.servingSize || 100,
-          serving_unit: food.servingSizeUnit || "g",
-          household_serving: food.householdServingFullText,
-          calories: getNutrient("208"),
-          protein: getNutrient("203"),
-          carbohydrates: getNutrient("205"),
-          total_fat: getNutrient("204"),
-          saturated_fat: getNutrient("606"),
-          fiber: getNutrient("291"),
-          sugar: getNutrient("269"),
-          sodium: getNutrient("307"),
-          cholesterol: getNutrient("601"),
-          calcium: getNutrient("301"),
-          iron: getNutrient("303"),
-          vitamin_c: getNutrient("401"),
-          nutrition_data: nutrients,
-          portions: portions
-        }, {
-          onConflict: "fdc_id",
-          returning: "representation"
-        })
+        .upsert(row, { onConflict: "fdc_id", returning: "representation" })
         .select("id")
         .single();
 
       if (error) {
-        console.error(`Error caching food ${food.fdcId}:`, error);
+        console.error(`Error caching food ${row.fdc_id}:`, error);
       } else if (upsertedFood) {
         cachedIds.push(upsertedFood.id);
       }
     } catch (error) {
-      console.error(`Error processing food ${food.fdcId}:`, error);
+      console.error(`Error processing food ${row.fdc_id}:`, error);
     }
   }
 
-  console.log(`✅ Cached ${cachedIds.length} foods`);
+  console.log(`✅ Cached ${cachedIds.length} foods (per-item fallback)`);
   return cachedIds;
 }
 

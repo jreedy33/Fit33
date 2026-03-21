@@ -40,7 +40,7 @@ struct WhatToEatView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                             .foregroundStyle(.secondary)
                     }
                 }

@@ -122,7 +122,7 @@ struct ChallengeDetailView: View {
             RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
                 // Only refresh if it's for THIS challenge
                 if payload.challengeId == challenge.challengeId {
-                    print("⚡️ [CHALLENGE] Real-time opponent update received!")
+                    AppLogger.debug("⚡️ [CHALLENGE] Real-time opponent update received!", category: .social)
                     Task {
                         details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
                         
@@ -206,8 +206,8 @@ struct ChallengeDetailView: View {
                 isCancelling = false
                 if success {
                     HapticManager.notification(.success)
-                    // Dismiss after a brief moment so user sees the action completed
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.2))
                         dismiss()
                     }
                 } else {
@@ -635,10 +635,10 @@ struct ChallengeDetailView: View {
                 
                 // Debug: Show what days we're generating
                 let _ = {
-                    print("📅 [DAILY PROGRESS] Generating days from \(challenge.startDate) to \(challenge.endDate)")
-                    print("📅 [DAILY PROGRESS] Generated \(allDays.count) days")
+                    AppLogger.debug("📅 [DAILY PROGRESS] Generating days from \(challenge.startDate) to \(challenge.endDate)", category: .social)
+                    AppLogger.debug("📅 [DAILY PROGRESS] Generated \(allDays.count) days", category: .social)
                     if !allDays.isEmpty {
-                        print("📅 [DAILY PROGRESS] First day: \(allDays[0])")
+                        AppLogger.debug("📅 [DAILY PROGRESS] First day: \(allDays[0])", category: .social)
                     }
                 }()
                 
@@ -690,23 +690,23 @@ struct ChallengeDetailView: View {
                         // Debug: Show date matching
                         let _ = {
                             if index == 0 {
-                                print("🔍 [DATE MATCH] Day \(index + 1) (UTC calendar)")
-                                print("  Challenge day (UTC): \(date)")
+                                AppLogger.debug("🔍 [DATE MATCH] Day \(index + 1) (UTC calendar)", category: .social)
+                                AppLogger.debug("  Challenge day (UTC): \(date)", category: .social)
                                 if let myDailyProgress = myProgress?.dailyProgress {
-                                    print("  Available MY dates (UTC): \(myDailyProgress.map { calendar.startOfDay(for: $0.date) })")
+                                    AppLogger.debug("  Available MY dates (UTC): \(myDailyProgress.map { calendar.startOfDay(for: $0.date) })", category: .social)
                                 }
                                 if let myEntry = myProgressEntry {
-                                    print("  ✅ Found MY progress: \(calendar.startOfDay(for: myEntry.date)) = \(myEntry.value)")
+                                    AppLogger.info("  ✅ Found MY progress: \(calendar.startOfDay(for: myEntry.date)) = \(myEntry.value)", category: .social)
                                 } else {
-                                    print("  ❌ No MY progress for this date")
+                                    AppLogger.error("  ❌ No MY progress for this date", category: .social)
                                 }
                                 if let oppEntry = oppProgressEntry {
-                                    print("  ✅ Found OPP progress: \(calendar.startOfDay(for: oppEntry.date)) = \(oppEntry.value)")
+                                    AppLogger.info("  ✅ Found OPP progress: \(calendar.startOfDay(for: oppEntry.date)) = \(oppEntry.value)", category: .social)
                                 } else {
-                                    print("  ❌ No OPP progress for this date")
+                                    AppLogger.error("  ❌ No OPP progress for this date", category: .social)
                                 }
-                                print("  Target: \(target), MY: \(myValue), OPP: \(oppValue)")
-                                print("  Should show ✅ for MY: \(myValue >= target), OPP: \(oppValue >= target)")
+                                AppLogger.debug("  Target: \(target), MY: \(myValue), OPP: \(oppValue)", category: .social)
+                                AppLogger.info("  Should show ✅ for MY: \(myValue >= target), OPP: \(oppValue >= target)", category: .social)
                             }
                         }()
                         
@@ -753,23 +753,23 @@ struct ChallengeDetailView: View {
     private func loadDetails() {
         Task {
             // Fetch challenge details immediately for fast display
-            print("🔄 [CHALLENGE DETAIL] Fetching details for challenge: \(challenge.challengeId)")
+            AppLogger.debug("🔄 [CHALLENGE DETAIL] Fetching details for challenge: \(challenge.challengeId)", category: .social)
             details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
             
             if let fetchedDetails = details {
-                print("✅ [CHALLENGE DETAIL] Details loaded - \(fetchedDetails.participants?.count ?? 0) participants")
+                AppLogger.info("✅ [CHALLENGE DETAIL] Details loaded - \(fetchedDetails.participants?.count ?? 0) participants", category: .social)
                 
                 // Debug: Print daily progress data
                 if let participants = fetchedDetails.participants {
                     for participant in participants {
-                        print("👤 [CHALLENGE DETAIL] \(participant.displayName): \(participant.totalProgress), days completed: \(participant.daysCompleted)")
+                        AppLogger.debug("👤 [CHALLENGE DETAIL] \(participant.displayName): \(participant.totalProgress), days completed: \(participant.daysCompleted)", category: .social)
                         if let dailyProgress = participant.dailyProgress {
-                            print("📊 [CHALLENGE DETAIL] Daily progress entries: \(dailyProgress.count)")
+                            AppLogger.debug("📊 [CHALLENGE DETAIL] Daily progress entries: \(dailyProgress.count)", category: .social)
                             for entry in dailyProgress {
-                                print("  📅 \(entry.date): \(entry.value) \(challenge.targetUnit)")
+                                AppLogger.debug("  📅 \(entry.date): \(entry.value) \(challenge.targetUnit)", category: .social)
                             }
                         } else {
-                            print("⚠️ [CHALLENGE DETAIL] No daily progress data for \(participant.displayName)")
+                            AppLogger.warning("⚠️ [CHALLENGE DETAIL] No daily progress data for \(participant.displayName)", category: .social)
                         }
                     }
                 }
@@ -778,7 +778,7 @@ struct ChallengeDetailView: View {
                     notifyOnOpponentComplete = fetchedDetails.shouldNotifyOnOpponentComplete
                 }
             } else {
-                print("❌ [CHALLENGE DETAIL] Failed to load details")
+                AppLogger.error("❌ [CHALLENGE DETAIL] Failed to load details", category: .social)
             }
             
             isLoading = false
@@ -839,7 +839,7 @@ struct ChallengeDetailView: View {
                 
                 if success {
                     HapticManager.notification(.success)
-                    print("✅ [CHALLENGES] Notification preference set to: \(notify ? "ON" : "OFF")")
+                    AppLogger.info("✅ [CHALLENGES] Notification preference set to: \(notify ? "ON" : "OFF")", category: .social)
                 } else {
                     // Revert toggle on failure
                     notifyOnOpponentComplete = !notify
@@ -956,7 +956,7 @@ struct DailyProgressRow: View {
     private var myCompleted: Bool {
         let completed = myValue >= target
         if !isFuture && myValue > 0 {
-            print("🔍 [DAILY ROW] Day \(dayNumber): myValue=\(myValue), target=\(target), completed=\(completed)")
+            AppLogger.debug("🔍 [DAILY ROW] Day \(dayNumber): myValue=\(myValue), target=\(target), completed=\(completed)", category: .social)
         }
         return completed
     }
@@ -964,7 +964,7 @@ struct DailyProgressRow: View {
     private var opponentCompleted: Bool {
         let completed = opponentValue >= target
         if !isFuture && opponentValue > 0 {
-            print("🔍 [DAILY ROW] Day \(dayNumber): oppValue=\(opponentValue), target=\(target), completed=\(completed)")
+            AppLogger.debug("🔍 [DAILY ROW] Day \(dayNumber): oppValue=\(opponentValue), target=\(target), completed=\(completed)", category: .social)
         }
         return completed
     }

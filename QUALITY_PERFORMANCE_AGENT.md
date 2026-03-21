@@ -1,18 +1,17 @@
 # Fit33 Quality & Performance Staff Engineer Agent
 
-> **Role**: You are the Staff Quality & Performance Engineer for Fit33. You own testing infrastructure, performance optimization, memory management, accessibility, error handling patterns, and app stability. If the app crashes, lags, leaks memory, or fails silently, it's your domain.
+> **Role**: Staff Quality & Performance Engineer. Owns testing, performance, memory, accessibility, error handling, code quality, and app stability.
 
 ---
 
-## Your Domain
+## Mandatory Standards (ALL Agents Must Follow)
 
-- **Testing** — XCTest infrastructure, unit tests, integration tests, UI tests
-- **Performance** — Frame rates, scroll performance, memory usage, battery impact, launch time
-- **Memory management** — Retain cycles, closure captures, `[weak self]`, task cancellation
-- **Accessibility** — VoiceOver labels, Dynamic Type, accessibility hints/values
-- **Error handling** — Consistent error patterns, user-facing error messages, crash prevention
-- **Code quality** — Force unwraps, race conditions, thread safety, dead code
-- **App stability** — Crash-free rate, watchdog kills, background task reliability
+1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
+2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
+3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
+4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
+5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
+6. **Thread safety**: Shared mutable state must use `NSLock`, `@MainActor`, or actor isolation. `@Published` properties must only be mutated on the main thread.
 
 ---
 
@@ -30,13 +29,12 @@
 ## Current Quality Posture
 
 ### Testing Infrastructure
-| Metric | Status | Target |
-|--------|--------|--------|
-| XCTest target | Does NOT exist | Must create |
-| Unit test count | 0 | 100+ for business logic |
-| UI test count | 0 | 10+ for critical flows |
-| In-app diagnostic tools | Exist (`CriticalPathTests.swift`, `LimitationFilterTests.swift`) | Keep, but also add real XCTests |
-| CI test runner | Does NOT exist | GitHub Actions |
+| Metric | Status |
+|--------|--------|
+| XCTest target | `Fit33Tests/` — 9 test files |
+| Unit tests | InputValidation, DTODecoding, WorkoutCalorie, ExerciseData, DesignSystem, ExercisePopularity, AppLogger, LogicAudit |
+| In-app diagnostics | `CriticalPathTests.swift`, `LimitationFilterTests.swift` |
+| CI | `.github/workflows/` — iOS build check, iOS unit tests, iOS syntax check, admin CMS CI |
 
 ### Performance
 | Metric | Status | Target |
@@ -291,16 +289,7 @@ do {
 
 ---
 
-## Logic Audit Learnings
-
-### Ownership from Logic Audit (March 2026)
-- BUG-04: PerformanceMonitor renamed to DebugPerformanceMonitor in DEBUG builds (FIXED)
-- BUG-05: InsightType/InsightCategory disambiguated (SmartInsight prefixed) (FIXED)
-- PERF-01 through PERF-07: All performance issues (FIXED)
-- DUP-14: SystemMetrics utility extracted (FIXED)
-- DUP-18: DateFormatter/ISO8601DateFormatter shared instances (FIXED)
-
-### Key Rules Established
+## Key Rules Established
 - DateFormatters MUST be `static let`, never computed properties
 - `@unchecked Sendable` classes with mutable state MUST use locks (NSLock or OSAllocatedUnfairLock)
 - `@MainActor` classes do NOT need NSLock — actor isolation handles synchronization
@@ -368,28 +357,11 @@ do {
 
 ---
 
-## Onboarding Responsibilities
+## Remaining Tasks
 
-**Primary owner** of `OnboardingTestHelper.swift`. Co-owner of onboarding QA.
-
-### Completed
-- **H-15**: Rewrote test cleanup to fully delete accounts via delete_user_account RPC
-- Built comprehensive audit runner (`runFullAuditWithCleanup`) with orphan sweep
-- Added zero-residue verification after each test profile
-
-### QA Checklist
-Before every release, run:
-1. `OnboardingValidationTests.runAll()` — 50+ offline validation tests
-2. `OnboardingTestHelper.shared.testAllCountryCodes()` — verify all 45 countries
-3. `OnboardingTestHelper.shared.runFullAuditWithCleanup()` — full E2E with DB cleanup
-4. Manual: walk through validation checklist in `ONBOARDING_AUDIT.md` Section 17
-
-### Remaining
-- **H-2**: Add accessibilityLabel/hint to all 17 onboarding steps
-- Integrate test suite into CI/CD when pipeline is established
-
-### Reference
-- `ONBOARDING_AUDIT.md` — Sections 15 (test suite), 17 (validation checklist)
+- Expand accessibility labels to remaining screens (5 critical screens done: ContentView, DashboardView, ActiveWorkoutView, NewOnboardingView, MealPlanView)
+- Add UI tests for critical flows (start workout, log food, complete challenge)
+- Performance baseline verification: run `EXPLAIN ANALYZE` on top 10 queries
 
 ---
 
@@ -469,3 +441,79 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 - Send a chat message when ANTHROPIC_API_KEY is not set (should return 500 with clear message)
 - Verify admin auth rejects non-admin users on both `/api/admin` insight actions and `/api/ai-chat`
 - Test conversation persistence: send message → verify conversation appears in history → reload → verify messages are preserved
+
+### 2026-03-20: Performance Audit — Status & TODO Inventory
+
+**Blocking issues resolved** (pending SQL execution):
+- `exercise_performance_history` missing columns → migration created
+- 7 analytics tables missing RLS → migration created
+- `collaborative_workout_data` missing `program_id` → migration created
+
+**TODO inventory** (5 total, 2 resolved this session):
+| TODO | File | Status |
+|------|------|--------|
+| AdMob production rewarded video ID | AdManager.swift:66 | OPEN — requires AdMob dashboard action |
+| PR detection in workout analysis | ActiveWorkoutView.swift:1258 | FIXED — checks ExerciseHistoryService.personalRecordsCache |
+| Friend search navigation | ShareWorkoutSheet.swift:361 | FIXED — presents FriendsListView sheet |
+| SmartProgramRecommender delegation | ProgramLibraryService.swift:269 | OPEN — architecture note, not blocking |
+| SmartProgramRecommender delegation | CollaborativeLearningEngine.swift:104 | OPEN — architecture note, not blocking |
+
+**Performance baseline verification** (Dec 2025 optimizations):
+- Projected: 40-60% reduction in DB query time (1,060s → 400-600s)
+- Status: NOT YET VERIFIED with post-implementation CSV comparison
+- Recommendation: Run `EXPLAIN ANALYZE` on top 10 queries and compare to baseline in `PERFORMANCE_BASELINE_2025-12-22.md`
+
+**Memory thresholds** (current in PerformanceOptimizations.swift):
+- Warning: 550 MB, Critical: 700 MB, Emergency: 850 MB
+
+### 2026-03-21: USDA Food Search — Test Scenarios & Degradation Path
+
+**Graceful degradation**: Full online (edge function + USDA API) → Server cache only (food_search_cache hit) → Local foods only (300+ hardcoded items) → "No results found" UI. App never crashes on food search failure.
+
+**Search test scenarios**:
+- [ ] "chicken breast" → cooked variants first, raw lower
+- [ ] "eg" (2 chars) → only local results, no API call
+- [ ] "eggs" → generic USDA eggs above branded egg products
+- [ ] Airplane mode → local foods shown, no crash
+- [ ] Repeat search within 5 min → client cache hit (instant)
+- [ ] Log "Chicken Breast" 10+ times → appears first in future searches
+- [ ] Rate limit: >30 rapid requests → 429 response (edge function)
+
+**Scanner test scenarios**:
+- [ ] Standard FDA label → all 18 fields populated
+- [ ] "Trans Fat 0g" → correctly extracts 0 (not nil)
+- [ ] Calories on next line → correctly extracted
+- [ ] "Serving Size 2/3 cup (55g)" (no colon) → correctly parsed
+- [ ] Serving quantity 0.5 → nutrition halved, quantity = 1 (not 0)
+
+**Favorites & history test scenarios**:
+- [ ] Heart/unheart a food → appears/disappears in favorites
+- [ ] Log/delete a food → history updated, challenge progress adjusted
+- [ ] Duplicate favorite attempt → prevented by UNIQUE constraint
+
+**Performance notes**:
+- `loadFrequentFoods()` now uses server-side RPC (was unbounded client-side aggregation)
+- `cacheUSDAFoods()` uses batch upsert (~100 rows in 1 round-trip vs 100 individual queries)
+- `food_search_cache` has 30-day TTL via `created_at` column
+
+### 2026-03-21: Notification System — Test Scenarios
+
+**Bug fix verification**:
+- [ ] Complete workout -> change a notification setting -> verify streak protection does NOT fire at 8 PM
+- [ ] Open app after 3+ days away -> verify comeback reminder fires only ONCE (not on every foreground)
+- [ ] While app is in foreground with comeback conditions -> verify NO in-app "we miss you" banner
+- [ ] Settings -> Social category -> verify Contact Joined, Challenge Progress, Challenge Cancelled visible
+- [ ] Toggle Morning Motivation OFF -> verify 8 AM notification does NOT fire next day
+
+**New notification verification**:
+- [ ] Sunday 6 PM -> weekly progress notification fires (if enabled)
+- [ ] Complete workout -> celebration notification appears after ~2s delay
+- [ ] Enable water reminder -> reminders fire every 2 hours 8 AM-8 PM
+- [ ] 14 days inactive -> "couple weeks" message; 30 days -> "fresh start" message; 31+ days -> no more
+
+**Server-side preference enforcement**:
+- [ ] Disable a notification type in iOS -> server push of that type -> should NOT arrive
+- [ ] Enable quiet hours 10 PM-7 AM -> server push at 11 PM -> should NOT arrive
+- [ ] Disable master toggle -> no server pushes arrive at all
+
+**Graceful degradation**: If `user_notification_preferences` row doesn't exist for a user, server sends notifications normally (no preferences = default behavior). Preferences are synced on every toggle change.

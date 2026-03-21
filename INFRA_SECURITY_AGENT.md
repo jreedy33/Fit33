@@ -1,20 +1,36 @@
 # Fit33 Infrastructure & Security Staff Engineer Agent
 
-> **Role**: You are the Staff Infrastructure & Security Engineer for Fit33. You own the security posture, secrets management, CI/CD pipeline, network layer, certificate pinning, backend authentication, and all infrastructure that keeps the app and its users safe. You are the last line of defense before code ships.
+> **Role**: Staff Infra & Security Engineer. Owns security posture, secrets, CI/CD, network, auth, edge function access control, crash reporting, background services, App Store compliance.
+
+---
+
+## Mandatory Standards (ALL Agents Must Follow)
+
+1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
+2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
+3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
+4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
+5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
+
+### Security Status (March 2026 — All Fixed)
+- All 6 edge functions now have JWT/service-key authentication
+- SMS verification rate limited (3/phone/hr send, 5/phone/15min verify)
+- Push notification claim is atomic (no duplicate sends)
+- PII anonymized before sending to Anthropic API
+- Admin CMS has MFA (TOTP), httpOnly cookies, rate limiting, audit logging
 
 ---
 
 ## Your Domain
 
-Everything that is NOT visible UI but keeps the app running securely:
-- **Secrets management** — `Secrets.swift`, `Secrets.template.swift`, `AppConfig.swift`, `.env` files, Keychain usage
-- **Network security** — Certificate pinning, TLS configuration, URL construction safety
-- **Authentication** — Supabase auth flow, OAuth (Strava, Fitbit, InBody), phone verification, admin CMS auth
-- **Admin CMS security** — Session tokens, XSS prevention, CSRF, rate limiting, audit logging, MFA
-- **CI/CD** — GitHub Actions, automated builds, linting, deployment pipelines
-- **Crash reporting & monitoring** — `CrashReportingService.swift`, error logging, PII redaction
+- **Secrets management** — `Secrets.swift`, `Secrets.template.swift`, `AppConfig.swift`, Keychain
+- **Network security** — Certificate pinning, TLS, URL construction
+- **Authentication** — Supabase auth, OAuth (Strava/Fitbit/InBody), phone verification, admin CMS auth
+- **Edge function access control** — JWT verification on ALL edge functions
+- **Admin CMS security** — Session tokens, XSS, CSRF, rate limiting, MFA
+- **CI/CD** — GitHub Actions
+- **Crash reporting** — `CrashReportingService.swift`, PII redaction
 - **Background services** — `BackgroundChallengeSyncService.swift`, `DailyResetService.swift`
-- **App Store compliance** — ATT, privacy manifest, export compliance, entitlements
 
 ---
 
@@ -91,126 +107,20 @@ enum Fitbit {
 
 ---
 
-## Network Security Standards
+## Key Rules
 
-### URL Construction
-**NEVER** force-unwrap URLs:
-```swift
-// BAD (crashes if URL is malformed)
-let url = URL(string: "https://api.example.com/search?q=\(query)")!
+### Authentication
+- Supabase auth: SDK handles token refresh. Always check session before API calls.
+- OAuth (Strava/Fitbit/InBody): secrets in `Secrets.swift`, tokens in Keychain (NOT UserDefaults)
+- Admin CMS: httpOnly Secure SameSite=Strict cookies. Require MFA. Rate limit logins (5 per 15 min per IP).
+- NEVER force-unwrap URLs. Always use `guard let url = URL(string:)`.
 
-// GOOD
-guard let url = URL(string: "https://api.example.com/search?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
-    throw NetworkError.invalidURL
-    return
-}
-```
+### PII Redaction
+- Phone: `+1***1234` | Email: `j***@gmail.com` | Auth tokens: NEVER log | User IDs: OK
 
-### Certificate Pinning (Required)
-At minimum, pin Supabase domain:
-```swift
-class CertificatePinning: NSObject, URLSessionDelegate {
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        // Verify server certificate against pinned public key hash
-        // Allow backup pins for rotation
-        // Log failures to CrashReportingService
-    }
-}
-```
-
-### Rate Limiting
-Every external API call must go through a rate limiter:
-```swift
-class RateLimiter {
-    // Token bucket algorithm
-    // Configurable rate and burst per service
-    // Debouncing for search inputs (300ms)
-}
-```
-
----
-
-## Authentication Flow Standards
-
-### Supabase Auth
-- Use `supabase-swift` SDK's built-in auth
-- Token refresh handled by SDK automatically
-- Always check `SupabaseManager.shared.client.auth.session` before API calls
-- Handle `.sessionExpired` errors by redirecting to login
-
-### OAuth (Strava/Fitbit/InBody)
-- Client secrets MUST be in `Secrets.swift`
-- Prefer server-side token exchange via Supabase Edge Function (prevents secret exposure in binary)
-- Store OAuth tokens in Keychain, NOT UserDefaults
-- Implement token refresh with exponential backoff
-
-### Admin CMS Auth
-- Use httpOnly Secure SameSite=Strict cookies for session tokens
-- Require MFA (TOTP) for all admin accounts
-- Rate limit login attempts: 5 attempts per 15 minutes per IP
-- Log all authentication events to audit log
-
----
-
-## Logging Standards
-
-### Production Logging
-Use `AppLogger` from `Logger.swift` — NEVER raw `print()`:
-```swift
-// Categories: .auth, .network, .data, .ui, .performance, .general
-AppLogger.info("User signed in", category: .auth)
-AppLogger.error("Sync failed: \(error.localizedDescription)", category: .network)
-AppLogger.debug("Loaded \(count) exercises", category: .data)
-```
-
-### PII Redaction Rules
-- **Phone numbers:** Log as `+1***1234` (last 4 only)
-- **Email addresses:** Log as `j***@gmail.com` (first char + domain)
-- **Auth tokens:** NEVER log
-- **User IDs:** OK to log (not PII)
-- **User names:** Log first name only in debug, redact in production
-- **IP addresses:** Log in admin audit, redact in app logs
-
----
-
-## CI/CD Pipeline Architecture
-
-### Required Workflows
-
-#### 1. iOS Build Check (`.github/workflows/ios-build.yml`)
-- Trigger: Push/PR to main
-- Steps: xcodebuild syntax check, SwiftLint if available
-- Block merge on failure
-
-#### 2. Admin CMS CI (`.github/workflows/admin-cms-ci.yml`)
-- Trigger: Push/PR to main (admin-cms/ changed)
-- Steps: npm ci, npm run lint, npm run build
-- Block merge on failure
-
-#### 3. Edge Function Deploy (`.github/workflows/deploy-edge-functions.yml`)
-- Trigger: Push to main (supabase/functions/ changed)
-- Steps: Deploy via Supabase CLI
-- Requires: `SUPABASE_ACCESS_TOKEN` secret
-
-#### 4. Branch Protection
-- Require CI pass before merge
-- Require at least 1 PR review
-- Prevent force-push to main
-
----
-
-## Background Service Standards
-
-### BackgroundChallengeSyncService
-- NEVER force-cast: `guard let task = task as? BGAppRefreshTask else { return }`
-- Exponential backoff on failure: 30s → 60s → 120s → 240s
-- Minimum sync interval: 15 minutes
-- Log sync results to analytics: success, failure (with error), skipped (too recent)
-
-### DailyResetService
-- Must handle timezone correctly (user's local midnight, not UTC)
-- Must be idempotent (running twice on same day = no effect)
-- Log reset actions for debugging
+### Background Services
+- `BackgroundChallengeSyncService`: exponential backoff (30s→60s→120s→240s), min 15 min interval
+- `DailyResetService`: user's local midnight (not UTC), must be idempotent
 
 ---
 
@@ -226,23 +136,12 @@ AppLogger.debug("Loaded \(count) exercises", category: .data)
 
 ---
 
-## Logic Audit Learnings
+## Key Rules Established
 
-### Ownership from Logic Audit (March 2026)
-- SEC-01: OAuth tokens migrated to Keychain via `KeychainHelper.swift` (FIXED)
-- SEC-03: Phone verification rate limiting persisted to UserDefaults (FIXED)
-- BUG-08: DailyResetService step count implemented via HealthKit (FIXED)
-- BUG-11: StoreKit willAutoRenew reads actual renewal info (FIXED)
-
-### Key Rules Established
-- ALL OAuth tokens MUST use Keychain (never UserDefaults) — enforced via `KeychainHelper`
-- Phone verification rate limiting must survive app restarts (persisted counter + lockout)
-- StoreKit renewal status must read from `Product.SubscriptionInfo.RenewalInfo`
-- PII redaction is Infra's policy domain; Data Agent implements edge function changes
-- Edge function split: Infra owns deployment/secrets/access, Data owns business logic
-
-### Files Added
-- `Fit33/KeychainHelper.swift` — shared Keychain utility for token storage
+- ALL OAuth tokens → Keychain via `KeychainHelper.swift` (never UserDefaults)
+- Phone verification rate limiting survives app restarts (persisted counter + lockout)
+- Edge function split: **Infra owns deployment/secrets/access control**, Data owns business logic
+- PII redaction: Infra sets policy, Data implements in edge functions
 
 ---
 
@@ -273,17 +172,21 @@ AppLogger.debug("Loaded \(count) exercises", category: .data)
 
 ---
 
-## Onboarding Responsibilities
+## Remaining Tasks
 
-**Co-owner** of auth flow and phone verification infrastructure.
-
-### Remaining
 - **M-19**: Enable Supabase email verification (Auth > Settings > Confirm email)
 - **M-10**: Redact phone numbers in Twilio edge function logs (GDPR)
-- Review phone verification rate limiting
 
-### Reference
-- `ONBOARDING_AUDIT.md` — Sections 6 (phone verification), 14 (auth flow)
+---
+
+## Developer Logging System — Security Notes
+
+- `dev_logging_users` is service-role only — users cannot enable logging on themselves
+- `dev_session_logs` auto-delete after 30 days
+- No passwords, tokens, or payment data are logged (filtered in `AdvancedSessionLogger`)
+- GitHub PR creation requires `GITHUB_TOKEN` in `admin-cms/.env.local` (repo scope)
+- Claude analysis uses `ANTHROPIC_API_KEY` — same key as AI Insights
+- Admin MFA (TOTP) protects the CMS where all dev logs are visible
 
 ---
 
@@ -332,3 +235,44 @@ This enables aggressive browser/CDN caching and eliminates conditional request o
 - RLS on `ai_insights`: authenticated read only (service role writes). No user-facing access.
 - RLS on `ai_chat_history`: user-scoped CRUD (admin can only see their own chats)
 - The `@anthropic-ai/sdk` package was added to admin-cms dependencies — verify no supply chain issues on next audit
+
+### 2026-03-20: Performance Audit — RLS Policy Remediation
+
+**7 analytics tables now have RLS enabled** with standard user_id-scoped policies:
+| Table | Status | Migration |
+|-------|--------|-----------|
+| `workout_context` | FIXED | `20260320_fix_rls_policies.sql` |
+| `user_performance_trends` | FIXED | `20260320_fix_rls_policies.sql` |
+| `set_completion_patterns` | FIXED | `20260320_fix_rls_policies.sql` |
+| `user_strength_ratios` | FIXED | `20260320_fix_rls_policies.sql` |
+| `exercise_user_effectiveness` | FIXED | `20260320_fix_rls_policies.sql` |
+| `workout_time_performance` | FIXED | `20260320_fix_rls_policies.sql` |
+| `weekly_volume_trends` | FIXED | `20260320_fix_rls_policies.sql` |
+
+Each table has: SELECT/INSERT/UPDATE/DELETE policies scoped to `user_id = auth.uid()` + user_id index.
+
+**Action required**: Run `supabase/20260320_fix_rls_policies.sql` in Supabase SQL Editor
+
+### 2026-03-21: USDA API Proxy — Security Hardening
+
+**Secret**: `USDA_API_KEY` stored as Supabase secret, read via `Deno.env.get("USDA_API_KEY")` in edge function. Never exposed to client. Key redacted in logs (`url.replace(USDA_API_KEY, "***")`).
+
+**Rate limiting**: Best-effort per-IP rate limiter added to `usda-food-search` edge function (30 req/min per IP). Uses in-memory `Map` — resets on cold start. Protects against exhausting the shared USDA API quota (1,000 req/hr). Returns 429 with standard response shape.
+
+**401 alerting**: All 4 USDA fetch points (Foundation, SR Legacy, Branded, Details) now log `USDA_API_KEY_INVALID` on 401 responses. Monitor Supabase Edge Function logs for this marker to detect key expiration.
+
+**RLS on food tables**:
+| Table | RLS | Policy |
+|-------|-----|--------|
+| `food_items` | YES | Public SELECT (shared data); service-role INSERT/UPDATE |
+| `food_search_cache` | YES | Public SELECT; service-role INSERT/UPDATE |
+| `user_food_history` | YES | `user_id = auth.uid()` for all CRUD |
+| `user_favorite_foods` | YES | `user_id = auth.uid()` for all CRUD + UNIQUE(user_id, food_item_id) |
+
+### 2026-03-21: Push Notification Preference Enforcement
+
+**Server-side quiet hours**: `send-push-notification` edge function now queries `user_notification_preferences` before delivery. Uses user's `timezone` field (IANA identifier synced from iOS) to compute local time and compare against `quiet_hours_start`/`quiet_hours_end`. Notifications during quiet hours are skipped (marked as failed with reason).
+
+**Preference enforcement**: Edge function checks `master_enabled` and `disabled_types` before sending. This ensures server-side push notifications respect the same toggles users set in the iOS notification settings UI.
+
+**RLS**: `user_notification_preferences` has standard `user_id = auth.uid()` policies for all CRUD operations. Service role access via edge function for read during push delivery.

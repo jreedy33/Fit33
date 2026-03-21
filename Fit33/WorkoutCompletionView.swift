@@ -16,7 +16,7 @@ class SoundEffectManager {
             try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Failed to setup audio session: \(error)")
+            AppLogger.error("Failed to setup audio session: \(error)", category: .workout)
         }
     }
     
@@ -29,8 +29,8 @@ class SoundEffectManager {
         impactFeedback.prepare()
         impactFeedback.impactOccurred()
         
-        // Add a second haptic burst
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
             let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
             mediumImpact.impactOccurred()
         }
@@ -42,7 +42,13 @@ class SoundEffectManager {
         
         // Play sounds with slight delays for layered effect
         for (index, soundID) in popSounds.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.05) {
+            let delay = Double(index) * 0.05
+            if delay > 0 {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(delay))
+                    AudioServicesPlaySystemSound(soundID)
+                }
+            } else {
                 AudioServicesPlaySystemSound(soundID)
             }
         }
@@ -63,10 +69,7 @@ struct ConfettiPiece: Identifiable {
     var angularVelocity: Double
     var opacity: CGFloat = 1.0
     
-    static let shapeNames = [
-        "circle.fill", "square.fill", "triangle.fill", "star.fill",
-        "dumbbell.fill", "trophy.fill", "flame.fill", "heart.fill"
-    ]
+    static let shapeNames = ["circle.fill", "square.fill", "star.fill"]
 }
 
 struct ConfettiView: View {
@@ -79,25 +82,23 @@ struct ConfettiView: View {
             Canvas(rendersAsynchronously: true) { context, size in
                 engine.update(size: size, date: timeline.date)
                 
-                let resolved = ConfettiPiece.shapeNames.map { context.resolve(Image(systemName: $0)) }
+                if engine.cachedSymbols.isEmpty {
+                    engine.cachedSymbols = ConfettiPiece.shapeNames.map { context.resolve(Image(systemName: $0)) }
+                }
                 
-                let fadeInEnd: CGFloat = 40
-                let fadeOutStart = size.height * 0.75
-                let fadeOutRange = size.height * 0.25
+                let fadeOutStart = size.height * 0.55
+                let fadeOutRange = size.height * 0.30
                 
                 for piece in engine.pieces {
                     var alpha = piece.opacity
-                    
-                    if piece.y < fadeInEnd {
-                        alpha *= max(0, piece.y / fadeInEnd)
-                    }
+                    if piece.y < 40 { alpha *= max(0, piece.y / 40) }
                     if piece.y > fadeOutStart {
                         alpha *= max(0, 1.0 - (piece.y - fadeOutStart) / fadeOutRange)
                     }
                     guard alpha > 0.02 else { continue }
                     
                     let s = piece.scale * 12
-                    let symbol = resolved[piece.shapeIndex % resolved.count]
+                    let symbol = engine.cachedSymbols[piece.shapeIndex % engine.cachedSymbols.count]
                     let color = engine.colors[piece.colorIndex % engine.colors.count]
                     let rect = CGRect(x: -s / 2, y: -s / 2, width: s, height: s)
                     
@@ -128,55 +129,43 @@ struct ConfettiView: View {
 private class ConfettiEngine: ObservableObject {
     @Published var isAnimating = false
     var pieces: [ConfettiPiece] = []
+    var cachedSymbols: [GraphicsContext.ResolvedImage] = []
     
     let colors: [Color] = [
         Color(red: 0.0, green: 0.78, blue: 1.0),
         Color(red: 0.3, green: 0.5, blue: 1.0),
         Color(red: 0.6, green: 0.2, blue: 1.0),
-        Color(red: 1.0, green: 0.2, blue: 0.55),
         Color(red: 0.0, green: 1.0, blue: 0.65),
         Color(red: 1.0, green: 0.55, blue: 0.0),
-        Color(red: 0.2, green: 0.95, blue: 0.3),
-        Color(red: 1.0, green: 0.82, blue: 0.0),
-        Color(red: 0.0, green: 0.85, blue: 0.85),
     ]
     
-    private var isSpawning = false
     private var lastUpdate: Date?
     private var startTime: Date?
-    private var spawnAccumulator: TimeInterval = 0
     private var cleanupCounter = 0
     
-    private let maxPieces = 140
-    private let gravity: CGFloat = 420
-    private let terminalVelocity: CGFloat = 500
-    private let airDrag: CGFloat = 0.988
+    private let maxPieces = 70
+    private let gravity: CGFloat = 600
+    private let terminalVelocity: CGFloat = 550
     
     func start() {
         pieces.removeAll()
         pieces.reserveCapacity(maxPieces)
+        cachedSymbols = []
         lastUpdate = nil
         startTime = Date()
-        spawnAccumulator = 0
         cleanupCounter = 0
-        isSpawning = true
         isAnimating = true
         
         SoundEffectManager.shared.playConfettiPop()
         
         let w = OrientationManager.shared.screenWidth
-        
-        // Three cannon bursts that shoot UPWARD from off-screen, arc, then rain down
-        spawnCannon(originX: w * 0.2, originY: -80, spread: 60, count: 18)
-        spawnCannon(originX: w * 0.5, originY: -100, spread: 80, count: 24)
-        spawnCannon(originX: w * 0.8, originY: -80, spread: 60, count: 18)
-        
-        // Gentle rain from well above the screen for sustained effect
-        spawnRain(count: 12)
+        spawnCannon(originX: w * 0.3, originY: -60, spread: 50, count: 20)
+        spawnCannon(originX: w * 0.5, originY: -80, spread: 70, count: 30)
+        spawnCannon(originX: w * 0.7, originY: -60, spread: 50, count: 20)
     }
     
     func stop() {
-        isSpawning = false
+        isAnimating = false
     }
     
     func update(size: CGSize, date: Date) {
@@ -190,44 +179,27 @@ private class ConfettiEngine: ObservableObject {
         }
         lastUpdate = date
         
-        let elapsed = startTime.map { date.timeIntervalSince($0) } ?? 0
-        
-        // Continuous rain spawning: fast burst for 0.3s, then trickle for 1.5s total
-        if isSpawning && elapsed < 1.5 && pieces.count < maxPieces {
-            spawnAccumulator += Double(dt)
-            let interval: TimeInterval = elapsed < 0.3 ? 0.03 : 0.12
-            while spawnAccumulator >= interval && pieces.count < maxPieces {
-                spawnAccumulator -= interval
-                spawnRain(count: elapsed < 0.3 ? 3 : 1)
-            }
-        }
-        
-        if elapsed > 2.0 { isSpawning = false }
-        
         let bottom = size.height + 80
         for i in pieces.indices {
             pieces[i].velocity.y = min(pieces[i].velocity.y + gravity * dt, terminalVelocity)
-            pieces[i].velocity.x *= airDrag
-            
-            let wobble = sin(CGFloat(elapsed) * 3.0 + pieces[i].x * 0.05) * 18.0 * dt
-            pieces[i].x += pieces[i].velocity.x * dt + wobble
+            pieces[i].velocity.x *= 0.992
+            pieces[i].x += pieces[i].velocity.x * dt
             pieces[i].y += pieces[i].velocity.y * dt
             pieces[i].rotation += pieces[i].angularVelocity * dt
+            pieces[i].scale *= 0.999
         }
         
         cleanupCounter += 1
-        if cleanupCounter >= 5 {
+        if cleanupCounter >= 3 {
             cleanupCounter = 0
             pieces.removeAll { $0.y > bottom }
-            if pieces.isEmpty && !isSpawning {
+            if pieces.isEmpty {
                 isAnimating = false
                 lastUpdate = nil
             }
         }
     }
     
-    /// Cannon burst: pieces start off-screen and shoot upward with wide spread,
-    /// creating a natural arc that peaks above the viewport then rains down.
     private func spawnCannon(originX: CGFloat, originY: CGFloat, spread: CGFloat, count: Int) {
         let shapeCount = ConfettiPiece.shapeNames.count
         for _ in 0..<count {
@@ -235,35 +207,14 @@ private class ConfettiEngine: ObservableObject {
                 x: originX + .random(in: -spread...spread),
                 y: originY + .random(in: -40...0),
                 rotation: .random(in: 0...360),
-                scale: .random(in: 0.7...1.8),
+                scale: .random(in: 0.6...1.6),
                 colorIndex: .random(in: 0..<colors.count),
                 shapeIndex: .random(in: 0..<shapeCount),
                 velocity: CGPoint(
-                    x: .random(in: -160...160),
-                    y: .random(in: -180 ... -40)
+                    x: .random(in: -150...150),
+                    y: .random(in: -320 ... -150)
                 ),
-                angularVelocity: .random(in: -260...260)
-            ))
-        }
-    }
-    
-    /// Rain: pieces spawn well above the screen and drift down gently.
-    private func spawnRain(count: Int) {
-        let w = OrientationManager.shared.screenWidth
-        let shapeCount = ConfettiPiece.shapeNames.count
-        for _ in 0..<count {
-            pieces.append(ConfettiPiece(
-                x: .random(in: -20...(w + 20)),
-                y: .random(in: -180 ... -60),
-                rotation: .random(in: 0...360),
-                scale: .random(in: 0.4...1.4),
-                colorIndex: .random(in: 0..<colors.count),
-                shapeIndex: .random(in: 0..<shapeCount),
-                velocity: CGPoint(
-                    x: .random(in: -50...50),
-                    y: .random(in: 30...120)
-                ),
-                angularVelocity: .random(in: -220...220)
+                angularVelocity: .random(in: -280...280)
             ))
         }
     }
@@ -286,6 +237,15 @@ struct WorkoutCompletionView: View {
     @State private var showingProgressPhotoCapture = false
     @State private var isCardExpanded = false
     @State private var visibleInsightCards: Set<Int> = []
+    @State private var isNotesExpanded = false
+    
+    // Entrance choreography
+    @State private var showCheckmark = false
+    @State private var showTitle = false
+    @State private var showStats = false
+    @State private var showTags = false
+    @State private var showActionBar = false
+    @State private var showPhotoPrompt = false
     
     var totalSets: Int {
         exerciseSets.values.reduce(0) { total, sets in
@@ -375,41 +335,29 @@ struct WorkoutCompletionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: Spacing.md) {
-                    // 1. Celebration header
-                    VStack(spacing: 6) {
-                        Text("🎉")
-                            .font(.system(size: 44))
-                            .scaleEffect(showingCelebration ? 1.0 : 0.5)
-                            .animation(.spring(response: 0.6, dampingFraction: 0.6), value: showingCelebration)
-                        
-                        Text("Workout Complete!")
-                            .font(.ds_heading2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.top, Spacing.xxs)
+                VStack(spacing: Spacing.lg) {
+                    // HERO ZONE
+                    heroSection
                     
-                    // 2. Inline Replay Insight Cards
+                    // INSIGHTS ZONE
                     if !replayInsights.isEmpty {
                         inlineReplaySection
                     }
                     
-                    // 3. Expandable Sleek Workout Card
-                    expandableWorkoutCard
+                    if showPhotoPrompt {
+                        progressPhotoPrompt
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                     
-                    // 4. Notes Section
-                    workoutNotesSection
-                    
-                    // 5. Progress Photo Prompt
-                    progressPhotoPrompt
-                    
-                    // 6. Reopen Workout Button
-                    doneButton
-                    
-                    Spacer(minLength: 40)
+                    Spacer(minLength: 120)
                 }
                 .padding(.horizontal, Spacing.md)
+            }
+            .overlay(alignment: .bottom) {
+                if showActionBar {
+                    floatingDoneBar
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .background(
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
@@ -420,6 +368,20 @@ struct WorkoutCompletionView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
+                        HapticManager.impact(.medium)
+                        dismiss()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.left")
+                                .font(.ds_bodySmall)
+                            Text("Reopen")
+                                .font(.ds_labelMedium)
+                        }
+                        .foregroundColor(.primary)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
                         HapticManager.selectionChanged()
                         showingShareOptions = true
                     }) {
@@ -428,29 +390,8 @@ struct WorkoutCompletionView: View {
                             .foregroundColor(.primary)
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        HapticManager.notification(.success)
-                        if !completionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            workout.notes = completionNotes
-                            try? workout.managedObjectContext?.save()
-                        }
-                        workoutManager.finishWorkout()
-                        dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            workoutManager.navigateToHomeTab()
-                        }
-                    }) {
-                        Text("Done")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.blue)
-                    }
-                }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarBackground(Color.clear, for: .navigationBar)
         }
         .sheet(isPresented: $showingShareOptions) {
             ShareWorkoutSheet(workout: workout, accentColor: workoutGradient[0])
@@ -467,6 +408,7 @@ struct WorkoutCompletionView: View {
             ])
             if let existingNotes = workout.notes, !existingNotes.isEmpty {
                 completionNotes = existingNotes
+                isNotesExpanded = true
             }
             replayInsights = WorkoutReplayEngine.shared.generateInsights(
                 workout: workout,
@@ -474,12 +416,325 @@ struct WorkoutCompletionView: View {
                 exerciseSets: exerciseSets,
                 workoutDuration: workoutDuration
             )
-            DispatchQueue.main.async {
-                showingCelebration = true
-            }
+            startEntranceChoreography()
         }
         .fullScreenCover(isPresented: $showingProgressPhotoCapture) {
             ProgressPhotoCaptureView()
+        }
+    }
+    
+    // MARK: - Entrance Choreography
+    
+    private func startEntranceChoreography() {
+        showingCelebration = true
+        
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.65)) {
+            showCheckmark = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.15))
+            withAnimation(.easeOut(duration: 0.3)) { showTitle = true }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.45))
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { showStats = true }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.6))
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { showTags = true }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.0))
+            withAnimation(.easeOut(duration: 0.3)) { showActionBar = true }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.easeOut(duration: 0.3)) { showPhotoPrompt = true }
+        }
+    }
+    
+    // MARK: - Hero Section
+    
+    private var heroSection: some View {
+        VStack(spacing: Spacing.md) {
+            // Animated gradient checkmark
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: showCheckmark ? 1 : 0)
+                    .stroke(
+                        LinearGradient(colors: workoutGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 64, height: 64)
+                    .rotationEffect(.degrees(-90))
+                
+                Image(systemName: "checkmark")
+                    .font(.ds_heading1)
+                    .foregroundStyle(
+                        LinearGradient(colors: workoutGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .scaleEffect(showCheckmark ? 1 : 0)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.3), value: showCheckmark)
+            }
+            .padding(.top, Spacing.lg)
+            
+            // Title
+            VStack(spacing: Spacing.xxs) {
+                Text("Workout Complete!")
+                    .font(.ds_heading1)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text(smartWorkoutName)
+                    .font(.ds_bodyLarge)
+                    .foregroundColor(.secondary)
+            }
+            .opacity(showTitle ? 1 : 0)
+            .offset(y: showTitle ? 0 : 12)
+            
+            // Unified stats + breakdown + notes card
+            unifiedStatsCard
+                .opacity(showStats ? 1 : 0)
+                .scaleEffect(showStats ? 1 : 0.95)
+            
+            // Muscle tags
+            if !topMuscles.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(topMuscles.enumerated()), id: \.element) { index, muscle in
+                        Text(muscle)
+                            .font(.ds_labelSmall)
+                            .fontWeight(.medium)
+                            .foregroundColor(workoutGradient[0])
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xxs)
+                            .background(
+                                Capsule()
+                                    .fill(workoutGradient[0].opacity(0.12))
+                            )
+                            .opacity(showTags ? 1 : 0)
+                            .offset(x: showTags ? 0 : -20)
+                            .animation(.spring(response: 0.4, dampingFraction: 0.75).delay(Double(index) * 0.08), value: showTags)
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Unified Stats Card (stats + exercises + notes)
+    
+    private var unifiedStatsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Stats row (always visible)
+            HStack(spacing: 0) {
+                statPill(icon: "clock.fill", value: formatDurationMinutes(workoutDuration), label: "Time")
+                Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                statPill(icon: "figure.strengthtraining.traditional", value: "\(exercises.count)", label: "Exercises")
+                Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                statPill(icon: "repeat", value: "\(totalSets)", label: "Sets")
+                Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                statPill(icon: "star.fill", value: "+\(calculateXP())", label: "XP")
+            }
+            .padding(.vertical, Spacing.sm)
+            
+            // Add a note row (when not expanded)
+            if !isCardExpanded {
+                Divider().padding(.horizontal, Spacing.xs)
+                
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        isNotesExpanded.toggle()
+                    }
+                }) {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "note.text")
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                        Text(completionNotes.isEmpty ? "Add a note..." : completionNotes)
+                            .font(.ds_labelMedium)
+                            .foregroundColor(completionNotes.isEmpty ? .secondary : .primary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                if isNotesExpanded {
+                    TextEditor(text: $completionNotes)
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(.primary)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 60, maxHeight: 100)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.bottom, Spacing.sm)
+                        .overlay(
+                            Group {
+                                if completionNotes.isEmpty {
+                                    Text("Anything you'd like to add?")
+                                        .font(.ds_bodyMedium)
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                        .padding(.leading, Spacing.md)
+                                        .padding(.top, Spacing.xxs)
+                                        .allowsHitTesting(false)
+                                }
+                            },
+                            alignment: .topLeading
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            
+            Divider().padding(.horizontal, Spacing.xs)
+            
+            // Expand/collapse for exercise breakdown
+            Button(action: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isCardExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "list.bullet")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(workoutGradient[0])
+                    Text("Exercise Breakdown")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("\(exercises.count)")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                    Image(systemName: isCardExpanded ? "chevron.up" : "chevron.down")
+                        .font(.ds_bodySmall).fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isCardExpanded {
+                VStack(spacing: Spacing.xs) {
+                    ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
+                        let exerciseId = exercise.id?.uuidString ?? exercise.name ?? ""
+                        let sets = exerciseSets[exerciseId] ?? exerciseSets[exercise.name ?? ""] ?? []
+                        let completedSets = sets.filter { $0.isCompleted }
+                        
+                        CompletionExerciseRow(
+                            exercise: exercise,
+                            completedSets: completedSets,
+                            accentColor: workoutGradient[0]
+                        )
+                    }
+                    
+                    // Notes inside expanded view
+                    Divider().padding(.horizontal, Spacing.xs)
+                    
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "note.text")
+                                .font(.ds_bodySmall)
+                                .foregroundColor(.secondary)
+                            Text("Notes")
+                                .font(.ds_labelMedium)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, Spacing.md)
+                        
+                        TextEditor(text: $completionNotes)
+                            .font(.ds_bodyMedium)
+                            .foregroundColor(.primary)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 60, maxHeight: 100)
+                            .padding(Spacing.sm)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                                    .fill(Color.cardBackground)
+                            )
+                            .overlay(
+                                Group {
+                                    if completionNotes.isEmpty {
+                                        Text("Anything you'd like to add?")
+                                            .font(.ds_bodyMedium)
+                                            .foregroundColor(.secondary.opacity(0.6))
+                                            .padding(.leading, Spacing.md)
+                                            .padding(.top, Spacing.sm + 8)
+                                            .allowsHitTesting(false)
+                                    }
+                                },
+                                alignment: .topLeading
+                            )
+                            .padding(.horizontal, Spacing.sm)
+                    }
+                    .padding(.bottom, Spacing.sm)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.vertical, Spacing.xs)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
+    }
+    
+    private func statPill(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(workoutGradient[0])
+                Text(value)
+                    .font(.ds_statSmall)
+                    .foregroundColor(.primary)
+            }
+            Text(label)
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    // MARK: - Floating Done Bar (matches tab bar size/shape)
+
+    private var floatingDoneBar: some View {
+        Button(action: finishAndDismiss) {
+            Text("Done")
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.xl)
+        .background(
+            .ultraThinMaterial,
+            in: UnevenRoundedRectangle(
+                topLeadingRadius: CornerRadius.xl,
+                topTrailingRadius: CornerRadius.xl
+            )
+        )
+        .background(
+            LinearGradient(colors: workoutGradient, startPoint: .leading, endPoint: .trailing)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.xl)
+                .shadow(color: workoutGradient[0].opacity(0.3), radius: 12, x: 0, y: -4)
+        )
+    }
+    
+    private func finishAndDismiss() {
+        HapticManager.notification(.success)
+        if !completionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            workout.notes = completionNotes
+            try? workout.managedObjectContext?.save()
+        }
+        workoutManager.finishWorkout()
+        dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
+            workoutManager.navigateToHomeTab()
         }
     }
     
@@ -540,175 +795,7 @@ struct WorkoutCompletionView: View {
         .sleekCard(cornerRadius: CornerRadius.lg, accentColor: insight.iconColor)
     }
     
-    // MARK: - Expandable Sleek Workout Card
-    private var expandableWorkoutCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    isCardExpanded.toggle()
-                }
-            }) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top, spacing: Spacing.sm) {
-                        ZStack {
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: workoutGradient,
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 2.5
-                                )
-                                .frame(width: 52, height: 52)
-                            
-                            Image(systemName: "checkmark")
-                                .font(.ds_heading2)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: workoutGradient,
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                        }
-                        
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text(smartWorkoutName)
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            
-                            Text("Just now")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: isCardExpanded ? "chevron.up" : "chevron.down")
-                            .font(.ds_labelMedium).fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                            .padding(.top, Spacing.xs)
-                    }
-                    
-                    Divider()
-                        .padding(.vertical, Spacing.sm)
-                    
-                    HStack(spacing: 0) {
-                        completionStatColumn(icon: "clock.fill", iconColor: workoutGradient[0], value: formatDurationMinutes(workoutDuration), label: "Duration")
-                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                        completionStatColumn(icon: "figure.strengthtraining.traditional", iconColor: workoutGradient[0], value: "\(exercises.count)", label: "Exercises")
-                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                        completionStatColumn(icon: "repeat", iconColor: workoutGradient[0], value: "\(totalSets)", label: "Sets")
-                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                        completionStatColumn(icon: "star.fill", iconColor: .orange, value: "+\(calculateXP())", label: "XP")
-                    }
-                    
-                    if !topMuscles.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(topMuscles, id: \.self) { muscle in
-                                Text(muscle)
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(workoutGradient[0])
-                                    .padding(.horizontal, Spacing.xs)
-                                    .padding(.vertical, Spacing.xxs)
-                                    .background(
-                                        Capsule()
-                                            .fill(workoutGradient[0].opacity(0.12))
-                                    )
-                            }
-                            Spacer()
-                        }
-                        .padding(.top, Spacing.sm)
-                    }
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            if isCardExpanded {
-                VStack(spacing: 0) {
-                    Divider()
-                        .padding(.top, Spacing.sm)
-                    
-                    VStack(spacing: Spacing.xs) {
-                        ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
-                            let exerciseId = exercise.id?.uuidString ?? exercise.name ?? ""
-                            let sets = exerciseSets[exerciseId] ?? exerciseSets[exercise.name ?? ""] ?? []
-                            let completedSets = sets.filter { $0.isCompleted }
-                            
-                            CompletionExerciseRow(
-                                exercise: exercise,
-                                completedSets: completedSets,
-                                accentColor: workoutGradient[0]
-                            )
-                        }
-                    }
-                    .padding(.top, Spacing.sm)
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
-    }
-    
-    private func completionStatColumn(icon: String, iconColor: Color, value: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.ds_bodySmall)
-                    .foregroundColor(iconColor)
-                Text(value)
-                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                    .foregroundColor(.primary)
-            }
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    // MARK: - Workout Notes
-    private var workoutNotesSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: 6) {
-                Image(systemName: "note.text")
-                    .font(.ds_bodySmall)
-                    .foregroundColor(.secondary)
-                Text("Notes")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.secondary)
-            }
-            
-            TextEditor(text: $completionNotes)
-                .font(.ds_bodyMedium)
-                .foregroundColor(.primary)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 60, maxHeight: 100)
-                .padding(Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                        .fill(Color.cardBackground)
-                )
-                .overlay(
-                    Group {
-                        if completionNotes.isEmpty {
-                            Text("Anything you'd like to add?")
-                                .font(.ds_bodyMedium)
-                                .foregroundColor(.secondary.opacity(0.6))
-                                .padding(.leading, Spacing.md)
-                                .padding(.top, Spacing.sm + 8)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
-                )
-        }
-    }
+    // exerciseBreakdownCard and collapsedNotesSection merged into unifiedStatsCard
     
     // MARK: - Progress Photo Prompt
     private var progressPhotoPrompt: some View {
@@ -719,27 +806,35 @@ struct WorkoutCompletionView: View {
                     HapticManager.impact(.light)
                     showingProgressPhotoCapture = true
                 }) {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "camera.fill")
-                            .font(.ds_bodyRegular)
-                            .foregroundColor(.purple)
+                    HStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(LinearGradient(colors: [.purple, .pink], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 3)
+                            .padding(.vertical, Spacing.xs)
                         
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Take a Progress Photo")
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "camera.fill")
+                                .font(.ds_bodyRegular)
+                                .foregroundColor(.purple)
+                            
+                            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                                Text("Take a Progress Photo")
+                                    .font(.ds_labelMedium)
+                                    .foregroundColor(.primary)
+                                Text(days.map { "It's been \($0) days since your last photo" } ?? "Start tracking your transformation")
+                                    .font(.ds_bodySmall)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
                                 .font(.ds_labelMedium)
-                                .foregroundColor(.primary)
-                            Text(days == nil ? "Start tracking your transformation" : "It's been \(days!) days since your last photo")
-                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
                         }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                     }
-                    .padding(Spacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                             .fill(Color.cardBackground)
@@ -750,32 +845,7 @@ struct WorkoutCompletionView: View {
         }
     }
     
-    // MARK: - Reopen Workout Button
-    private var doneButton: some View {
-        Button(action: {
-            HapticManager.impact(.medium)
-            dismiss()
-        }) {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "arrow.uturn.left")
-                    .font(.ds_labelMedium)
-                Text("Reopen Workout")
-                    .font(.ds_labelLarge)
-                    .fontWeight(.bold)
-            }
-            .foregroundColor(workoutGradient[0])
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .stroke(
-                        LinearGradient(colors: workoutGradient, startPoint: .leading, endPoint: .trailing),
-                        lineWidth: 2
-                    )
-            )
-        }
-        .padding(.top, Spacing.xs)
-    }
+    // doneButton replaced by stickyActionBar
     
     // MARK: - Helper Functions
     private func formatDurationMinutes(_ duration: TimeInterval) -> String {

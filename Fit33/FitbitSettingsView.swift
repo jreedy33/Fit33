@@ -215,7 +215,7 @@ struct FitbitSettingsView: View {
                     Circle()
                         .fill(Color(red: 0, green: 0.73, blue: 0.77).opacity(0.2))
                     Image(systemName: "person.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(Color(red: 0, green: 0.73, blue: 0.77))
                 }
             }
@@ -797,7 +797,7 @@ struct FitbitSettingsView: View {
                 if let error = error {
                     // User cancelled or error occurred
                     if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        print("🔐 [FITBIT] User cancelled login")
+                        AppLogger.debug("🔐 [FITBIT] User cancelled login", category: .health)
                     } else {
                         errorMessage = error.localizedDescription
                     }

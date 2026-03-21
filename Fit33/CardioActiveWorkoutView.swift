@@ -376,7 +376,7 @@ struct CardioActiveWorkoutView: View {
                         .frame(width: 70, height: 70)
                     
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
             }
@@ -1021,11 +1021,11 @@ struct CardioCompletionView: View {
             }
             
             #if DEBUG
-            print("✅ [CARDIO] Workout saved successfully")
+            AppLogger.info("✅ [CARDIO] Workout saved successfully", category: .workout)
             #endif
         } catch {
             #if DEBUG
-            print("❌ [CARDIO] Failed to save workout: \(error)")
+            AppLogger.error("❌ [CARDIO] Failed to save workout: \(error)", category: .workout)
             #endif
             await MainActor.run {
                 isSaving = false
@@ -1069,7 +1069,7 @@ struct SummaryStatBubble: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 24))
+                .font(.ds_heading2)
                 .foregroundColor(color)
             
             Text(value)

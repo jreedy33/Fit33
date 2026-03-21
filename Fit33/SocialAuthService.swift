@@ -46,7 +46,7 @@ class SocialAuthService: NSObject, ObservableObject {
     func signInWithApple(completion: @escaping (Result<AppleSignInCredentials, Error>) -> Void) {
         // Prevent multiple simultaneous sign-in attempts (prevents nonce mismatch)
         guard !isSignInInProgress else {
-            print("🍎 [APPLE AUTH] ⚠️ Sign-in already in progress, ignoring duplicate request")
+            AppLogger.warning("🍎 [APPLE AUTH] ⚠️ Sign-in already in progress, ignoring duplicate request", category: .auth)
             return
         }
         
@@ -55,7 +55,7 @@ class SocialAuthService: NSObject, ObservableObject {
         currentNonce = nonce
         appleSignInCompletion = completion
         
-        print("🍎 [APPLE AUTH] Starting sign-in with nonce: \(nonce.prefix(8))...")
+        AppLogger.debug("🍎 [APPLE AUTH] Starting sign-in with nonce: \(nonce.prefix(8))...", category: .auth)
         
         let appleIDProvider = ASAuthorizationAppleIDProvider()
         let request = appleIDProvider.createRequest()
@@ -81,7 +81,7 @@ class SocialAuthService: NSObject, ObservableObject {
         let errorCode = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
         if errorCode != errSecSuccess {
             // Fallback to arc4random if SecRandomCopyBytes fails (extremely rare)
-            print("⚠️ [AUTH] SecRandomCopyBytes failed with OSStatus \(errorCode), using fallback")
+            AppLogger.warning("⚠️ [AUTH] SecRandomCopyBytes failed with OSStatus \(errorCode), using fallback", category: .auth)
             for i in 0..<length {
                 randomBytes[i] = UInt8(arc4random_uniform(256))
             }
@@ -125,12 +125,12 @@ extension SocialAuthService: ASAuthorizationControllerDelegate {
               let authorizationCodeData = appleIDCredential.authorizationCode,
               let authorizationCode = String(data: authorizationCodeData, encoding: .utf8),
               let nonce = currentNonce else {
-            print("🍎 [APPLE AUTH] ❌ Failed to extract credentials or nonce")
+            AppLogger.error("🍎 [APPLE AUTH] ❌ Failed to extract credentials or nonce", category: .auth)
             appleSignInCompletion?(.failure(SocialAuthError.invalidCredentials))
             return
         }
         
-        print("🍎 [APPLE AUTH] ✅ Authorization complete with nonce: \(nonce.prefix(8))...")
+        AppLogger.info("🍎 [APPLE AUTH] ✅ Authorization complete with nonce: \(nonce.prefix(8))...", category: .auth)
         
         let credentials = AppleSignInCredentials(
             identityToken: identityToken,
@@ -154,7 +154,7 @@ extension SocialAuthService: ASAuthorizationControllerDelegate {
             self.errorMessage = error.localizedDescription
         }
         
-        print("🍎 [APPLE AUTH] ❌ Authorization error: \(error.localizedDescription)")
+        AppLogger.error("🍎 [APPLE AUTH] ❌ Authorization error: \(error.localizedDescription)", category: .auth)
         appleSignInCompletion?(.failure(error))
     }
 }

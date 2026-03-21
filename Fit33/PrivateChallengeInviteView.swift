@@ -44,7 +44,7 @@ struct PrivateChallengeInviteView: View {
                     // Header
                     VStack(spacing: 8) {
                         Image(systemName: "person.badge.plus")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                         
                         Text("Invite Friends")

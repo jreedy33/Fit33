@@ -200,7 +200,7 @@ final class FitbitService: ObservableObject {
         
         if httpResponse.statusCode != 200 {
             if let errorBody = String(data: data, encoding: .utf8) {
-                print("❌ [FITBIT] Token exchange error: \(errorBody)")
+                AppLogger.error("❌ [FITBIT] Token exchange error: \(errorBody)", category: .health)
             }
             throw FitbitError.tokenExchangeFailed
         }
@@ -217,7 +217,7 @@ final class FitbitService: ObservableObject {
         
         isConnected = true
         
-        print("✅ [FITBIT] Connected! User ID: \(tokenResponse.userId)")
+        AppLogger.info("✅ [FITBIT] Connected! User ID: \(tokenResponse.userId)", category: .health)
         
         // Update integration status in database
         Task {
@@ -273,7 +273,7 @@ final class FitbitService: ObservableObject {
         self.refreshToken = tokenResponse.refreshToken
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn))
         
-        print("🔄 [FITBIT] Token refreshed")
+        AppLogger.debug("🔄 [FITBIT] Token refreshed", category: .health)
     }
     
     /// Ensure we have a valid access token
@@ -344,10 +344,10 @@ final class FitbitService: ObservableObject {
                 UserDefaults.standard.set(userData, forKey: "fitbit_user")
             }
             
-            print("✅ [FITBIT] Loaded profile: \(profileResponse.user.fullName)")
+            AppLogger.info("✅ [FITBIT] Loaded profile: \(profileResponse.user.fullName)", category: .health)
             
         } catch {
-            print("❌ [FITBIT] Profile error: \(error)")
+            AppLogger.error("❌ [FITBIT] Profile error: \(error)", category: .health)
         }
     }
     
@@ -362,13 +362,13 @@ final class FitbitService: ObservableObject {
         // Throttle: Skip if already syncing or synced recently (unless forced)
         if !force {
             if isSyncing {
-                print("⏭️ [FITBIT] Skipping sync - already in progress")
+                AppLogger.debug("⏭️ [FITBIT] Skipping sync - already in progress", category: .health)
                 return
             }
             
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
-                print("⏭️ [FITBIT] Skipping sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (throttle: \(Int(Self.syncThrottleInterval))s)")
+                AppLogger.debug("⏭️ [FITBIT] Skipping sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (throttle: \(Int(Self.syncThrottleInterval))s)", category: .health)
                 return
             }
         }
@@ -389,7 +389,7 @@ final class FitbitService: ObservableObject {
         
         isLoading = false
         isSyncing = false
-        print("✅ [FITBIT] Full sync complete")
+        AppLogger.info("✅ [FITBIT] Full sync complete", category: .health)
     }
     
     /// Sync activities (workouts) from Fitbit
@@ -426,10 +426,10 @@ final class FitbitService: ObservableObject {
             // Save activities to Supabase
             await saveActivitiesToCloud(activitiesResponse.activities)
             
-            print("✅ [FITBIT] Synced \(activitiesResponse.activities.count) activities")
+            AppLogger.info("✅ [FITBIT] Synced \(activitiesResponse.activities.count) activities", category: .health)
             
         } catch {
-            print("❌ [FITBIT] Activities sync error: \(error)")
+            AppLogger.error("❌ [FITBIT] Activities sync error: \(error)", category: .health)
             errorMessage = error.localizedDescription
         }
     }
@@ -459,10 +459,10 @@ final class FitbitService: ObservableObject {
             let summary = try JSONDecoder().decode(FitbitDailySummaryResponse.self, from: data)
             todaySummary = summary.summary
             
-            print("✅ [FITBIT] Today: \(summary.summary.steps) steps, \(summary.summary.caloriesOut) cal")
+            AppLogger.info("✅ [FITBIT] Today: \(summary.summary.steps) steps, \(summary.summary.caloriesOut) cal", category: .health)
             
         } catch {
-            print("❌ [FITBIT] Daily summary error: \(error)")
+            AppLogger.error("❌ [FITBIT] Daily summary error: \(error)", category: .health)
         }
     }
     
@@ -496,10 +496,10 @@ final class FitbitService: ObservableObject {
             let sleepResponse = try JSONDecoder().decode(FitbitSleepResponse.self, from: data)
             sleepData = sleepResponse.sleep
             
-            print("✅ [FITBIT] Synced \(sleepResponse.sleep.count) sleep logs")
+            AppLogger.info("✅ [FITBIT] Synced \(sleepResponse.sleep.count) sleep logs", category: .health)
             
         } catch {
-            print("❌ [FITBIT] Sleep sync error: \(error)")
+            AppLogger.error("❌ [FITBIT] Sleep sync error: \(error)", category: .health)
         }
     }
     
@@ -529,7 +529,7 @@ final class FitbitService: ObservableObject {
             return heartResponse.activitiesHeart.first?.value
             
         } catch {
-            print("❌ [FITBIT] Heart rate error: \(error)")
+            AppLogger.error("❌ [FITBIT] Heart rate error: \(error)", category: .health)
             return nil
         }
     }
@@ -597,11 +597,11 @@ final class FitbitService: ObservableObject {
                     skippedCount += 1
                 }
             } catch {
-                print("⚠️ [FITBIT] Failed to save activity \(activity.logId): \(error)")
+                AppLogger.warning("⚠️ [FITBIT] Failed to save activity \(activity.logId): \(error)", category: .health)
             }
         }
         
-        print("✅ [FITBIT] Saved \(savedCount) activities, skipped \(skippedCount) existing")
+        AppLogger.info("✅ [FITBIT] Saved \(savedCount) activities, skipped \(skippedCount) existing", category: .health)
         
         // Notify dashboard to reload cardio workouts so Fitbit workouts appear in Recent Activity
         if savedCount > 0 {
@@ -623,7 +623,7 @@ final class FitbitService: ObservableObject {
         if !todayActivities.isEmpty {
             await MainActor.run {
                 UserManager.shared.updateStreak()
-                print("🔥 [FITBIT] Updated streak - found \(todayActivities.count) activities from today")
+                AppLogger.debug("🔥 [FITBIT] Updated streak - found \(todayActivities.count) activities from today", category: .health)
             }
             
             // 🏆 Sync today's activities to challenges
@@ -642,11 +642,11 @@ final class FitbitService: ObservableObject {
         }
         
         guard !todayActivities.isEmpty else {
-            print("📊 [FITBIT] No activities from today to sync to challenges")
+            AppLogger.debug("📊 [FITBIT] No activities from today to sync to challenges", category: .health)
             return
         }
         
-        print("🏆 [FITBIT] Checking \(todayActivities.count) today's activities against challenges...")
+        AppLogger.debug("🏆 [FITBIT] Checking \(todayActivities.count) today's activities against challenges...", category: .health)
         
         for activity in todayActivities {
             await ChallengeService.shared.checkStravaWorkoutForChallenges(
@@ -715,7 +715,7 @@ final class FitbitService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "fitbit", isConnected: false)
         }
         
-        print("🔌 [FITBIT] Disconnected")
+        AppLogger.debug("🔌 [FITBIT] Disconnected", category: .health)
     }
     
     // MARK: - Computed Properties

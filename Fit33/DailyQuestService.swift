@@ -345,7 +345,7 @@ class DailyQuestService: ObservableObject {
     
     func fetchDailyQuests(force: Bool = false) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("📋 [QUESTS] ⚠️ No currentUser — skipping fetch")
+            AppLogger.warning("📋 [QUESTS] ⚠️ No currentUser — skipping fetch", category: .general)
             return
         }
         
@@ -353,11 +353,11 @@ class DailyQuestService: ObservableObject {
         if !force, let cacheDate = UserDefaults.standard.object(forKey: cacheDateKey) as? Date,
            Date().timeIntervalSince(cacheDate) < cacheDuration,
            !quests.isEmpty {
-            print("📋 [QUESTS] Throttled — using cache (\(quests.count) quests)")
+            AppLogger.debug("📋 [QUESTS] Throttled — using cache (\(quests.count) quests)", category: .general)
             return
         }
         
-        print("📋 [QUESTS] Fetching daily quests for user \(userId.uuidString.prefix(8))...")
+        AppLogger.debug("📋 [QUESTS] Fetching daily quests for user \(userId.uuidString.prefix(8))...", category: .general)
         isLoading = true
         error = nil
         
@@ -405,9 +405,9 @@ class DailyQuestService: ObservableObject {
             
             #if DEBUG
             let completed = quests.filter(\.isCompleted).count
-            print("📋 [QUESTS] Fetched \(quests.count) quests (\(completed)/\(quests.count) done), streak: \(response.streak), profile: \(response.difficultyProfile ?? "?")")
+            AppLogger.debug("📋 [QUESTS] Fetched \(quests.count) quests (\(completed)/\(quests.count) done), streak: \(response.streak), profile: \(response.difficultyProfile ?? "?")", category: .general)
             for q in quests {
-                print("   → \(q.questKey): \"\(q.title)\" [\(q.difficulty)] \(q.isCompleted ? "✅" : "⬜")")
+                AppLogger.info("   → \(q.questKey): \"\(q.title)\" [\(q.difficulty)] \(q.isCompleted ? "✅" : "⬜")", category: .general)
             }
             #endif
             
@@ -418,8 +418,8 @@ class DailyQuestService: ObservableObject {
             
         } catch {
             self.error = error.localizedDescription
-            print("❌ [QUESTS] Failed to fetch: \(error)")
-            print("❌ [QUESTS] Error details: \(error.localizedDescription)")
+            AppLogger.error("❌ [QUESTS] Failed to fetch: \(error)", category: .general)
+            AppLogger.error("❌ [QUESTS] Error details: \(error.localizedDescription)", category: .general)
         }
         
         isLoading = false
@@ -435,7 +435,7 @@ class DailyQuestService: ObservableObject {
         // Only call RPC if this quest is actually assigned today and not yet done
         guard hasQuest(questKey) else {
             #if DEBUG
-            print("📋 [QUESTS] Quest '\(questKey.rawValue)' not active today, skipping")
+            AppLogger.debug("📋 [QUESTS] Quest '\(questKey.rawValue)' not active today, skipping", category: .general)
             #endif
             return
         }
@@ -453,7 +453,7 @@ class DailyQuestService: ObservableObject {
             
             guard result.success else {
                 #if DEBUG
-                print("📋 [QUESTS] Progress update returned false: \(result.reason ?? "unknown")")
+                AppLogger.debug("📋 [QUESTS] Progress update returned false: \(result.reason ?? "unknown")", category: .general)
                 #endif
                 return
             }
@@ -503,7 +503,7 @@ class DailyQuestService: ObservableObject {
                     }
                     
                     #if DEBUG
-                    print("✅ [QUESTS] Completed '\(questKey.rawValue)' (+\(old.xpReward) XP, +\(old.leaguePoints) league pts)")
+                    AppLogger.info("✅ [QUESTS] Completed '\(questKey.rawValue)' (+\(old.xpReward) XP, +\(old.leaguePoints) league pts)", category: .general)
                     #endif
                 }
                 
@@ -527,7 +527,7 @@ class DailyQuestService: ObservableObject {
                     }
                     
                     #if DEBUG
-                    print("🎉 [QUESTS] ALL QUESTS COMPLETE! Bonus: +\(bonusXp) XP, +\(bonusLeaguePoints) league pts")
+                    AppLogger.debug("🎉 [QUESTS] ALL QUESTS COMPLETE! Bonus: +\(bonusXp) XP, +\(bonusLeaguePoints) league pts", category: .general)
                     #endif
                 }
                 
@@ -536,7 +536,7 @@ class DailyQuestService: ObservableObject {
             
         } catch {
             #if DEBUG
-            print("⚠️ [QUESTS] Failed to update progress: \(error)")
+            AppLogger.warning("⚠️ [QUESTS] Failed to update progress: \(error)", category: .general)
             #endif
             // Silently fail — quest progress is best-effort
         }

@@ -3756,7 +3756,8 @@ class WorkoutGeneratorService: ObservableObject {
                     result.append(remaining.removeFirst())
                 } else {
                     // Find an exercise with a different movement category than the last added
-                    let lastCategory = getMovementCategory(result.last!)
+                    guard let lastExercise = result.last else { break }
+                    let lastCategory = getMovementCategory(lastExercise)
                     
                     // Try to find one with different category
                     if let differentIndex = remaining.firstIndex(where: { getMovementCategory($0) != lastCategory }) {

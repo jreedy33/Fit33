@@ -93,6 +93,27 @@ export async function POST(req: NextRequest) {
 
     clearAttempts(ip)
 
+    const authedClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${data.session.access_token}` } } },
+    )
+
+    const { data: aal } = await authedClient.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+      const { data: factors } = await authedClient.auth.mfa.listFactors()
+      const totpFactor = factors?.totp?.[0]
+      if (totpFactor) {
+        return NextResponse.json({
+          mfa_required: true,
+          factor_id: totpFactor.id,
+          temp_token: data.session.access_token,
+          temp_refresh: data.session.refresh_token,
+          temp_expires: data.session.expires_at ?? 0,
+        })
+      }
+    }
+
     const response = NextResponse.json({
       user: {
         id: data.user?.id,

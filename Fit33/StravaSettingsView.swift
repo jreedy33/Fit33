@@ -482,7 +482,7 @@ struct StravaAuthSheet: View {
                 if let error = error {
                     // User cancelled or error occurred
                     if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        print("🔐 [STRAVA] User cancelled login")
+                        AppLogger.debug("🔐 [STRAVA] User cancelled login", category: .health)
                     } else {
                         errorMessage = error.localizedDescription
                     }

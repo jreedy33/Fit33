@@ -893,7 +893,7 @@ struct WorkoutProgressView: View {
                         .frame(width: 50, height: 50)
                     
                     Image(systemName: "heart.text.square.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -1453,7 +1453,7 @@ struct WorkoutProgressView: View {
             HStack(spacing: 0) {
                 ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
                     Text(day)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
                 }

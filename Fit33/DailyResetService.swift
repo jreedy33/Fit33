@@ -55,11 +55,11 @@ class DailyResetService: ObservableObject {
         // Check if we already reset today
         if let lastReset = lastResetDate,
            calendar.isDate(lastReset, inSameDayAs: now) {
-            print("🌙 [DAILY RESET] Already performed today's reset at \(lastReset)")
+            AppLogger.debug("🌙 [DAILY RESET] Already performed today's reset at \(lastReset)", category: .general)
             return
         }
         
-        print("🌙 [DAILY RESET] New day detected! Performing daily reset...")
+        AppLogger.debug("🌙 [DAILY RESET] New day detected! Performing daily reset...", category: .general)
         await performDailyReset()
     }
     
@@ -72,7 +72,7 @@ class DailyResetService: ObservableObject {
     
     private func performDailyReset() async {
         guard !isPerformingReset else {
-            print("🌙 [DAILY RESET] Reset already in progress, skipping...")
+            AppLogger.debug("🌙 [DAILY RESET] Reset already in progress, skipping...", category: .general)
             return
         }
         
@@ -296,7 +296,7 @@ class DailyResetService: ObservableObject {
             
             UNUserNotificationCenter.current().add(request) { error in
                 if let error = error {
-                    print("❌ [DAILY RESET] Failed to schedule weight reminder: \(error)")
+                    AppLogger.error("❌ [DAILY RESET] Failed to schedule weight reminder: \(error)", category: .general)
                 }
             }
             
@@ -359,7 +359,7 @@ class DailyResetService: ObservableObject {
             let results = try viewContext.fetch(request)
             return results.count
         } catch {
-            print("❌ [DAILY RESET] Error fetching workout count: \(error)")
+            AppLogger.error("❌ [DAILY RESET] Error fetching workout count: \(error)", category: .general)
             return 0
         }
     }
@@ -430,7 +430,7 @@ class DailyResetService: ObservableObject {
     }
     
     private func logStep(_ message: String) {
-        print("🌙 [DAILY RESET] \(message)")
+        AppLogger.debug("🌙 [DAILY RESET] \(message)", category: .general)
         dailyResetLog.append(message)
     }
 }

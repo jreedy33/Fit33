@@ -305,13 +305,13 @@ final class ExercisePopularityService {
                 lastRefresh = Date()
                 
                 #if DEBUG
-                print("📊 [POPULARITY] Refreshed: \(popular.count) popular, \(trending.count) trending, \(favorited.count) favorited")
+                AppLogger.debug("📊 [POPULARITY] Refreshed: \(popular.count) popular, \(trending.count) trending, \(favorited.count) favorited", category: .workout)
                 #endif
             }
             
         } catch {
             #if DEBUG
-            print("⚠️ [POPULARITY] Failed to refresh: \(error)")
+            AppLogger.warning("⚠️ [POPULARITY] Failed to refresh: \(error)", category: .workout)
             #endif
         }
     }
@@ -328,7 +328,7 @@ final class ExercisePopularityService {
             popularityCache[key] = min(currentScore + 1, 100)
             
             #if DEBUG
-            print("📊 [POPULARITY] Local cache updated: \(exerciseName) -> \(popularityCache[key] ?? 50)")
+            AppLogger.debug("📊 [POPULARITY] Local cache updated: \(exerciseName) -> \(popularityCache[key] ?? 50)", category: .workout)
             #endif
         }
     }
@@ -387,12 +387,12 @@ extension IntelligentWorkoutGenerator {
 #if DEBUG
 extension ExercisePopularityService {
     func printTopExercises() {
-        print("📊 TOP 20 EXERCISES BY POPULARITY:")
+        AppLogger.debug("📊 TOP 20 EXERCISES BY POPULARITY:", category: .workout)
         for (index, name) in getTopExercises(count: 20).enumerated() {
             let score = getPopularityScore(for: name)
             let trending = isTrendingExercise(name) ? "📈" : ""
             let favorite = isCommunityFavorite(name) ? "⭐" : ""
-            print("  \(index + 1). \(name.capitalized) - Score: \(score) \(trending)\(favorite)")
+            AppLogger.debug("  \(index + 1). \(name.capitalized) - Score: \(score) \(trending)\(favorite)", category: .workout)
         }
     }
 }

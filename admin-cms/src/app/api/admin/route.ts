@@ -1288,6 +1288,102 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
+      // ═══════════════════════════════════════════════════
+      // DEV LOGGING ACTIONS
+      // ═══════════════════════════════════════════════════
+
+      case 'get_dev_logging_users': {
+        const { data, error } = await admin.from('dev_logging_users')
+          .select('*, user_profiles(name, email, username)')
+          .order('created_at', { ascending: false })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ users: data })
+      }
+
+      case 'toggle_dev_logging': {
+        const { user_id, enabled } = params as { user_id: string; enabled: boolean }
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        if (enabled) {
+          const { error } = await admin.from('dev_logging_users')
+            .upsert({ user_id, enabled: true, enabled_by: adminAuth.email, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        } else {
+          const { error } = await admin.from('dev_logging_users')
+            .update({ enabled: false, updated_at: new Date().toISOString() })
+            .eq('user_id', user_id)
+          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ success: true })
+      }
+
+      case 'get_dev_sessions': {
+        const { user_id } = params as { user_id?: string }
+        let query = admin.from('dev_session_logs')
+          .select('session_id, user_id, device_info, created_at, batch_index')
+          .order('created_at', { ascending: false })
+          .limit(100)
+        if (user_id) query = query.eq('user_id', user_id)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const sessions = new Map<string, { session_id: string; user_id: string; device_info: unknown; started_at: string; batch_count: number }>()
+        for (const row of (data || [])) {
+          if (!sessions.has(row.session_id)) {
+            sessions.set(row.session_id, {
+              session_id: row.session_id,
+              user_id: row.user_id,
+              device_info: row.device_info,
+              started_at: row.created_at,
+              batch_count: 1,
+            })
+          } else {
+            sessions.get(row.session_id)!.batch_count++
+          }
+        }
+        return NextResponse.json({ sessions: Array.from(sessions.values()) })
+      }
+
+      case 'get_dev_session_entries': {
+        const { session_id } = params as { session_id: string }
+        if (!session_id) return NextResponse.json({ error: 'Missing session_id' }, { status: 400 })
+
+        const { data, error } = await admin.from('dev_session_logs')
+          .select('*')
+          .eq('session_id', session_id)
+          .order('batch_index', { ascending: true })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ batches: data })
+      }
+
+      case 'get_dev_suggestions': {
+        const { session_id } = params as { session_id?: string }
+        let query = admin.from('dev_log_suggestions')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (session_id) query = query.eq('session_id', session_id)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ suggestions: data })
+      }
+
+      case 'update_suggestion_status': {
+        const { suggestion_id, status: newStatus, pr_url, pr_branch } = params as {
+          suggestion_id: string; status: string; pr_url?: string; pr_branch?: string
+        }
+        const update: Record<string, unknown> = { status: newStatus }
+        if (pr_url) update.pr_url = pr_url
+        if (pr_branch) update.pr_branch = pr_branch
+
+        const { error } = await admin.from('dev_log_suggestions')
+          .update(update)
+          .eq('id', suggestion_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

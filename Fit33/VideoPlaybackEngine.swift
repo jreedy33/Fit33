@@ -125,7 +125,9 @@ final class VideoPlaybackEngine: ObservableObject {
         loadVideoMappingsAsync()
         
         // Sync with Core Data favorites and pre-warm cache
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled else { return }
             self?.syncWithCoreDataFavorites()
             self?.preWarmFavorites()
         }
@@ -443,7 +445,8 @@ final class VideoPlaybackEngine: ObservableObject {
         
         // Clear the current item
         // Using a brief delay to allow any pending operations to complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.05))
             player.replaceCurrentItem(with: nil)
         }
     }
@@ -531,7 +534,9 @@ final class VideoPlaybackEngine: ObservableObject {
         AppLogger.debug("Video prefetching resumed", category: .general)
         
         // Re-warm favorites if needed
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.0))
+            guard !Task.isCancelled else { return }
             self?.preWarmFavorites()
         }
     }
@@ -930,7 +935,7 @@ final class VideoPlaybackEngine: ObservableObject {
         // Each pre-warmed player = 20-50MB. Users with 10+ favorites were getting 200MB+ just from pre-warming.
         prefetchLock.lock()
         let shouldSkip = isPreWarmingInProgress || 
-            (lastPreWarmTime != nil && Date().timeIntervalSince(lastPreWarmTime!) < preWarmCooldown)
+            (lastPreWarmTime.map { Date().timeIntervalSince($0) < preWarmCooldown } ?? false)
         if shouldSkip {
             prefetchLock.unlock()
             AppLogger.debug("Skipping duplicate pre-warm (cooldown or in progress)", category: .general)
@@ -944,7 +949,9 @@ final class VideoPlaybackEngine: ObservableObject {
             isPreWarmingInProgress = false
             prefetchLock.unlock()
             // Retry after mappings load
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.0))
+                guard !Task.isCancelled else { return }
                 self?.preWarmFavorites()
             }
             return

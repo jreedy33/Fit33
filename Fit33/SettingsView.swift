@@ -791,8 +791,9 @@ struct SettingsView: View {
         .onChange(of: isAdminAuthenticated) { authenticated in
             if authenticated {
                 showAdminPassword = false
-                // Small delay to let sheet dismiss before navigating
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.3))
+                    guard !Task.isCancelled else { return }
                     showDevMenu = true
                 }
             }
@@ -1098,11 +1099,11 @@ struct SettingsView: View {
     }
     
     private func performAppStateReset() {
-        print("🔄 [DEV] Performing app state reset...")
+        AppLogger.debug("🔄 [DEV] Performing app state reset...", category: .ui)
         
         // Reset WorkoutManager state
         WorkoutManager.shared.resetForSignOut()
-        print("   ✓ WorkoutManager reset")
+        AppLogger.debug("   ✓ WorkoutManager reset", category: .ui)
         
         // Clear any cached UserDefaults for programs (but keep user auth)
         let programKeys = [
@@ -1112,23 +1113,24 @@ struct SettingsView: View {
         for key in programKeys {
             UserDefaults.standard.removeObject(forKey: key)
         }
-        print("   ✓ Program cache cleared")
+        AppLogger.debug("   ✓ Program cache cleared", category: .ui)
         
         // Force refresh cloud program service
         Task {
             await CloudProgramService.shared.forceRefreshAllData()
-            print("   ✓ CloudProgramService refreshed")
+            AppLogger.debug("   ✓ CloudProgramService refreshed", category: .ui)
         }
         
         // Show success feedback
         resetComplete = true
         
-        // Hide checkmark after 2 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled else { return }
             resetComplete = false
         }
         
-        print("🔄 [DEV] App state reset complete!")
+        AppLogger.debug("🔄 [DEV] App state reset complete!", category: .ui)
         
         // Trigger haptic feedback
         let generator = UINotificationFeedbackGenerator()

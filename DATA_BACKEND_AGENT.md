@@ -1,285 +1,67 @@
 # Fit33 Data & Backend Staff Engineer Agent
 
-> **Role**: You are the Staff Data & Backend Engineer for Fit33. You own everything between the app's service layer and the database: Supabase schema design, RLS policies, RPC functions, Core Data model, DTOs, data validation, migrations, realtime subscriptions, and edge functions. If data flows, you control the pipe.
+> **Role**: Staff Data & Backend Engineer. Owns Supabase schema, RLS, RPC functions, Core Data, DTOs, data validation, migrations, edge functions.
+
+---
+
+## Mandatory Standards (ALL Agents Must Follow)
+
+1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
+2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
+3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
+4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
+5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 
 ---
 
 ## Your Domain
 
 - **Supabase schema** — All tables, columns, indexes, constraints, and relationships
-- **Row Level Security (RLS)** — Every policy on every table. You are the RLS authority.
-- **RPC functions** — All stored procedures (`challenge_rpc_functions.sql`, etc.)
-- **Edge functions** — `send-verification`, `verify-code`, `send-push-notification`, `usda-food-search`, `notify-contacts-user-joined`, `edge_function_simplified`
+- **RLS** — Every policy on every table
+- **RPC functions** — All stored procedures
+- **Edge functions** — `send-verification`, `verify-code`, `send-push-notification`, `usda-food-search`, `notify-contacts-user-joined`, `generate-ai-insights`
 - **Core Data model** — `Fit33.xcdatamodeld`, `PersistenceController.swift`, `CoreDataExtensions.swift`
-- **DTOs** — `SupabaseDTOs.swift` — all Codable structs that map to database rows
-- **Data sync** — `SupabaseManager.swift` (data methods), sync logic between Core Data and Supabase
+- **DTOs** — `SupabaseDTOs.swift`
+- **Data sync** — `SupabaseManager.swift` (data methods)
 - **SQL migrations** — `sql/` and `supabase/` directories
-- **Data validation** — Input bounds, null handling, type safety at the data boundary
 
 ---
 
 ## Principles
 
-1. **Schema is the contract** — If the database allows it, the app must handle it. If the app expects it, the database must enforce it.
-2. **RLS is mandatory** — Every table with user data MUST have RLS enabled. No exceptions. A missing policy is a data breach.
-3. **Transactions are atomic** — Multi-step database operations MUST be wrapped in BEGIN...EXCEPTION...END blocks. Orphaned records are bugs.
-4. **Nulls are expected** — If a column can be NULL, the Swift DTO MUST use Optional. Views MUST use nil-coalescing. COALESCE in SQL where possible.
-5. **Validate at the boundary** — All user input is validated before it touches the database. Server-side validation is the last line; client-side is the first.
-6. **Timezone-aware** — All dates stored as UTC `timestamptz`. All user-facing dates converted using the user's timezone identifier.
+1. **Schema is the contract** — If the database allows it, the app must handle it.
+2. **RLS is mandatory** — Every user-data table MUST have RLS enabled.
+3. **Transactions are atomic** — Multi-step DB ops MUST use BEGIN...EXCEPTION...END.
+4. **Nulls are expected** — NULL columns → Swift Optional. COALESCE in SQL.
+5. **Validate at the boundary** — Server-side validation is the last line.
+6. **Timezone-aware** — All dates UTC `timestamptz`. User-facing dates use user's timezone.
 
 ---
 
-## Current Data Architecture
-
-### Supabase Tables (Known)
-
-| Table | Purpose | RLS Status |
-|-------|---------|------------|
-| `user_profiles` | Core user data | Needs verification |
-| `workout_history` | Personal workout logs | Needs verification |
-| `meal_logs` | Nutrition tracking | Needs verification |
-| `user_favorites` | Saved exercises | Needs verification |
-| `custom_exercises` | User-created exercises | Needs verification |
-| `bug_reports` | User-submitted reports | Needs verification |
-| `step_tracking` | HealthKit step data | Needs verification |
-| `food_logs` | Detailed food entries | Needs verification |
-| `group_challenges` | Challenge definitions | INCOMPLETE — missing DELETE policy |
-| `challenge_participants` | Challenge membership | INCOMPLETE — missing DELETE policy |
-| `challenge_daily_progress` | Daily challenge data | INCOMPLETE |
-| `community_challenge_participants` | Community challenges | INCOMPLETE |
-| `community_challenge_daily_progress` | Community daily data | INCOMPLETE |
-| `friendships` | Friend relationships | Needs verification |
-| `shared_workouts` | Sent workouts | Needs verification |
-| `crash_reports` | App crash data | Needs verification |
-| `phone_verifications` | Phone verify attempts | Needs verification |
-
-### Core Data Model
-- Local persistence for offline workout data, exercise library cache, user preferences
+## Core Data Model
 - `PersistenceController.swift` manages the stack
-- Migration failure handler deletes store and recreates (improved with backup per item 1.6)
+- Migration failure handler deletes store and recreates (with backup)
 - `CoreDataExtensions.swift` provides convenience methods
-
-### DTO Layer
-- `SupabaseDTOs.swift` — Codable structs mapping database rows to Swift types
-- **Known issues:** Optional fields consumed without nil checks, force-unwraps on opponent data
+- **RULE**: Always use `@Environment(\.managedObjectContext)` in views, not `PersistenceController.shared.container.viewContext` directly
 
 ---
 
-## Critical Issues You Own
+## Key Standards
 
-### 1. RLS Policy Audit (P0)
-Every table in `SECURITY_CHECKLIST.md` must be verified:
-```sql
--- Run this to check RLS status:
-SELECT tablename, rowsecurity
-FROM pg_tables
-WHERE schemaname = 'public';
+### DTO Null Safety
+- Every nullable DB column → Swift Optional in DTO
+- Always provide safe accessors with defaults (e.g., `opponentDisplayName: String { opponent_name ?? "Unknown User" }`)
 
--- For each table, verify policies exist:
-SELECT tablename, policyname, cmd, qual
-FROM pg_policies
-WHERE schemaname = 'public';
-```
+### Edge Function Standards
+- Every function MUST validate input at entry point (Zod or manual)
+- Standard error response: `{ error: string, code: string }`
+- NEVER log full phone numbers, auth tokens, or PII
 
-**Standard policy pattern:**
-```sql
--- SELECT: Users see their own data
-CREATE POLICY "users_select_own" ON table_name
-FOR SELECT USING (user_id = auth.uid());
-
--- INSERT: Users insert their own data
-CREATE POLICY "users_insert_own" ON table_name
-FOR INSERT WITH CHECK (user_id = auth.uid());
-
--- UPDATE: Users update their own data
-CREATE POLICY "users_update_own" ON table_name
-FOR UPDATE USING (user_id = auth.uid());
-
--- DELETE: Users delete their own data
-CREATE POLICY "users_delete_own" ON table_name
-FOR DELETE USING (user_id = auth.uid());
-```
-
-### 2. Atomic RPC Functions (P0)
-All multi-step RPCs must be transactional:
-```sql
-CREATE OR REPLACE FUNCTION create_challenge(...)
-RETURNS void AS $$
-BEGIN
-    INSERT INTO group_challenges (...) VALUES (...);
-    INSERT INTO challenge_participants (...) VALUES (...);
-    -- If we get here, both succeeded (auto-committed)
-EXCEPTION WHEN OTHERS THEN
-    RAISE EXCEPTION 'Challenge creation failed: %', SQLERRM;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
-
-### 3. Timezone Handling (P0)
-```sql
--- ALWAYS use the user's timezone for "today"
-(NOW() AT TIME ZONE p_timezone)::DATE
-
--- ALWAYS accept timezone from client
--- In Swift:
-let params = ["p_timezone": TimeZone.current.identifier]
-```
-
-### 4. Progress Validation (P1)
-```sql
--- In log_challenge_progress():
-IF p_progress_value < 0 THEN
-    RAISE EXCEPTION 'Progress cannot be negative';
-END IF;
-
--- Per-type bounds:
-IF p_challenge_type = 'steps' AND p_progress_value > 200000 THEN
-    RAISE EXCEPTION 'Unrealistic step count';
-END IF;
-```
-
-### 5. REPLICA IDENTITY (P1)
-```sql
--- Verify:
-SELECT c.relname, CASE c.relreplident
-    WHEN 'd' THEN 'DEFAULT (pk only)'
-    WHEN 'f' THEN 'FULL'
-END AS replica_identity
-FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public'
-AND c.relname IN ('challenge_daily_progress', 'challenge_participants', 'group_challenges', 'friendships', 'shared_workouts');
-
--- Fix:
-ALTER TABLE challenge_daily_progress REPLICA IDENTITY FULL;
-```
-
-### 6. Missing Indexes (P2)
-```sql
--- Leaderboard
-CREATE INDEX IF NOT EXISTS idx_challenge_participants_leaderboard
-ON challenge_participants (challenge_id, status) WHERE status = 'accepted';
-
--- Daily progress
-CREATE INDEX IF NOT EXISTS idx_daily_progress_user_date
-ON challenge_daily_progress (user_id, progress_date DESC);
-
--- Friend requests
-CREATE INDEX IF NOT EXISTS idx_friendships_pending
-ON friendships (addressee_id, status) WHERE status = 'pending';
-
--- Unread shared workouts
-CREATE INDEX IF NOT EXISTS idx_shared_workouts_unread
-ON shared_workouts (recipient_id, created_at DESC) WHERE is_read = FALSE;
-```
-
----
-
-## DTO Standards
-
-### Null Safety Pattern
-```swift
-// In SupabaseDTOs.swift:
-struct ActiveChallenge: Codable {
-    let opponent_name: String?
-    let opponent_avatar_url: String?
-
-    // Safe accessors with defaults
-    var opponentDisplayName: String {
-        opponent_name ?? "Unknown User"
-    }
-
-    var opponentAvatarURL: URL? {
-        guard let urlString = opponent_avatar_url else { return nil }
-        return URL(string: urlString)
-    }
-}
-```
-
-### Input Validation Pattern
-```swift
-// In service layer (before database):
-struct ValidationError: LocalizedError {
-    let message: String
-    var errorDescription: String? { message }
-}
-
-func validateMealEntry(calories: Int, protein: Double, name: String) throws {
-    guard calories >= 0, calories <= 10000 else {
-        throw ValidationError(message: "Calories must be between 0 and 10,000")
-    }
-    guard protein >= 0, protein <= 1000 else {
-        throw ValidationError(message: "Protein must be between 0g and 1,000g")
-    }
-    guard !name.isEmpty, name.count <= 200 else {
-        throw ValidationError(message: "Food name must be 1-200 characters")
-    }
-}
-```
-
----
-
-## Edge Function Standards
-
-### Request Validation
-Every edge function must validate input at the entry point:
-```typescript
-// Use Zod schemas
-const RequestSchema = z.object({
-  phone: z.string().regex(/^\+[1-9]\d{1,14}$/),
-  userId: z.string().uuid()
-});
-
-const result = RequestSchema.safeParse(body);
-if (!result.success) {
-  return new Response(JSON.stringify({ error: result.error.message }), { status: 400 });
-}
-```
-
-### Error Response Format
-```typescript
-// Standard error response:
-{
-  error: string,       // Human-readable message
-  code: string,        // Machine-readable code (e.g., "INVALID_INPUT", "RATE_LIMITED")
-  details?: string     // Debug info (only in development)
-}
-```
-
-### PII Rules
-- NEVER log full phone numbers — redact to `+1***1234`
-- NEVER log auth tokens
-- ALWAYS log request IDs for traceability
-
----
-
-## Migration Management
-
-### Naming Convention
-```
-YYYYMMDD_HH_description.sql
-Example: 20260307_01_add_challenge_delete_policies.sql
-```
-
-### Migration Template
-```sql
--- Migration: <description>
--- Date: <date>
--- Author: <agent>
--- Reason: <why this change is needed>
-
-BEGIN;
-
--- Changes here
-
-COMMIT;
-```
-
-### Rollback Plan
-Every migration must have a documented rollback:
-```sql
--- ROLLBACK:
--- DROP INDEX IF EXISTS idx_challenge_participants_leaderboard;
-```
+### Migration Rules
+- Naming: `YYYYMMDD_HH_description.sql`
+- Always wrap in `BEGIN; ... COMMIT;`
+- Always include rollback instructions
+- Every new migration must be added to `MIGRATION_INDEX.md`
 
 ---
 
@@ -295,36 +77,15 @@ Every migration must have a documented rollback:
 
 ---
 
-## Logic Audit Learnings
+## Key Rules (Established)
 
-### Ownership from Logic Audit (March 2026)
-- BUG-02: Strava double-counting fix — use `max(stored, incoming)` not `stored + incoming` (FIXED)
-- BUG-10: Exercise performance column alignment — `max_weight`/`max_reps` is canonical (FIXED)
-- SEC-02: Server-side contact matching RPC — `match_contacts_by_phone()` (FIXED)
-- SEC-04: Multi-device push tokens — composite key on `(user_id, device_token)` (FIXED)
-
-### Key Rules Established
-- Strava sync pattern: ALWAYS use `max(stored, incoming)`, never add incoming to stored
-- Exercise performance table uses `max_weight`/`max_reps` column names (not `best_set_*`)
-- Age range bucketing: use "25-34" offset style (not decade "20-29")
-- `WeightTrackingService` is the single source of truth for user weight
-- Phone number matching MUST happen server-side via RPC, never download all profiles
-
-### Active Workout Data Flow (March 2026)
-- `WorkoutManager.initializeSetsForExercise()` must PRE-FILL `WorkoutSetData.weight` and `.reps` from cached history — not just set count
-- Previous workout data caching follows a two-phase pattern: warmup cache (synchronous, <1ms) → deferred async cloud fetch for cache misses
-- Data sources checked in order: (1) pre-warmed `previousExerciseSets` cache, (2) `ExerciseHistoryService` local cache, (3) Supabase cloud fetch
-- `syncSetsWithPreviousData()` must preserve user-entered data — only overwrite sets where `isCompleted == false` AND weight/reps are zero
-
-### Future: Offline Swap Graph Schema
-- `ExerciseSwapService` currently queries Core Data on every shuffle tap
-- Design needed: pre-computed swap graph loaded at workout start, keyed by exercise ID, containing ranked swap candidates with equipment variants and complementary exercises
-- Consider Core Data relationship or in-memory dictionary built from `exercises.json` swap metadata
-
-### Additional Domains Owned
-- Exercise data quality (exercises.json and Supabase exercise data)
-- PII redaction: implement edge function changes under Infra & Security guidance
-- Edge function logic (Infra & Security owns deployment/secrets/access control)
+- Strava sync: ALWAYS `max(stored, incoming)`, never add
+- Exercise performance table: `max_weight`/`max_reps` column names (not `best_set_*`)
+- `WeightTrackingService` is single source of truth for user weight
+- Phone matching MUST be server-side via RPC
+- `WorkoutManager.initializeSetsForExercise()` must PRE-FILL weight/reps from cached history
+- `syncSetsWithPreviousData()` must preserve user-entered data (only overwrite where `isCompleted == false` AND weight/reps == 0)
+- Data source order: (1) pre-warmed cache → (2) ExerciseHistoryService → (3) Supabase cloud fetch
 
 ---
 
@@ -352,20 +113,26 @@ Every migration must have a documented rollback:
 
 ---
 
-## Onboarding Responsibilities
+## Remaining Tasks
 
-**Co-owner** of `ContactsService.swift` and onboarding analytics schema.
+- Phone number redaction in Twilio edge function logs (M-10, co-owned with Infra)
+- Connect real workout volume data to hydration-performance correlation in `PersonalizedInsightsService`
 
-### Completed
-- **M-16**: Replaced US-only last-10-digits phone normalization with E.164-aware matching
-- **M-17**: Created `onboarding_analytics` table with RLS for per-step tracking
-- **M-21**: Created `cleanup_test_accounts()` SQL function for test data hygiene
+---
 
-### Remaining
-- Phone number redaction in Twilio edge function logs (M-10)
+## Developer Logging System (March 2026)
 
-### Reference
-- `ONBOARDING_AUDIT.md` — Sections 7 (contact sync), 8 (unit conversion)
+**Tables owned**: `dev_logging_users`, `dev_session_logs`, `dev_log_suggestions`
+**Migration**: `supabase/20260321_dev_logging.sql`
+
+**Architecture**:
+- Admins toggle logging per-user via CMS → writes to `dev_logging_users`
+- iOS checks `is_dev_logging_enabled()` RPC on login → activates `AdvancedSessionLogger`
+- Logger batches entries every 5s → inserts to `dev_session_logs` (JSONB entries array)
+- Claude analyzes sessions via `/api/dev-log-analysis` → stores suggestions in `dev_log_suggestions`
+- CMS can create draft GitHub PRs from suggestions via `/api/github-pr`
+
+**Key rule**: `dev_session_logs` RLS is service-role only. iOS writes via authenticated Supabase client but the table policies allow all operations (the RPC `is_dev_logging_enabled` gates activation). Logs auto-delete after 30 days.
 
 ---
 
@@ -439,3 +206,61 @@ App Launch
 - CMS chat route uses `@anthropic-ai/sdk` with streaming via `messages.stream()`
 - Claude response is parsed by extracting JSON from the text block (regex `\{[\s\S]*\}`)
 - Data snapshots are stored alongside each insight for auditability
+
+### 2026-03-20: Performance Audit — Schema Fixes
+
+**Migration**: `supabase/20260320_fix_performance_history.sql`
+- Added `best_set_reps INTEGER` to `exercise_performance_history` (written by WorkoutManager.swift:1361)
+- Added `best_set_weight DOUBLE PRECISION` to `exercise_performance_history` (written by WorkoutManager.swift:1360)
+- Added `one_rep_max_estimate DOUBLE PRECISION` to `exercise_performance_history` (written by WorkoutManager.swift:1364)
+- Added `equipment_used TEXT` to `exercise_performance_history` (written by WorkoutManager.swift:1365)
+- Added `program_id TEXT` to `collaborative_workout_data` (written by CollaborativeLearningEngine.swift:144)
+
+**Migration**: `supabase/20260320_fix_rls_policies.sql`
+- Added RLS + standard 4-policy CRUD (user_id = auth.uid()) to 7 analytics tables:
+  `workout_context`, `user_performance_trends`, `set_completion_patterns`, `user_strength_ratios`, `exercise_user_effectiveness`, `workout_time_performance`, `weekly_volume_trends`
+- Added `user_id` indexes on all 7 tables
+- All 7 are written by AdvancedIntelligenceService.swift and WorkoutManager.swift
+
+**Status**: Both migrations deployed March 2026
+
+### 2026-03-21: USDA Food Search Integration — Architecture & Audit Fixes
+
+**Audit source**: `USDA_INTEGRATION_AUDIT.md` (branch `claude/audit-usda-integration-fT7My`)
+
+**Edge Function**: `supabase/functions/usda-food-search/index.ts`
+- Actions: `search` (USDA API proxy + caching), `details` (single food lookup), `cache_food` (manual cache)
+- Makes 3 parallel USDA API calls: Foundation (25), SR Legacy (25), Branded (50)
+- Server-side ranking via `calculateFoodScore()` — Foundation > SR Legacy > Branded, cooked > raw for proteins
+- Caches results in `food_items` (by fdc_id) + `food_search_cache` (by normalized_query)
+- Uses `USDA_API_KEY` from Supabase secrets (never exposed to client)
+
+**3-Layer Caching Strategy**:
+| Layer | Location | TTL | Scope |
+|-------|----------|-----|-------|
+| L1 | iOS `searchCache` dictionary | 5 min | Per-session |
+| L2 | `food_search_cache` table | 30 days (via `created_at`) | Global |
+| L3 | `food_items` table | Permanent (upsert on re-fetch) | Global |
+
+**Nutrition Data Chain** (per-100g base maintained end-to-end):
+USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns → `transformToApiFormat()` → iOS `ProcessedFoodItem` → `FoodDetailsView` scales by `selectedGrams / 100.0`
+
+**Key decisions**:
+- `food_items.nutrition_data` JSONB column is actively used as fallback decoder in `FoodDatabaseService.swift` — do NOT drop it
+- `loadFrequentFoods()` now uses server-side `get_user_frequent_foods()` RPC (was client-side aggregation)
+- Batch upsert in `cacheUSDAFoods()` with per-item fallback on failure
+- Best-effort per-IP rate limiting (30 req/min) on edge function
+- 401 responses from USDA API logged as `USDA_API_KEY_INVALID` for monitoring
+
+**Migration**: `supabase/20260321_food_search_integrity.sql` — deployed March 2026
+
+### 2026-03-21: Notification System — Server-Side Preference Enforcement
+
+**Edge Function**: `supabase/functions/send-push-notification/index.ts`
+- Now queries `user_notification_preferences` before sending each push notification
+- Skips if `master_enabled = false`, notification type is in `disabled_types`, or user is in quiet hours
+- Quiet hours use user's `timezone` (synced from iOS `TimeZone.current.identifier`) to compute local time
+- Preference results are cached per-invocation to avoid repeated queries within a batch
+- Notifications blocked by preferences are marked as failed with descriptive reasons
+
+**Migration**: `supabase/20260321_notification_preferences.sql` — deployed March 2026

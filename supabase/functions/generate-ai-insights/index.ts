@@ -99,8 +99,8 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
     best_streak_ever: active.length > 0 ? Math.max(...active.map(p => p.longest_streak || 0)) : 0,
     total_platform_xp: profiles.reduce((a, p) => a + (p.xp || 0), 0),
   };
-  r.top_users_by_xp = profiles.sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 10).map(p => ({
-    name: p.name, username: p.username, xp: p.xp, total_workouts: p.total_workouts, current_streak: p.current_streak, longest_streak: p.longest_streak
+  r.top_users_by_xp = profiles.sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 10).map((p, i) => ({
+    user_rank: i + 1, xp: p.xp, total_workouts: p.total_workouts, current_streak: p.current_streak, longest_streak: p.longest_streak
   }));
 
   // ══════════════════════════════════════════════════════════
@@ -441,6 +441,52 @@ async function collectPlatformData(supabase: ReturnType<typeof createClient>) {
   }
   r.user_lifecycle_stages = stages;
 
+  // ══════════════════════════════════════════════════════════
+  // CROSS-TABLE CORRELATIONS (from new views)
+  // ══════════════════════════════════════════════════════════
+
+  const socialCorr = (await safeQuery(() => supabase.from("v_social_retention_correlation")
+    .select("friend_count, total_workouts, current_streak, challenges_joined, days_since_last_workout")) || []) as R[];
+  if (socialCorr.length > 0) {
+    const withFriends = socialCorr.filter(r => (r.friend_count || 0) > 0);
+    const noFriends = socialCorr.filter(r => (r.friend_count || 0) === 0);
+    r.social_retention = {
+      users_with_friends: withFriends.length,
+      users_without_friends: noFriends.length,
+      avg_workouts_with_friends: withFriends.length > 0 ? Math.round(withFriends.reduce((a, p) => a + (p.total_workouts || 0), 0) / withFriends.length * 10) / 10 : 0,
+      avg_workouts_without_friends: noFriends.length > 0 ? Math.round(noFriends.reduce((a, p) => a + (p.total_workouts || 0), 0) / noFriends.length * 10) / 10 : 0,
+      avg_streak_with_friends: withFriends.length > 0 ? Math.round(withFriends.reduce((a, p) => a + (p.current_streak || 0), 0) / withFriends.length * 10) / 10 : 0,
+      avg_streak_without_friends: noFriends.length > 0 ? Math.round(noFriends.reduce((a, p) => a + (p.current_streak || 0), 0) / noFriends.length * 10) / 10 : 0,
+    };
+  }
+
+  const challengeCorr = (await safeQuery(() => supabase.from("v_challenge_progress_correlation")
+    .select("total_workouts, total_challenges, completed_challenges")) || []) as R[];
+  if (challengeCorr.length > 0) {
+    const challengers = challengeCorr.filter(r => (r.total_challenges || 0) > 0);
+    const nonChallengers = challengeCorr.filter(r => (r.total_challenges || 0) === 0);
+    r.challenge_impact = {
+      users_in_challenges: challengers.length,
+      users_not_in_challenges: nonChallengers.length,
+      avg_workouts_challengers: challengers.length > 0 ? Math.round(challengers.reduce((a, p) => a + (p.total_workouts || 0), 0) / challengers.length * 10) / 10 : 0,
+      avg_workouts_non_challengers: nonChallengers.length > 0 ? Math.round(nonChallengers.reduce((a, p) => a + (p.total_workouts || 0), 0) / nonChallengers.length * 10) / 10 : 0,
+    };
+  }
+
+  // Workout completion rate distribution
+  const completionRates = (await safeQuery(() => supabase.from("workout_history")
+    .select("completion_rate")
+    .not("completion_rate", "is", null)) || []) as R[];
+  if (completionRates.length > 0) {
+    const rates = completionRates.map(r => r.completion_rate as number).filter(r => r != null);
+    r.completion_rate_distribution = {
+      total_workouts_with_rate: rates.length,
+      avg_completion_rate_pct: rates.length > 0 ? Math.round(rates.reduce((a, c) => a + c, 0) / rates.length * 100) : 0,
+      perfect_completion_pct: rates.length > 0 ? Math.round(rates.filter(r => r >= 0.95).length / rates.length * 100) : 0,
+      below_80_pct: rates.length > 0 ? Math.round(rates.filter(r => r < 0.8).length / rates.length * 100) : 0,
+    };
+  }
+
   return r;
 }
 
@@ -512,7 +558,7 @@ Generate 4-8 insights. Be specific and data-driven.`;
   const content = result.content?.[0]?.text;
   if (!content) throw new Error("Empty response from Claude");
 
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  const jsonMatch = content.match(/\{[\s\S]*?\}(?=[^}]*$)/) || content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Could not parse JSON from Claude response");
 
   return JSON.parse(jsonMatch[0]);
@@ -560,8 +606,25 @@ serve(async (req) => {
   }
 
   try {
-    const { action, ...params } = await req.json();
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Missing authorization" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    const token = authHeader.replace("Bearer ", "");
     const supabase = getSupabase();
+    if (token !== supabaseServiceKey) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    const { action, ...params } = await req.json();
 
     switch (action) {
       case "generate_weekly": {

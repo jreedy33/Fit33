@@ -326,7 +326,7 @@ struct ExerciseSelectionView: View {
     private func loadExercises() {
         // Load exercises from cache/Core Data (don't re-initialize, that causes duplicates)
         exercises = ExerciseLibraryService.shared.getAllExercises()
-        print("Loaded \(exercises.count) exercises")
+        AppLogger.info("Loaded \(exercises.count) exercises", category: .workout)
     }
     
     private func toggleExerciseSelection(_ exercise: Exercise) {
@@ -359,7 +359,7 @@ struct SeamlessExerciseSelectionRow: View {
             HStack(spacing: 16) {
                 // Selection indicator
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.ds_heading2)
                     .foregroundColor(isSelected ? .blue : Color(.systemGray4))
                 
                 // Exercise icon
@@ -369,7 +369,7 @@ struct SeamlessExerciseSelectionRow: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: categoryIcon)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.ds_heading3)
                         .foregroundColor(categoryColor)
                 }
                 
@@ -385,7 +385,7 @@ struct SeamlessExerciseSelectionRow: View {
                         
                         Button(action: onInfoTap) {
                             Image(systemName: "info.circle")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.ds_heading3)
                                 .foregroundColor(.blue)
                         }
                         .buttonStyle(PlainButtonStyle())

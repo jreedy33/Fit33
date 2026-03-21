@@ -809,7 +809,8 @@ struct RemoteVideoPlayerView: View {
         .onReceive(playerManager.$isLoading) { isLoading in
             // When loading transitions from true → false and we have a player, capture the poster
             if !isLoading, let player = playerManager.player {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.8))
                     VideoThumbnailService.shared.capturePosterFrame(from: player, exerciseName: exerciseName)
                 }
             }
@@ -901,9 +902,9 @@ class RemoteVideoPlayerManager: ObservableObject {
                 self?.isReadyToDisplay = true
             }
         
-        // Timeout fallback: show player after 2s even if not fully ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self = self, !self.isReadyToDisplay else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled, let self = self, !self.isReadyToDisplay else { return }
             self.isReadyToDisplay = true
         }
     }

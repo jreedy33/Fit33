@@ -61,7 +61,7 @@ class WorkoutManager: ObservableObject {
     // Active program tracking (persisted to UserDefaults)
     @Published var activeProgram: WorkoutProgram? = nil {
         didSet {
-            print("🔔 [PROGRAM] activeProgram changed: \(oldValue?.name ?? "nil") -> \(activeProgram?.name ?? "nil")")
+            AppLogger.debug("🔔 [PROGRAM] activeProgram changed: \(oldValue?.name ?? "nil") -> \(activeProgram?.name ?? "nil")", category: .workout)
             saveActiveProgramToStorage()
         }
     }
@@ -138,7 +138,7 @@ class WorkoutManager: ObservableObject {
             let sets = prefilledSets ?? (0..<setCount).map { _ in WorkoutSetData() }
             exerciseSetsData[id] = sets
             #if DEBUG
-            print("📦 Initialized \(setCount) sets for exercise \(id.prefix(8))")
+            AppLogger.debug("📦 Initialized \(setCount) sets for exercise \(id.prefix(8))", category: .data)
             #endif
         }
     }
@@ -149,7 +149,7 @@ class WorkoutManager: ObservableObject {
     func prefetchExerciseData(_ exercises: [Exercise]) {
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
-        print("⚡️ [PREFETCH] Pre-warming \(exercises.count) exercises...")
+        AppLogger.debug("⚡️ [PREFETCH] Pre-warming \(exercises.count) exercises...", category: .performance)
         #endif
         
         // Force Core Data to fetch all properties we'll need during rendering
@@ -168,7 +168,7 @@ class WorkoutManager: ObservableObject {
         
         #if DEBUG
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("⚡️ [PREFETCH] Pre-warmed \(exercises.count) exercises in \(String(format: "%.2f", elapsed))ms")
+        AppLogger.debug("⚡️ [PREFETCH] Pre-warmed \(exercises.count) exercises in \(String(format: "%.2f", elapsed))ms", category: .performance)
         #endif
     }
     
@@ -223,7 +223,7 @@ class WorkoutManager: ObservableObject {
                     updates[exerciseId] = sets
                     totalSets += setCount
                     #if DEBUG
-                    print("📦 Initialized \(setCount) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))")
+                    AppLogger.debug("📦 Initialized \(setCount) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))", category: .data)
                     #endif
                 }
             }
@@ -231,7 +231,7 @@ class WorkoutManager: ObservableObject {
 
         #if DEBUG
         let buildTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("📦 Built \(totalSets) sets in \(String(format: "%.2f", buildTime))ms")
+        AppLogger.debug("📦 Built \(totalSets) sets in \(String(format: "%.2f", buildTime))ms", category: .data)
         let mergeStart = CFAbsoluteTimeGetCurrent()
         #endif
 
@@ -242,8 +242,8 @@ class WorkoutManager: ObservableObject {
 
         #if DEBUG
         let mergeTime = (CFAbsoluteTimeGetCurrent() - mergeStart) * 1000
-        print("📦 Merge completed in \(String(format: "%.2f", mergeTime))ms")
-        print("📦 Initialized sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)")
+        AppLogger.debug("📦 Merge completed in \(String(format: "%.2f", mergeTime))ms", category: .data)
+        AppLogger.debug("📦 Initialized sets for \(exercises.count) exercises (total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms)", category: .performance)
         #endif
     }
     
@@ -302,24 +302,24 @@ class WorkoutManager: ObservableObject {
     }
     
     func startProgram(_ program: WorkoutProgram) {
-        print("🎯 [PROGRAM] startProgram called for: \(program.name)")
-        print("🎯 [PROGRAM] activeProgram BEFORE: \(activeProgram?.name ?? "nil")")
+        AppLogger.debug("🎯 [PROGRAM] startProgram called for: \(program.name)", category: .workout)
+        AppLogger.debug("🎯 [PROGRAM] activeProgram BEFORE: \(activeProgram?.name ?? "nil")", category: .workout)
         activeProgram = program
         programStartDate = Date()
         programCompletedDays = []
-        print("🎯 [PROGRAM] activeProgram AFTER: \(activeProgram?.name ?? "nil")")
-        print("🎯 [PROGRAM] Started program: \(program.name)")
+        AppLogger.debug("🎯 [PROGRAM] activeProgram AFTER: \(activeProgram?.name ?? "nil")", category: .workout)
+        AppLogger.debug("🎯 [PROGRAM] Started program: \(program.name)", category: .workout)
     }
     
     @MainActor func startProgramWorkout(day: Int, context: NSManagedObjectContext) {
         guard let program = activeProgram,
               let programDay = program.schedule[day] else {
-            print("❌ No program day found for day \(day)")
+            AppLogger.error("❌ No program day found for day \(day)", category: .workout)
             return
         }
         
-        print("🏋️ Starting program day \(day): \(programDay.name)")
-        print("   Focus: \(programDay.focus.joined(separator: ", "))")
+        AppLogger.debug("🏋️ Starting program day \(day): \(programDay.name)", category: .workout)
+        AppLogger.debug("   Focus: \(programDay.focus.joined(separator: ", "))", category: .data)
         
         // Generate fresh workout using intelligent generator with day's focus
         let (workout, exercises) = WorkoutProgramEngine.shared.generateWorkoutFromProgramDay(
@@ -331,18 +331,18 @@ class WorkoutManager: ObservableObject {
         startWorkout(workout: workout, exercises: exercises, insights: nil)
         
         // Mark this day as started (could add completion tracking)
-        print("✅ Started fresh workout for Day \(day) with \(exercises.count) exercises")
+        AppLogger.debug("✅ Started fresh workout for Day \(day) with \(exercises.count) exercises", category: .data)
     }
     
     @MainActor func startPreviewWorkout(context: NSManagedObjectContext) {
         guard let program = previewProgram,
               let day = previewDay,
               let programDay = program.schedule[day] else {
-            print("❌ No preview workout data available")
+            AppLogger.error("❌ No preview workout data available", category: .workout)
             return
         }
         
-        print("🚀 Starting workout from preview screen")
+        AppLogger.debug("🚀 Starting workout from preview screen", category: .data)
         
         // Create workout
         let workout = Workout(context: context)
@@ -358,7 +358,7 @@ class WorkoutManager: ObservableObject {
             allExercises.first { $0.name == exerciseData.name }
         }
         
-        print("   Starting with \(exercises.count) exercises")
+        AppLogger.debug("   Starting with \(exercises.count) exercises", category: .data)
         
         // Start the workout with program day info
         startWorkout(
@@ -369,12 +369,12 @@ class WorkoutManager: ObservableObject {
             programDayFocus: programDay.name
         )
         
-        print("✅ Preview workout started successfully")
+        AppLogger.debug("✅ Preview workout started successfully", category: .workout)
     }
     
     func markProgramDayComplete(_ day: Int) {
         programCompletedDays.insert(day)
-        print("✅ Marked program day \(day) complete. Total: \(programCompletedDays.count)")
+        AppLogger.debug("✅ Marked program day \(day) complete. Total: \(programCompletedDays.count)", category: .workout)
     }
     
     func cancelProgram() {
@@ -382,7 +382,7 @@ class WorkoutManager: ObservableObject {
         programStartDate = nil
         programCompletedDays = []
         clearProgramStorage()
-        print("❌ Program cancelled")
+        AppLogger.error("❌ Program cancelled", category: .workout)
     }
     
     static let shared = WorkoutManager()
@@ -425,11 +425,11 @@ class WorkoutManager: ObservableObject {
         if let program = activeProgram {
             if let encoded = try? JSONEncoder().encode(program) {
                 UserDefaults.standard.set(encoded, forKey: activeProgramKey)
-                print("💾 [PROGRAM] Saved active program: \(program.name)")
+                AppLogger.debug("💾 [PROGRAM] Saved active program: \(program.name)", category: .workout)
             }
         } else {
             UserDefaults.standard.removeObject(forKey: activeProgramKey)
-            print("💾 [PROGRAM] Cleared active program from storage")
+            AppLogger.debug("💾 [PROGRAM] Cleared active program from storage", category: .workout)
         }
     }
     
@@ -452,19 +452,19 @@ class WorkoutManager: ObservableObject {
            let program = try? JSONDecoder().decode(WorkoutProgram.self, from: data) {
             // Set without triggering didSet to avoid re-saving
             self.activeProgram = program
-            print("📂 [PROGRAM] Loaded active program: \(program.name)")
+            AppLogger.debug("📂 [PROGRAM] Loaded active program: \(program.name)", category: .workout)
         }
         
         // Load start date
         if let date = UserDefaults.standard.object(forKey: programStartDateKey) as? Date {
             self.programStartDate = date
-            print("📂 [PROGRAM] Loaded start date: \(date)")
+            AppLogger.debug("📂 [PROGRAM] Loaded start date: \(date)", category: .workout)
         }
         
         // Load completed days
         if let daysArray = UserDefaults.standard.array(forKey: programCompletedDaysKey) as? [Int] {
             self.programCompletedDays = Set(daysArray)
-            print("📂 [PROGRAM] Loaded completed days: \(daysArray)")
+            AppLogger.debug("📂 [PROGRAM] Loaded completed days: \(daysArray)", category: .workout)
         }
     }
     
@@ -472,7 +472,7 @@ class WorkoutManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: activeProgramKey)
         UserDefaults.standard.removeObject(forKey: programStartDateKey)
         UserDefaults.standard.removeObject(forKey: programCompletedDaysKey)
-        print("🗑️ [PROGRAM] Cleared all program storage")
+        AppLogger.debug("🗑️ [PROGRAM] Cleared all program storage", category: .workout)
     }
     
     // MARK: - Active Workout Persistence
@@ -515,7 +515,7 @@ class WorkoutManager: ObservableObject {
         // This prevents saving corrupted state that can't be restored
         guard !currentExercises.isEmpty else {
             #if DEBUG
-            print("⚠️ [WORKOUT] Cannot save workout state with empty exercises - potential data corruption")
+            AppLogger.error("⚠️ [WORKOUT] Cannot save workout state with empty exercises - potential data corruption", category: .data)
             #endif
             // Don't clear storage yet - this might be a temporary state
             return
@@ -526,7 +526,7 @@ class WorkoutManager: ObservableObject {
         // Additional safety check - ensure we got valid IDs
         guard exerciseIds.count == currentExercises.count else {
             #if DEBUG
-            print("⚠️ [WORKOUT] Some exercises have nil IDs - cannot save workout state safely")
+            AppLogger.error("⚠️ [WORKOUT] Some exercises have nil IDs - cannot save workout state safely", category: .data)
             #endif
             return
         }
@@ -544,7 +544,7 @@ class WorkoutManager: ObservableObject {
         if let encoded = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(encoded, forKey: activeWorkoutKey)
             #if DEBUG
-            print("💾 [WORKOUT] Saved active workout state")
+            AppLogger.debug("💾 [WORKOUT] Saved active workout state", category: .data)
             #endif
         }
         
@@ -568,22 +568,22 @@ class WorkoutManager: ObservableObject {
         if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
             UserDefaults.standard.set(setsEncoded, forKey: workoutSetsDataKey)
             #if DEBUG
-            print("💾 [WORKOUT] Saved \(exerciseSetsData.count) exercise sets")
+            AppLogger.debug("💾 [WORKOUT] Saved \(exerciseSetsData.count) exercise sets", category: .data)
             #endif
         }
     }
     
     /// Load active workout state from UserDefaults (call on app launch)
     private func loadActiveWorkoutFromStorage() {
-        print("📂 [WORKOUT] Checking for saved active workout...")
+        AppLogger.debug("📂 [WORKOUT] Checking for saved active workout...", category: .data)
         
         guard let data = UserDefaults.standard.data(forKey: activeWorkoutKey) else {
-            print("📂 [WORKOUT] No saved active workout data found")
+            AppLogger.debug("📂 [WORKOUT] No saved active workout data found", category: .data)
             return
         }
         
         guard let state = try? JSONDecoder().decode(ActiveWorkoutState.self, from: data) else {
-            print("⚠️ [WORKOUT] Could not decode saved workout state")
+            AppLogger.error("⚠️ [WORKOUT] Could not decode saved workout state", category: .data)
             return
         }
         
@@ -593,14 +593,14 @@ class WorkoutManager: ObservableObject {
         let minutesElapsed = Int(elapsedTime / 60)
         
         if elapsedTime > maxWorkoutDuration {
-            print("⏰ [WORKOUT] Active workout expired (\(String(format: "%.1f", hoursElapsed)) hours old, limit is 4 hours) - auto-ending")
+            AppLogger.warning("⏰ [WORKOUT] Active workout expired (\(String(format: "%.1f", hoursElapsed)) hours old, limit is 4 hours) - auto-ending", category: .performance)
             clearActiveWorkoutStorage()
             return
         }
         
-        print("📂 [WORKOUT] Found saved active workout (started \(minutesElapsed) minutes ago)")
-        print("📂 [WORKOUT] Workout ID: \(state.workoutId)")
-        print("📂 [WORKOUT] Exercise IDs: \(state.exerciseIds.count) exercises")
+        AppLogger.debug("📂 [WORKOUT] Found saved active workout (started \(minutesElapsed) minutes ago)", category: .performance)
+        AppLogger.debug("📂 [WORKOUT] Workout ID: \(state.workoutId)", category: .data)
+        AppLogger.debug("📂 [WORKOUT] Exercise IDs: \(state.exerciseIds.count) exercises", category: .data)
         
         // Fetch the workout and exercises from Core Data
         let context = PersistenceController.shared.container.viewContext
@@ -614,13 +614,13 @@ class WorkoutManager: ObservableObject {
         do {
             workout = try context.fetch(workoutFetch).first
         } catch {
-            print("❌ [WORKOUT] Core Data fetch error for workout: \(error)")
+            AppLogger.error("❌ [WORKOUT] Core Data fetch error for workout: \(error)", category: .network)
         }
         
         // If workout not found, try to create a placeholder
         if workout == nil {
-            print("⚠️ [WORKOUT] Could not find saved workout in Core Data (ID: \(state.workoutId))")
-            print("⚠️ [WORKOUT] This can happen if app data was cleared. Creating placeholder workout...")
+            AppLogger.error("⚠️ [WORKOUT] Could not find saved workout in Core Data (ID: \(state.workoutId))", category: .data)
+            AppLogger.warning("⚠️ [WORKOUT] This can happen if app data was cleared. Creating placeholder workout...", category: .data)
             
             // Create a new placeholder workout to continue
             let newWorkout = Workout(context: context)
@@ -633,9 +633,9 @@ class WorkoutManager: ObservableObject {
             
             do {
                 try context.save()
-                print("✅ [WORKOUT] Created placeholder workout")
+                AppLogger.debug("✅ [WORKOUT] Created placeholder workout", category: .data)
             } catch {
-                print("❌ [WORKOUT] Failed to create placeholder workout: \(error)")
+                AppLogger.error("❌ [WORKOUT] Failed to create placeholder workout: \(error)", category: .data)
                 clearActiveWorkoutStorage()
                 return
             }
@@ -643,7 +643,7 @@ class WorkoutManager: ObservableObject {
         
         // At this point workout should exist (either fetched or created)
         guard let resolvedWorkout = workout else {
-            print("❌ [WORKOUT] Unexpected: workout is still nil after creation attempt")
+            AppLogger.error("❌ [WORKOUT] Unexpected: workout is still nil after creation attempt", category: .data)
             clearActiveWorkoutStorage()
             return
         }
@@ -652,14 +652,14 @@ class WorkoutManager: ObservableObject {
         // This ensures the user can finish the workout even if it was previously marked complete
         // (e.g., app crashed after saveWorkoutData() but before completion view dismissed)
         if resolvedWorkout.isCompleted {
-            print("⚠️ [WORKOUT] Restored workout was marked as completed - resetting to allow finishing")
+            AppLogger.warning("⚠️ [WORKOUT] Restored workout was marked as completed - resetting to allow finishing", category: .data)
             resolvedWorkout.isCompleted = false
             try? context.save()
         }
         
         // Fetch exercises
         let exerciseIds = state.exerciseIds.compactMap { UUID(uuidString: $0) }
-        print("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseIds.map { $0.uuidString.prefix(8) })")
+        AppLogger.debug("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseIds.map { $0.uuidString.prefix(8) })", category: .data)
         
         let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
         exerciseFetch.predicate = NSPredicate(format: "id IN %@", exerciseIds)
@@ -667,14 +667,14 @@ class WorkoutManager: ObservableObject {
         var exercises: [Exercise] = []
         do {
             exercises = try context.fetch(exerciseFetch)
-            print("📂 [WORKOUT] Found \(exercises.count) exercises in Core Data")
+            AppLogger.debug("📂 [WORKOUT] Found \(exercises.count) exercises in Core Data", category: .data)
         } catch {
-            print("❌ [WORKOUT] Core Data fetch error for exercises: \(error)")
+            AppLogger.error("❌ [WORKOUT] Core Data fetch error for exercises: \(error)", category: .network)
         }
         
         if exercises.isEmpty {
-            print("⚠️ [WORKOUT] Could not find any saved exercises in Core Data")
-            print("⚠️ [WORKOUT] This means the workout data is corrupted - clearing to prevent crash loop")
+            AppLogger.error("⚠️ [WORKOUT] Could not find any saved exercises in Core Data", category: .data)
+            AppLogger.error("⚠️ [WORKOUT] This means the workout data is corrupted - clearing to prevent crash loop", category: .data)
             clearActiveWorkoutStorage()
             
             // Show notification to user that workout was lost
@@ -695,7 +695,7 @@ class WorkoutManager: ObservableObject {
         
         // Final safety check - ensure we have exercises after ordering
         if orderedExercises.isEmpty {
-            print("⚠️ [WORKOUT] No exercises after ordering - clearing to prevent crash loop")
+            AppLogger.error("⚠️ [WORKOUT] No exercises after ordering - clearing to prevent crash loop", category: .data)
             clearActiveWorkoutStorage()
             return
         }
@@ -732,7 +732,7 @@ class WorkoutManager: ObservableObject {
             for (_, sets) in exerciseSetsData {
                 completedSets += sets.filter { $0.isCompleted }.count
             }
-            print("📂 [WORKOUT] Restored \(persistedSets.count) exercises with \(completedSets) completed sets")
+            AppLogger.debug("📂 [WORKOUT] Restored \(persistedSets.count) exercises with \(completedSets) completed sets", category: .data)
         }
         
         // Restore workout state
@@ -744,11 +744,12 @@ class WorkoutManager: ObservableObject {
         currentSmartProgramId = state.smartProgramId
         isWorkoutActive = true
         
-        print("✅ [WORKOUT] Successfully restored active workout with \(orderedExercises.count) exercises")
-        print("✅ [WORKOUT] Workout has been active for \(minutesElapsed) minutes (\(String(format: "%.1f", hoursElapsed)) hours)")
+        AppLogger.debug("✅ [WORKOUT] Successfully restored active workout with \(orderedExercises.count) exercises", category: .data)
+        AppLogger.debug("✅ [WORKOUT] Workout has been active for \(minutesElapsed) minutes (\(String(format: "%.1f", hoursElapsed)) hours)", category: .performance)
         
-        // Navigate to workout tab
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
             self?.shouldNavigateToWorkoutTab = true
         }
     }
@@ -757,13 +758,13 @@ class WorkoutManager: ObservableObject {
     private func clearActiveWorkoutStorage() {
         UserDefaults.standard.removeObject(forKey: activeWorkoutKey)
         UserDefaults.standard.removeObject(forKey: workoutSetsDataKey)
-        print("🗑️ [WORKOUT] Cleared active workout storage")
+        AppLogger.debug("🗑️ [WORKOUT] Cleared active workout storage", category: .data)
     }
     
     /// Force clear ALL workout state - use when stuck in bad state
     /// This is a nuclear option for debugging/recovery
     func forceResetWorkoutState() {
-        print("🔴 [WORKOUT] FORCE RESET - Clearing all workout state")
+        AppLogger.debug("🔴 [WORKOUT] FORCE RESET - Clearing all workout state", category: .data)
         
         // Clear published state
         isWorkoutActive = false
@@ -788,21 +789,21 @@ class WorkoutManager: ObservableObject {
         // Force UI update
         objectWillChange.send()
         
-        print("✅ [WORKOUT] Force reset complete - all state cleared")
+        AppLogger.debug("✅ [WORKOUT] Force reset complete - all state cleared", category: .data)
     }
     
     /// Called when app enters background - save workout state
     func saveWorkoutStateOnBackground() {
         if isWorkoutActive {
             saveActiveWorkoutToStorage()
-            print("📱 [WORKOUT] Saved state before entering background")
+            AppLogger.debug("📱 [WORKOUT] Saved state before entering background", category: .data)
         }
     }
     
     /// Called when app returns to foreground - check for expired workout
     func checkWorkoutStateOnForeground() {
         guard isWorkoutActive, let startTime = workoutStartTime else {
-            print("📱 [WORKOUT] App foregrounded - no active workout")
+            AppLogger.debug("📱 [WORKOUT] App foregrounded - no active workout", category: .data)
             return
         }
         
@@ -811,7 +812,7 @@ class WorkoutManager: ObservableObject {
         let minutesElapsed = Int(elapsedTime / 60)
         
         if elapsedTime > maxWorkoutDuration {
-            print("⏰ [WORKOUT] Workout has been active for \(String(format: "%.1f", hoursElapsed)) hours - exceeds 4 hour limit")
+            AppLogger.debug("⏰ [WORKOUT] Workout has been active for \(String(format: "%.1f", hoursElapsed)) hours - exceeds 4 hour limit", category: .performance)
             
             // Auto-end the workout
             cancelWorkout()
@@ -823,7 +824,7 @@ class WorkoutManager: ObservableObject {
                 userInfo: ["reason": "Your workout was automatically ended after 4 hours. Tap FINISH next time to save your progress!"]
             )
         } else {
-            print("✅ [WORKOUT] App foregrounded - workout still active (\(minutesElapsed) min / \(String(format: "%.1f", hoursElapsed)) hrs)")
+            AppLogger.debug("✅ [WORKOUT] App foregrounded - workout still active (\(minutesElapsed) min / \(String(format: "%.1f", hoursElapsed)) hrs)", category: .performance)
             
             // Re-save state to ensure it's fresh
             saveActiveWorkoutToStorage()
@@ -847,7 +848,7 @@ class WorkoutManager: ObservableObject {
                     self?.saveCounter = 0
                     self?.saveActiveWorkoutToStorage()
                     #if DEBUG
-                    print("💾 [WORKOUT] Auto-saved workout state (periodic)")
+                    AppLogger.debug("💾 [WORKOUT] Auto-saved workout state (periodic)", category: .data)
                     #endif
                 }
             }
@@ -861,19 +862,19 @@ class WorkoutManager: ObservableObject {
     @MainActor func startWorkout(workout: Workout, exercises: [Exercise], insights: WorkoutInsights? = nil, programDay: Int? = nil, programDayFocus: String? = nil, smartProgramId: String? = nil, programWeek: Int? = nil) {
         #if DEBUG
         let totalStartTime = CFAbsoluteTimeGetCurrent()
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("🏋️ [PERF] startWorkout() BEGIN")
-        print("   Exercises: \(exercises.count)")
-        print("   Thread: \(Thread.isMainThread ? "Main ✅" : "Background ⚠️")")
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .data)
+        AppLogger.debug("🏋️ [PERF] startWorkout() BEGIN", category: .performance)
+        AppLogger.debug("   Exercises: \(exercises.count)", category: .data)
+        AppLogger.warning("   Thread: \(Thread.isMainThread ? "Main ✅" : "Background ⚠️")", category: .data)
         #endif
         
         // Ensure we're on the main thread for @Published property changes
         guard Thread.isMainThread else {
             #if DEBUG
-            print("⚠️ [PERF] Redirecting to main thread...")
+            AppLogger.warning("⚠️ [PERF] Redirecting to main thread...", category: .performance)
             #endif
             DispatchQueue.main.async {
-                self.startWorkout(workout: workout, exercises: exercises, insights: insights, programDay: programDay, programDayFocus: programDayFocus, smartProgramId: smartProgramId)
+                self.startWorkout(workout: workout, exercises: exercises, insights: insights, programDay: programDay, programDayFocus: programDayFocus, smartProgramId: smartProgramId, programWeek: programWeek)
             }
             return
         }
@@ -881,7 +882,7 @@ class WorkoutManager: ObservableObject {
         // Prevent double-start
         guard !isWorkoutActive else {
             #if DEBUG
-            print("⏭️ [PERF] Workout already active, skipping")
+            AppLogger.warning("⏭️ [PERF] Workout already active, skipping", category: .performance)
             #endif
             return
         }
@@ -896,7 +897,7 @@ class WorkoutManager: ObservableObject {
         prefetchExerciseData(exercises)
         
         #if DEBUG
-        print("   Prefetch data: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        AppLogger.debug("   Prefetch data: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .performance)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
@@ -905,7 +906,7 @@ class WorkoutManager: ObservableObject {
         initializeSetsForExercises(exercises)
         
         #if DEBUG
-        print("   Initialize sets: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        AppLogger.debug("   Initialize sets: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .data)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
@@ -922,7 +923,7 @@ class WorkoutManager: ObservableObject {
         }
         
         #if DEBUG
-        print("   Swap graph: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        AppLogger.debug("   Swap graph: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .data)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
@@ -948,11 +949,11 @@ class WorkoutManager: ObservableObject {
         shouldClearWorkoutTabNav = false
         
         #if DEBUG
-        print("   State + Navigation: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        AppLogger.debug("   State + Navigation: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .data)
         let totalTime = (CFAbsoluteTimeGetCurrent() - totalStartTime) * 1000
-        print("🏋️ [PERF] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms")
-        print("🎯 [WORKOUT MANAGER] Workout ACTIVE - INSTANT!")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        AppLogger.debug("🏋️ [PERF] startWorkout() COMPLETE in \(String(format: "%.2f", totalTime))ms", category: .performance)
+        AppLogger.debug("🎯 [WORKOUT MANAGER] Workout ACTIVE - INSTANT!", category: .data)
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .data)
         #endif
         
         // 📺 Prepare ads ASYNC after workout starts (non-blocking)
@@ -967,15 +968,16 @@ class WorkoutManager: ObservableObject {
             await recordWorkoutContext()
         }
         
-        // ⚡️ PERSISTENCE: Save workout state after brief delay (non-blocking)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
             self?.saveActiveWorkoutToStorage()
         }
     }
     
     func finishWorkout() {
         #if DEBUG
-        print("🏁 WorkoutManager: Finishing current workout")
+        AppLogger.debug("🏁 WorkoutManager: Finishing current workout", category: .data)
         #endif
         
         // Calculate workout stats for program tracking
@@ -985,7 +987,7 @@ class WorkoutManager: ObservableObject {
         // If this is a SmartProgram workout, complete the day
         if let smartProgramId = currentSmartProgramId, let dayNumber = currentProgramDayNumber {
             #if DEBUG
-            print("✅ Completing SmartProgram day: Program=\(smartProgramId), Day=\(dayNumber)")
+            AppLogger.debug("✅ Completing SmartProgram day: Program=\(smartProgramId), Day=\(dayNumber)", category: .workout)
             #endif
             SmartProgramEngine.shared.completeDay(
                 programId: smartProgramId,
@@ -998,7 +1000,7 @@ class WorkoutManager: ObservableObject {
         else if let dayNumber = currentProgramDayNumber, activeProgram != nil {
             markProgramDayComplete(dayNumber)
             #if DEBUG
-            print("✅ Program Day \(dayNumber) marked as complete")
+            AppLogger.debug("✅ Program Day \(dayNumber) marked as complete", category: .workout)
             #endif
         }
         
@@ -1012,7 +1014,7 @@ class WorkoutManager: ObservableObject {
                 let context = PersistenceController.shared.container.viewContext
                 await UserBehaviorLearningEngine.shared.refreshAfterWorkout(workout, context: context)
                 #if DEBUG
-                print("🧠 UserBehaviorLearningEngine: Updated preferences from completed workout")
+                AppLogger.debug("🧠 UserBehaviorLearningEngine: Updated preferences from completed workout", category: .data)
                 #endif
             }
         }
@@ -1070,7 +1072,7 @@ class WorkoutManager: ObservableObject {
                 )
                 
                 #if DEBUG
-                print("🌐 CollaborativeLearningEngine: Recorded \(completedExercises.count) exercises for global analysis")
+                AppLogger.debug("🌐 CollaborativeLearningEngine: Recorded \(completedExercises.count) exercises for global analysis", category: .data)
                 #endif
             }
         }
@@ -1115,7 +1117,7 @@ class WorkoutManager: ObservableObject {
         clearActiveWorkoutStorage()
         
         #if DEBUG
-        print("✅ WorkoutManager: Workout finished successfully")
+        AppLogger.debug("✅ WorkoutManager: Workout finished successfully", category: .data)
         #endif
     }
     
@@ -1136,7 +1138,7 @@ class WorkoutManager: ObservableObject {
     
     func cancelWorkout() {
         #if DEBUG
-        print("❌ WorkoutManager: Cancelling current workout")
+        AppLogger.error("❌ WorkoutManager: Cancelling current workout", category: .data)
         #endif
         
         isWorkoutActive = false
@@ -1155,7 +1157,7 @@ class WorkoutManager: ObservableObject {
         clearActiveWorkoutStorage()
         
         #if DEBUG
-        print("✅ WorkoutManager: Workout cancelled successfully")
+        AppLogger.debug("✅ WorkoutManager: Workout cancelled successfully", category: .data)
         #endif
     }
     
@@ -1163,13 +1165,13 @@ class WorkoutManager: ObservableObject {
     @MainActor func replaceExercise(_ oldExercise: Exercise, with newExercise: Exercise) {
         guard let index = currentExercises.firstIndex(where: { $0.id == oldExercise.id }) else {
             #if DEBUG
-            print("⚠️ WorkoutManager: Could not find exercise to replace: \(oldExercise.name ?? "?")")
+            AppLogger.error("⚠️ WorkoutManager: Could not find exercise to replace: \(oldExercise.name ?? "?")", category: .data)
             #endif
             return
         }
         
         #if DEBUG
-        print("🔄 WorkoutManager: Replacing '\(oldExercise.name ?? "?")' with '\(newExercise.name ?? "?")'")
+        AppLogger.debug("🔄 WorkoutManager: Replacing '\(oldExercise.name ?? "?")' with '\(newExercise.name ?? "?")'", category: .data)
         #endif
         
         // Get the old exercise ID for sets data
@@ -1192,13 +1194,13 @@ class WorkoutManager: ObservableObject {
         objectWillChange.send()
         
         #if DEBUG
-        print("✅ WorkoutManager: Exercise replaced successfully")
+        AppLogger.debug("✅ WorkoutManager: Exercise replaced successfully", category: .data)
         #endif
     }
     
     func showWorkoutGenerator() {
         #if DEBUG
-        print("🧠 WorkoutManager: Navigating to workout generator")
+        AppLogger.debug("🧠 WorkoutManager: Navigating to workout generator", category: .data)
         #endif
         shouldNavigateToWorkoutTab = true
         shouldShowWorkoutGenerator = true
@@ -1206,7 +1208,7 @@ class WorkoutManager: ObservableObject {
     
     func navigateToHomeTab() {
         #if DEBUG
-        print("🏠 WorkoutManager: Navigating to home tab")
+        AppLogger.debug("🏠 WorkoutManager: Navigating to home tab", category: .data)
         #endif
         // 🔧 Set synchronously to prevent race conditions with user actions
         shouldPopToRootHome = true
@@ -1228,7 +1230,7 @@ class WorkoutManager: ObservableObject {
     /// Resets all workout state for sign-out
     /// Called when user signs out to ensure clean state for next user
     func resetForSignOut() {
-        print("🔐 WorkoutManager: Resetting state for sign-out...")
+        AppLogger.debug("🔐 WorkoutManager: Resetting state for sign-out...", category: .auth)
         
         isWorkoutActive = false
         currentWorkout = nil
@@ -1273,7 +1275,7 @@ class WorkoutManager: ObservableObject {
         // Clear exercise sets data
         exerciseSetsData = [:]
         
-        print("✅ WorkoutManager state reset")
+        AppLogger.debug("✅ WorkoutManager state reset", category: .data)
     }
     
     // MARK: - Quick Wins: Performance Tracking
@@ -1308,10 +1310,10 @@ class WorkoutManager: ObservableObject {
                 .insert(dto)
                 .execute()
             #if DEBUG
-            print("✅ Recorded context: \(dayNames[dayOfWeek - 1]) at \(timeString)")
+            AppLogger.debug("✅ Recorded context: \(dayNames[dayOfWeek - 1]) at \(timeString)", category: .data)
             #endif
         } catch {
-            print("❌ Error recording context: \(error)")
+            AppLogger.error("❌ Error recording context: \(error)", category: .data)
         }
     }
     
@@ -1371,10 +1373,10 @@ class WorkoutManager: ObservableObject {
                     .insert(dto)
                     .execute()
                 #if DEBUG
-                print("✅ Recorded performance: \(exerciseName) - \(bestSet.weight)lbs x \(bestSet.reps) (1RM: \(String(format: "%.1f", oneRM))lbs)")
+                AppLogger.debug("✅ Recorded performance: \(exerciseName) - \(bestSet.weight)lbs x \(bestSet.reps) (1RM: \(String(format: "%.1f", oneRM))lbs)", category: .data)
                 #endif
             } catch {
-                print("❌ Error recording performance for \(exerciseName): \(error)")
+                AppLogger.error("❌ Error recording performance for \(exerciseName): \(error)", category: .data)
             }
         }
     }
@@ -1405,10 +1407,10 @@ class WorkoutManager: ObservableObject {
                     ])
                     .execute()
                 #if DEBUG
-                print("✅ Updated proficiency: \(equipment)")
+                AppLogger.debug("✅ Updated proficiency: \(equipment)", category: .data)
                 #endif
             } catch {
-                print("❌ Error updating proficiency for \(equipment): \(error)")
+                AppLogger.error("❌ Error updating proficiency for \(equipment): \(error)", category: .data)
             }
         }
     }
@@ -1455,10 +1457,10 @@ class WorkoutManager: ObservableObject {
         do {
             try PersistenceController.shared.container.viewContext.save()
             #if DEBUG
-            print("✅ Saved workout stats: \(String(format: "%.0f", totalVolume))lbs volume, \(totalReps) reps, \(totalSets) sets")
+            AppLogger.debug("✅ Saved workout stats: \(String(format: "%.0f", totalVolume))lbs volume, \(totalReps) reps, \(totalSets) sets", category: .data)
             #endif
         } catch {
-            print("❌ Error saving workout stats: \(error)")
+            AppLogger.error("❌ Error saving workout stats: \(error)", category: .data)
         }
     }
 }

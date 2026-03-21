@@ -121,7 +121,7 @@ struct SharedWorkoutPreviewView: View {
                         .frame(width: 44, height: 44)
                     
                     Text(friend.initials)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
                 

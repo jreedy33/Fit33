@@ -19,7 +19,7 @@ struct StepTrackerCard: View {
                 // Header
                 HStack {
                     Image(systemName: "figure.walk")
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.green, .cyan],

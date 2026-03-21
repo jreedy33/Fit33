@@ -112,7 +112,7 @@ struct ProgramExplorerView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Find Your Program")
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.ds_heading1)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.green, .mint],
@@ -443,7 +443,7 @@ struct ProgramTile: View {
                         .frame(height: 80)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(.white.opacity(0.9))
                     
                     // Badges

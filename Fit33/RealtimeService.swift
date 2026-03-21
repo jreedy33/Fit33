@@ -1207,8 +1207,8 @@ class RealtimeService: ObservableObject {
                 }
                 
                 // Skip if we already fetched recently from a realtime event (prevents redundant calls)
-                let communityStale = lastCommunityFetchTime == nil || Date().timeIntervalSince(lastCommunityFetchTime!) > 30
-                let privateStale = lastPrivateFetchTime == nil || Date().timeIntervalSince(lastPrivateFetchTime!) > 30
+                let communityStale = lastCommunityFetchTime.map { Date().timeIntervalSince($0) > 30 } ?? true
+                let privateStale = lastPrivateFetchTime.map { Date().timeIntervalSince($0) > 30 } ?? true
                 
                 let hasCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
                 let hasPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty

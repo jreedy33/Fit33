@@ -253,7 +253,11 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         case .workout:
             return [.dailyWorkoutReminder, .streakProtection, .workoutComplete, .comebackReminder]
         case .social:
-            return [.sharedWorkout, .friendRequest, .challengeInvite, .groupChallengeInvite, .challengeUpdate, .challengeReaction, .communityFriendJoined, .privateChallengeInvite, .privateChallengeUpdate, .privateChallengeMessage]
+            return [.sharedWorkout, .friendRequest, .contactJoined,
+                    .challengeInvite, .groupChallengeInvite, .challengeUpdate,
+                    .challengeProgress, .challengeReaction, .challengeCancelled,
+                    .communityFriendJoined, .privateChallengeInvite,
+                    .privateChallengeUpdate, .privateChallengeMessage]
         case .achievements:
             return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
         case .health:
@@ -280,6 +284,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             } else {
                 UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
             }
+            syncPreferencesToCloud()
         }
     }
     
@@ -304,6 +309,16 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     // MARK: - Private Properties
     private var enabledNotifications: Set<String> = []
+    
+    // Achievement batching: collect rapid-fire achievements into one notification
+    private var pendingAchievements: [(title: String, body: String)] = []
+    private var achievementBatchTimer: Task<Void, Never>?
+    
+    // Daily notification cap
+    private static let dailyCapKey = "daily_notification_count"
+    private static let dailyCapDateKey = "daily_notification_date"
+    private static let dailyCapLimit = 4
+    private static let criticalTypes: Set<NotificationType> = [.friendRequest, .challengeInvite, .privateChallengeInvite]
     
     // MARK: - Initialization
     private override init() {
@@ -440,9 +455,17 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             rescheduleNutritionReminders()
         case .streakProtection:
             rescheduleStreakProtection()
+        case .morningMotivation:
+            rescheduleMorningMotivation()
+        case .weeklyProgress:
+            rescheduleWeeklyProgress()
+        case .waterReminder:
+            rescheduleWaterReminders()
         default:
             break
         }
+        
+        syncPreferencesToCloud()
     }
     
     private func saveEnabledNotifications() {
@@ -592,7 +615,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         
-        if isNotificationEnabled(.dailyWorkoutReminder) {
+        let workedOutToday: Bool = {
+            if let last = UserDefaults.standard.object(forKey: "last_workout_date") as? Date {
+                return Calendar.current.isDateInToday(last)
+            }
+            return false
+        }()
+        
+        if isNotificationEnabled(.dailyWorkoutReminder) && !workedOutToday {
             scheduleWorkoutReminder()
         }
         
@@ -600,12 +630,20 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             scheduleNutritionReminders()
         }
         
-        if isNotificationEnabled(.streakProtection) {
+        if isNotificationEnabled(.streakProtection) && !workedOutToday {
             scheduleStreakProtection()
         }
         
         if isNotificationEnabled(.morningMotivation) {
             scheduleMorningMotivation()
+        }
+        
+        if isNotificationEnabled(.weeklyProgress) {
+            scheduleWeeklyProgress()
+        }
+        
+        if isNotificationEnabled(.waterReminder) {
+            scheduleWaterReminders()
         }
         
         AppLogger.debug("Scheduled all notifications", category: .general)
@@ -710,6 +748,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     private func scheduleStreakProtection() {
         guard isNotificationEnabled(.streakProtection) else { return }
         
+        if let last = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
+           Calendar.current.isDateInToday(last) {
+            return
+        }
+        
         let content = UNMutableNotificationContent()
         content.title = "Protect your streak! 🔥"
         content.body = "You haven't worked out today. Quick workout to keep your streak alive!"
@@ -773,6 +816,99 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().add(request)
     }
     
+    private func rescheduleMorningMotivation() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [NotificationType.morningMotivation.rawValue]
+        )
+        if isNotificationEnabled(.morningMotivation) {
+            scheduleMorningMotivation()
+        }
+    }
+    
+    // MARK: - Weekly Progress
+    
+    private func scheduleWeeklyProgress() {
+        guard isNotificationEnabled(.weeklyProgress) else { return }
+        
+        let streak = UserDefaults.standard.integer(forKey: "current_streak")
+        let totalWorkouts = UserDefaults.standard.integer(forKey: "total_workouts")
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Your Week in Review 📊"
+        if streak > 0 {
+            content.body = "You're on a \(streak)-day streak with \(totalWorkouts) total workouts. Keep the momentum going!"
+        } else {
+            content.body = "New week, fresh start! Set a goal and crush it this week."
+        }
+        content.sound = .default
+        content.userInfo = ["type": NotificationType.weeklyProgress.rawValue]
+        
+        var dateComponents = DateComponents()
+        dateComponents.weekday = 1 // Sunday
+        dateComponents.hour = 18
+        dateComponents.minute = 0
+        
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let request = UNNotificationRequest(
+            identifier: NotificationType.weeklyProgress.rawValue,
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    private func rescheduleWeeklyProgress() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [NotificationType.weeklyProgress.rawValue]
+        )
+        if isNotificationEnabled(.weeklyProgress) {
+            scheduleWeeklyProgress()
+        }
+    }
+    
+    // MARK: - Water Reminders
+    
+    private func scheduleWaterReminders() {
+        guard isNotificationEnabled(.waterReminder) else { return }
+        
+        let messages = [
+            "Time for a glass of water! 💧",
+            "Stay hydrated! Your body needs water to perform. 💦",
+            "Water break! Hydration fuels your gains. 🚰",
+            "Don't forget to drink water! 💧",
+            "Hydration check — grab some water! 💦"
+        ]
+        
+        // Schedule every 2 hours from 8 AM to 8 PM (7 reminders)
+        for hour in stride(from: 8, through: 20, by: 2) {
+            let content = UNMutableNotificationContent()
+            content.title = "Hydration Reminder 💧"
+            content.body = messages[((hour - 8) / 2) % messages.count]
+            content.sound = .default
+            content.userInfo = ["type": NotificationType.waterReminder.rawValue]
+            
+            var dateComponents = DateComponents()
+            dateComponents.hour = hour
+            dateComponents.minute = 0
+            
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+            let request = UNNotificationRequest(
+                identifier: "water_reminder_\(hour)",
+                content: content,
+                trigger: trigger
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+    
+    private func rescheduleWaterReminders() {
+        let identifiers = stride(from: 8, through: 20, by: 2).map { "water_reminder_\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+        if isNotificationEnabled(.waterReminder) {
+            scheduleWaterReminders()
+        }
+    }
+    
     // MARK: - Instant Notifications
     
     /// Celebrate streak milestones
@@ -809,14 +945,27 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "streak_\(streakCount)")
     }
     
-    /// Send comeback reminder after days away
+    /// Send comeback reminder with graduated messaging based on absence length
     func sendComebackReminder(daysAway: Int) {
         guard isNotificationEnabled(.comebackReminder) && isAuthorized else { return }
         
         let content = UNMutableNotificationContent()
-        content.title = "We miss you! 💙"
-        content.body = "It's been \(daysAway) days. A quick workout can get you back on track!"
         content.sound = .default
+        
+        switch daysAway {
+        case 3...7:
+            content.title = "We miss you! 💙"
+            content.body = "It's been \(daysAway) days. A quick workout can get you back on track!"
+        case 14:
+            content.title = "It's been a couple weeks 🤝"
+            content.body = "Ready to get back on track? Your progress is still here waiting."
+        case 30:
+            content.title = "Ready for a fresh start? 🌱"
+            content.body = "It's been a month — but every comeback starts with one workout."
+        default:
+            content.title = "We miss you! 💙"
+            content.body = "It's been \(daysAway) days. A quick workout can get you back on track!"
+        }
         
         sendImmediateNotification(content: content, identifier: "comeback_\(daysAway)")
     }
@@ -1107,9 +1256,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "private_msg_\(challengeId)_\(Date().timeIntervalSince1970)")
     }
     
-    /// Workout completed - cancel today's reminders
+    /// Workout completed - cancel today's reminders and celebrate
     func workoutCompleted() {
-        // Cancel today's workout reminders since they did it
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [
                 NotificationType.dailyWorkoutReminder.rawValue,
@@ -1117,8 +1265,30 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             ]
         )
         
-        // Record workout date
         UserDefaults.standard.set(Date(), forKey: "last_workout_date")
+        
+        if isNotificationEnabled(.workoutComplete) && isAuthorized {
+            let celebrations = [
+                ("Great workout! 💪", "You crushed it today. Recovery starts now."),
+                ("Workout complete! 🔥", "Another step toward your goals."),
+                ("Done and dusted! ✅", "Consistency is the key — and you showed up."),
+                ("Beast mode: activated 🏆", "That's another one in the books!")
+            ]
+            let msg = celebrations.randomElement()!
+            let content = UNMutableNotificationContent()
+            content.title = msg.0
+            content.body = msg.1
+            content.sound = .default
+            content.userInfo = ["type": NotificationType.workoutComplete.rawValue]
+            
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+            let request = UNNotificationRequest(
+                identifier: NotificationType.workoutComplete.rawValue,
+                content: content,
+                trigger: trigger
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
         
         AppLogger.info("Workout completed - cancelled today's reminders", category: .general)
     }
@@ -1158,28 +1328,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
         }
         
-        // Check for comeback reminder — only if user did NOT work out today
-        if let lastWorkout = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
-           !Calendar.current.isDateInToday(lastWorkout) {
-            let daysSince = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
-            if daysSince >= 3 && daysSince <= 7 {
-                sendComebackReminder(daysAway: daysSince)
-            }
-        }
+        // Comeback reminders are handled exclusively by Fit33App.checkForComebackReminder()
+        // which has proper once-per-day dedup via "last_comeback_reminder" UserDefaults key.
     }
     
     // MARK: - Helper
     private func sendImmediateNotification(content: UNMutableNotificationContent, identifier: String) {
-        // Check quiet hours
         if quietHoursEnabled && isInQuietHours() {
             AppLogger.debug("Notification skipped - quiet hours active", category: .general)
+            return
+        }
+        
+        let typeString = content.userInfo["type"] as? String ?? identifier
+        let notifType = NotificationType(rawValue: typeString)
+        if let notifType, isDailyCapped(for: notifType) {
+            AppLogger.debug("Notification skipped - daily cap reached (\(Self.dailyCapLimit))", category: .general)
             return
         }
         
         let request = UNNotificationRequest(
             identifier: identifier,
             content: content,
-            trigger: nil // Immediate
+            trigger: nil
         )
         
         UNUserNotificationCenter.current().add(request) { error in
@@ -1187,6 +1357,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 AppLogger.error("Failed to send notification: \(error.localizedDescription)", category: .general)
             }
         }
+        incrementDailyCap()
     }
     
     private func isInQuietHours() -> Bool {
@@ -1203,6 +1374,122 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         } else {
             // Overnight range (e.g., 22:00 to 07:00)
             return nowMinutes >= startMinutes || nowMinutes < endMinutes
+        }
+    }
+    
+    // MARK: - Achievement Batching
+    
+    /// Queue an achievement notification into a 30-second batch window.
+    /// If multiple achievements fire in rapid succession (PR + level up + streak),
+    /// they are combined into a single notification.
+    func queueAchievementNotification(title: String, body: String) {
+        guard isAuthorized else { return }
+        
+        pendingAchievements.append((title: title, body: body))
+        
+        if achievementBatchTimer == nil {
+            achievementBatchTimer = Task {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                guard !Task.isCancelled else { return }
+                flushAchievementBatch()
+            }
+        }
+    }
+    
+    private func flushAchievementBatch() {
+        let achievements = pendingAchievements
+        pendingAchievements = []
+        achievementBatchTimer = nil
+        
+        guard !achievements.isEmpty else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        
+        if achievements.count == 1 {
+            content.title = achievements[0].title
+            content.body = achievements[0].body
+        } else {
+            let labels = achievements.map { $0.title.replacingOccurrences(of: "!", with: "") }
+            content.title = "Multiple Achievements! 🏆"
+            content.body = labels.joined(separator: ", ")
+        }
+        
+        sendImmediateNotification(content: content, identifier: "achievement_batch_\(Date().timeIntervalSince1970)")
+    }
+    
+    // MARK: - Daily Notification Cap
+    
+    private func isDailyCapped(for type: NotificationType) -> Bool {
+        if Self.criticalTypes.contains(type) { return false }
+        
+        let today = Calendar.current.startOfDay(for: Date())
+        let lastDate = UserDefaults.standard.object(forKey: Self.dailyCapDateKey) as? Date ?? .distantPast
+        
+        if !Calendar.current.isDate(lastDate, inSameDayAs: today) {
+            UserDefaults.standard.set(today, forKey: Self.dailyCapDateKey)
+            UserDefaults.standard.set(0, forKey: Self.dailyCapKey)
+            return false
+        }
+        
+        return UserDefaults.standard.integer(forKey: Self.dailyCapKey) >= Self.dailyCapLimit
+    }
+    
+    private func incrementDailyCap() {
+        let count = UserDefaults.standard.integer(forKey: Self.dailyCapKey)
+        UserDefaults.standard.set(count + 1, forKey: Self.dailyCapKey)
+    }
+    
+    // MARK: - Preference Sync to Cloud
+    
+    private struct NotificationPreferencesInsert: Codable {
+        let user_id: String
+        let master_enabled: Bool
+        let disabled_types: [String]
+        let quiet_hours_enabled: Bool
+        let quiet_hours_start: String
+        let quiet_hours_end: String
+        let timezone: String
+        let updated_at: String
+    }
+    
+    /// Upserts current notification preferences to Supabase so server-side push
+    /// notifications can respect user toggles and quiet hours.
+    func syncPreferencesToCloud() {
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else { return }
+        
+        let disabledTypes = NotificationType.allCases
+            .filter { !isNotificationEnabled($0) }
+            .map { $0.rawValue }
+        
+        let calendar = Calendar.current
+        let startHour = calendar.component(.hour, from: quietHoursStart)
+        let startMin = calendar.component(.minute, from: quietHoursStart)
+        let endHour = calendar.component(.hour, from: quietHoursEnd)
+        let endMin = calendar.component(.minute, from: quietHoursEnd)
+        
+        let insert = NotificationPreferencesInsert(
+            user_id: userId.uuidString,
+            master_enabled: masterNotificationsEnabled,
+            disabled_types: disabledTypes,
+            quiet_hours_enabled: quietHoursEnabled,
+            quiet_hours_start: String(format: "%02d:%02d:00", startHour, startMin),
+            quiet_hours_end: String(format: "%02d:%02d:00", endHour, endMin),
+            timezone: TimeZone.current.identifier,
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        Task {
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("user_notification_preferences")
+                    .upsert(insert, onConflict: "user_id")
+                    .execute()
+                AppLogger.debug("Synced notification preferences to cloud", category: .general)
+            } catch {
+                AppLogger.error("Failed to sync notification preferences: \(error.localizedDescription)", category: .general)
+            }
         }
     }
     

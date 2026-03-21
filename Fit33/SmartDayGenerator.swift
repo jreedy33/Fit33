@@ -389,10 +389,10 @@ class SmartDayGenerator {
     ) -> [DynamicProgramGenerator.GeneratedExercise] {
         
         #if DEBUG
-        print("🏋️ Generating exercises for day \(dayInProgram)")
-        print("   Target muscles: \(targetMuscles)")
-        print("   Equipment: \(availableEquipment)")
-        print("   Intensity: \(intensity.rawValue)")
+        AppLogger.debug("🏋️ Generating exercises for day \(dayInProgram)", category: .workout)
+        AppLogger.debug("   Target muscles: \(targetMuscles)", category: .workout)
+        AppLogger.debug("   Equipment: \(availableEquipment)", category: .workout)
+        AppLogger.debug("   Intensity: \(intensity.rawValue)", category: .workout)
         #endif
         
         var selectedExercises: [DynamicProgramGenerator.GeneratedExercise] = []
@@ -410,7 +410,7 @@ class SmartDayGenerator {
         
         #if DEBUG
         if !favorites.isEmpty {
-            print("   ⭐ User has \(favorites.count) favorite exercises - will gently influence selection")
+            AppLogger.debug("   ⭐ User has \(favorites.count) favorite exercises - will gently influence selection", category: .workout)
         }
         #endif
         
@@ -460,7 +460,7 @@ class SmartDayGenerator {
                     let currentCount = bundleCounts[bundle.id, default: 0]
                     if currentCount >= bundle.maxPerWorkout {
                         #if DEBUG
-                        print("   ⏭️ Bundle limit: skipping \(exercise.name) (\(bundle.displayName) has \(currentCount)/\(bundle.maxPerWorkout))")
+                        AppLogger.debug("   ⏭️ Bundle limit: skipping \(exercise.name) (\(bundle.displayName) has \(currentCount)/\(bundle.maxPerWorkout))", category: .workout)
                         #endif
                         continue
                     }
@@ -471,7 +471,7 @@ class SmartDayGenerator {
                 let isAnchorLift = exercise.isCompound && pattern.isAnchorPattern
                 if cooldownTracker.isOnCooldown(exercise.name, isAnchor: isAnchorLift) {
                     #if DEBUG
-                    print("   ❄️ Cooldown: skipping \(exercise.name)")
+                    AppLogger.debug("   ❄️ Cooldown: skipping \(exercise.name)", category: .workout)
                     #endif
                     continue
                 }
@@ -561,7 +561,7 @@ class SmartDayGenerator {
         }
         
         #if DEBUG
-        print("✅ Generated \(selectedExercises.count) exercises from database")
+        AppLogger.info("✅ Generated \(selectedExercises.count) exercises from database", category: .workout)
         #endif
         return selectedExercises
     }

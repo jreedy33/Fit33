@@ -57,6 +57,18 @@ enum Spacing {
     static let lg: CGFloat = 24
     static let xl: CGFloat = 32
     static let xxl: CGFloat = 48
+
+    /// Returns a spacing value scaled for the current device tier
+    static func adaptive(_ base: CGFloat) -> CGFloat {
+        base * DeviceTier.current.spacingScale
+    }
+
+    /// Returns ideal column count for a grid given item min width and available width
+    static func adaptiveColumns(minWidth: CGFloat = 160, availableWidth: CGFloat? = nil) -> Int {
+        let width = availableWidth ?? OrientationManager.shared.screenWidth
+        let padded = width - (Spacing.md * 2)
+        return max(1, Int(padded / minWidth))
+    }
 }
 
 // MARK: - Corner Radius Tokens
@@ -117,7 +129,7 @@ struct SectionHeader: View {
         HStack {
             if let icon = icon {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(iconColor)
             }
             Text(title)
@@ -152,7 +164,7 @@ struct DSPillButton: View {
             HStack(spacing: Spacing.xs) {
                 if let icon = icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.ds_bodyMedium)
                 }
                 Text(title)
                     .font(.ds_labelMedium)

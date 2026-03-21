@@ -118,7 +118,9 @@ struct HydrationWidget: View {
             .padding(.top, 8)
         }
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled else { return }
                 animateRing = true
             }
         }
@@ -776,7 +778,8 @@ struct WaterPresetButton: View {
                 isPressed = true
             }
             action()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.2))
                 isPressed = false
             }
         }) {
@@ -1361,14 +1364,16 @@ struct GoalCelebrationOverlay: View {
                 opacity = 1.0
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.3)) {
                     opacity = 0
                     scale = 0.8
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    showCelebration = false
-                }
+                try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled else { return }
+                showCelebration = false
             }
         }
     }

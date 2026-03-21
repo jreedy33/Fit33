@@ -422,7 +422,7 @@ struct ExistingUserPhonePrompt: View {
 
 #Preview {
     ExistingUserPhonePrompt(
-        onComplete: { phone in print("Completed: \(phone)") },
-        onSkip: { print("Skipped") }
+        onComplete: { phone in AppLogger.debug("Completed: \(phone)", category: .auth) },
+        onSkip: { AppLogger.debug("Skipped", category: .auth) }
     )
 }

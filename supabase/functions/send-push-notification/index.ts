@@ -31,8 +31,77 @@ function getAPNsHost(apnsEnvironment: string | null): string {
 const MAX_RETRIES = 3
 const BATCH_SIZE = 100
 
+// Preference cache per invocation (avoids re-querying for the same user within a batch)
+const prefsCache = new Map<string, { master_enabled: boolean; disabled_types: string[]; quiet_hours_enabled: boolean; quiet_hours_start: string | null; quiet_hours_end: string | null; timezone: string | null } | null>()
+
+async function getUserPreferences(supabase: ReturnType<typeof createClient>, userId: string) {
+  if (prefsCache.has(userId)) return prefsCache.get(userId)!
+
+  const { data, error } = await supabase
+    .from('user_notification_preferences')
+    .select('master_enabled, disabled_types, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone')
+    .eq('user_id', userId)
+    .single()
+
+  const prefs = error ? null : data
+  prefsCache.set(userId, prefs)
+  return prefs
+}
+
+function isInQuietHours(prefs: { quiet_hours_enabled: boolean; quiet_hours_start: string | null; quiet_hours_end: string | null; timezone: string | null }): boolean {
+  if (!prefs.quiet_hours_enabled || !prefs.quiet_hours_start || !prefs.quiet_hours_end) return false
+
+  const tz = prefs.timezone || 'America/New_York'
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false })
+  const parts = formatter.formatToParts(now)
+  const nowHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0')
+  const nowMin = parseInt(parts.find(p => p.type === 'minute')?.value || '0')
+  const nowMinutes = nowHour * 60 + nowMin
+
+  const [startH, startM] = prefs.quiet_hours_start.split(':').map(Number)
+  const [endH, endM] = prefs.quiet_hours_end.split(':').map(Number)
+  const startMinutes = startH * 60 + startM
+  const endMinutes = endH * 60 + endM
+
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes
+  }
+  // Overnight range (e.g., 22:00 to 07:00)
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    const token = authHeader.replace('Bearer ', '')
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    if (token !== supabaseServiceKey) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
     // Parse request body for optional specific queue_id
     let requestBody: { queue_id?: string; batch?: boolean } = {}
     try {
@@ -40,12 +109,6 @@ serve(async (req) => {
     } catch {
       // No body or invalid JSON - process batch
     }
-
-    // Create Supabase client with service role for full access
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Build query based on whether this is a single notification or batch
     let query = supabase
@@ -79,7 +142,7 @@ serve(async (req) => {
       console.error('Error fetching notifications:', fetchError)
       return new Response(JSON.stringify({ error: fetchError.message }), { 
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -89,19 +152,37 @@ serve(async (req) => {
         processed: 0 
       }), { 
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     console.log(`Processing ${pendingNotifications.length} notifications`)
 
-    // ═══ ATOMIC CLAIM: Mark all as 'processing' to prevent duplicate sends ═══
-    // If another invocation runs concurrently, it won't pick up these same rows
+    // Atomic claim: mark as 'processing' to prevent duplicate sends from concurrent invocations
     const claimedIds = pendingNotifications.map((n: { id: string }) => n.id)
-    await supabase
+    const { data: claimed } = await supabase
       .from('push_notification_queue')
       .update({ status: 'processing' })
       .in('id', claimedIds)
+      .eq('status', 'pending')
+      .select('id')
+    
+    const claimedIdSet = new Set((claimed || []).map((c: { id: string }) => c.id))
+    const actualNotifications = pendingNotifications.filter(
+      (n: { id: string }) => claimedIdSet.has(n.id)
+    )
+    
+    if (actualNotifications.length === 0) {
+      return new Response(JSON.stringify({ 
+        message: 'All notifications already claimed by another invocation',
+        processed: 0 
+      }), { 
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    
+    console.log(`Claimed ${actualNotifications.length} of ${pendingNotifications.length} notifications`)
 
     // Generate APNs JWT token
     const apnsToken = await generateAPNsToken()
@@ -109,9 +190,33 @@ serve(async (req) => {
     let successCount = 0
     let failCount = 0
 
-    // Process each notification
-    for (const notification of pendingNotifications) {
+    // Process only the notifications we successfully claimed
+    for (const notification of actualNotifications) {
       try {
+        // Check user notification preferences before sending
+        const prefs = await getUserPreferences(supabase, notification.recipient_user_id)
+        if (prefs) {
+          if (!prefs.master_enabled) {
+            console.log(`⏭️ Skipping notification for user ${notification.recipient_user_id} — master toggle disabled`)
+            await markNotificationFailed(supabase, notification.id, 'User disabled all notifications')
+            failCount++
+            continue
+          }
+          const notifType = notification.data?.type || notification.notification_type || ''
+          if (prefs.disabled_types?.includes(notifType)) {
+            console.log(`⏭️ Skipping ${notifType} for user ${notification.recipient_user_id} — type disabled`)
+            await markNotificationFailed(supabase, notification.id, `User disabled ${notifType} notifications`)
+            failCount++
+            continue
+          }
+          if (isInQuietHours(prefs)) {
+            console.log(`🌙 Skipping notification for user ${notification.recipient_user_id} — quiet hours active`)
+            await markNotificationFailed(supabase, notification.id, 'Quiet hours active')
+            failCount++
+            continue
+          }
+        }
+
         // Get device token and APNs environment for this user
         const { data: tokenData, error: tokenError } = await supabase
           .from('user_push_tokens')
@@ -184,19 +289,19 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       message: 'Notifications processed',
-      processed: pendingNotifications.length,
+      processed: actualNotifications.length,
       success: successCount,
       failed: failCount
     }), { 
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (error) {
     console.error('Edge function error:', error)
     return new Response(JSON.stringify({ error: String(error) }), { 
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 })

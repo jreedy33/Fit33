@@ -73,7 +73,7 @@ struct FriendsListView: View {
                         
                         if friendService.unreadWorkoutCount > 0 {
                             Text("\(friendService.unreadWorkoutCount)")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                                 .foregroundColor(.white)
                                 .padding(Spacing.xxs)
                                 .background(Circle().fill(Color.red))
@@ -108,7 +108,7 @@ struct FriendsListView: View {
             // ALWAYS refresh pending requests when coming from a deep link (notification tap)
             // This ensures the request is fetched and displayed even if there's a race condition
             if initialTab == 1 {
-                print("👥 [FRIENDS] Opened from notification - forcing refresh of pending requests")
+                AppLogger.debug("👥 [FRIENDS] Opened from notification - forcing refresh of pending requests", category: .social)
                 Task {
                     await friendService.fetchPendingRequests()
                     await friendService.fetchSentRequests()
@@ -123,7 +123,7 @@ struct FriendsListView: View {
             // ⚡️ INSTANT LOAD: Use already-cached friends data (loaded at app startup)
             // Only do background refresh if data is empty or stale
             if !friendService.friends.isEmpty {
-                print("👥 [FRIENDS] Using cached friends data (\(friendService.friends.count) friends) - instant display!")
+                AppLogger.debug("👥 [FRIENDS] Using cached friends data (\(friendService.friends.count) friends) - instant display!", category: .social)
                 // Preload photos in background for fast display
                 preloadFriendPhotos()
                 
@@ -134,7 +134,7 @@ struct FriendsListView: View {
                 }
             } else {
                 // No cached data - need to fetch
-                print("👥 [FRIENDS] No cached data, fetching from server...")
+                AppLogger.debug("👥 [FRIENDS] No cached data, fetching from server...", category: .social)
                 Task {
                     await friendService.loadAllData()
                     await rankingService.fetchRankedFriends()
@@ -177,7 +177,7 @@ struct FriendsListView: View {
                 
                 // If contacts are now accessible and we're on Search tab, fetch immediately
                 if contactsService.canAccessContacts && selectedTab == 2 {
-                    print("✅ [CONTACTS] User returned from Settings - contacts now enabled!")
+                    AppLogger.info("✅ [CONTACTS] User returned from Settings - contacts now enabled!", category: .social)
                     HapticManager.notification(.success)
                     Task {
                         await contactsService.fetchContactsAndFindFriends()
@@ -197,7 +197,7 @@ struct FriendsListView: View {
                 let badgeCount = index == 1 ? friendService.pendingRequests.count : 0
                 
                 Button(action: {
-                    print("🔴 [TAB] Tapped \(tab) tab (index: \(index))")
+                    AppLogger.debug("🔴 [TAB] Tapped \(tab) tab (index: \(index))", category: .social)
                     HapticManager.selectionChanged()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         selectedTab = index
@@ -211,7 +211,7 @@ struct FriendsListView: View {
                             
                             if badgeCount > 0 {
                                 Text("\(badgeCount)")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.ds_caption)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -610,7 +610,7 @@ struct FriendsListView: View {
         }
         .refreshable {
             // Pull-to-refresh to force reload requests
-            print("👥 [FRIENDS] Pull-to-refresh on requests tab")
+            AppLogger.debug("👥 [FRIENDS] Pull-to-refresh on requests tab", category: .social)
             await friendService.fetchPendingRequests()
             await friendService.fetchSentRequests()
         }
@@ -797,7 +797,7 @@ struct FriendsListView: View {
                         // Checked but no suggestions found
                         VStack(spacing: 8) {
                             Image(systemName: "person.2.slash")
-                                .font(.system(size: 30))
+                                .font(.ds_heading1)
                                 .foregroundColor(.secondary.opacity(0.5))
                             Text("No contacts on Fit33 yet")
                                 .font(.caption)
@@ -979,7 +979,7 @@ struct FriendsListView: View {
                         .frame(width: 60, height: 60)
                     
                     Image(systemName: "person.crop.rectangle.stack.fill")
-                        .font(.system(size: 26))
+                        .font(.ds_heading2)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.green, .teal],
@@ -1124,7 +1124,7 @@ struct SuggestedFriendCard: View {
                 .frame(width: 50, height: 50)
             
             Text(friend.initials)
-                .font(.system(size: 18, weight: .bold))
+                .font(.ds_heading3)
                 .foregroundColor(.white)
         }
     }
@@ -1170,7 +1170,7 @@ struct SuggestedFriendCard: View {
             }
         } else {
             Button(action: { 
-                print("🔴 [ADD BUTTON] Tapped! Sending request to \(friend.displayName)")
+                AppLogger.debug("🔴 [ADD BUTTON] Tapped! Sending request to \(friend.displayName)", category: .social)
                 sendRequest()
             }) {
                 HStack(spacing: 4) {
@@ -1421,7 +1421,7 @@ struct FriendRequestCard: View {
                 .frame(width: 50, height: 50)
             
             Text(initials)
-                .font(.system(size: 18, weight: .bold))
+                .font(.ds_heading3)
                 .foregroundColor(.white)
         }
     }
@@ -1510,7 +1510,7 @@ struct SentFriendRequestCard: View {
                     Image(systemName: "xmark.circle")
                         .font(.ds_bodySmall).fontWeight(.medium)
                     Text("Unsend")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.ds_bodySmall)
                 }
                 .foregroundColor(.red)
                 .padding(.horizontal, Spacing.sm)
@@ -1623,7 +1623,7 @@ struct UserSearchResultCard: View {
                 .frame(width: 50, height: 50)
             
             Text(user.initials)
-                .font(.system(size: 18, weight: .bold))
+                .font(.ds_heading3)
                 .foregroundColor(.white)
         }
     }
@@ -1677,7 +1677,7 @@ struct UserSearchResultCard: View {
         } else {
             // No relationship - can add as friend
             Button(action: { 
-                print("🔴 [ADD BUTTON] Tapped! Sending request to \(user.username ?? "unknown")")
+                AppLogger.debug("🔴 [ADD BUTTON] Tapped! Sending request to \(user.username ?? "unknown")", category: .social)
                 sendRequest()
             }) {
                 HStack(spacing: 4) {
@@ -1716,16 +1716,16 @@ struct UserSearchResultCard: View {
         isProcessing = true
         HapticManager.impact(.medium)
         Task {
-            print("📤 Sending friend request to user: \(user.userId)")
+            AppLogger.debug("📤 Sending friend request to user: \(user.userId)", category: .social)
             let success = await friendService.sendFriendRequest(toUserId: user.userId)
             await MainActor.run {
                 if success {
                     requestSent = true
                     HapticManager.notification(.success)
-                    print("✅ Friend request sent successfully!")
+                    AppLogger.info("✅ Friend request sent successfully!", category: .social)
                 } else {
                     HapticManager.notification(.error)
-                    print("❌ Failed to send friend request")
+                    AppLogger.error("❌ Failed to send friend request", category: .social)
                 }
                 isProcessing = false
             }
@@ -1756,7 +1756,7 @@ struct ContactFriendChip: View {
                     
                     // Contact badge
                     Image(systemName: "person.crop.rectangle.stack.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ds_caption)
                         .foregroundColor(.white)
                         .padding(Spacing.xxs)
                         .background(Circle().fill(Color.green))
@@ -1789,7 +1789,7 @@ struct ContactFriendChip: View {
                 .frame(width: 56, height: 56)
             
             Text(friend.initials)
-                .font(.system(size: 18, weight: .bold))
+                .font(.ds_heading3)
                 .foregroundColor(.white)
         }
     }

@@ -247,7 +247,7 @@ struct SmartWorkoutPreviewView: View {
             createdExercises = exercises
             navigateToActiveWorkout = true
         } catch {
-            print("❌ Error creating workout: \(error)")
+            AppLogger.error("❌ Error creating workout: \(error)", category: .workout)
         }
     }
 }

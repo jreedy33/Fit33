@@ -89,7 +89,7 @@ class BodyCompositionTrackingService: ObservableObject {
             }
             
         } catch {
-            print("⚠️ [BODY COMP] Failed to load history: \(error)")
+            AppLogger.warning("⚠️ [BODY COMP] Failed to load history: \(error)", category: .health)
         }
     }
     
@@ -114,7 +114,7 @@ class BodyCompositionTrackingService: ObservableObject {
             
         } catch {
             // No goal set yet, that's OK
-            print("ℹ️ [BODY COMP] No goal set")
+            AppLogger.debug("ℹ️ [BODY COMP] No goal set", category: .health)
         }
     }
     
@@ -138,7 +138,7 @@ class BodyCompositionTrackingService: ObservableObject {
             }
             
         } catch {
-            print("ℹ️ [BODY COMP] No statistics available")
+            AppLogger.debug("ℹ️ [BODY COMP] No statistics available", category: .health)
         }
     }
     
@@ -182,7 +182,7 @@ class BodyCompositionTrackingService: ObservableObject {
         
         await loadData()
         
-        print("✅ [BODY COMP] Manual entry logged")
+        AppLogger.info("✅ [BODY COMP] Manual entry logged", category: .health)
     }
     
     // MARK: - InBody Integration
@@ -243,7 +243,7 @@ class BodyCompositionTrackingService: ObservableObject {
         
         await loadGoal()
         
-        print("✅ [BODY COMP] Goal set")
+        AppLogger.info("✅ [BODY COMP] Goal set", category: .health)
     }
     
     // MARK: - Progress Tracking

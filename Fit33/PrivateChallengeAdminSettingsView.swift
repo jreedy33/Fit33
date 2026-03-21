@@ -116,7 +116,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                             HapticManager.impact(.light)
                                         }) {
                                             Image(systemName: "minus.circle.fill")
-                                                .font(.system(size: 26))
+                                                .font(.ds_heading2)
                                                 .foregroundColor(.white.opacity(0.5))
                                         }
                                         
@@ -131,7 +131,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                             HapticManager.impact(.light)
                                         }) {
                                             Image(systemName: "plus.circle.fill")
-                                                .font(.system(size: 26))
+                                                .font(.ds_heading2)
                                                 .foregroundColor(.purple)
                                         }
                                     }
@@ -208,7 +208,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                         HapticManager.impact(.light)
                                     }) {
                                         Image(systemName: "minus.circle.fill")
-                                            .font(.system(size: 24))
+                                            .font(.ds_heading2)
                                             .foregroundColor(.white.opacity(0.5))
                                     }
                                     
@@ -222,7 +222,7 @@ struct PrivateChallengeAdminSettingsView: View {
                                         HapticManager.impact(.light)
                                     }) {
                                         Image(systemName: "plus.circle.fill")
-                                            .font(.system(size: 24))
+                                            .font(.ds_heading2)
                                             .foregroundColor(.purple)
                                     }
                                 }

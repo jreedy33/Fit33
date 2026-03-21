@@ -45,9 +45,9 @@ class FriendRankingService: ObservableObject {
         do {
             let data = try JSONEncoder().encode(rankedFriends)
             UserDefaults.standard.set(data, forKey: rankedFriendsCacheKey)
-            print("💾 [RANKING] Cached \(rankedFriends.count) ranked friends")
+            AppLogger.debug("💾 [RANKING] Cached \(rankedFriends.count) ranked friends", category: .social)
         } catch {
-            print("⚠️ [RANKING] Failed to cache: \(error)")
+            AppLogger.warning("⚠️ [RANKING] Failed to cache: \(error)", category: .social)
         }
     }
     
@@ -57,10 +57,10 @@ class FriendRankingService: ObservableObject {
             let cached = try JSONDecoder().decode([RankedFriend].self, from: data)
             if !cached.isEmpty {
                 rankedFriends = cached
-                print("⚡️ [RANKING] Loaded \(cached.count) cached ranked friends (instant)")
+                AppLogger.debug("⚡️ [RANKING] Loaded \(cached.count) cached ranked friends (instant)", category: .social)
             }
         } catch {
-            print("⚠️ [RANKING] Failed to load cache: \(error)")
+            AppLogger.warning("⚠️ [RANKING] Failed to load cache: \(error)", category: .social)
             UserDefaults.standard.removeObject(forKey: rankedFriendsCacheKey)
         }
     }
@@ -88,14 +88,14 @@ class FriendRankingService: ObservableObject {
             rankedFriends = result
             lastRefreshed = Date()
             cacheRankedFriends() // Persist for instant display on next launch
-            print("✅ [RANKING] Fetched \(result.count) ranked friends")
+            AppLogger.info("✅ [RANKING] Fetched \(result.count) ranked friends", category: .social)
             
             // Log top 3 for debugging
             for (index, friend) in result.prefix(3).enumerated() {
-                print("   #\(index + 1): \(friend.friendName ?? friend.friendUsername ?? "Unknown") - Score: \(friend.relationshipScore)")
+                AppLogger.debug("   #\(index + 1): \(friend.friendName ?? friend.friendUsername ?? "Unknown") - Score: \(friend.relationshipScore)", category: .social)
             }
         } catch {
-            print("❌ [RANKING] Error fetching ranked friends: \(error)")
+            AppLogger.error("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
         }
         
         isLoading = false
@@ -116,10 +116,10 @@ class FriendRankingService: ObservableObject {
                 .value
             
             topFriends = result
-            print("✅ [RANKING] Fetched top \(result.count) friends")
+            AppLogger.info("✅ [RANKING] Fetched top \(result.count) friends", category: .social)
             return result
         } catch {
-            print("❌ [RANKING] Error fetching top friends: \(error)")
+            AppLogger.error("❌ [RANKING] Error fetching top friends: \(error)", category: .social)
             return []
         }
     }
@@ -135,9 +135,9 @@ class FriendRankingService: ObservableObject {
                 .value
             
             friendsFromContacts = result
-            print("✅ [RANKING] Fetched \(result.count) friends from contacts")
+            AppLogger.info("✅ [RANKING] Fetched \(result.count) friends from contacts", category: .social)
         } catch {
-            print("❌ [RANKING] Error fetching friends from contacts: \(error)")
+            AppLogger.error("❌ [RANKING] Error fetching friends from contacts: \(error)", category: .social)
         }
     }
     
@@ -170,9 +170,9 @@ class FriendRankingService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ [RANKING] Logged interaction: \(type.rawValue) with friend \(friendId)")
+            AppLogger.info("✅ [RANKING] Logged interaction: \(type.rawValue) with friend \(friendId)", category: .social)
         } catch {
-            print("⚠️ [RANKING] Failed to log interaction: \(error)")
+            AppLogger.warning("⚠️ [RANKING] Failed to log interaction: \(error)", category: .social)
             // Non-critical - don't throw
         }
     }
@@ -206,12 +206,12 @@ class FriendRankingService: ObservableObject {
                 .rpc("refresh_friend_scores")
                 .execute()
             
-            print("✅ [RANKING] Refreshed friend scores")
+            AppLogger.info("✅ [RANKING] Refreshed friend scores", category: .social)
             
             // Re-fetch ranked friends after refresh
             await fetchRankedFriends(forceRefresh: true)
         } catch {
-            print("⚠️ [RANKING] Failed to refresh scores: \(error)")
+            AppLogger.warning("⚠️ [RANKING] Failed to refresh scores: \(error)", category: .social)
         }
     }
     

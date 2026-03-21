@@ -209,7 +209,7 @@ struct FriendWorkoutPreviewView: View {
     
     private func saveWorkoutForLater() {
         // Placeholder — would save the exercise list as a favorite routine template
-        print("✅ Workout saved for later: \(workoutId)")
+        AppLogger.info("✅ Workout saved for later: \(workoutId)", category: .workout)
     }
     
     private func formatDuration(_ seconds: Int) -> String {

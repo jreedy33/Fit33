@@ -101,7 +101,7 @@ struct NativeAdContentView: View {
                             .font(.caption)
                             .fontWeight(.semibold)
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ds_caption)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, Spacing.md)
@@ -198,7 +198,7 @@ class NativeAdLoader: NSObject, ObservableObject, NativeAdLoaderDelegate {
     
     func loadAd() {
         guard AdManager.shared.adsEnabled else {
-            print("📺 [NATIVE] Ads disabled, not loading")
+            AppLogger.debug("📺 [NATIVE] Ads disabled, not loading", category: .ui)
             return
         }
         
@@ -206,11 +206,11 @@ class NativeAdLoader: NSObject, ObservableObject, NativeAdLoaderDelegate {
         AdManager.shared.initializeSDK()
         
         guard let rootVC = RootViewControllerFinder.find() else {
-            print("📺 [NATIVE] No root view controller found")
+            AppLogger.debug("📺 [NATIVE] No root view controller found", category: .ui)
             return
         }
         
-        print("📺 [NATIVE] Loading native ad...")
+        AppLogger.debug("📺 [NATIVE] Loading native ad...", category: .ui)
         
         let options = NativeAdViewAdOptions()
         options.preferredAdChoicesPosition = .topRightCorner
@@ -228,21 +228,21 @@ class NativeAdLoader: NSObject, ObservableObject, NativeAdLoaderDelegate {
     // MARK: - GADNativeAdLoaderDelegate
     
     func adLoader(_ adLoader: AdLoader, didReceive nativeAd: NativeAd) {
-        print("📺 [NATIVE] Native ad loaded successfully")
+        AppLogger.debug("📺 [NATIVE] Native ad loaded successfully", category: .ui)
         DispatchQueue.main.async {
             self.nativeAd = nativeAd
         }
     }
     
     func adLoader(_ adLoader: AdLoader, didFailToReceiveAdWithError error: Error) {
-        print("📺 [NATIVE] Failed to load native ad: \(error.localizedDescription)")
+        AppLogger.error("📺 [NATIVE] Failed to load native ad: \(error.localizedDescription)", category: .ui)
         DispatchQueue.main.async {
             self.nativeAd = nil
         }
     }
     
     func adLoaderDidFinishLoading(_ adLoader: AdLoader) {
-        print("📺 [NATIVE] Ad loader finished")
+        AppLogger.debug("📺 [NATIVE] Ad loader finished", category: .ui)
     }
 }
 
@@ -331,7 +331,7 @@ struct WorkoutNativeAdContent: View {
             // Description (if available)
             if let body = nativeAd.body {
                 Text(body)
-                    .font(.system(size: 11))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
@@ -341,7 +341,7 @@ struct WorkoutNativeAdContent: View {
                 Button(action: {}) {
                     HStack(spacing: 4) {
                         Text(callToAction)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.ds_caption)
                         Image(systemName: "arrow.right")
                             .font(.system(size: 9, weight: .bold))
                     }
@@ -462,11 +462,11 @@ struct BannerAdRepresentable: UIViewRepresentable {
     }
     
     func makeUIView(context: Context) -> BannerView {
-        print("📢 [Banner] makeUIView called")
+        AppLogger.debug("📢 [Banner] makeUIView called", category: .ui)
         
         // Ensure SDK is initialized before loading ads
         AdManager.shared.initializeSDK()
-        print("📢 [Banner] SDK initialization requested")
+        AppLogger.debug("📢 [Banner] SDK initialization requested", category: .ui)
         
         let bannerView = BannerView()
         
@@ -477,39 +477,39 @@ struct BannerAdRepresentable: UIViewRepresentable {
         
         // Use adaptive banner size matching screen width  
         bannerView.adSize = portraitAnchoredAdaptiveBanner(width: screenWidth)
-        print("📢 [Banner] Set frame: \(bannerView.frame) and adaptive banner for width: \(screenWidth)")
+        AppLogger.debug("📢 [Banner] Set frame: \(bannerView.frame) and adaptive banner for width: \(screenWidth)", category: .ui)
         
         // Use test ad unit ID in debug, production ID in release
         #if DEBUG
         bannerView.adUnitID = "ca-app-pub-3940256099942544/2934735716" // Google test banner
-        print("📢 [Banner] Using TEST ad unit ID")
+        AppLogger.debug("📢 [Banner] Using TEST ad unit ID", category: .ui)
         #else
         bannerView.adUnitID = "ca-app-pub-8809892203317185/7456758464" // Production banner
-        print("📢 [Banner] Using PRODUCTION ad unit ID")
+        AppLogger.debug("📢 [Banner] Using PRODUCTION ad unit ID", category: .ui)
         #endif
         
         // Set the root view controller
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootViewController = windowScene.windows.first?.rootViewController {
             bannerView.rootViewController = rootViewController
-            print("📢 [Banner] Root view controller set")
+            AppLogger.debug("📢 [Banner] Root view controller set", category: .ui)
         } else {
-            print("⚠️ [Banner] Could not find root view controller")
+            AppLogger.warning("⚠️ [Banner] Could not find root view controller", category: .ui)
         }
         
         // Set delegate
         bannerView.delegate = context.coordinator
-        print("📢 [Banner] Delegate set")
+        AppLogger.debug("📢 [Banner] Delegate set", category: .ui)
         
         // Load the ad
         let request = Request()
         bannerView.load(request)
-        print("📢 [Banner] Ad load requested with size: \(bannerView.adSize.size)")
+        AppLogger.debug("📢 [Banner] Ad load requested with size: \(bannerView.adSize.size)", category: .ui)
         
         // Mark that we've attempted to load
         DispatchQueue.main.async {
             self.bannerState.hasAttemptedLoad = true
-            print("📢 [Banner] hasAttemptedLoad set to true")
+            AppLogger.debug("📢 [Banner] hasAttemptedLoad set to true", category: .ui)
         }
         
         return bannerView
@@ -521,7 +521,7 @@ struct BannerAdRepresentable: UIViewRepresentable {
         if bannerView.frame.width != screenWidth {
             bannerView.frame = CGRect(x: 0, y: 0, width: screenWidth, height: 50)
             bannerView.adSize = portraitAnchoredAdaptiveBanner(width: screenWidth)
-            print("📢 [Banner] Updated frame and size for new width: \(screenWidth)")
+            AppLogger.debug("📢 [Banner] Updated frame and size for new width: \(screenWidth)", category: .ui)
         }
     }
     
@@ -534,27 +534,27 @@ struct BannerAdRepresentable: UIViewRepresentable {
         }
         
         func bannerViewDidReceiveAd(_ bannerView: BannerView) {
-            print("📢 [Banner] ✅ Banner ad loaded successfully!")
+            AppLogger.info("📢 [Banner] ✅ Banner ad loaded successfully!", category: .ui)
             DispatchQueue.main.async {
                 self.bannerState.isAdLoaded = true
-                print("📢 [Banner] bannerState.isAdLoaded set to TRUE")
+                AppLogger.debug("📢 [Banner] bannerState.isAdLoaded set to TRUE", category: .ui)
             }
         }
         
         func bannerView(_ bannerView: BannerView, didFailToReceiveAdWithError error: Error) {
-            print("❌ [Banner] Banner ad failed to load: \(error.localizedDescription)")
-            print("❌ [Banner] Error code: \((error as NSError).code)")
+            AppLogger.error("❌ [Banner] Banner ad failed to load: \(error.localizedDescription)", category: .ui)
+            AppLogger.error("❌ [Banner] Error code: \((error as NSError).code)", category: .ui)
             DispatchQueue.main.async {
                 self.bannerState.isAdLoaded = false
             }
         }
         
         func bannerViewDidRecordImpression(_ bannerView: BannerView) {
-            print("👁️ [Banner] Banner ad impression recorded")
+            AppLogger.debug("👁️ [Banner] Banner ad impression recorded", category: .ui)
         }
         
         func bannerViewDidRecordClick(_ bannerView: BannerView) {
-            print("👆 [Banner] Banner ad clicked")
+            AppLogger.debug("👆 [Banner] Banner ad clicked", category: .ui)
         }
     }
 }

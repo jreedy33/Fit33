@@ -630,7 +630,7 @@ class StrengthProfileRecommendationEngine {
                 return (lastSet.weight, Int(lastSet.reps))
             }
         } catch {
-            print("⚠️ Error fetching last performance: \(error)")
+            AppLogger.warning("⚠️ Error fetching last performance: \(error)", category: .workout)
         }
         
         return nil

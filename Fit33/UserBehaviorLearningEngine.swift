@@ -95,7 +95,7 @@ class UserBehaviorLearningEngine: ObservableObject {
     }
     
     private init() {
-        print("🧠 [LEARNING ENGINE] Initialized")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Initialized", category: .workout)
         
         // Load cached preferences from UserDefaults immediately
         loadCachedPreferences()
@@ -108,7 +108,7 @@ class UserBehaviorLearningEngine: ObservableObject {
            let profile = try? JSONDecoder().decode(UserBehaviorProfile.self, from: data) {
             self.userPreferences = profile
             updateCaches(from: profile)
-            print("🧠 [LEARNING ENGINE] Loaded cached preferences (\(profile.totalWorkoutsAnalyzed) workouts)")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Loaded cached preferences (\(profile.totalWorkoutsAnalyzed) workouts)", category: .workout)
         }
     }
     
@@ -116,7 +116,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         guard let profile = userPreferences else { return }
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: "userBehaviorProfile")
-            print("🧠 [LEARNING ENGINE] Saved preferences to local cache")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Saved preferences to local cache", category: .workout)
         }
     }
     
@@ -129,7 +129,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         let newNameLower = newExercise.lowercased()
         
         guard var profile = userPreferences else {
-            print("⚠️ [LEARNING] No profile to record swap")
+            AppLogger.warning("⚠️ [LEARNING] No profile to record swap", category: .workout)
             return
         }
         
@@ -154,9 +154,9 @@ class UserBehaviorLearningEngine: ObservableObject {
         }
         
         #if DEBUG
-        print("🔄 [LEARNING] Recorded swap: '\(originalExercise)' → '\(newExercise)' (total swaps: \(swapData.swapCount))")
+        AppLogger.debug("🔄 [LEARNING] Recorded swap: '\(originalExercise)' → '\(newExercise)' (total swaps: \(swapData.swapCount))", category: .workout)
         if swapData.swapCount >= 3 {
-            print("   ⚠️ Exercise '\(originalExercise)' has been swapped \(swapData.swapCount)x - reducing recommendations")
+            AppLogger.warning("   ⚠️ Exercise '\(originalExercise)' has been swapped \(swapData.swapCount)x - reducing recommendations", category: .workout)
         }
         #endif
     }
@@ -184,7 +184,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         saveCachedPreferences()
         
         #if DEBUG
-        print("➕ [LEARNING] Recorded custom workout addition: '\(exerciseName)' - will recommend similar exercises")
+        AppLogger.debug("➕ [LEARNING] Recorded custom workout addition: '\(exerciseName)' - will recommend similar exercises", category: .workout)
         #endif
     }
     
@@ -201,7 +201,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         saveCachedPreferences()
         
         #if DEBUG
-        print("✅ [LEARNING] Recorded explicit selection: '\(exerciseName)'")
+        AppLogger.info("✅ [LEARNING] Recorded explicit selection: '\(exerciseName)'", category: .workout)
         #endif
     }
     
@@ -229,19 +229,19 @@ class UserBehaviorLearningEngine: ObservableObject {
         if let existing = userPreferences,
            let lastStart = UserBehaviorLearningEngine.lastAnalysisStart,
            Date().timeIntervalSince(lastStart) < UserBehaviorLearningEngine.minAnalysisInterval {
-            print("⚡️ [LEARNING ENGINE] Using cached profile (analyzed \(Int(Date().timeIntervalSince(lastStart)))s ago)")
+            AppLogger.debug("⚡️ [LEARNING ENGINE] Using cached profile (analyzed \(Int(Date().timeIntervalSince(lastStart)))s ago)", category: .workout)
             return existing
         }
         
         // 🛡️ Skip if CPU is critical (> 200%)
         if CPUProtection.shared.isCPUCritical() {
-            print("⚠️ [LEARNING ENGINE] Skipping analysis - CPU critical")
+            AppLogger.warning("⚠️ [LEARNING ENGINE] Skipping analysis - CPU critical", category: .workout)
             return userPreferences ?? UserBehaviorProfile.empty
         }
         
         // 🛡️ Reuse in-flight analysis
         if let existingTask = UserBehaviorLearningEngine.analysisTask {
-            print("⚡️ [LEARNING ENGINE] Reusing in-flight analysis")
+            AppLogger.debug("⚡️ [LEARNING ENGINE] Reusing in-flight analysis", category: .workout)
             return await existingTask.value
         }
         
@@ -264,13 +264,13 @@ class UserBehaviorLearningEngine: ObservableObject {
                 }
             }
             
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("🧠 [LEARNING ENGINE] Starting comprehensive behavior analysis...")
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
+            AppLogger.debug("🧠 [LEARNING ENGINE] Starting comprehensive behavior analysis...", category: .workout)
             let startTime = CFAbsoluteTimeGetCurrent()
             
             // Try to load from cloud first (for cross-device sync)
             if let cloudProfile = await self.loadFromCloud() {
-                print("🧠 [LEARNING ENGINE] Loaded profile from cloud (\(cloudProfile.totalWorkoutsAnalyzed) workouts)")
+                AppLogger.debug("🧠 [LEARNING ENGINE] Loaded profile from cloud (\(cloudProfile.totalWorkoutsAnalyzed) workouts)", category: .workout)
                 await MainActor.run {
                     self.userPreferences = cloudProfile
                 }
@@ -283,22 +283,22 @@ class UserBehaviorLearningEngine: ObservableObject {
             
             // Fetch completed workouts
             let workouts = await self.fetchCompletedWorkouts(context: context)
-            print("🧠 [LEARNING ENGINE] Analyzing \(workouts.count) completed workouts")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Analyzing \(workouts.count) completed workouts", category: .workout)
             
             // ⚡️ PERFORMANCE: Yield between heavy operations
             await Task.yield()
             
             // Fetch favorited exercises
             let favoritedExercises = await self.fetchFavoritedExercises(context: context)
-            print("🧠 [LEARNING ENGINE] Found \(favoritedExercises.count) favorited exercises")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Found \(favoritedExercises.count) favorited exercises", category: .workout)
             
             // Fetch favorited workouts
             let favoritedWorkouts = await self.fetchFavoritedWorkouts(context: context)
-            print("🧠 [LEARNING ENGINE] Found \(favoritedWorkouts.count) favorited workout routines")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Found \(favoritedWorkouts.count) favorited workout routines", category: .workout)
             
             // Fetch program day completions from cloud (for comprehensive learning)
             let programCompletions = await self.fetchProgramCompletions()
-            print("🧠 [LEARNING ENGINE] Found \(programCompletions.count) program day completions")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Found \(programCompletions.count) program day completions", category: .workout)
             
             // ⚡️ PERFORMANCE: Yield before heavy profile building
             await Task.yield()
@@ -344,8 +344,8 @@ class UserBehaviorLearningEngine: ObservableObject {
             }
             
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("🧠 [LEARNING ENGINE] Analysis complete in \(String(format: "%.0f", elapsed))ms")
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Analysis complete in \(String(format: "%.0f", elapsed))ms", category: .workout)
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
             
             // 🌟 Also trigger progressive unlock service analysis (deferred)
             Task(priority: .utility) { @MainActor in
@@ -411,7 +411,7 @@ class UserBehaviorLearningEngine: ObservableObject {
                 explicitlySelectedExercises: []
             )
         } catch {
-            print("⚠️ [LEARNING ENGINE] Could not load from cloud: \(error)")
+            AppLogger.warning("⚠️ [LEARNING ENGINE] Could not load from cloud: \(error)", category: .workout)
             return nil
         }
     }
@@ -436,7 +436,7 @@ class UserBehaviorLearningEngine: ObservableObject {
                 .execute()
                 .value
             
-            print("🧠 [LEARNING ENGINE] Fetched \(response.count) program day completions from cloud")
+            AppLogger.debug("🧠 [LEARNING ENGINE] Fetched \(response.count) program day completions from cloud", category: .workout)
             
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -455,14 +455,14 @@ class UserBehaviorLearningEngine: ObservableObject {
                 )
             }
         } catch {
-            print("⚠️ [LEARNING ENGINE] Could not fetch program completions: \(error)")
+            AppLogger.warning("⚠️ [LEARNING ENGINE] Could not fetch program completions: \(error)", category: .workout)
             return []
         }
     }
     
     private func saveToCloud(_ profile: UserBehaviorProfile) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [LEARNING ENGINE] Not authenticated, skipping cloud save")
+            AppLogger.warning("⚠️ [LEARNING ENGINE] Not authenticated, skipping cloud save", category: .workout)
             return
         }
         
@@ -491,9 +491,9 @@ class UserBehaviorLearningEngine: ObservableObject {
                 .upsert(data, onConflict: "user_id")
                 .execute()
             
-            print("☁️ [LEARNING ENGINE] Profile saved to cloud successfully")
+            AppLogger.debug("☁️ [LEARNING ENGINE] Profile saved to cloud successfully", category: .workout)
         } catch {
-            print("❌ [LEARNING ENGINE] Failed to save to cloud: \(error)")
+            AppLogger.error("❌ [LEARNING ENGINE] Failed to save to cloud: \(error)", category: .workout)
         }
     }
     
@@ -546,7 +546,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         LearningCacheStorage.shared.exerciseVariationCache = variationCache
         
         let elapsedMs = (CACurrentMediaTime() - startTime) * 1000
-        print("🧠 [LEARNING ENGINE] Built similarity map for \(variationCache.count) exercises in \(String(format: "%.0f", elapsedMs))ms (background thread)")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Built similarity map for \(variationCache.count) exercises in \(String(format: "%.0f", elapsedMs))ms (background thread)", category: .workout)
     }
     
     /// Get similar exercises based on movement pattern and muscle group
@@ -556,7 +556,7 @@ class UserBehaviorLearningEngine: ObservableObject {
     
     /// Quick refresh after a workout completes (incremental update)
     func refreshAfterWorkout(_ workout: Workout, context: NSManagedObjectContext) async {
-        print("🧠 [LEARNING ENGINE] Quick refresh after workout: \(workout.name ?? "Unknown")")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Quick refresh after workout: \(workout.name ?? "Unknown")", category: .workout)
         
         // 🌟 Also update progressive unlock service
         let exerciseNames = extractExerciseData(from: workout).map { $0.name }
@@ -597,7 +597,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         self.userPreferences = profile
         updateCaches(from: profile)
         
-        print("🧠 [LEARNING ENGINE] Profile updated incrementally")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Profile updated incrementally", category: .workout)
     }
     
     // MARK: - Scoring Functions for Workout Generation
@@ -667,7 +667,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         
         #if DEBUG
         if maxSimilarityBoost > 30 {
-            print("   🔗 Similar exercise boost: \(exerciseName) (+\(Int(maxSimilarityBoost)))")
+            AppLogger.debug("   🔗 Similar exercise boost: \(exerciseName) (+\(Int(maxSimilarityBoost)))", category: .workout)
         }
         #endif
         
@@ -965,7 +965,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         do {
             return try context.fetch(request)
         } catch {
-            print("❌ [LEARNING ENGINE] Error fetching workouts: \(error)")
+            AppLogger.error("❌ [LEARNING ENGINE] Error fetching workouts: \(error)", category: .workout)
             return []
         }
     }
@@ -977,7 +977,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         do {
             return try context.fetch(request)
         } catch {
-            print("❌ [LEARNING ENGINE] Error fetching favorited exercises: \(error)")
+            AppLogger.error("❌ [LEARNING ENGINE] Error fetching favorited exercises: \(error)", category: .workout)
             return []
         }
     }
@@ -989,7 +989,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         do {
             return try context.fetch(request)
         } catch {
-            print("❌ [LEARNING ENGINE] Error fetching favorited workouts: \(error)")
+            AppLogger.error("❌ [LEARNING ENGINE] Error fetching favorited workouts: \(error)", category: .workout)
             return []
         }
     }
@@ -1136,7 +1136,7 @@ class UserBehaviorLearningEngine: ObservableObject {
                 movementPatternScores[pattern, default: 0] += recencyWeight
             }
         }
-        print("🧠 [LEARNING ENGINE] Incorporated \(programCompletions.count) program completions into profile")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Incorporated \(programCompletions.count) program completions into profile", category: .workout)
         
         // Normalize scores to 0.0 - 1.0 range
         let normalizedExercises = normalizeScores(exerciseScores)
@@ -1170,15 +1170,15 @@ class UserBehaviorLearningEngine: ObservableObject {
             insights.append("You've mastered \(fullSetExercises.count) exercises (3+ sets)")
         }
         
-        print("🧠 [LEARNING ENGINE] Profile built:")
-        print("   - Exercise affinities: \(normalizedExercises.count)")
-        print("   - Equipment affinities: \(normalizedEquipment.count)")
-        print("   - Muscle affinities: \(normalizedMuscles.count)")
-        print("   - Movement patterns: \(normalizedPatterns.count)")
-        print("   - Full-set exercises: \(fullSetExercises.count)")
-        print("   - Recent exercises: \(recentExercises.count)")
-        print("   - Preferred duration: \(avgDuration) min")
-        print("   - Preferred time: \(preferredTime)")
+        AppLogger.debug("🧠 [LEARNING ENGINE] Profile built:", category: .workout)
+        AppLogger.debug("   - Exercise affinities: \(normalizedExercises.count)", category: .workout)
+        AppLogger.debug("   - Equipment affinities: \(normalizedEquipment.count)", category: .workout)
+        AppLogger.debug("   - Muscle affinities: \(normalizedMuscles.count)", category: .workout)
+        AppLogger.debug("   - Movement patterns: \(normalizedPatterns.count)", category: .workout)
+        AppLogger.debug("   - Full-set exercises: \(fullSetExercises.count)", category: .workout)
+        AppLogger.debug("   - Recent exercises: \(recentExercises.count)", category: .workout)
+        AppLogger.debug("   - Preferred duration: \(avgDuration) min", category: .workout)
+        AppLogger.debug("   - Preferred time: \(preferredTime)", category: .workout)
         
         // Preserve existing swap history and custom additions
         let existingSwapHistory = userPreferences?.swapHistory ?? [:]

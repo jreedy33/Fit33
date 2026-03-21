@@ -51,7 +51,7 @@ final class StartupCache: ObservableObject {
         guard !isWarmed || isCacheStale else { return }
         
         let startTime = CACurrentMediaTime()
-        print("🚀 [STARTUP CACHE] Beginning warm-up...")
+        AppLogger.debug("🚀 [STARTUP CACHE] Beginning warm-up...", category: .performance)
         
         // Stage 1: User stats (fastest, most critical)
         await warmUserStats(context: context)
@@ -79,7 +79,7 @@ final class StartupCache: ObservableObject {
         isWarmed = true
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("🚀 [STARTUP CACHE] Warm-up complete in \(String(format: "%.1f", elapsed))ms")
+        AppLogger.debug("🚀 [STARTUP CACHE] Warm-up complete in \(String(format: "%.1f", elapsed))ms", category: .performance)
     }
     
     private var isCacheStale: Bool {
@@ -105,7 +105,7 @@ final class StartupCache: ObservableObject {
                 )
             }
         } catch {
-            print("⚠️ [STARTUP CACHE] User stats warm failed: \(error)")
+            AppLogger.error("⚠️ [STARTUP CACHE] User stats warm failed: \(error)", category: .performance)
         }
     }
     
@@ -120,7 +120,7 @@ final class StartupCache: ObservableObject {
             let results = try context.fetch(categoryRequest)
             self.cachedCategories = results.compactMap { $0["category"] as? String }.sorted()
         } catch {
-            print("⚠️ [STARTUP CACHE] Categories warm failed: \(error)")
+            AppLogger.error("⚠️ [STARTUP CACHE] Categories warm failed: \(error)", category: .performance)
         }
         
         // Get unique equipment
@@ -133,7 +133,7 @@ final class StartupCache: ObservableObject {
             let results = try context.fetch(equipmentRequest)
             self.cachedEquipment = results.compactMap { $0["equipment"] as? String }.sorted()
         } catch {
-            print("⚠️ [STARTUP CACHE] Equipment warm failed: \(error)")
+            AppLogger.error("⚠️ [STARTUP CACHE] Equipment warm failed: \(error)", category: .performance)
         }
         
         // Muscle groups are static, cache them directly
@@ -152,7 +152,7 @@ final class StartupCache: ObservableObject {
             let workouts = try context.fetch(fetchRequest)
             self.cachedRecentWorkouts = workouts.map { $0.objectID }
         } catch {
-            print("⚠️ [STARTUP CACHE] Workouts warm failed: \(error)")
+            AppLogger.error("⚠️ [STARTUP CACHE] Workouts warm failed: \(error)", category: .performance)
         }
     }
     
@@ -161,7 +161,7 @@ final class StartupCache: ObservableObject {
         do {
             self.cachedExerciseCount = try context.count(for: fetchRequest)
         } catch {
-            print("⚠️ [STARTUP CACHE] Exercise count warm failed: \(error)")
+            AppLogger.error("⚠️ [STARTUP CACHE] Exercise count warm failed: \(error)", category: .performance)
         }
     }
     
@@ -218,7 +218,7 @@ final class LazyTabManager: ObservableObject {
     func markVisited(_ tab: Tab) {
         if !visitedTabs.contains(tab) {
             visitedTabs.insert(tab)
-            print("📱 [LAZY TAB] Tab \(tab) initialized on first visit")
+            AppLogger.debug("📱 [LAZY TAB] Tab \(tab) initialized on first visit", category: .ui)
         }
     }
     
@@ -237,11 +237,12 @@ final class LazyTabManager: ObservableObject {
             hintedTabs.insert(tab)
             
             // Pre-render after short delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self = self else { return }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled, let self = self else { return }
                 if self.hintedTabs.contains(tab) {
                     self.visitedTabs.insert(tab)
-                    print("📱 [LAZY TAB] Tab \(tab) pre-rendered from hint")
+                    AppLogger.debug("📱 [LAZY TAB] Tab \(tab) pre-rendered from hint", category: .ui)
                 }
             }
         }
@@ -262,20 +263,23 @@ final class LazyTabManager: ObservableObject {
         // Pre-initialize all tabs in sequence with tiny delays
         // This spreads the work across multiple frames
         for (index, tab) in Tab.allCases.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.05) { [weak self] in
+            let delay = Double(index) * 0.05
+            Task { @MainActor [weak self] in
+                if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+                guard !Task.isCancelled else { return }
                 self?.visitedTabs.insert(tab)
             }
         }
         
         let elapsed = (CACurrentMediaTime() - eagerPreloadStartTime) * 1000
-        print("⚡️ [EAGER MODE] Enabled - all tabs will render immediately (\(String(format: "%.1f", elapsed))ms)")
+        AppLogger.debug("⚡️ [EAGER MODE] Enabled - all tabs will render immediately (\(String(format: "%.1f", elapsed))ms)", category: .ui)
     }
     
     /// Pre-warm all tabs immediately (synchronous version for startup)
     func preWarmAllTabs() {
         isEagerModeEnabled = true
         visitedTabs = Set(Tab.allCases)
-        print("⚡️ [EAGER MODE] All tabs pre-warmed synchronously")
+        AppLogger.debug("⚡️ [EAGER MODE] All tabs pre-warmed synchronously", category: .ui)
     }
     
     /// Reset (for testing or sign out)
@@ -396,7 +400,7 @@ final class SmartPrefetch: ObservableObject {
                     let exercises = try context.fetch(fetchRequest)
                     self.prefetchedData["exercises_first_batch"] = exercises.map { $0.objectID }
                 } catch {
-                    print("⚠️ [PREFETCH] Exercise prefetch failed: \(error)")
+                    AppLogger.error("⚠️ [PREFETCH] Exercise prefetch failed: \(error)", category: .performance)
                 }
             }
             
@@ -600,7 +604,7 @@ final class TabSwitchOptimizer: ObservableObject {
         let toName = to < tabNames.count ? tabNames[to] : "Tab\(to)"
         
         let memoryMB = Self.quickMemoryMB()
-        print("🔍 [TAB FREEZE] beginTransition: \(fromName)(\(from))→\(toName)(\(to)) seq#\(seq) memory:\(Int(memoryMB))MB thread:\(Thread.isMainThread ? "main" : "bg")")
+        AppLogger.debug("🔍 [TAB FREEZE] beginTransition: \(fromName)(\(from))→\(toName)(\(to)) seq#\(seq) memory:\(Int(memoryMB))MB thread:\(Thread.isMainThread ? "main" : "bg")", category: .ui)
         
         // 🐕 Tell watchdog about this tab switch
         MainThreadWatchdog.shared.trackTabSwitch(from: from, to: to)
@@ -612,7 +616,7 @@ final class TabSwitchOptimizer: ObservableObject {
             SmartPrefetch.shared.prefetchForTab(tab)
         }
         let prepMs = (CACurrentMediaTime() - prepStart) * 1000
-        print("🔍 [TAB FREEZE] beginTransition: prefetch done for seq#\(seq) (\(String(format: "%.1f", prepMs))ms)")
+        AppLogger.debug("🔍 [TAB FREEZE] beginTransition: prefetch done for seq#\(seq) (\(String(format: "%.1f", prepMs))ms)", category: .ui)
         
         // Haptic feedback (already warm from HapticManager)
         HapticManager.selectionChanged()
@@ -625,17 +629,20 @@ final class TabSwitchOptimizer: ObservableObject {
             if self.transitionSequence == seq && self.isTransitioning {
                 let elapsed = (CACurrentMediaTime() - self.transitionStartTime) * 1000
                 let mem = Self.quickMemoryMB()
-                print("🚨🚨🚨 [TAB FREEZE] FREEZE DETECTED! Tab \(from)→\(to) seq#\(seq) stuck for \(String(format: "%.0f", elapsed))ms!")
-                print("   └─ memory: \(Int(mem))MB")
-                print("   └─ isTransitioning still true — endTransition() was NEVER called")
-                print("   └─ main_thread: \(Thread.isMainThread)")
+                AppLogger.error("🚨🚨🚨 [TAB FREEZE] FREEZE DETECTED! Tab \(from)→\(to) seq#\(seq) stuck for \(String(format: "%.0f", elapsed))ms!", category: .ui)
+                AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
+                AppLogger.debug("   └─ isTransitioning still true — endTransition() was NEVER called", category: .ui)
+                AppLogger.debug("   └─ main_thread: \(Thread.isMainThread)", category: .performance)
                 
                 // Log what's happening on the main run loop
                 MainThreadWatchdog.shared.logFreezeSnapshot(context: "tab_switch_\(from)→\(to)_seq\(seq)")
             }
         }
         freezeDetectionTimer = freezeCheck
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: freezeCheck)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3.0))
+            freezeCheck.perform()
+        }
     }
     
     /// Call when tab switch animation completes
@@ -654,13 +661,13 @@ final class TabSwitchOptimizer: ObservableObject {
         // Note: Humans perceive <200ms as "instant", <500ms as "fast"
         // Only warn if transition takes longer than 300ms (noticeable delay)
         if elapsed > 2000 {
-            print("🚨 [TAB SWITCH] VERY slow transition: \(String(format: "%.1f", elapsed))ms (seq#\(seq))")
+            AppLogger.warning("🚨 [TAB SWITCH] VERY slow transition: \(String(format: "%.1f", elapsed))ms (seq#\(seq))", category: .ui)
         } else if elapsed > 300 {
-            print("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", elapsed))ms")
+            AppLogger.warning("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", elapsed))ms", category: .ui)
         } else if elapsed > 150 {
-            print("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", elapsed))ms")
+            AppLogger.debug("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", elapsed))ms", category: .ui)
         } else {
-            print("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", elapsed))ms")
+            AppLogger.debug("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", elapsed))ms", category: .ui)
         }
     }
     
@@ -709,7 +716,7 @@ final class MainThreadWatchdog {
         thread.start()
         watchdogThread = thread
         
-        print("🐕 [WATCHDOG] Main thread freeze detector started (threshold: \(freezeThreshold)s)")
+        AppLogger.debug("🐕 [WATCHDOG] Main thread freeze detector started (threshold: \(freezeThreshold)s)", category: .performance)
     }
     
     /// Set current context (e.g., "tab_switch_0→1") — helps correlate freezes
@@ -754,12 +761,12 @@ final class MainThreadWatchdog {
         let mem = TabSwitchOptimizer.quickMemoryMB()
         let runLoopMode = RunLoop.current.currentMode?.rawValue ?? "unknown"
         
-        print("🔍 [WATCHDOG] Freeze snapshot for: \(context)")
-        print("   └─ memory: \(Int(mem))MB")
-        print("   └─ runloop_mode: \(runLoopMode)")
-        print("   └─ isTransitioning: \(TabSwitchOptimizer.shared.isTransitioning)")
-        print("   └─ thread: \(Thread.isMainThread ? "main" : "background")")
-        print("   └─ active_tasks: check console for pending operations")
+        AppLogger.debug("🔍 [WATCHDOG] Freeze snapshot for: \(context)", category: .performance)
+        AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
+        AppLogger.debug("   └─ runloop_mode: \(runLoopMode)", category: .performance)
+        AppLogger.debug("   └─ isTransitioning: \(TabSwitchOptimizer.shared.isTransitioning)", category: .ui)
+        AppLogger.debug("   └─ thread: \(Thread.isMainThread ? "main" : "background")", category: .performance)
+        AppLogger.debug("   └─ active_tasks: check console for pending operations", category: .performance)
     }
     
     private func watchdogLoop() {
@@ -807,11 +814,11 @@ final class MainThreadWatchdog {
                     tabInfo = "none"
                 }
                 
-                print("🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count))")
-                print("   └─ context: \(ctx) (running \(String(format: "%.0f", ctxDuration))ms)")
-                print("   └─ last_tab_switch: \(tabInfo)")
-                print("   └─ memory: \(Int(mem))MB")
-                print("   └─ ⚠️ UI is unresponsive — user cannot interact")
+                AppLogger.error("🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count))", category: .performance)
+                AppLogger.debug("   └─ context: \(ctx) (running \(String(format: "%.0f", ctxDuration))ms)", category: .performance)
+                AppLogger.debug("   └─ last_tab_switch: \(tabInfo)", category: .performance)
+                AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
+                AppLogger.error("   └─ ⚠️ UI is unresponsive — user cannot interact", category: .performance)
                 
                 // Log thread count
                 logThreadInfo()
@@ -821,14 +828,14 @@ final class MainThreadWatchdog {
                 let totalBlocked = CACurrentMediaTime() - pingStart
                 
                 if unblockResult == .timedOut {
-                    print("🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK!")
-                    print("   └─ context: \(ctx)")
+                    AppLogger.error("🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK!", category: .performance)
+                    AppLogger.debug("   └─ context: \(ctx)", category: .performance)
                 } else if totalBlocked >= criticalThreshold {
-                    print("🧊🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s (CRITICAL)")
-                    print("   └─ context: \(ctx)")
+                    AppLogger.error("🧊🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s (CRITICAL)", category: .performance)
+                    AppLogger.debug("   └─ context: \(ctx)", category: .performance)
                 } else {
-                    print("🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s")
-                    print("   └─ context: \(ctx)")
+                    AppLogger.debug("🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s", category: .performance)
+                    AppLogger.debug("   └─ context: \(ctx)", category: .performance)
                 }
             }
         }
@@ -840,7 +847,7 @@ final class MainThreadWatchdog {
         var threadCount: mach_msg_type_number_t = 0
         let result = task_threads(mach_task_self_, &threadList, &threadCount)
         if result == KERN_SUCCESS {
-            print("   └─ active_threads: \(threadCount)")
+            AppLogger.debug("   └─ active_threads: \(threadCount)", category: .performance)
             // Deallocate the thread list
             if let list = threadList {
                 vm_deallocate(mach_task_self_, vm_address_t(bitPattern: list), vm_size_t(Int(threadCount) * MemoryLayout<thread_act_t>.size))
@@ -894,7 +901,7 @@ enum FetchOptimizer {
                     let results = try context.fetch(request)
                     continuation.resume(returning: results.map { $0.objectID })
                 } catch {
-                    print("⚠️ [FETCH] Background fetch failed: \(error)")
+                    AppLogger.error("⚠️ [FETCH] Background fetch failed: \(error)", category: .performance)
                     continuation.resume(returning: [])
                 }
             }
@@ -930,14 +937,14 @@ struct LazyTabContent<Content: View>: View {
                     .onAppear {
                         hasInitialized = true
                         lazyTabManager.markVisited(tab)
-                        print("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (eager/initialized)")
+                        AppLogger.debug("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (eager/initialized)", category: .ui)
                     }
             } else if lazyTabManager.shouldRenderContent(for: tab) {
                 // Tab was explicitly visited or hinted
                 content()
                     .onAppear {
                         hasInitialized = true
-                        print("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (shouldRender)")
+                        AppLogger.debug("🔍 [TAB FREEZE] ✅ Tab \(tab.rawValue) onAppear fired (shouldRender)", category: .ui)
                     }
             } else {
                 // Lightweight placeholder - show VERY briefly while initializing
@@ -946,7 +953,7 @@ struct LazyTabContent<Content: View>: View {
                         // Initialize immediately - no delay
                         hasInitialized = true
                         lazyTabManager.markVisited(tab)
-                        print("🔍 [TAB FREEZE] ⏳ Tab \(tab.rawValue) showing PLACEHOLDER (first init)")
+                        AppLogger.debug("🔍 [TAB FREEZE] ⏳ Tab \(tab.rawValue) showing PLACEHOLDER (first init)", category: .ui)
                     }
             }
         }
@@ -1067,7 +1074,7 @@ final class PerformanceMetrics: ObservableObject {
         
         if isFirstLoad {
             tabMetrics[tab]?.firstLoadTime = elapsed
-            print("📊 [PERF] Tab \(tab) first load: \(String(format: "%.1f", elapsed * 1000))ms")
+            AppLogger.debug("📊 [PERF] Tab \(tab) first load: \(String(format: "%.1f", elapsed * 1000))ms", category: .ui)
         } else {
             let existing = tabMetrics[tab]!
             let newAvg = (existing.avgSwitchTime * Double(existing.switchCount) + elapsed) / Double(existing.switchCount + 1)
@@ -1075,17 +1082,17 @@ final class PerformanceMetrics: ObservableObject {
             tabMetrics[tab]?.switchCount += 1
             
             if elapsed * 1000 > 50 {
-                print("⚠️ [PERF] Tab \(tab) slow switch: \(String(format: "%.1f", elapsed * 1000))ms")
+                AppLogger.warning("⚠️ [PERF] Tab \(tab) slow switch: \(String(format: "%.1f", elapsed * 1000))ms", category: .ui)
             }
         }
     }
     
     func printSummary() {
-        print("\n📊 === PERFORMANCE SUMMARY ===")
+        AppLogger.debug("\n📊 === PERFORMANCE SUMMARY ===", category: .performance)
         for (tab, metrics) in tabMetrics.sorted(by: { $0.key < $1.key }) {
-            print("Tab \(tab): First=\(String(format: "%.1f", metrics.firstLoadTime * 1000))ms, Avg=\(String(format: "%.1f", metrics.avgSwitchTime * 1000))ms (\(metrics.switchCount) switches)")
+            AppLogger.debug("Tab \(tab): First=\(String(format: "%.1f", metrics.firstLoadTime * 1000))ms, Avg=\(String(format: "%.1f", metrics.avgSwitchTime * 1000))ms (\(metrics.switchCount) switches)", category: .ui)
         }
-        print("==============================\n")
+        AppLogger.debug("==============================\n", category: .performance)
     }
 }
 #endif

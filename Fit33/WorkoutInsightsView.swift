@@ -31,7 +31,7 @@ struct WorkoutInsightsView: View {
                                         .shadow(color: .purple.opacity(0.25), radius: 4, x: 0, y: 2)
                                     
                                     Image(systemName: "brain.head.profile")
-                                        .font(.system(size: 26, weight: .bold))
+                                        .font(.ds_heading2)
                                         .foregroundColor(.white)
                                 }
                                 

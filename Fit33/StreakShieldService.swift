@@ -71,7 +71,7 @@ class StreakShieldService: ObservableObject {
             saveShieldData()
             
             #if DEBUG
-            print("🛡️ Monthly shield reset! Granted \(monthlyGrant) shields. Total: \(availableShields)")
+            AppLogger.debug("🛡️ Monthly shield reset! Granted \(monthlyGrant) shields. Total: \(availableShields)", category: .social)
             #endif
         }
     }
@@ -123,7 +123,7 @@ class StreakShieldService: ObservableObject {
     func useShield() -> Bool {
         guard availableShields > 0 else {
             #if DEBUG
-            print("🛡️ No shields available!")
+            AppLogger.debug("🛡️ No shields available!", category: .social)
             #endif
             return false
         }
@@ -132,7 +132,7 @@ class StreakShieldService: ObservableObject {
         if let lastUsed = lastShieldUsedDate,
            Calendar.current.isDateInToday(lastUsed) {
             #if DEBUG
-            print("🛡️ Already used a shield today!")
+            AppLogger.debug("🛡️ Already used a shield today!", category: .social)
             #endif
             return false
         }
@@ -155,7 +155,7 @@ class StreakShieldService: ObservableObject {
         generator.notificationOccurred(.success)
         
         #if DEBUG
-        print("🛡️ Shield used! Streak protected. Remaining: \(availableShields)")
+        AppLogger.debug("🛡️ Shield used! Streak protected. Remaining: \(availableShields)", category: .social)
         #endif
         
         return true
@@ -168,7 +168,7 @@ class StreakShieldService: ObservableObject {
             saveShieldData()
             
             #if DEBUG
-            print("🛡️ Earned a shield! Total workouts: \(totalWorkouts). Shields: \(availableShields)")
+            AppLogger.debug("🛡️ Earned a shield! Total workouts: \(totalWorkouts). Shields: \(availableShields)", category: .social)
             #endif
         }
     }

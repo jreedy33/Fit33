@@ -182,11 +182,11 @@ class WorkoutProgramEngine {
         workout.duration = 0
         workout.isCompleted = false
         
-        print("🎯 Generating workout for: \(programDay.name)")
-        print("   Focus areas: \(programDay.focus)")
-        print("   Equipment: \(programDay.equipment)")
-        print("   Exercise count: \(programDay.exerciseCount)")
-        print("   Intensity: \(programDay.intensity.rawValue)")
+        AppLogger.debug("🎯 Generating workout for: \(programDay.name)", category: .workout)
+        AppLogger.debug("   Focus areas: \(programDay.focus)", category: .workout)
+        AppLogger.debug("   Equipment: \(programDay.equipment)", category: .workout)
+        AppLogger.debug("   Exercise count: \(programDay.exerciseCount)", category: .workout)
+        AppLogger.debug("   Intensity: \(programDay.intensity.rawValue)", category: .workout)
         
         // Use intelligent generator with the day's specific focus
         let focusAreas = Set(programDay.focus.map { $0.lowercased() })
@@ -219,7 +219,7 @@ class WorkoutProgramEngine {
             allExercises.first { $0.name == exerciseData.name }
         }
         
-        print("✅ Generated \(exercises.count) fresh exercises for Day \(programDay.dayNumber)")
+        AppLogger.info("✅ Generated \(exercises.count) fresh exercises for Day \(programDay.dayNumber)", category: .workout)
         
         return (workout, exercises)
     }

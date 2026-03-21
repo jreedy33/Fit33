@@ -71,7 +71,7 @@ final class VideoThumbnailService {
         
         #if DEBUG
         let diskCount = countDiskThumbnails()
-        print("🖼️ [THUMBNAIL] Initialized — \(diskCount) poster frames on disk")
+        AppLogger.debug("🖼️ [THUMBNAIL] Initialized — \(diskCount) poster frames on disk", category: .general)
         #endif
     }
     
@@ -160,11 +160,11 @@ final class VideoThumbnailService {
                 self.saveToDisk(thumbnail, key: key)
                 
                 #if DEBUG
-                print("🖼️ [THUMBNAIL] Captured poster frame: \(exerciseName)")
+                AppLogger.debug("🖼️ [THUMBNAIL] Captured poster frame: \(exerciseName)", category: .general)
                 #endif
             } catch {
                 #if DEBUG
-                print("⚠️ [THUMBNAIL] Failed to capture: \(exerciseName) — \(error.localizedDescription)")
+                AppLogger.warning("⚠️ [THUMBNAIL] Failed to capture: \(exerciseName) — \(error.localizedDescription)", category: .general)
                 #endif
             }
             
@@ -211,11 +211,11 @@ final class VideoThumbnailService {
                 self.saveToDisk(thumbnail, key: key)
                 
                 #if DEBUG
-                print("🖼️ [THUMBNAIL] Generated poster frame: \(exerciseName)")
+                AppLogger.debug("🖼️ [THUMBNAIL] Generated poster frame: \(exerciseName)", category: .general)
                 #endif
             } catch {
                 #if DEBUG
-                print("⚠️ [THUMBNAIL] Generation failed: \(exerciseName) — \(error.localizedDescription)")
+                AppLogger.warning("⚠️ [THUMBNAIL] Generation failed: \(exerciseName) — \(error.localizedDescription)", category: .general)
                 #endif
             }
             
@@ -261,7 +261,7 @@ final class VideoThumbnailService {
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode < 500 {
                 self?.isConnectionWarmed = true
                 #if DEBUG
-                print("🌐 [THUMBNAIL] CDN connection pre-warmed (status: \(httpResponse.statusCode), attempt: \(attempt))")
+                AppLogger.debug("🌐 [THUMBNAIL] CDN connection pre-warmed (status: \(httpResponse.statusCode), attempt: \(attempt))", category: .network)
                 #endif
             } else if attempt < 3 {
                 let delay = pow(2.0, Double(attempt - 1))
@@ -291,7 +291,7 @@ final class VideoThumbnailService {
     func clearMemoryCache() {
         memoryCache.removeAllObjects()
         #if DEBUG
-        print("💾 [THUMBNAIL] Memory cache cleared (disk cache retained)")
+        AppLogger.debug("💾 [THUMBNAIL] Memory cache cleared (disk cache retained)", category: .general)
         #endif
     }
     
@@ -303,7 +303,7 @@ final class VideoThumbnailService {
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         #if DEBUG
-        print("🗑️ [THUMBNAIL] All caches cleared")
+        AppLogger.debug("🗑️ [THUMBNAIL] All caches cleared", category: .general)
         #endif
     }
     

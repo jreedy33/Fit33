@@ -140,6 +140,42 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
     private var workoutStartTime: Date?
     private var dataHistory: [FitnessEquipmentData] = []
     
+    // RSSI averaging for stable proximity ranking (5-sample rolling average)
+    private var rssiHistory: [UUID: [Int]] = [:]
+    private let rssiSampleCount = 5
+    
+    // Device memory — remember last connected device for quick reconnect
+    private var lastDeviceId: String {
+        get { UserDefaults.standard.string(forKey: "lastConnectedBLEDeviceId") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "lastConnectedBLEDeviceId") }
+    }
+    private var lastDeviceName: String {
+        get { UserDefaults.standard.string(forKey: "lastConnectedBLEDeviceName") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "lastConnectedBLEDeviceName") }
+    }
+    
+    // Auto-suggest: the device we're most confident is the user's (closest by RSSI)
+    var suggestedDevice: DiscoveredFitnessDevice? {
+        guard discoveredDevices.count >= 2 else { return discoveredDevices.first }
+        let strongest = discoveredDevices[0]
+        let secondStrongest = discoveredDevices[1]
+        if strongest.rssi - secondStrongest.rssi >= 15 { return strongest }
+        return nil
+    }
+    
+    // The remembered device if it appears in the current scan
+    var rememberedDevice: DiscoveredFitnessDevice? {
+        guard !lastDeviceId.isEmpty else { return nil }
+        return discoveredDevices.first { $0.peripheral.identifier.uuidString == lastDeviceId }
+    }
+    
+    // Whether we should auto-connect (remembered device is also the closest)
+    var shouldAutoConnect: Bool {
+        guard let remembered = rememberedDevice,
+              let suggested = suggestedDevice else { return false }
+        return remembered.id == suggested.id
+    }
+    
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
@@ -154,6 +190,7 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
         }
         
         discoveredDevices.removeAll()
+        rssiHistory.removeAll()
         connectionState = .scanning
         isScanning = true
         
@@ -179,7 +216,7 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
             self?.cleanupStaleDevices()
         }
         
-        print("🔵 [BLUETOOTH] Started scanning for fitness equipment")
+        AppLogger.debug("🔵 [BLUETOOTH] Started scanning for fitness equipment", category: .health)
     }
     
     func stopScanning() {
@@ -192,14 +229,17 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
             connectionState = .disconnected
         }
         
-        print("🔵 [BLUETOOTH] Stopped scanning")
+        AppLogger.debug("🔵 [BLUETOOTH] Stopped scanning", category: .health)
     }
     
     func connect(to device: DiscoveredFitnessDevice) {
         stopScanning()
         connectionState = .connecting
         
-        print("🔵 [BLUETOOTH] Connecting to \(device.name)...")
+        lastDeviceId = device.peripheral.identifier.uuidString
+        lastDeviceName = device.name
+        
+        AppLogger.debug("🔵 [BLUETOOTH] Connecting to \(device.name)...", category: .health)
         centralManager.connect(device.peripheral, options: nil)
     }
     
@@ -214,13 +254,13 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
         liveData = FitnessEquipmentData()
         dataCharacteristics.removeAll()
         
-        print("🔵 [BLUETOOTH] Disconnected from equipment")
+        AppLogger.debug("🔵 [BLUETOOTH] Disconnected from equipment", category: .health)
     }
     
     func startWorkoutRecording() {
         workoutStartTime = Date()
         dataHistory.removeAll()
-        print("🔵 [BLUETOOTH] Started workout recording")
+        AppLogger.debug("🔵 [BLUETOOTH] Started workout recording", category: .health)
     }
     
     func stopWorkoutRecording() -> (duration: TimeInterval, distance: Double, calories: Int, avgHeartRate: Int)? {
@@ -236,7 +276,7 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
         
         workoutStartTime = nil
         
-        print("🔵 [BLUETOOTH] Stopped recording: \(duration)s, \(distance)m, \(calories)cal, \(avgHeartRate)bpm avg")
+        AppLogger.debug("🔵 [BLUETOOTH] Stopped recording: \(duration)s, \(distance)m, \(calories)cal, \(avgHeartRate)bpm avg", category: .health)
         
         return (duration, distance, calories, avgHeartRate)
     }
@@ -244,8 +284,10 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
     // MARK: - Private Methods
     
     private func cleanupStaleDevices() {
-        let cutoff = Date().addingTimeInterval(-10) // Remove devices not seen in 10s
+        let cutoff = Date().addingTimeInterval(-10)
+        let staleIds = discoveredDevices.filter { $0.lastSeen < cutoff }.map { $0.id }
         discoveredDevices.removeAll { $0.lastSeen < cutoff }
+        for id in staleIds { rssiHistory.removeValue(forKey: id) }
     }
     
     private func determineEquipmentType(from advertisementData: [String: Any], name: String) -> FitnessEquipmentType {
@@ -279,56 +321,62 @@ extension BluetoothFitnessManager: CBCentralManagerDelegate {
         switch central.state {
         case .poweredOn:
             isBluetoothAvailable = true
-            print("🔵 [BLUETOOTH] Powered on and ready")
+            AppLogger.debug("🔵 [BLUETOOTH] Powered on and ready", category: .health)
         case .poweredOff:
             isBluetoothAvailable = false
             connectionState = .error("Bluetooth is turned off")
-            print("🔵 [BLUETOOTH] Powered off")
+            AppLogger.debug("🔵 [BLUETOOTH] Powered off", category: .health)
         case .unauthorized:
             isBluetoothAvailable = false
             connectionState = .error("Bluetooth permission denied")
-            print("🔵 [BLUETOOTH] Unauthorized")
+            AppLogger.debug("🔵 [BLUETOOTH] Unauthorized", category: .health)
         case .unsupported:
             isBluetoothAvailable = false
             connectionState = .error("Bluetooth not supported")
-            print("🔵 [BLUETOOTH] Unsupported")
+            AppLogger.debug("🔵 [BLUETOOTH] Unsupported", category: .health)
         default:
             isBluetoothAvailable = false
-            print("🔵 [BLUETOOTH] State: \(central.state.rawValue)")
+            AppLogger.debug("🔵 [BLUETOOTH] State: \(central.state.rawValue)", category: .health)
         }
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Unknown Device"
         
-        // Skip unnamed devices
         guard name != "Unknown Device" else { return }
         
         let equipmentType = determineEquipmentType(from: advertisementData, name: name)
         
-        // Update or add device
-        if let index = discoveredDevices.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
-            discoveredDevices[index].rssi = RSSI.intValue
+        // RSSI averaging: keep last N samples for stable proximity ranking
+        let deviceId = peripheral.identifier
+        rssiHistory[deviceId, default: []].append(RSSI.intValue)
+        if let history = rssiHistory[deviceId], history.count > rssiSampleCount {
+            rssiHistory[deviceId]?.removeFirst()
+        }
+        let history = rssiHistory[deviceId] ?? []
+        let avgRSSI = history.isEmpty ? RSSI.intValue : history.reduce(0, +) / history.count
+        
+        if let index = discoveredDevices.firstIndex(where: { $0.peripheral.identifier == deviceId }) {
+            discoveredDevices[index].rssi = avgRSSI
             discoveredDevices[index].lastSeen = Date()
         } else {
             let device = DiscoveredFitnessDevice(
-                id: peripheral.identifier,
+                id: deviceId,
                 peripheral: peripheral,
                 name: name,
                 type: equipmentType,
-                rssi: RSSI.intValue,
+                rssi: avgRSSI,
                 lastSeen: Date()
             )
             discoveredDevices.append(device)
-            print("🔵 [BLUETOOTH] Discovered: \(name) (\(equipmentType.rawValue))")
+            AppLogger.debug("🔵 [BLUETOOTH] Discovered: \(name) (\(equipmentType.rawValue)) RSSI: \(avgRSSI)", category: .health)
         }
         
-        // Sort by signal strength
         discoveredDevices.sort { $0.rssi > $1.rssi }
     }
     
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        print("🔵 [BLUETOOTH] Connected to \(peripheral.name ?? "device")")
+        AppLogger.debug("🔵 [BLUETOOTH] Connected to \(peripheral.name ?? "device")", category: .health)
         
         connectedPeripheral = peripheral
         peripheral.delegate = self
@@ -345,13 +393,13 @@ extension BluetoothFitnessManager: CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("🔵 [BLUETOOTH] Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+        AppLogger.error("🔵 [BLUETOOTH] Failed to connect: \(error?.localizedDescription ?? "unknown error")", category: .health)
         connectionState = .error(error?.localizedDescription ?? "Connection failed")
         HapticManager.notification(.error)
     }
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        print("🔵 [BLUETOOTH] Disconnected from \(peripheral.name ?? "device")")
+        AppLogger.debug("🔵 [BLUETOOTH] Disconnected from \(peripheral.name ?? "device")", category: .health)
         
         connectedPeripheral = nil
         connectedDevice = nil
@@ -370,7 +418,7 @@ extension BluetoothFitnessManager: CBPeripheralDelegate {
         guard let services = peripheral.services else { return }
         
         for service in services {
-            print("🔵 [BLUETOOTH] Discovered service: \(service.uuid)")
+            AppLogger.debug("🔵 [BLUETOOTH] Discovered service: \(service.uuid)", category: .health)
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
@@ -379,7 +427,7 @@ extension BluetoothFitnessManager: CBPeripheralDelegate {
         guard let characteristics = service.characteristics else { return }
         
         for characteristic in characteristics {
-            print("🔵 [BLUETOOTH] Discovered characteristic: \(characteristic.uuid)")
+            AppLogger.debug("🔵 [BLUETOOTH] Discovered characteristic: \(characteristic.uuid)", category: .health)
             
             // Subscribe to notify characteristics
             if characteristic.properties.contains(.notify) {
@@ -417,6 +465,9 @@ extension BluetoothFitnessManager: CBPeripheralDelegate {
         // Record data point for workout
         if workoutStartTime != nil {
             dataHistory.append(liveData)
+            if dataHistory.count > 3600 {
+                dataHistory.removeFirst(dataHistory.count - 3600)
+            }
         }
     }
     

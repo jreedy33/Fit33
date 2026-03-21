@@ -48,7 +48,7 @@ class CollaborativeLearningEngine: ObservableObject {
     }
     
     private init() {
-        print("🌐 [COLLABORATIVE ENGINE] Initialized")
+        AppLogger.debug("🌐 [COLLABORATIVE ENGINE] Initialized", category: .workout)
     }
     
     // MARK: - Main API
@@ -169,10 +169,10 @@ class CollaborativeLearningEngine: ObservableObject {
             // 3. Update user similarity profile
             await updateUserSimilarityProfile(userId: userId, profile: userProfile)
             
-            print("🌐 [COLLABORATIVE] Recorded workout with \(exercises.count) exercises")
+            AppLogger.debug("🌐 [COLLABORATIVE] Recorded workout with \(exercises.count) exercises", category: .workout)
             
         } catch {
-            print("❌ [COLLABORATIVE] Failed to record workout: \(error)")
+            AppLogger.error("❌ [COLLABORATIVE] Failed to record workout: \(error)", category: .workout)
         }
     }
     
@@ -208,10 +208,10 @@ class CollaborativeLearningEngine: ObservableObject {
                 .insert(data)
                 .execute()
             
-            print("🌐 [COLLABORATIVE] Recorded program completion: \(programName) (\(Int(completionRate * 100))%)")
+            AppLogger.debug("🌐 [COLLABORATIVE] Recorded program completion: \(programName) (\(Int(completionRate * 100))%)", category: .workout)
             
         } catch {
-            print("❌ [COLLABORATIVE] Failed to record program: \(error)")
+            AppLogger.error("❌ [COLLABORATIVE] Failed to record program: \(error)", category: .workout)
         }
     }
     
@@ -222,7 +222,7 @@ class CollaborativeLearningEngine: ObservableObject {
         isAnalyzing = true
         defer { isAnalyzing = false }
         
-        print("🌐 [COLLABORATIVE] Starting global data sync...")
+        AppLogger.debug("🌐 [COLLABORATIVE] Starting global data sync...", category: .workout)
         
         do {
             // 1. Fetch global exercise statistics
@@ -238,7 +238,7 @@ class CollaborativeLearningEngine: ObservableObject {
             await updateUserSimilarityClusters()
             
             lastSyncDate = Date()
-            print("🌐 [COLLABORATIVE] Global sync complete!")
+            AppLogger.debug("🌐 [COLLABORATIVE] Global sync complete!", category: .workout)
             
         }
     }
@@ -300,7 +300,7 @@ class CollaborativeLearningEngine: ObservableObject {
             return similarUsers
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not fetch similar users: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not fetch similar users: \(error)", category: .workout)
             return []
         }
     }
@@ -432,7 +432,7 @@ class CollaborativeLearningEngine: ObservableObject {
                 .execute()
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not update user profile: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not update user profile: \(error)", category: .workout)
         }
     }
     
@@ -471,10 +471,10 @@ class CollaborativeLearningEngine: ObservableObject {
             )
             
             totalWorkoutsAnalyzed = stats.reduce(0) { $0 + $1.completion_count }
-            print("🌐 [COLLABORATIVE] Loaded \(stats.count) exercise stats from materialized view")
+            AppLogger.debug("🌐 [COLLABORATIVE] Loaded \(stats.count) exercise stats from materialized view", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Materialized view not ready, using base table: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Materialized view not ready, using base table: \(error)", category: .workout)
             // Fallback to base table calculation
             await fetchGlobalExerciseStatsFromBaseTable()
         }
@@ -516,10 +516,10 @@ class CollaborativeLearningEngine: ObservableObject {
             )
             
             totalWorkoutsAnalyzed = workouts.count
-            print("🌐 [COLLABORATIVE] Loaded stats from \(workouts.count) workouts (base table)")
+            AppLogger.debug("🌐 [COLLABORATIVE] Loaded stats from \(workouts.count) workouts (base table)", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not fetch exercise stats: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not fetch exercise stats: \(error)", category: .workout)
             globalTrendsCache = GlobalTrends(
                 exercisePopularity: [:],
                 exerciseSuccessRates: [:],
@@ -558,10 +558,10 @@ class CollaborativeLearningEngine: ObservableObject {
                 )
             }
             
-            print("🌐 [COLLABORATIVE] Loaded \(programs.count) successful programs from materialized view")
+            AppLogger.debug("🌐 [COLLABORATIVE] Loaded \(programs.count) successful programs from materialized view", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Materialized view not ready, using base table: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Materialized view not ready, using base table: \(error)", category: .workout)
             await fetchSuccessfulProgramsFromBaseTable()
         }
     }
@@ -607,10 +607,10 @@ class CollaborativeLearningEngine: ObservableObject {
                 }
                 .sorted { $0.completionRate > $1.completionRate }
             
-            print("🌐 [COLLABORATIVE] Loaded \(successfulProgramsCache.count) successful programs (base table)")
+            AppLogger.debug("🌐 [COLLABORATIVE] Loaded \(successfulProgramsCache.count) successful programs (base table)", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not fetch programs: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not fetch programs: \(error)", category: .workout)
             successfulProgramsCache = []
         }
     }
@@ -660,10 +660,10 @@ class CollaborativeLearningEngine: ObservableObject {
             }
             
             exercisePairingCache = index
-            print("🌐 [COLLABORATIVE] Built pairing index for \(index.count) exercises")
+            AppLogger.debug("🌐 [COLLABORATIVE] Built pairing index for \(index.count) exercises", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not build pairing index: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not build pairing index: \(error)", category: .workout)
         }
     }
     
@@ -681,10 +681,10 @@ class CollaborativeLearningEngine: ObservableObject {
                 .value
             
             totalUsersAnalyzed = result.first?.count ?? 0
-            print("🌐 [COLLABORATIVE] Tracking \(totalUsersAnalyzed) users")
+            AppLogger.debug("🌐 [COLLABORATIVE] Tracking \(totalUsersAnalyzed) users", category: .workout)
             
         } catch {
-            print("⚠️ [COLLABORATIVE] Could not count users: \(error)")
+            AppLogger.warning("⚠️ [COLLABORATIVE] Could not count users: \(error)", category: .workout)
         }
     }
     

@@ -185,7 +185,7 @@ struct SharedWorkoutView: View {
                     .shadow(color: accentGradient[0].opacity(0.4), radius: 10, x: 0, y: 5)
                 
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             
@@ -364,7 +364,7 @@ struct SharedWorkoutView: View {
             savedForLater = true
             HapticManager.notification(.success)
         } catch {
-            print("❌ Error saving workout: \(error)")
+            AppLogger.error("❌ Error saving workout: \(error)", category: .workout)
         }
     }
     

@@ -30,7 +30,7 @@ struct WorkoutHistoryDetailView: View {
                 deduplicated.append(workoutExercise)
             } else {
                 #if DEBUG
-                print("⚠️ [HISTORY] Skipping duplicate exercise: \(workoutExercise.safeDisplayName) at position \(workoutExercise.order)")
+                AppLogger.warning("⚠️ [HISTORY] Skipping duplicate exercise: \(workoutExercise.safeDisplayName) at position \(workoutExercise.order)", category: .workout)
                 #endif
             }
         }
@@ -241,7 +241,7 @@ struct WorkoutHistoryDetailView: View {
                             showingShareSheet = true
                         }) {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.ds_heading3)
                                 .foregroundColor(accentColor)
                                 .frame(width: 44, height: 44)
                                 .background(
@@ -578,7 +578,7 @@ struct WorkoutHistoryDetailView: View {
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.ds_bodyMedium)
                     Text("Repeat Workout")
                         .font(.headline)
                         .fontWeight(.bold)
@@ -613,7 +613,7 @@ struct WorkoutHistoryDetailView: View {
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.ds_bodyMedium)
                     Text("Share Workout")
                         .font(.headline)
                         .fontWeight(.bold)
@@ -647,7 +647,7 @@ struct WorkoutHistoryDetailView: View {
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.ds_bodyMedium)
                     Text(isFavorite ? "Saved to Favorites" : "Save to Favorites")
                         .font(.headline)
                         .fontWeight(.bold)
@@ -778,10 +778,18 @@ struct WorkoutHistoryDetailView: View {
     }
     
     private func repeatWorkout() {
-        print("🔄 [REPEAT] repeatWorkout() called - navigating to preview")
         HapticManager.impact(.medium)
-        // Show preview screen instead of starting directly
-        showingRepeatPreview = true
+        let exercises = resolveExercisesForRepeat()
+        guard !exercises.isEmpty else { return }
+
+        let context = viewContext
+        let newWorkout = Workout(context: context)
+        newWorkout.id = UUID()
+        newWorkout.name = workout.name ?? "Repeated Workout"
+        newWorkout.date = Date()
+        newWorkout.isCompleted = false
+
+        WorkoutManager.shared.startWorkout(workout: newWorkout, exercises: exercises)
     }
     
     // Toggle favorite with debounce protection
@@ -801,15 +809,15 @@ struct WorkoutHistoryDetailView: View {
         
         do {
             try workout.managedObjectContext?.save()
-            print("✅ Workout favorite status saved: \(isFavorite)")
+            AppLogger.info("✅ Workout favorite status saved: \(isFavorite)", category: .workout)
         } catch {
-            print("❌ Error saving favorite: \(error)")
+            AppLogger.error("❌ Error saving favorite: \(error)", category: .workout)
             // Revert on error
             isFavorite.toggle()
         }
         
-        // Allow next tap after short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
             isFavoriteProcessing = false
         }
     }
@@ -830,15 +838,15 @@ struct WorkoutHistoryDetailView: View {
             let exerciseName = workoutExercise.safeDisplayName
             if exerciseName != "Loading..." && exerciseName != "Unknown Exercise" {
                 if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName) {
-                    print("🔄 [REPEAT] Resolved exercise by name: \(exerciseName)")
+                    AppLogger.debug("🔄 [REPEAT] Resolved exercise by name: \(exerciseName)", category: .workout)
                     resolvedExercises.append(exercise)
                 } else {
-                    print("⚠️ [REPEAT] Could not resolve exercise: \(exerciseName)")
+                    AppLogger.warning("⚠️ [REPEAT] Could not resolve exercise: \(exerciseName)", category: .workout)
                 }
             }
         }
         
-        print("🔄 [REPEAT] Resolved \(resolvedExercises.count) of \(workoutExercises.count) exercises")
+        AppLogger.debug("🔄 [REPEAT] Resolved \(resolvedExercises.count) of \(workoutExercises.count) exercises", category: .workout)
         return resolvedExercises
     }
 }
@@ -1344,10 +1352,8 @@ struct RepeatWorkoutPreviewView: View {
             
             ScrollView {
                 VStack(spacing: 16) {
-                    // Workout Header Card (matching autogen style)
                     workoutHeaderCard
                     
-                    // Exercise list section
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("Today's Exercises")
@@ -1387,6 +1393,17 @@ struct RepeatWorkoutPreviewView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 120)
             }
+            
+            // Embedded Go button (global GoButtonOverlay is hidden behind fullScreenCover)
+            VStack {
+                Spacer()
+                FloatingGoButton(
+                    action: { startWorkout() },
+                    primaryColor: accentColor,
+                    secondaryColor: accentGradient[1]
+                )
+                .padding(.bottom, 30)
+            }
         }
         .navigationTitle("Your Workout")
         .navigationBarTitleDisplayMode(.inline)
@@ -1394,7 +1411,7 @@ struct RepeatWorkoutPreviewView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundStyle(.secondary)
                         .symbolRenderingMode(.hierarchical)
                 }
@@ -1415,33 +1432,17 @@ struct RepeatWorkoutPreviewView: View {
             }
         }
         .onChange(of: workoutManager.isWorkoutActive) { oldValue, isActive in
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("🔁 [REPEAT PREVIEW] isWorkoutActive changed: \(oldValue) → \(isActive)")
-            
             if isActive {
-                print("🔁 [REPEAT PREVIEW] Workout became active - dismissing IMMEDIATELY")
-                // Dismiss immediately to prevent any flicker
                 dismiss()
-                print("🔁 [REPEAT PREVIEW] Dismiss called")
             }
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         }
         .onAppear {
             SessionLogManager.shared.logScreen(.workoutHistoryDetail, metadata: [
                 "workout_date": workout.date?.description ?? "unknown",
                 "exercise_count": workout.exercises?.count ?? 0
             ])
-            print("🔁 [REPEAT PREVIEW] View appeared - isWorkoutActive: \(workoutManager.isWorkoutActive)")
-            
-            // 🔄 Force refresh Core Data to show latest set data
             viewContext.refreshAllObjects()
             refreshTrigger = UUID()
-            
-            showGoButton()
-        }
-        .onDisappear {
-            print("🔁 [REPEAT PREVIEW] View disappeared")
-            GoButtonState.shared.hide()
         }
     }
     
@@ -1514,20 +1515,11 @@ struct RepeatWorkoutPreviewView: View {
         }
     }
     
-    private func showGoButton() {
-        GoButtonState.shared.show(
-            primaryColor: accentColor,
-            secondaryColor: accentGradient[1]
-        ) {
-            self.startWorkout()
-        }
-    }
-    
     private func startWorkout() {
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("🔁 [REPEAT WORKOUT] START FLOW BEGIN")
-        print("🔁 [REPEAT WORKOUT] Current isWorkoutActive: \(workoutManager.isWorkoutActive)")
-        print("🔁 [REPEAT WORKOUT] Exercises count: \(exercises.count)")
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] START FLOW BEGIN", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Current isWorkoutActive: \(workoutManager.isWorkoutActive)", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Exercises count: \(exercises.count)", category: .workout)
         
         // Create a new workout for repeating
         let newWorkout = Workout(context: viewContext)
@@ -1536,17 +1528,17 @@ struct RepeatWorkoutPreviewView: View {
         newWorkout.date = Date()
         newWorkout.isCompleted = false
         
-        print("🔁 [REPEAT WORKOUT] Created new workout: \(newWorkout.name ?? "")")
-        print("🔁 [REPEAT WORKOUT] Calling workoutManager.startWorkout()...")
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Created new workout: \(newWorkout.name ?? "")", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Calling workoutManager.startWorkout()...", category: .workout)
         
         // Start workout - WorkoutManager will automatically show ActiveWorkoutView
         workoutManager.startWorkout(workout: newWorkout, exercises: exercises)
         
-        print("🔁 [REPEAT WORKOUT] workoutManager.startWorkout() called")
-        print("🔁 [REPEAT WORKOUT] New isWorkoutActive: \(workoutManager.isWorkoutActive)")
-        print("🔁 [REPEAT WORKOUT] Current workout: \(workoutManager.currentWorkout?.name ?? "nil")")
-        print("🔁 [REPEAT WORKOUT] Navigation should auto-clear - NOT dismissing manually")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        AppLogger.debug("🔁 [REPEAT WORKOUT] workoutManager.startWorkout() called", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] New isWorkoutActive: \(workoutManager.isWorkoutActive)", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Current workout: \(workoutManager.currentWorkout?.name ?? "nil")", category: .workout)
+        AppLogger.debug("🔁 [REPEAT WORKOUT] Navigation should auto-clear - NOT dismissing manually", category: .workout)
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
     }
 }
 

@@ -31,6 +31,8 @@ struct MealPlanView: View {
                         Image(systemName: "trash")
                             .foregroundColor(.red)
                     }
+                    .accessibilityLabel("Clear all meals")
+                    .accessibilityHint("Remove all food entries for today")
                 }
             }
             .toolbarBackground(
@@ -50,13 +52,13 @@ struct MealPlanView: View {
         }
         .sheet(isPresented: $showingAddFood) {
             FoodSearchView(mealType: selectedMeal) { foodEntry in
-                print("Food entry received: \(foodEntry.name)")
+                AppLogger.debug("Food entry received: \(foodEntry.name)", category: .nutrition)
                 addFoodEntry(foodEntry)
             }
             .environmentObject(userManager)
         }
         .onChange(of: showingAddFood) { isShowing in
-            print("Sheet presentation state changed: \(isShowing)")
+            AppLogger.debug("Sheet presentation state changed: \(isShowing)", category: .nutrition)
         }
     }
     
@@ -116,6 +118,7 @@ struct MealPlanView: View {
         .background(
             AnimatedOrbBackground.meals(colorScheme: colorScheme)
                 .ignoresSafeArea(.all, edges: .all)
+                .accessibilityHidden(true)
         )
         topFadeOverlay
         }
@@ -143,6 +146,7 @@ struct MealPlanView: View {
                     color: .red,
                     colorScheme: colorScheme
                 )
+                .accessibilityLabel("Calories: \(currentCalories) of \(nutritionGoals?.calories ?? 2000)")
                 
                 NutritionProgressCard(
                     title: "Protein",
@@ -152,6 +156,7 @@ struct MealPlanView: View {
                     color: .blue,
                     colorScheme: colorScheme
                 )
+                .accessibilityLabel("Protein: \(currentProtein) of \(nutritionGoals?.protein ?? 150) grams")
                 
                 NutritionProgressCard(
                     title: "Carbs",
@@ -161,6 +166,7 @@ struct MealPlanView: View {
                     color: .orange,
                     colorScheme: colorScheme
                 )
+                .accessibilityLabel("Carbs: \(currentCarbs) of \(nutritionGoals?.carbs ?? 250) grams")
             }
         }
         .padding(.horizontal, 18)
@@ -234,7 +240,7 @@ struct MealPlanView: View {
                 Spacer()
                 
                 Button(action: {
-                    print("Add food button tapped for \(mealType.displayName)")
+                    AppLogger.debug("Add food button tapped for \(mealType.displayName)", category: .nutrition)
                     selectedMeal = mealType
                     showingAddFood = true
                 }) {
@@ -244,6 +250,8 @@ struct MealPlanView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Add food to \(mealType.displayName)")
+                .accessibilityHint("Search and add a food item")
                 .buttonStyle(PlainButtonStyle())
             }
             
@@ -497,25 +505,25 @@ struct MealPlanView: View {
     }
     
     private func addFoodEntry(_ entry: FoodEntry) {
-        print("🍽️ [MEAL PLAN] addFoodEntry called for: \(entry.name)")
-        print("🍽️ [MEAL PLAN] Meal type: \(selectedMeal)")
-        print("🍽️ [MEAL PLAN] FDC ID: \(entry.fdcId ?? -1)")
+        AppLogger.debug("🍽️ [MEAL PLAN] addFoodEntry called for: \(entry.name)", category: .nutrition)
+        AppLogger.debug("🍽️ [MEAL PLAN] Meal type: \(selectedMeal)", category: .nutrition)
+        AppLogger.debug("🍽️ [MEAL PLAN] FDC ID: \(entry.fdcId ?? -1)", category: .nutrition)
         
         guard let user = userManager.currentUser else {
-            print("❌ [MEAL PLAN] No current user found!")
+            AppLogger.error("❌ [MEAL PLAN] No current user found!", category: .nutrition)
             return
         }
         
-        print("✅ [MEAL PLAN] User found: \(user.email ?? "no email")")
-        print("🔄 [MEAL PLAN] Calling mealService.addMealEntry...")
+        AppLogger.info("✅ [MEAL PLAN] User found: \(user.email ?? "no email")", category: .nutrition)
+        AppLogger.debug("🔄 [MEAL PLAN] Calling mealService.addMealEntry...", category: .nutrition)
         mealService.addMealEntry(entry, mealType: selectedMeal, user: user)
-        print("✅ [MEAL PLAN] addMealEntry call completed")
+        AppLogger.info("✅ [MEAL PLAN] addMealEntry call completed", category: .nutrition)
     }
     
     private func clearAllMeals() {
-        print("🗑️ [MEAL PLAN] Clearing ALL meal entries from database")
+        AppLogger.debug("🗑️ [MEAL PLAN] Clearing ALL meal entries from database", category: .nutrition)
         mealService.clearAllMeals()
-        print("✅ [MEAL PLAN] All meals cleared, reloading...")
+        AppLogger.info("✅ [MEAL PLAN] All meals cleared, reloading...", category: .nutrition)
         loadTodaysData()
     }
 }
@@ -626,10 +634,10 @@ struct ProfileSetupView: View {
         
         do {
             try PersistenceController.shared.container.viewContext.save()
-            print("✅ [PROFILE] Saved weight: \(weightValue), height: \(heightValue), age: \(ageValue)")
+            AppLogger.info("✅ [PROFILE] Saved weight: \(weightValue), height: \(heightValue), age: \(ageValue)", category: .nutrition)
             showingProfileSetup = false
         } catch {
-            print("❌ [PROFILE] Error saving: \(error)")
+            AppLogger.error("❌ [PROFILE] Error saving: \(error)", category: .nutrition)
         }
     }
 }
@@ -1422,7 +1430,9 @@ struct SavedMealDetailView: View {
             showingAddedToList = true
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) {
                 showingAddedToList = false
             }
@@ -1431,7 +1441,7 @@ struct SavedMealDetailView: View {
     
     private func addToMeal(_ mealType: MealType) {
         guard let user = userManager.currentUser else {
-            print("❌ [SAVED MEAL] Cannot add to meal - no user")
+            AppLogger.error("❌ [SAVED MEAL] Cannot add to meal - no user", category: .nutrition)
             return
         }
         
@@ -1455,7 +1465,7 @@ struct SavedMealDetailView: View {
         MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
         HapticManager.success()
         
-        print("✅ [SAVED MEAL] Added '\(meal.name)' to \(mealType.displayName)")
+        AppLogger.info("✅ [SAVED MEAL] Added '\(meal.name)' to \(mealType.displayName)", category: .nutrition)
     }
 }
 

@@ -91,7 +91,7 @@ final class PerformanceMonitor: ObservableObject {
         
         SessionLogManager.shared.log(.info, category: .session, message: "🎯 Performance monitoring started")
         
-        print("🎯 [PERF MONITOR] Started - tracking FPS, memory, CPU, and view loads")
+        AppLogger.debug("🎯 [PERF MONITOR] Started - tracking FPS, memory, CPU, and view loads", category: .general)
     }
     
     func stopMonitoring() {
@@ -111,7 +111,7 @@ final class PerformanceMonitor: ObservableObject {
         
         SessionLogManager.shared.log(.info, category: .session, message: "🎯 Performance monitoring stopped")
         
-        print("🎯 [PERF MONITOR] Stopped")
+        AppLogger.debug("🎯 [PERF MONITOR] Stopped", category: .general)
     }
     
     // MARK: - Update Metrics
@@ -322,8 +322,9 @@ final class PerformanceMonitor: ObservableObject {
     private func setupAutoMonitoring() {
         // Auto-start monitoring in DEBUG builds
         #if DEBUG
-        // Start after a short delay to avoid startup overhead
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled else { return }
             self?.startMonitoring()
         }
         #endif
@@ -450,8 +451,8 @@ final class ViewLoadTracker {
         viewLoadTimes[name]?.append(loadTimeMs)
         
         // Keep only last 10 loads per view
-        if let count = viewLoadTimes[name]?.count, count > 10 {
-            viewLoadTimes[name] = Array(viewLoadTimes[name]!.suffix(10))
+        if let times = viewLoadTimes[name], times.count > 10 {
+            viewLoadTimes[name] = Array(times.suffix(10))
         }
     }
     
@@ -481,8 +482,8 @@ final class TransitionTracker {
         transitionTimes[key]?.append(durationMs)
         
         // Keep only last 10 transitions per pair
-        if let count = transitionTimes[key]?.count, count > 10 {
-            transitionTimes[key] = Array(transitionTimes[key]!.suffix(10))
+        if let times = transitionTimes[key], times.count > 10 {
+            transitionTimes[key] = Array(times.suffix(10))
         }
     }
     

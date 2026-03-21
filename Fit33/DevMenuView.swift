@@ -1713,7 +1713,7 @@ struct FullScreenScreenshotView: View {
                     Spacer()
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.5), radius: 2)
                     }

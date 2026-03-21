@@ -77,9 +77,9 @@ final class ExerciseMappingService {
         guard !isInitialized && !isBuildingMaps else {
             #if DEBUG
             if isInitialized {
-                print("🗺️ [MAPPING] Already initialized, skipping")
+                AppLogger.debug("🗺️ [MAPPING] Already initialized, skipping", category: .workout)
             } else {
-                print("🗺️ [MAPPING] Build already in progress, skipping")
+                AppLogger.debug("🗺️ [MAPPING] Build already in progress, skipping", category: .workout)
             }
             #endif
             return
@@ -90,7 +90,7 @@ final class ExerciseMappingService {
         
         #if DEBUG
         let startTime = Date()
-        print("🗺️ [MAPPING] Starting to build exercise maps...")
+        AppLogger.debug("🗺️ [MAPPING] Starting to build exercise maps...", category: .workout)
         #endif
         
         do {
@@ -102,7 +102,7 @@ final class ExerciseMappingService {
             }
             
             #if DEBUG
-            print("🗺️ [MAPPING] Using \(exercises.count) exercises for map building...")
+            AppLogger.debug("🗺️ [MAPPING] Using \(exercises.count) exercises for map building...", category: .workout)
             #endif
             
             // ⚡️ PERFORMANCE: Build maps incrementally on background queue
@@ -116,7 +116,7 @@ final class ExerciseMappingService {
                 self.buildPatternMap(from: exercises)
                 
                 #if DEBUG
-                print("🗺️ [MAPPING] Pattern map built")
+                AppLogger.debug("🗺️ [MAPPING] Pattern map built", category: .workout)
                 #endif
                 
                 // Yield to let UI breathe
@@ -126,7 +126,7 @@ final class ExerciseMappingService {
                 self.buildMuscleEffectivenessMap(from: exercises)
                 
                 #if DEBUG
-                print("🗺️ [MAPPING] Effectiveness map built")
+                AppLogger.debug("🗺️ [MAPPING] Effectiveness map built", category: .workout)
                 #endif
                 
                 // Yield again
@@ -141,7 +141,7 @@ final class ExerciseMappingService {
                 for i in stride(from: 0, to: limitedExercises.count, by: chunkSize) {
                     // Skip if CPU is critical
                     if CPUProtection.shared.isCPUCritical() {
-                        print("⚠️ [MAPPING] Pausing - CPU critical")
+                        AppLogger.warning("⚠️ [MAPPING] Pausing - CPU critical", category: .workout)
                         try? await Task.sleep(nanoseconds: 500_000_000) // 500ms pause
                     }
                     
@@ -154,7 +154,7 @@ final class ExerciseMappingService {
                 if !CPUProtection.shared.isCPUTooHigh() {
                     self.buildPairingMapOptimized(from: limitedExercises)
                 } else {
-                    print("⚠️ [MAPPING] Skipping pairing map - CPU too high")
+                    AppLogger.warning("⚠️ [MAPPING] Skipping pairing map - CPU too high", category: .workout)
                 }
                 await Task.yield()
                 
@@ -164,16 +164,16 @@ final class ExerciseMappingService {
                 
                 #if DEBUG
                 let elapsed = Date().timeIntervalSince(startTime)
-                print("🗺️ [MAPPING] ✅ All maps built in \(String(format: "%.2f", elapsed))s")
-                print("   Substitutions: \(self.substitutionMap.count)")
-                print("   Pairings: \(self.pairingMap.count)")
-                print("   Progressions: \(self.progressionMap.count)")
-                print("   Patterns: \(self.patternMap.count)")
-                print("   Muscle rankings: \(self.muscleEffectivenessMap.count)")
+                AppLogger.info("🗺️ [MAPPING] ✅ All maps built in \(String(format: "%.2f", elapsed))s", category: .workout)
+                AppLogger.debug("   Substitutions: \(self.substitutionMap.count)", category: .workout)
+                AppLogger.debug("   Pairings: \(self.pairingMap.count)", category: .workout)
+                AppLogger.debug("   Progressions: \(self.progressionMap.count)", category: .workout)
+                AppLogger.debug("   Patterns: \(self.patternMap.count)", category: .workout)
+                AppLogger.debug("   Muscle rankings: \(self.muscleEffectivenessMap.count)", category: .workout)
                 #endif
             }
         } catch {
-            print("❌ ExerciseMappingService: Failed to build maps: \(error)")
+            AppLogger.error("❌ ExerciseMappingService: Failed to build maps: \(error)", category: .workout)
         }
     }
     

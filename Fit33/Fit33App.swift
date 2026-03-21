@@ -260,7 +260,9 @@ struct Fit33App: App {
         // and check applicationState before presenting.
         #if DEBUG
         if !FAST_STARTUP_MODE {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3.0))
+                guard !Task.isCancelled else { return }
                 guard UIApplication.shared.applicationState == .active else {
                     AppLogger.debug("App not active yet, deferring ATT request", category: .general)
                     return
@@ -274,7 +276,9 @@ struct Fit33App: App {
             AppLogger.debug("FAST STARTUP - Skipping AdMob pre-warm", category: .general)
         }
         #else
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3.0))
+            guard !Task.isCancelled else { return }
             guard UIApplication.shared.applicationState == .active else {
                 AppLogger.debug("App not active yet, deferring ATT request", category: .general)
                 return
@@ -462,6 +466,9 @@ struct Fit33App: App {
                         Task.detached(priority: .background) {
                             await SupabaseManager.shared.syncAllIntegrationStatuses()
                         }
+                        
+                        // Check if this user has advanced dev logging enabled
+                        await AdvancedSessionLogger.shared.checkIfEnabled()
                     }
                     
                     // Check notification authorization and schedule if authorized
@@ -736,13 +743,23 @@ struct Fit33App: App {
             if let user = users.first, let lastWorkout = user.lastWorkoutDate {
                 let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
                 
-                // Only send if it's been 3+ days (not 2 — avoid false positives for rest days)
-                if daysSinceLastWorkout >= 3 {
-                    // Only send once per day max
+                // Graduated re-engagement: 3-7 days (standard), 14 days, 30 days, then stop.
+                if daysSinceLastWorkout >= 3 && daysSinceLastWorkout <= 30 {
                     let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
-                    if let lastReminder = lastComebackReminder {
-                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
-                        if daysSinceReminder < 1 { return }
+                    
+                    // Frequency: daily for 3-7 days, then only at 14 and 30 day milestones
+                    if daysSinceLastWorkout <= 7 {
+                        if let lastReminder = lastComebackReminder {
+                            let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                            if daysSinceReminder < 1 { return }
+                        }
+                    } else {
+                        // Only send at the 14-day and 30-day milestones
+                        guard daysSinceLastWorkout == 14 || daysSinceLastWorkout == 30 else { return }
+                        if let lastReminder = lastComebackReminder {
+                            let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                            if daysSinceReminder < 1 { return }
+                        }
                     }
                     
                     notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)

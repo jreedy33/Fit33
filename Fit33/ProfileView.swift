@@ -756,7 +756,7 @@ struct ProfileView: View {
                 Button(action: { HapticManager.selectionChanged(); dismiss() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.ds_labelLarge)
                         Text("Back")
                             .font(.ds_bodyLarge)
                     }
@@ -843,9 +843,9 @@ struct ProfileView: View {
                             try await SupabaseManager.shared.updatePhoneNumber(phone)
                             // Also mark as verified in AppStorage for Dashboard check
                             UserDefaults.standard.set(true, forKey: "userHasVerifiedPhone")
-                            print("📱 [PROFILE] Phone saved to cloud: \(phone)")
+                            AppLogger.debug("📱 [PROFILE] Phone saved to cloud: \(phone)", category: .ui)
                         } catch {
-                            print("❌ [PROFILE] Failed to save phone to cloud: \(error)")
+                            AppLogger.error("❌ [PROFILE] Failed to save phone to cloud: \(error)", category: .ui)
                         }
                     }
                 }
@@ -1063,7 +1063,7 @@ struct ProfileView: View {
                                 .foregroundColor(.primary)
                             
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.ds_labelLarge)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [.blue, .cyan.opacity(0.8)],
@@ -1303,7 +1303,7 @@ struct ProfileView: View {
                 }
             }
         } catch {
-            print("Failed to load username: \(error)")
+            AppLogger.error("Failed to load username: \(error)", category: .ui)
             await MainActor.run {
                 isLoadingUsername = false
             }
@@ -1359,7 +1359,7 @@ struct ProfileView: View {
                 }
             }
         } catch {
-            print("❌ Error loading profile photo: \(error)")
+            AppLogger.error("❌ Error loading profile photo: \(error)", category: .ui)
         }
     }
     
@@ -1373,7 +1373,7 @@ struct ProfileView: View {
                 }
             }
         } catch {
-            print("❌ Error downloading profile photo: \(error)")
+            AppLogger.error("❌ Error downloading profile photo: \(error)", category: .ui)
         }
     }
     
@@ -1429,9 +1429,9 @@ struct ProfileView: View {
                 self.isUploadingPhoto = false
             }
             
-            print("✅ Profile photo uploaded successfully")
+            AppLogger.info("✅ Profile photo uploaded successfully", category: .ui)
         } catch {
-            print("❌ Error uploading profile photo: \(error)")
+            AppLogger.error("❌ Error uploading profile photo: \(error)", category: .ui)
             await MainActor.run { isUploadingPhoto = false }
         }
     }
@@ -1467,9 +1467,9 @@ struct ProfileView: View {
                 self.isUploadingPhoto = false
             }
             
-            print("✅ Profile photo removed")
+            AppLogger.info("✅ Profile photo removed", category: .ui)
         } catch {
-            print("❌ Error removing profile photo: \(error)")
+            AppLogger.error("❌ Error removing profile photo: \(error)", category: .ui)
             await MainActor.run { isUploadingPhoto = false }
         }
     }
@@ -1532,8 +1532,9 @@ struct ProfileView: View {
                 showingSaveSuccess = true
             }
             
-            // Hide toast after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     showingSaveSuccess = false
                 }
@@ -1573,15 +1574,15 @@ struct ProfileView: View {
             // The recommendation engine reads from UserManager.shared.currentUser
             // which is now updated with the new equipment
             
-            print("✅ Profile saved successfully!")
-            print("   📦 Equipment: \(Array(selectedEquipment).sorted().joined(separator: ", "))")
-            print("   🎯 Goal: \(fitnessGoal)")
-            print("   📊 Experience: \(experienceLevel)")
-            print("   📅 Days/week: \(availableDays)")
-            print("   ☁️ Cloud sync initiated")
-            print("   🔄 Recommendation engine will use updated equipment on next workout")
+            AppLogger.info("✅ Profile saved successfully!", category: .ui)
+            AppLogger.debug("   📦 Equipment: \(Array(selectedEquipment).sorted().joined(separator: ", "))", category: .ui)
+            AppLogger.debug("   🎯 Goal: \(fitnessGoal)", category: .ui)
+            AppLogger.debug("   📊 Experience: \(experienceLevel)", category: .ui)
+            AppLogger.debug("   📅 Days/week: \(availableDays)", category: .ui)
+            AppLogger.debug("   ☁️ Cloud sync initiated", category: .ui)
+            AppLogger.debug("   🔄 Recommendation engine will use updated equipment on next workout", category: .ui)
         } catch {
-            print("❌ Error saving profile: \(error)")
+            AppLogger.error("❌ Error saving profile: \(error)", category: .ui)
         }
         
         isSaving = false
@@ -1595,10 +1596,10 @@ struct ProfileView: View {
                 if supabaseManager.isAuthenticated {
                     // Delete from Supabase if authenticated
                     try await supabaseManager.deleteAccount()
-                    print("🗑️ Cloud account deleted successfully")
+                    AppLogger.debug("🗑️ Cloud account deleted successfully", category: .ui)
                 } else {
                     // Local-only user (test/debug mode) - just clear local data
-                    print("🗑️ Local-only account - clearing local data")
+                    AppLogger.debug("🗑️ Local-only account - clearing local data", category: .ui)
                     PersistenceController.shared.clearAllUserData()
                 }
                 
@@ -1609,12 +1610,12 @@ struct ProfileView: View {
                     workoutManager.resetForSignOut()
                 }
                 
-                print("🗑️ Account deleted successfully - returning to login")
+                AppLogger.debug("🗑️ Account deleted successfully - returning to login", category: .ui)
             } catch {
                 await MainActor.run {
                     isDeleting = false
                 }
-                print("Error deleting account: \(error)")
+                AppLogger.error("Error deleting account: \(error)", category: .ui)
             }
         }
     }
@@ -1629,9 +1630,9 @@ struct ProfileView: View {
                     workoutManager.resetForSignOut()
                 }
                 
-                print("🔐 Sign out complete")
+                AppLogger.debug("🔐 Sign out complete", category: .ui)
             } catch {
-                print("Error signing out: \(error)")
+                AppLogger.error("Error signing out: \(error)", category: .ui)
             }
         }
     }

@@ -115,7 +115,7 @@ struct PhoneVerificationSheet: View {
     // MARK: - Phone Input View
     
     private var phoneInputView: some View {
-        let _ = print("📱 [PHONE SHEET] Rendering phoneInputView")
+        let _ = AppLogger.debug("📱 [PHONE SHEET] Rendering phoneInputView", category: .auth)
         
         return VStack(spacing: 20) {
             // Phone Number Input
@@ -129,7 +129,7 @@ struct PhoneVerificationSheet: View {
                     Menu {
                         ForEach(CountryCode.allCases) { country in
                             Button {
-                                print("🌍 [PHONE SHEET] Selected country: \(country.name)")
+                                AppLogger.debug("🌍 [PHONE SHEET] Selected country: \(country.name)", category: .auth)
                                 selectedCountryCode = country
                                 localPhoneNumber = ""
                             } label: {
@@ -360,7 +360,9 @@ struct PhoneVerificationSheet: View {
             }
         }
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled else { return }
                 focusedField = .verificationCode
             }
         }
@@ -508,8 +510,9 @@ struct PhoneVerificationSheet: View {
         }
         startResendCountdown()
         
-        // Focus the code field after a brief delay for view to build
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
             focusedField = .verificationCode
         }
         

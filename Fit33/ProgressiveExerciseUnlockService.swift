@@ -154,7 +154,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
     
     private init() {
         loadCachedProfile()
-        print("📈 [PROGRESSIVE UNLOCK] Service initialized")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Service initialized", category: .workout)
     }
     
     // MARK: - Cache Management
@@ -165,10 +165,10 @@ class ProgressiveExerciseUnlockService: ObservableObject {
             self.userProfile = profile
             // Update thread-safe cache for synchronous access
             ProgressiveUnlockCache.shared.update(from: profile)
-            print("📈 [PROGRESSIVE UNLOCK] Loaded cached profile:")
-            print("   • Workouts: \(profile.totalWorkoutsCompleted)")
-            print("   • Unlock tier: \(profile.currentUnlockTier.displayName)")
-            print("   • Restrict to foundational: \(profile.shouldRestrictToFoundational)")
+            AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Loaded cached profile:", category: .workout)
+            AppLogger.debug("   • Workouts: \(profile.totalWorkoutsCompleted)", category: .workout)
+            AppLogger.debug("   • Unlock tier: \(profile.currentUnlockTier.displayName)", category: .workout)
+            AppLogger.debug("   • Restrict to foundational: \(profile.shouldRestrictToFoundational)", category: .workout)
         }
     }
     
@@ -186,7 +186,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         isAnalyzing = true
         defer { isAnalyzing = false }
         
-        print("📈 [PROGRESSIVE UNLOCK] Analyzing user maturity...")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Analyzing user maturity...", category: .workout)
         
         var profile = UserExerciseMaturityProfile()
         
@@ -199,7 +199,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         do {
             workouts = try context.fetch(workoutRequest)
         } catch {
-            print("❌ [PROGRESSIVE UNLOCK] Error fetching workouts: \(error)")
+            AppLogger.error("❌ [PROGRESSIVE UNLOCK] Error fetching workouts: \(error)", category: .workout)
             return profile
         }
         
@@ -276,16 +276,16 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         self.userProfile = profile
         saveProfile()
         
-        print("📈 [PROGRESSIVE UNLOCK] Analysis complete:")
-        print("   • Total workouts: \(profile.totalWorkoutsCompleted)")
-        print("   • Unique exercises: \(profile.uniqueExercisesDone.count)")
-        print("   • Full-set exercises: \(profile.totalExercisesCompletedFull)")
-        print("   • Favorites: \(profile.favoritedExercises.count)")
-        print("   • Mastered equipment: \(profile.masteredEquipmentTypes)")
-        print("   • Days active: \(profile.daysSinceFirstWorkout)")
-        print("   • Current tier: \(profile.currentUnlockTier.displayName)")
-        print("   • Restrict to foundational: \(profile.shouldRestrictToFoundational)")
-        print("   • Variety percentage: \(Int(profile.varietyPercentage * 100))%")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Analysis complete:", category: .workout)
+        AppLogger.debug("   • Total workouts: \(profile.totalWorkoutsCompleted)", category: .workout)
+        AppLogger.debug("   • Unique exercises: \(profile.uniqueExercisesDone.count)", category: .workout)
+        AppLogger.debug("   • Full-set exercises: \(profile.totalExercisesCompletedFull)", category: .workout)
+        AppLogger.debug("   • Favorites: \(profile.favoritedExercises.count)", category: .workout)
+        AppLogger.debug("   • Mastered equipment: \(profile.masteredEquipmentTypes)", category: .workout)
+        AppLogger.debug("   • Days active: \(profile.daysSinceFirstWorkout)", category: .workout)
+        AppLogger.debug("   • Current tier: \(profile.currentUnlockTier.displayName)", category: .workout)
+        AppLogger.debug("   • Restrict to foundational: \(profile.shouldRestrictToFoundational)", category: .workout)
+        AppLogger.debug("   • Variety percentage: \(Int(profile.varietyPercentage * 100))%", category: .workout)
         
         return profile
     }
@@ -306,9 +306,9 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         self.userProfile = profile
         saveProfile()
         
-        print("📈 [PROGRESSIVE UNLOCK] Recorded workout completion:")
-        print("   • Total workouts now: \(profile.totalWorkoutsCompleted)")
-        print("   • Tier: \(profile.currentUnlockTier.displayName)")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Recorded workout completion:", category: .workout)
+        AppLogger.debug("   • Total workouts now: \(profile.totalWorkoutsCompleted)", category: .workout)
+        AppLogger.debug("   • Tier: \(profile.currentUnlockTier.displayName)", category: .workout)
     }
     
     /// Record when user favorites an exercise
@@ -319,7 +319,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         self.userProfile = profile
         saveProfile()
         
-        print("📈 [PROGRESSIVE UNLOCK] Recorded favorite: \(exerciseName)")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Recorded favorite: \(exerciseName)", category: .workout)
     }
     
     /// Record when user swaps an exercise
@@ -336,7 +336,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
             self.userProfile = profile
             saveProfile()
             
-            print("📈 [PROGRESSIVE UNLOCK] '\(exerciseName)' marked as frequently swapped")
+            AppLogger.debug("📈 [PROGRESSIVE UNLOCK] '\(exerciseName)' marked as frequently swapped", category: .workout)
         }
     }
     
@@ -420,7 +420,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
     func resetProfile() {
         userProfile = UserExerciseMaturityProfile()
         saveProfile()
-        print("📈 [PROGRESSIVE UNLOCK] Profile reset")
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Profile reset", category: .workout)
     }
     
     /// Get detailed debug info

@@ -257,7 +257,7 @@ struct ProgramDayTile: View {
                 
                 if isCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 } else if !isUnlocked {
                     Image(systemName: "lock.fill")
@@ -318,7 +318,7 @@ struct ProgramDayTile: View {
         } else if isCompleted {
             return programColor.opacity(0.08)
         } else {
-            return Color.white
+            return Color.cardBackground
         }
     }
     

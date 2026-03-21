@@ -137,7 +137,7 @@ struct AchievementsView: View {
             HStack(spacing: 4) {
                 if let icon = icon {
                     Image(systemName: icon)
-                        .font(.system(size: 11))
+                        .font(.ds_caption)
                 }
                 Text(label)
                     .font(.ds_labelMedium)

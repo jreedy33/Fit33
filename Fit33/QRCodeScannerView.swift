@@ -233,7 +233,9 @@ struct QRCodeScannerView: View {
         // Parse and validate QR code
         guard let qrCodeId = QRCodeService.parseQRCode(code) else {
             // Invalid QR code - reset and continue scanning
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
                 scannedCode = nil
             }
             return
@@ -253,8 +255,9 @@ struct QRCodeScannerView: View {
             } else {
                 await MainActor.run {
                     HapticManager.notification(.error)
-                    // Reset after delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1))
+                        guard !Task.isCancelled else { return }
                         scannedCode = nil
                         isProcessing = false
                     }
@@ -751,7 +754,7 @@ class QRCodeCameraViewController: UIViewController, AVCaptureMetadataOutputObjec
             device.torchMode = on ? .on : .off
             device.unlockForConfiguration()
         } catch {
-            print("Torch could not be configured: \(error)")
+            AppLogger.debug("Torch could not be configured: \(error)", category: .social)
         }
     }
     

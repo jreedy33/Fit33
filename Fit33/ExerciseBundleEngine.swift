@@ -620,11 +620,11 @@ class ExerciseBundleEngine {
     func logBundleInfo(for exerciseName: String) {
         let family = detectExerciseFamily(exerciseName)
         let bundle = familyToBundleMap[family]
-        print("📦 Exercise: \(exerciseName)")
-        print("   Family: \(family)")
-        print("   Bundle: \(bundle?.id ?? "none") (\(bundle?.displayName ?? "uncategorized"))")
-        print("   Max/workout: \(bundle?.maxPerWorkout ?? 0)")
-        print("   Cooldown: \(bundle?.cooldownDays ?? 0) days")
+        AppLogger.debug("📦 Exercise: \(exerciseName)", category: .workout)
+        AppLogger.debug("   Family: \(family)", category: .workout)
+        AppLogger.debug("   Bundle: \(bundle?.id ?? "none") (\(bundle?.displayName ?? "uncategorized"))", category: .workout)
+        AppLogger.debug("   Max/workout: \(bundle?.maxPerWorkout ?? 0)", category: .workout)
+        AppLogger.debug("   Cooldown: \(bundle?.cooldownDays ?? 0) days", category: .workout)
     }
 }
 

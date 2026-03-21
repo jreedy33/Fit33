@@ -100,7 +100,7 @@ final class ExerciseIntelligenceService: ObservableObject {
                 // The exercise_pairings table was deprecated and data moved to exercises table
             }
         } catch {
-            print("⚠️ Failed to refresh exercise intelligence supplemental data: \(error)")
+            AppLogger.warning("⚠️ Failed to refresh exercise intelligence supplemental data: \(error)", category: .workout)
         }
     }
     

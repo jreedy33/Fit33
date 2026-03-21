@@ -318,7 +318,7 @@ struct WeightTrackerWidget: View {
                         Image(systemName: weightService.weeklyChange >= 0 ? "arrow.up.right" : "arrow.down.right")
                             .font(.ds_caption)
                         Text(formatWeightChangeShort(weightService.weeklyChange))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.ds_caption)
                     }
                     .foregroundColor(weeklyChangeColor)
                     .padding(.horizontal, Spacing.xs)
@@ -335,7 +335,7 @@ struct WeightTrackerWidget: View {
                             .frame(width: 40, height: 40)
                         
                         Image(systemName: weightService.hasLoggedToday ? "pencil" : "plus")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.ds_bodyMedium)
                             .foregroundColor(.white)
                     }
                 }
@@ -589,7 +589,7 @@ struct WeightTrackerWidget: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(.secondary.opacity(0.4))
                     
                     Text("Log more weights to see your trend")
@@ -971,7 +971,7 @@ struct LogWeightSheet: View {
         .onChange(of: autoFocus) { _, newValue in
             // Focus immediately when sheet opens
             if newValue {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                Task { @MainActor in
                     isWeightFocused = true
                 }
             }
@@ -1015,8 +1015,8 @@ struct LogWeightSheet: View {
                     // Success feedback
                     HapticManager.notification(.success)
                     
-                    // Small delay to ensure UI updates before dismiss
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.15))
                         dismiss()
                     }
                 } else {

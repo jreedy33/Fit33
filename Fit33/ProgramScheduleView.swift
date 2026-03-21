@@ -279,7 +279,7 @@ struct DayTileContent: View {
                     
                     if isCompleted {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 26, weight: .bold))
+                            .font(.ds_heading2)
                             .foregroundColor(.white)
                     } else if !isUnlocked {
                         Image(systemName: "lock.fill")
@@ -352,7 +352,7 @@ struct DayTileContent: View {
         } else if isCompleted {
             return programColor.opacity(0.08)
         } else {
-            return Color.white
+            return Color.cardBackground
         }
     }
     
@@ -427,7 +427,7 @@ struct WorkoutPreviewView: View {
         .navigationTitle("Day \(day)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            print("🎬 WORKOUT PREVIEW VIEW APPEARED - Day \(day)")
+            AppLogger.debug("🎬 WORKOUT PREVIEW VIEW APPEARED - Day \(day)", category: .workout)
             generateWorkoutExercises()
             workoutManager.isOnWorkoutPreviewScreen = true
             workoutManager.previewProgram = program
@@ -489,7 +489,7 @@ struct WorkoutPreviewView: View {
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                     Text("\(day)")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                 }
             }
@@ -504,14 +504,14 @@ struct WorkoutPreviewView: View {
                     HStack(spacing: 10) {
                         HStack(spacing: 4) {
                             Image(systemName: "figure.strengthtraining.traditional")
-                                .font(.system(size: 11))
+                                .font(.ds_caption)
                             Text("\(programDay.exerciseCount) exercises")
                                 .font(.caption2)
                         }
                         
                         HStack(spacing: 4) {
                             Image(systemName: "flame.fill")
-                                .font(.system(size: 11))
+                                .font(.ds_caption)
                             Text(programDay.intensity.rawValue)
                                 .font(.caption2)
                         }
@@ -573,8 +573,8 @@ struct WorkoutPreviewView: View {
             return
         }
         
-        print("🎯 Generating exercises for Day \(day): \(programDay.name)")
-        print("   Focus: \(programDay.focus)")
+        AppLogger.debug("🎯 Generating exercises for Day \(day): \(programDay.name)", category: .workout)
+        AppLogger.debug("   Focus: \(programDay.focus)", category: .workout)
         
         // Use intelligent generator with the day's focus
         let focusAreas = Set(programDay.focus.map { $0.lowercased() })
@@ -604,14 +604,14 @@ struct WorkoutPreviewView: View {
         // Store exercises in WorkoutManager for tab bar GO! button
         workoutManager.previewExercises = generatedExercises
         
-        print("✅ Generated \(generatedExercises.count) exercises")
+        AppLogger.info("✅ Generated \(generatedExercises.count) exercises", category: .workout)
         isGenerating = false
     }
     
     private func startWorkoutWithGeneratedExercises() {
         guard let programDay = programDay else { return }
         
-        print("🚀 Starting workout with generated exercises from WorkoutPreviewView")
+        AppLogger.debug("🚀 Starting workout with generated exercises from WorkoutPreviewView", category: .workout)
         
         // Create workout
         let workout = Workout(context: viewContext)
@@ -627,7 +627,7 @@ struct WorkoutPreviewView: View {
             allExercises.first { $0.name == exerciseData.name }
         }
         
-        print("   Starting with \(exercises.count) exercises")
+        AppLogger.debug("   Starting with \(exercises.count) exercises", category: .workout)
         
         // Start the workout - this sets shouldNavigateToWorkoutTab = true AND isWorkoutActive = true
         workoutManager.startWorkout(
@@ -638,9 +638,9 @@ struct WorkoutPreviewView: View {
             programDayFocus: programDay.name
         )
         
-        print("✅ Workout started")
-        print("   - shouldNavigateToWorkoutTab: \(workoutManager.shouldNavigateToWorkoutTab)")
-        print("   - isWorkoutActive: \(workoutManager.isWorkoutActive)")
+        AppLogger.info("✅ Workout started", category: .workout)
+        AppLogger.debug("   - shouldNavigateToWorkoutTab: \(workoutManager.shouldNavigateToWorkoutTab)", category: .workout)
+        AppLogger.debug("   - isWorkoutActive: \(workoutManager.isWorkoutActive)", category: .workout)
         
         // DO NOT dismiss - the tab switch will handle the navigation
         // The onChange in MainTabView will switch to tab 2

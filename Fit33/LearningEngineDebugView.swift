@@ -370,7 +370,8 @@ struct LearningEngineDebugView: View {
         isRefreshing = true
         loadStats()
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
             isRefreshing = false
         }
     }
@@ -389,11 +390,12 @@ struct LearningEngineDebugView: View {
         Task {
             // This will trigger a save to cloud
             if learningEngine.userPreferences != nil {
-                print("🧪 Testing cloud sync with current profile...")
+                AppLogger.debug("🧪 Testing cloud sync with current profile...", category: .ui)
                 // The save happens automatically when profile is updated
                 await MainActor.run {
                     cloudSyncStatus = "Sync Triggered"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2))
                         loadStats()
                     }
                 }

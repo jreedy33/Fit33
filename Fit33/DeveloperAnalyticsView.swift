@@ -641,15 +641,15 @@ class DeveloperAnalyticsViewModel: ObservableObject {
             userStats = results.5
             stepAnalytics = results.6
             
-            print("📊 Loaded comprehensive analytics:")
-            print("  - \(popularExercises.count) popular exercises")
-            print("  - \(trendingExercises.count) trending exercises")
-            print("  - \(favoritedExercises.count) favorited exercises")
-            print("  - \(topWorkouts.count) top workouts")
-            print("  - \(totalUsers) total users")
-            print("  - \(totalWorkouts) total workouts")
+            AppLogger.debug("📊 Loaded comprehensive analytics:", category: .ui)
+            AppLogger.debug("  - \(popularExercises.count) popular exercises", category: .ui)
+            AppLogger.debug("  - \(trendingExercises.count) trending exercises", category: .ui)
+            AppLogger.debug("  - \(favoritedExercises.count) favorited exercises", category: .ui)
+            AppLogger.debug("  - \(topWorkouts.count) top workouts", category: .ui)
+            AppLogger.debug("  - \(totalUsers) total users", category: .ui)
+            AppLogger.debug("  - \(totalWorkouts) total workouts", category: .ui)
         } catch {
-            print("❌ Error loading analytics: \(error)")
+            AppLogger.error("❌ Error loading analytics: \(error)", category: .ui)
         }
     }
 }

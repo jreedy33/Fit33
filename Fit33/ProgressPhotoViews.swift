@@ -546,7 +546,7 @@ struct ProgressPhotoCompareView: View {
         HStack(spacing: 16) {
             VStack(spacing: 4) {
                 Text("BEFORE")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                 Picker("Before", selection: $leftIndex) {
                     ForEach(groups.indices, id: \.self) { i in
@@ -558,7 +558,7 @@ struct ProgressPhotoCompareView: View {
             
             VStack(spacing: 4) {
                 Text("AFTER")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                 Picker("After", selection: $rightIndex) {
                     ForEach(groups.indices, id: \.self) { i in

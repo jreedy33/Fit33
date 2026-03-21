@@ -48,7 +48,7 @@ class AdvancedIntelligenceService: ObservableObject {
     private var isTrackingActivity = false
     
     private init() {
-        print("🧠 [ADVANCED INTELLIGENCE] Service initialized")
+        AppLogger.debug("🧠 [ADVANCED INTELLIGENCE] Service initialized", category: .general)
     }
     
     // MARK: - 1. PROGRESSION VELOCITY TRACKING
@@ -87,9 +87,9 @@ class AdvancedIntelligenceService: ObservableObject {
             // Calculate progression velocity
             await calculateProgressionVelocity(userId: userId, exerciseName: exerciseName)
             
-            print("📈 [INTELLIGENCE] Tracked performance: \(exerciseName) \(Int(weight))lbs × \(reps)")
+            AppLogger.debug("📈 [INTELLIGENCE] Tracked performance: \(exerciseName) \(Int(weight))lbs × \(reps)", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track performance: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track performance: \(error)", category: .general)
         }
     }
     
@@ -132,10 +132,10 @@ class AdvancedIntelligenceService: ObservableObject {
                 .execute()
             
             if abs(velocity) > 0.1 {
-                print("📊 [INTELLIGENCE] \(exerciseName) velocity: \(String(format: "%.2f", velocity)) lbs/week")
+                AppLogger.debug("📊 [INTELLIGENCE] \(exerciseName) velocity: \(String(format: "%.2f", velocity)) lbs/week", category: .general)
             }
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to calculate velocity: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to calculate velocity: \(error)", category: .general)
         }
     }
     
@@ -209,9 +209,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,time_slot")
                 .execute()
             
-            print("⏰ [INTELLIGENCE] Tracked \(timeSlot) workout performance")
+            AppLogger.debug("⏰ [INTELLIGENCE] Tracked \(timeSlot) workout performance", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track time performance: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track time performance: \(error)", category: .general)
         }
     }
     
@@ -311,9 +311,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,exercise_name")
                 .execute()
             
-            print("📊 [INTELLIGENCE] Set patterns: \(exerciseName) - \(setsCompleted.filter { $0 }.count)/\(setsCompleted.count) completed")
+            AppLogger.debug("📊 [INTELLIGENCE] Set patterns: \(exerciseName) - \(setsCompleted.filter { $0 }.count)/\(setsCompleted.count) completed", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track set patterns: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track set patterns: \(error)", category: .general)
         }
     }
     
@@ -369,9 +369,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,date")
                 .execute()
             
-            print("🍎 [INTELLIGENCE] Logged nutrition: \(protein)g protein, \(calories) cal")
+            AppLogger.debug("🍎 [INTELLIGENCE] Logged nutrition: \(protein)g protein, \(calories) cal", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track nutrition: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track nutrition: \(error)", category: .general)
         }
     }
     
@@ -399,9 +399,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .eq("date", value: dateString)
                 .execute()
             
-            print("🔗 [INTELLIGENCE] Linked workout to yesterday's nutrition")
+            AppLogger.debug("🔗 [INTELLIGENCE] Linked workout to yesterday's nutrition", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to link workout to nutrition: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to link workout to nutrition: \(error)", category: .general)
         }
     }
     
@@ -435,9 +435,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .execute()
             
             lastActivityTrackDate = dateString
-            print("👣 [INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))")
+            AppLogger.debug("👣 [INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track activity: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track activity: \(error)", category: .general)
         }
     }
     
@@ -542,9 +542,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,original_exercise,swapped_to_exercise")
                 .execute()
             
-            print("🔄 [INTELLIGENCE] Tracked swap: \(originalExercise) → \(swappedTo) (\(reason.rawValue))")
+            AppLogger.debug("🔄 [INTELLIGENCE] Tracked swap: \(originalExercise) → \(swappedTo) (\(reason.rawValue))", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track swap: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track swap: \(error)", category: .general)
         }
     }
     
@@ -632,9 +632,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,muscle_group,week_start")
                 .execute()
             
-            print("📊 [INTELLIGENCE] Volume: \(muscleGroup) - \(totalSets) sets this week (\(trainingStatus))")
+            AppLogger.debug("📊 [INTELLIGENCE] Volume: \(muscleGroup) - \(totalSets) sets this week (\(trainingStatus))", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to track volume: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track volume: \(error)", category: .general)
         }
     }
     
@@ -721,7 +721,8 @@ class AdvancedIntelligenceService: ObservableObject {
             }
             
             // Calculate overall strength level
-            let avgRatio = (benchRatio + squatRatio + deadliftRatio) / 3.0
+            let nonZeroRatios = [benchRatio, squatRatio, deadliftRatio].filter { $0 > 0 }
+            let avgRatio = nonZeroRatios.isEmpty ? 0.0 : nonZeroRatios.reduce(0, +) / Double(nonZeroRatios.count)
             let strengthLevel = getStrengthLevel(avgRatio: avgRatio)
             
             let data: [String: AnyJSON] = [
@@ -735,7 +736,7 @@ class AdvancedIntelligenceService: ObservableObject {
                 "bench_press_1rm": .double(normalizedName.contains("bench") ? oneRM : 0),
                 "squat_1rm": .double(normalizedName.contains("squat") ? oneRM : 0),
                 "deadlift_1rm": .double(normalizedName.contains("deadlift") ? oneRM : 0),
-                "overhead_press_1rm": .double(normalizedName.contains("press") ? oneRM : 0),
+                "overhead_press_1rm": .double((normalizedName.contains("overhead press") || normalizedName.contains("shoulder press") || normalizedName.contains("ohp") || normalizedName.contains("military press")) ? oneRM : 0),
                 "overall_strength_level": .string(strengthLevel),
                 "updated_at": .string(dateToISO( Date()))
             ]
@@ -746,10 +747,10 @@ class AdvancedIntelligenceService: ObservableObject {
                 .execute()
             
             if ratio > 0.5 {
-                print("💪 [INTELLIGENCE] Strength ratio: \(exercise) = \(String(format: "%.2f", ratio))x bodyweight")
+                AppLogger.debug("💪 [INTELLIGENCE] Strength ratio: \(exercise) = \(String(format: "%.2f", ratio))x bodyweight", category: .general)
             }
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to update strength ratios: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to update strength ratios: \(error)", category: .general)
         }
     }
     
@@ -805,9 +806,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,goal_type")
                 .execute()
             
-            print("🎯 [INTELLIGENCE] Goal progress: \(goalType.rawValue) = \(String(format: "%.0f", progressPercent))%")
+            AppLogger.debug("🎯 [INTELLIGENCE] Goal progress: \(goalType.rawValue) = \(String(format: "%.0f", progressPercent))%", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to update goal progress: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to update goal progress: \(error)", category: .general)
         }
     }
     
@@ -867,9 +868,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 .upsert(data, onConflict: "user_id,exercise_name")
                 .execute()
             
-            print("⭐ [INTELLIGENCE] Effectiveness: \(exerciseName) = \(String(format: "%.0f", normalizedScore))/100")
+            AppLogger.debug("⭐ [INTELLIGENCE] Effectiveness: \(exerciseName) = \(String(format: "%.0f", normalizedScore))/100", category: .general)
         } catch {
-            print("⚠️ [INTELLIGENCE] Failed to update effectiveness: \(error)")
+            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to update effectiveness: \(error)", category: .general)
         }
     }
     
@@ -917,7 +918,7 @@ class AdvancedIntelligenceService: ObservableObject {
         bodyWeightKg: Double?,
         hadPR: Bool = false
     ) async {
-        print("🧠 [INTELLIGENCE] Analyzing completed workout...")
+        AppLogger.debug("🧠 [INTELLIGENCE] Analyzing completed workout...", category: .general)
         
         var totalVolume: Double = 0
         var totalSets = 0
@@ -1016,7 +1017,7 @@ class AdvancedIntelligenceService: ObservableObject {
             )
         }
         
-        print("✅ [INTELLIGENCE] Workout analysis complete!")
+        AppLogger.info("✅ [INTELLIGENCE] Workout analysis complete!", category: .general)
     }
     
     // MARK: - Helper Functions
@@ -1081,8 +1082,153 @@ class AdvancedIntelligenceService: ObservableObject {
         return formatter.string(from: date)
     }
     
+    // MARK: - CROSS-TABLE CORRELATION INSIGHTS
+
+    struct NutritionWorkoutCorrelation {
+        let highProteinAvgCompletion: Double
+        let lowProteinAvgCompletion: Double
+        let sampleSize: Int
+    }
+
+    func getNutritionWorkoutCorrelation(userId: UUID) async -> NutritionWorkoutCorrelation? {
+        do {
+            struct Row: Decodable {
+                let pre_workout_protein: Double?
+                let completion_rate: Double?
+            }
+            let rows: [Row] = try await supabase
+                .from("v_nutrition_workout_correlation")
+                .select("pre_workout_protein, completion_rate")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+
+            let withProtein = rows.compactMap { r -> (protein: Double, rate: Double)? in
+                guard let p = r.pre_workout_protein, let c = r.completion_rate else { return nil }
+                return (p, c)
+            }
+            guard withProtein.count >= 3 else { return nil }
+
+            let highProtein = withProtein.filter { $0.protein >= 120 }
+            let lowProtein = withProtein.filter { $0.protein < 120 }
+            guard !highProtein.isEmpty && !lowProtein.isEmpty else { return nil }
+
+            let highAvg = highProtein.map(\.rate).reduce(0, +) / Double(highProtein.count)
+            let lowAvg = lowProtein.map(\.rate).reduce(0, +) / Double(lowProtein.count)
+
+            return NutritionWorkoutCorrelation(
+                highProteinAvgCompletion: highAvg,
+                lowProteinAvgCompletion: lowAvg,
+                sampleSize: withProtein.count
+            )
+        } catch {
+            AppLogger.warning("⚠️ [INTELLIGENCE] Nutrition correlation query failed: \(error)", category: .general)
+            return nil
+        }
+    }
+
+    struct HydrationWorkoutCorrelation {
+        let hydratedAvgCompletion: Double
+        let dehydratedAvgCompletion: Double
+        let sampleSize: Int
+    }
+
+    func getHydrationWorkoutCorrelation(userId: UUID) async -> HydrationWorkoutCorrelation? {
+        do {
+            struct Row: Decodable {
+                let hydration_pct: Double?
+                let completion_rate: Double?
+            }
+            let rows: [Row] = try await supabase
+                .from("v_hydration_workout_correlation")
+                .select("hydration_pct, completion_rate")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+
+            let valid = rows.compactMap { r -> (pct: Double, rate: Double)? in
+                guard let h = r.hydration_pct, let c = r.completion_rate else { return nil }
+                return (h, c)
+            }
+            guard valid.count >= 3 else { return nil }
+
+            let hydrated = valid.filter { $0.pct >= 80 }
+            let dehydrated = valid.filter { $0.pct < 80 }
+            guard !hydrated.isEmpty && !dehydrated.isEmpty else { return nil }
+
+            let hydAvg = hydrated.map(\.rate).reduce(0, +) / Double(hydrated.count)
+            let dehydAvg = dehydrated.map(\.rate).reduce(0, +) / Double(dehydrated.count)
+
+            return HydrationWorkoutCorrelation(
+                hydratedAvgCompletion: hydAvg,
+                dehydratedAvgCompletion: dehydAvg,
+                sampleSize: valid.count
+            )
+        } catch {
+            AppLogger.warning("⚠️ [INTELLIGENCE] Hydration correlation query failed: \(error)", category: .general)
+            return nil
+        }
+    }
+
+    struct CompletionRateInsight {
+        let avgRate: Double
+        let lowestCategory: String?
+        let lowestRate: Double?
+    }
+
+    func getCompletionRateInsight(userId: UUID) async -> CompletionRateInsight? {
+        do {
+            struct Row: Decodable {
+                let name: String
+                let completion_rate: Double?
+            }
+            let rows: [Row] = try await supabase
+                .from("workout_history")
+                .select("name, completion_rate")
+                .eq("user_id", value: userId.uuidString)
+                .not("completion_rate", operator: .is, value: "null")
+                .order("date", ascending: false)
+                .limit(20)
+                .execute()
+                .value
+
+            let valid = rows.compactMap { r -> (name: String, rate: Double)? in
+                guard let c = r.completion_rate else { return nil }
+                return (r.name, c)
+            }
+            guard valid.count >= 3 else { return nil }
+
+            let avgRate = valid.map(\.rate).reduce(0, +) / Double(valid.count)
+
+            var categoryRates: [String: [Double]] = [:]
+            for item in valid {
+                let category = item.name.lowercased().contains("leg") ? "Leg" :
+                               item.name.lowercased().contains("push") ? "Push" :
+                               item.name.lowercased().contains("pull") ? "Pull" :
+                               item.name.lowercased().contains("upper") ? "Upper Body" :
+                               item.name.lowercased().contains("lower") ? "Lower Body" : "General"
+                categoryRates[category, default: []].append(item.rate)
+            }
+
+            var lowestCat: String?
+            var lowestAvg: Double?
+            for (cat, rates) in categoryRates where rates.count >= 2 {
+                let avg = rates.reduce(0, +) / Double(rates.count)
+                if lowestAvg.map({ avg < $0 }) ?? true {
+                    lowestAvg = avg
+                    lowestCat = cat
+                }
+            }
+
+            return CompletionRateInsight(avgRate: avgRate, lowestCategory: lowestCat, lowestRate: lowestAvg)
+        } catch {
+            AppLogger.warning("⚠️ [INTELLIGENCE] Completion rate query failed: \(error)", category: .general)
+            return nil
+        }
+    }
+
     // MARK: - PERSONALIZED DASHBOARD RECOMMENDATION
-    
+
     struct PersonalizedRecommendation {
         let message: String
         let icon: String
@@ -1093,6 +1239,7 @@ class AdvancedIntelligenceService: ObservableObject {
             case workout(muscleGroup: String?)
             case rest
             case nutrition
+            case hydration
             case celebrate
             case general
         }
@@ -1105,11 +1252,17 @@ class AdvancedIntelligenceService: ObservableObject {
         async let volumeData = getIntelligenceMuscleVolumeStatus(userId: userId)
         async let timeData = getOptimalWorkoutTime(userId: userId)
         async let effectiveExercises = getMostEffectiveExercises(userId: userId, limit: 3)
+        async let nutritionCorr = getNutritionWorkoutCorrelation(userId: userId)
+        async let hydrationCorr = getHydrationWorkoutCorrelation(userId: userId)
+        async let completionInsight = getCompletionRateInsight(userId: userId)
         
         let recovery = await recoveryData
         let volumes = await volumeData
         let optimalTime = await timeData
         let topExercises = await effectiveExercises
+        let nutrition = await nutritionCorr
+        let hydration = await hydrationCorr
+        let completion = await completionInsight
         
         // Priority 0: Weight trend insights (if user is tracking)
         if let weightRecommendation = getWeightTrendRecommendation() {
@@ -1177,7 +1330,47 @@ class AdvancedIntelligenceService: ObservableObject {
             )
         }
         
-        // Priority 6: Celebrate top performer
+        // Priority 6: Nutrition correlation insight
+        if let nutr = nutrition, nutr.sampleSize >= 5 {
+            let diff = nutr.highProteinAvgCompletion - nutr.lowProteinAvgCompletion
+            if diff > 0.1 {
+                let pctBetter = Int(diff * 100)
+                return PersonalizedRecommendation(
+                    message: "High-protein days boost your workout completion by \(pctBetter)%! Fuel up today",
+                    icon: "fork.knife",
+                    priority: 75,
+                    actionType: .nutrition
+                )
+            }
+        }
+
+        // Priority 7: Hydration correlation insight
+        if let hyd = hydration, hyd.sampleSize >= 5 {
+            let diff = hyd.hydratedAvgCompletion - hyd.dehydratedAvgCompletion
+            if diff > 0.1 {
+                let pctBetter = Int(diff * 100)
+                return PersonalizedRecommendation(
+                    message: "You finish \(pctBetter)% more sets when hydrated. Hit your water goal today",
+                    icon: "drop.fill",
+                    priority: 72,
+                    actionType: .hydration
+                )
+            }
+        }
+
+        // Priority 8: Completion rate coaching
+        if let comp = completion, comp.avgRate < 0.85,
+           let lowestCat = comp.lowestCategory, let lowestRate = comp.lowestRate {
+            let pct = Int(lowestRate * 100)
+            return PersonalizedRecommendation(
+                message: "\(lowestCat) day completion is \(pct)% — try a shorter session next time",
+                icon: "chart.bar.fill",
+                priority: 68,
+                actionType: .general
+            )
+        }
+
+        // Priority 9: Celebrate top performer
         if let topExercise = topExercises.first, topExercise.effectivenessScore > 70 {
             let shortName = topExercise.name.components(separatedBy: " ").prefix(3).joined(separator: " ")
             return PersonalizedRecommendation(

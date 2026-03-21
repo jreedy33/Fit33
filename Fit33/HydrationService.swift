@@ -187,7 +187,7 @@ class HydrationService: ObservableObject {
         do {
             let users = try viewContext.fetch(request)
             guard let user = users.first else {
-                print("ℹ️ [Water] No user found, using default goal")
+                AppLogger.debug("ℹ️ [Water] No user found, using default goal", category: .nutrition)
                 recommendedGoalMl = 2500
                 return
             }
@@ -197,7 +197,7 @@ class HydrationService: ObservableObject {
             
             // Skip if no weight data
             guard weightKg > 0 else {
-                print("ℹ️ [Water] No weight data, using default goal")
+                AppLogger.debug("ℹ️ [Water] No weight data, using default goal", category: .nutrition)
                 recommendedGoalMl = 2500
                 return
             }
@@ -225,7 +225,7 @@ class HydrationService: ObservableObject {
             // Clamp between reasonable bounds (1500ml - 5000ml)
             recommendedGoalMl = min(max(roundedGoal, 1500), 5000)
             
-            print("✅ [Water] Smart goal calculated: \(recommendedGoalMl)ml (weight: \(weightKg)kg, goal: \(fitnessGoal))")
+            AppLogger.info("✅ [Water] Smart goal calculated: \(recommendedGoalMl)ml (weight: \(weightKg)kg, goal: \(fitnessGoal))", category: .nutrition)
             
             // Update settings if user hasn't customized their goal
             if settings.weightBasedGoal && settings.dailyGoalMl != recommendedGoalMl {
@@ -240,7 +240,7 @@ class HydrationService: ObservableObject {
             }
             
         } catch {
-            print("❌ [Water] Failed to fetch user data: \(error)")
+            AppLogger.error("❌ [Water] Failed to fetch user data: \(error)", category: .nutrition)
             recommendedGoalMl = 2500
         }
     }
@@ -286,7 +286,7 @@ class HydrationService: ObservableObject {
                 self.todaySummary = summaries.first
             }
         } catch {
-            print("❌ [Water] Failed to load today's summary: \(error)")
+            AppLogger.error("❌ [Water] Failed to load today's summary: \(error)", category: .nutrition)
         }
     }
     
@@ -310,7 +310,7 @@ class HydrationService: ObservableObject {
                 self.todayLogs = logs
             }
         } catch {
-            print("❌ [Water] Failed to load today's logs: \(error)")
+            AppLogger.error("❌ [Water] Failed to load today's logs: \(error)", category: .nutrition)
         }
     }
     
@@ -332,7 +332,7 @@ class HydrationService: ObservableObject {
                 await createDefaultSettings(userId: userId)
             }
         } catch {
-            print("❌ [Water] Failed to load settings: \(error)")
+            AppLogger.error("❌ [Water] Failed to load settings: \(error)", category: .nutrition)
         }
     }
     
@@ -349,7 +349,7 @@ class HydrationService: ObservableObject {
                 self.streaks = streaks.first
             }
         } catch {
-            print("❌ [Water] Failed to load streaks: \(error)")
+            AppLogger.error("❌ [Water] Failed to load streaks: \(error)", category: .nutrition)
         }
     }
     
@@ -372,7 +372,7 @@ class HydrationService: ObservableObject {
                 self.weeklyData = summaries
             }
         } catch {
-            print("❌ [Water] Failed to load weekly data: \(error)")
+            AppLogger.error("❌ [Water] Failed to load weekly data: \(error)", category: .nutrition)
         }
     }
     
@@ -386,9 +386,9 @@ class HydrationService: ObservableObject {
             userId = supabaseUserId
         } else if let localUser = UserManager.shared.currentUser, let localUserId = localUser.id {
             userId = localUserId
-            print("⚠️ [Water] Using local user ID (not authenticated to cloud)")
+            AppLogger.warning("⚠️ [Water] Using local user ID (not authenticated to cloud)", category: .nutrition)
         } else {
-            print("❌ [Water] No user ID available")
+            AppLogger.error("❌ [Water] No user ID available", category: .nutrition)
             return false
         }
         
@@ -434,12 +434,12 @@ class HydrationService: ObservableObject {
                     .insert(log)
                     .execute()
                 
-                print("✅ [Water] Logged \(amountMl)ml to cloud")
+                AppLogger.info("✅ [Water] Logged \(amountMl)ml to cloud", category: .nutrition)
                 
                 // Only reload if cloud insert succeeded
                 await loadTodayData()
             } catch {
-                print("❌ [Water] Failed to log to cloud: \(error)")
+                AppLogger.error("❌ [Water] Failed to log to cloud: \(error)", category: .nutrition)
                 // Don't reload from cloud if insert failed - keep local data
             }
             
@@ -459,7 +459,7 @@ class HydrationService: ObservableObject {
                 await DailyQuestService.shared.onWaterLogged()
             }
         } else {
-            print("ℹ️ [Water] Logged \(amountMl)ml locally (offline mode)")
+            AppLogger.debug("ℹ️ [Water] Logged \(amountMl)ml locally (offline mode)", category: .nutrition)
         }
         
         return true
@@ -476,7 +476,7 @@ class HydrationService: ObservableObject {
                 .eq("id", value: log.id.uuidString)
                 .execute()
             
-            print("✅ [Water] Deleted log")
+            AppLogger.info("✅ [Water] Deleted log", category: .nutrition)
             await loadTodayData()
             
             // ⚡ Re-sync challenge progress with updated (lower) total.
@@ -496,7 +496,7 @@ class HydrationService: ObservableObject {
             
             return true
         } catch {
-            print("❌ [Water] Failed to delete log: \(error)")
+            AppLogger.error("❌ [Water] Failed to delete log: \(error)", category: .nutrition)
             return false
         }
     }
@@ -534,10 +534,10 @@ class HydrationService: ObservableObject {
                 .execute()
             
             self.settings = newSettings
-            print("✅ [Water] Settings updated")
+            AppLogger.info("✅ [Water] Settings updated", category: .nutrition)
             return true
         } catch {
-            print("❌ [Water] Failed to update settings: \(error)")
+            AppLogger.error("❌ [Water] Failed to update settings: \(error)", category: .nutrition)
             // Update local settings anyway
             self.settings = newSettings
             return false

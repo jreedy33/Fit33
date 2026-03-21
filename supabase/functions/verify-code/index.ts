@@ -15,27 +15,52 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const verifyRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const VERIFY_RATE_LIMIT_MAX = 5
+const VERIFY_RATE_LIMIT_WINDOW_MS = 900_000 // 15 minutes
+
+function checkVerifyRateLimit(phone: string): boolean {
+  const now = Date.now()
+  const entry = verifyRateLimitMap.get(phone)
+  if (!entry || now >= entry.resetAt) {
+    verifyRateLimitMap.set(phone, { count: 1, resetAt: now + VERIFY_RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+  entry.count++
+  return entry.count <= VERIFY_RATE_LIMIT_MAX
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Get Twilio credentials from environment
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN')
     const twilioVerifyServiceSid = Deno.env.get('TWILIO_VERIFY_SERVICE_SID')
 
     if (!twilioAccountSid || !twilioAuthToken || !twilioVerifyServiceSid) {
-      throw new Error('Twilio credentials not configured')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server configuration error' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
     }
 
-    // Parse request
     const { phone_number, code } = await req.json()
 
     if (!phone_number || !code) {
-      throw new Error('Phone number and code are required')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Phone number and code are required' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      )
+    }
+
+    if (!checkVerifyRateLimit(phone_number)) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Too many verification attempts. Please try again later.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 429 }
+      )
     }
 
     // Format phone number (ensure it starts with +1 for US)
@@ -125,6 +150,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error:', error.message)
+    const isClientError = error.message === 'Verification failed' || error.message?.includes('Invalid')
     return new Response(
       JSON.stringify({
         success: false,
@@ -132,7 +158,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: isClientError ? 400 : 500,
       }
     )
   }

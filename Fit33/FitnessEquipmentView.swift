@@ -41,6 +41,23 @@ struct FitnessEquipmentView: View {
             .fullScreenCover(isPresented: $showingLiveWorkout) {
                 if let device = bluetoothManager.connectedDevice {
                     EquipmentWorkoutView(device: device)
+                } else {
+                    VStack(spacing: 16) {
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        Text("Device Disconnected")
+                            .font(.headline)
+                        Text("The fitness equipment connection was lost.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Close") {
+                            showingLiveWorkout = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
                 }
             }
         }
@@ -62,7 +79,7 @@ struct FitnessEquipmentView: View {
                     .frame(width: 80, height: 80)
                 
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 32))
+                    .font(.ds_heading1)
                     .foregroundColor(accentColor)
             }
             
@@ -84,10 +101,14 @@ struct FitnessEquipmentView: View {
     // MARK: - Scanning Content
     private var scanningContentView: some View {
         VStack(spacing: 20) {
-            // Status & Scan Button
             connectionStatusView
             
-            // Discovered Devices List
+            if let suggested = bluetoothManager.suggestedDevice {
+                autoSuggestBanner(device: suggested)
+            } else if let remembered = bluetoothManager.rememberedDevice, bluetoothManager.suggestedDevice == nil {
+                reconnectBanner(device: remembered)
+            }
+            
             if !bluetoothManager.discoveredDevices.isEmpty {
                 discoveredDevicesSection
             } else if bluetoothManager.isScanning {
@@ -98,10 +119,111 @@ struct FitnessEquipmentView: View {
             
             Spacer()
             
-            // Tips
             tipsSection
         }
         .padding(.horizontal, 20)
+    }
+    
+    // MARK: - Auto-Suggest Banner
+    private func autoSuggestBanner(device: DiscoveredFitnessDevice) -> some View {
+        Button(action: {
+            HapticManager.notification(.success)
+            bluetoothManager.connect(to: device)
+        }) {
+            VStack(spacing: Spacing.sm) {
+                HStack(spacing: Spacing.sm) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.2))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.ds_heading3)
+                            .foregroundColor(.green)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                        Text("Treadmill Detected")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        Text(device.name)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    
+                    Spacer()
+                    
+                    Text("Connect")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, Spacing.xs)
+                        .background(Capsule().fill(Color.green))
+                }
+                
+                HStack(spacing: Spacing.xxs) {
+                    SignalStrengthIndicator(rssi: device.rssi)
+                    Text("Strongest signal nearby — likely yours")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.5))
+                    Spacer()
+                }
+            }
+            .padding(Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.green.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.green.opacity(0.3), lineWidth: 1.5)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Reconnect Banner
+    private func reconnectBanner(device: DiscoveredFitnessDevice) -> some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            bluetoothManager.connect(to: device)
+        }) {
+            HStack(spacing: Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(Color.cyan.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.cyan)
+                }
+                
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Reconnect to \(device.name)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text("Last used treadmill detected")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                
+                Spacer()
+                
+                SignalStrengthIndicator(rssi: device.rssi)
+            }
+            .padding(Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.cyan.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.cyan.opacity(0.2), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
     }
     
     // MARK: - Connection Status View
@@ -175,16 +297,28 @@ struct FitnessEquipmentView: View {
     // MARK: - Discovered Devices Section
     private var discoveredDevicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("NEARBY EQUIPMENT")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.white.opacity(0.5))
-                .tracking(1)
+            HStack {
+                Text("NEARBY EQUIPMENT")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1)
+                Spacer()
+                Text("\(bluetoothManager.discoveredDevices.count) found")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.3))
+            }
             
             ForEach(bluetoothManager.discoveredDevices) { device in
-                DiscoveredDeviceCard(device: device) {
-                    bluetoothManager.connect(to: device)
-                }
+                let isClosest = bluetoothManager.discoveredDevices.first?.id == device.id && bluetoothManager.discoveredDevices.count > 1
+                let isLastUsed = bluetoothManager.rememberedDevice?.id == device.id
+                
+                DiscoveredDeviceCard(
+                    device: device,
+                    onConnect: { bluetoothManager.connect(to: device) },
+                    isClosest: isClosest,
+                    isLastUsed: isLastUsed
+                )
             }
         }
     }
@@ -209,7 +343,7 @@ struct FitnessEquipmentView: View {
                 }
                 
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
                     .foregroundColor(accentColor)
             }
             .frame(height: 140)
@@ -254,7 +388,7 @@ struct FitnessEquipmentView: View {
                                 .frame(width: 60, height: 60)
                             
                             Image(systemName: device.type.icon)
-                                .font(.system(size: 26))
+                                .font(.ds_heading2)
                                 .foregroundColor(.green)
                         }
                         
@@ -387,11 +521,49 @@ struct FitnessEquipmentView: View {
 struct DiscoveredDeviceCard: View {
     let device: DiscoveredFitnessDevice
     let onConnect: () -> Void
+    var isClosest: Bool = false
+    var isLastUsed: Bool = false
+    
+    private var proximityLabel: String {
+        if device.rssi >= -50 { return "Very close" }
+        else if device.rssi >= -65 { return "Nearby" }
+        else { return "Far" }
+    }
+    
+    private var proximityColor: Color {
+        if device.rssi >= -50 { return .green }
+        else if device.rssi >= -65 { return .yellow }
+        else { return .gray }
+    }
     
     var body: some View {
         Button(action: onConnect) {
-            HStack(spacing: 14) {
-                    // Device icon
+            VStack(spacing: 0) {
+                if isClosest || isLastUsed {
+                    HStack(spacing: Spacing.xs) {
+                        if isClosest {
+                            Text("CLOSEST")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                        }
+                        if isLastUsed {
+                            Text("LAST USED")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.cyan)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.cyan.opacity(0.15)))
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+                }
+                
+                HStack(spacing: 14) {
                     ZStack {
                         Circle()
                             .fill((Color(hex: device.type.color.primary) ?? .gray).opacity(0.2))
@@ -401,45 +573,47 @@ struct DiscoveredDeviceCard: View {
                             .font(.ds_heading2)
                             .foregroundColor(Color(hex: device.type.color.primary) ?? .gray)
                     }
-                
-                // Device info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(device.name)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
                     
-                    HStack(spacing: 8) {
-                        Text(device.type.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(device.name)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
                         
-                        // Signal strength
-                        SignalStrengthIndicator(rssi: device.rssi)
+                        HStack(spacing: 8) {
+                            Text(device.type.rawValue)
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.5))
+                            
+                            SignalStrengthIndicator(rssi: device.rssi)
+                            
+                            Text(proximityLabel)
+                                .font(.ds_caption)
+                                .foregroundColor(proximityColor)
+                        }
                     }
+                    
+                    Spacer()
+                    
+                    Text("Connect")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.cyan)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, Spacing.xs)
+                        .background(
+                            Capsule()
+                                .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
+                        )
                 }
-                
-                Spacer()
-                
-                // Connect button
-                Text("Connect")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.cyan)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, Spacing.xs)
-                    .background(
-                        Capsule()
-                            .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
-                    )
+                .padding(Spacing.md)
             }
-            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(Color.white.opacity(isClosest ? 0.08 : 0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            .stroke(isClosest ? Color.green.opacity(0.3) : Color.white.opacity(0.08), lineWidth: isClosest ? 1.5 : 1)
                     )
             )
         }
@@ -703,7 +877,7 @@ struct EquipmentWorkoutView: View {
             // NOTE: Bluetooth equipment workout saving will be implemented
             // when the BLE integration goes live. Requires mapping BLE workout
             // data → CardioWorkoutData and calling SupabaseManager.saveCardioWorkout().
-            print("Workout completed: \(summary)")
+            AppLogger.debug("Workout completed: \(summary)", category: .ui)
         }
         
         dismiss()

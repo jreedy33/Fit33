@@ -1126,9 +1126,9 @@ final class SessionLogManager: ObservableObject {
                 // Only keep logs if bug report is pending
                 if !self.bugReportPending {
                     self.clearLogs()
-                    print("🗑️ [LOG] Session logs cleared (no bug report)")
+                    AppLogger.debug("🗑️ [LOG] Session logs cleared (no bug report)", category: .general)
                 } else {
-                    print("📋 [LOG] Session logs retained for bug report")
+                    AppLogger.debug("📋 [LOG] Session logs retained for bug report", category: .general)
                 }
             }
         }
@@ -1155,7 +1155,7 @@ final class SessionLogManager: ObservableObject {
     
     /// Show available developer commands
     func devHelp() {
-        print("""
+        AppLogger.debug("""
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         🔧 DEVELOPER LOG COMMANDS (use in LLDB: po SessionLogManager.shared.XXX)
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1178,7 +1178,7 @@ final class SessionLogManager: ObservableObject {
         📁 FILE LOCATIONS:
            devShowPaths()         → Print log file paths
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        """)
+        """, category: .general)
     }
     
     /// Print logs for a session (0=current, 1=previous, 2=two ago)
@@ -1190,10 +1190,10 @@ final class SessionLogManager: ObservableObject {
         case 0:
             // Current session - export live
             let content = exportLogsAsText()
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("📋 CURRENT SESSION LOGS (\(sessionLog.count) entries)")
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print(content)
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .general)
+            AppLogger.debug("📋 CURRENT SESSION LOGS (\(sessionLog.count) entries)", category: .general)
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .general)
+            AppLogger.debug("\(content)", category: .general)
             return
         case 1:
             url = previous1LogURL
@@ -1202,23 +1202,23 @@ final class SessionLogManager: ObservableObject {
             url = previous2LogURL
             label = "2 SESSIONS AGO"
         default:
-            print("❌ Invalid session number. Use 0 (current), 1 (previous), or 2 (two ago)")
+            AppLogger.error("❌ Invalid session number. Use 0 (current), 1 (previous), or 2 (two ago)", category: .general)
             return
         }
         
         guard FileManager.default.fileExists(atPath: url.path) else {
-            print("📋 No logs found for \(label)")
+            AppLogger.debug("📋 No logs found for \(label)", category: .general)
             return
         }
         
         do {
             let content = try String(contentsOf: url, encoding: .utf8)
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("📋 \(label) LOGS\(hasCrashLog && session == 1 ? " 🔥 CRASH" : "")")
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print(content)
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .general)
+            AppLogger.debug("📋 \(label) LOGS\(hasCrashLog && session == 1 ? " 🔥 CRASH" : "")", category: .general)
+            AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .general)
+            AppLogger.debug("\(content)", category: .general)
         } catch {
-            print("❌ Failed to read logs: \(error)")
+            AppLogger.error("❌ Failed to read logs: \(error)", category: .general)
         }
     }
     
@@ -1229,12 +1229,12 @@ final class SessionLogManager: ObservableObject {
     
     /// Show log file paths
     func devShowPaths() {
-        print("""
+        AppLogger.debug("""
         📁 Log file locations:
            Current:    \(currentLogURL.path)
            Previous 1: \(previous1LogURL.path)
            Previous 2: \(previous2LogURL.path)
-        """)
+        """, category: .general)
     }
     
     /// Clear all saved logs
@@ -1243,7 +1243,7 @@ final class SessionLogManager: ObservableObject {
         try? FileManager.default.removeItem(at: previous1LogURL)
         try? FileManager.default.removeItem(at: previous2LogURL)
         hasCrashLog = false
-        print("🗑️ All session logs cleared")
+        AppLogger.debug("🗑️ All session logs cleared", category: .general)
     }
     
     /// Call on app launch to rotate logs and check for crash
@@ -1262,9 +1262,9 @@ final class SessionLogManager: ObservableObject {
         
         if !wasCleanShutdown && FileManager.default.fileExists(atPath: previous1LogURL.path) {
             hasCrashLog = true
-            print("🔥🔥🔥 [DEV] CRASH DETECTED FROM PREVIOUS SESSION 🔥🔥🔥")
-            print("📋 [DEV] View with: po SessionLogManager.shared.devLogs(session: 1)")
-            print("📋 [DEV] All commands: po SessionLogManager.shared.devHelp()")
+            AppLogger.debug("🔥🔥🔥 [DEV] CRASH DETECTED FROM PREVIOUS SESSION 🔥🔥🔥", category: .general)
+            AppLogger.debug("📋 [DEV] View with: po SessionLogManager.shared.devLogs(session: 1)", category: .general)
+            AppLogger.debug("📋 [DEV] All commands: po SessionLogManager.shared.devHelp()", category: .general)
         }
         
         // Mark this session as not clean (will be set to true on clean shutdown)
@@ -1275,7 +1275,7 @@ final class SessionLogManager: ObservableObject {
     func markCleanShutdown() {
         UserDefaults.standard.set(true, forKey: Self.cleanShutdownKey)
         hasCrashLog = false
-        print("✅ [DEV] Clean shutdown marked")
+        AppLogger.info("✅ [DEV] Clean shutdown marked", category: .general)
     }
     
     /// Persist current logs to disk (call periodically or on major events)
@@ -1286,9 +1286,9 @@ final class SessionLogManager: ObservableObject {
             let logText = self.exportLogsAsText()
             do {
                 try logText.write(to: self.currentLogURL, atomically: true, encoding: .utf8)
-                print("💾 [DEV] Logs saved (\(self.sessionLog.count) entries)")
+                AppLogger.debug("💾 [DEV] Logs saved (\(self.sessionLog.count) entries)", category: .general)
             } catch {
-                print("❌ [DEV] Failed to persist logs: \(error)")
+                AppLogger.error("❌ [DEV] Failed to persist logs: \(error)", category: .general)
             }
         }
     }
@@ -1328,10 +1328,10 @@ final class SessionLogManager: ObservableObject {
             #if DEBUG
             let emoji = level.emoji
             let cat = category.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)
-            print("\(emoji) [\(cat)] \(message)")
+            AppLogger.debug("\(emoji) [\(cat)] \(message)", category: .general)
             if let metadata = metadata, !metadata.isEmpty {
                 for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
-                    print("   └─ \(key): \(value)")
+                    AppLogger.debug("   └─ \(key): \(value)", category: .general)
                 }
             }
             #endif
@@ -1717,6 +1717,14 @@ final class SessionLogManager: ObservableObject {
             self.screenHistory.append((id: screen.rawValue, name: screen.displayName, timestamp: appearTime, transitionMs: transitionMs))
             if self.screenHistory.count > 100 { self.screenHistory.removeFirst() }
             
+            // Forward to advanced logger when active
+            if AdvancedSessionLogger.shared.isEnabled {
+                AdvancedSessionLogger.shared.logScreenView(screen.displayName)
+                if let t = transitionMs {
+                    AdvancedSessionLogger.shared.logPerformance("screen_transition:\(screen.displayName)", durationMs: t, screen: screen.displayName)
+                }
+            }
+            
             // Add to compact timeline
             let entry = ActionTimelineEntry(
                 timestamp: appearTime,
@@ -1822,7 +1830,7 @@ final class SessionLogManager: ObservableObject {
         if actionTimeline.count > 300 { actionTimeline.removeFirst() }
 
         // Compact log - just one line
-        let elemStr = element != nil ? " [\(element!.rawValue)]" : ""
+        let elemStr = element.map { " [\($0.rawValue)]" } ?? ""
         log(.info, category: .userAction, message: "👆 \(action)\(elemStr) @\(screen.rawValue)", metadata: nil)
         
         // 🛡️ Breadcrumb for crash reporting

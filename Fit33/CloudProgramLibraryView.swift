@@ -252,7 +252,7 @@ struct CloudProgramLibraryView: View {
                     .frame(width: 80, height: 80)
                 
             Image(systemName: "magnifyingglass")
-                    .font(.system(size: 32))
+                    .font(.ds_heading1)
                 .foregroundColor(.secondary)
             }
             

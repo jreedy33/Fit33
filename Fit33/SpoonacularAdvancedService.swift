@@ -62,7 +62,7 @@ class SpoonacularAdvancedService: ObservableObject {
             return nil
         }
         
-        print("🍽️ [MEAL PLAN] Generating meal plan for \(targetCalories) calories")
+        AppLogger.debug("🍽️ [MEAL PLAN] Generating meal plan for \(targetCalories) calories", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -85,7 +85,7 @@ class SpoonacularAdvancedService: ObservableObject {
                 )
                 generatedMealPlan = mealPlan
                 isLoading = false
-                print("🍽️ [MEAL PLAN] Generated day plan with \(dayPlan.meals.count) meals")
+                AppLogger.debug("🍽️ [MEAL PLAN] Generated day plan with \(dayPlan.meals.count) meals", category: .nutrition)
                 return mealPlan
             } else {
                 let weekPlan = try decoder.decode(WeekMealPlanResponse.self, from: data)
@@ -96,13 +96,13 @@ class SpoonacularAdvancedService: ObservableObject {
                 )
                 generatedMealPlan = mealPlan
                 isLoading = false
-                print("🍽️ [MEAL PLAN] Generated week plan")
+                AppLogger.debug("🍽️ [MEAL PLAN] Generated week plan", category: .nutrition)
                 return mealPlan
             }
             
         } catch {
             errorMessage = "Failed to parse meal plan: \(error.localizedDescription)"
-            print("🍽️ [MEAL PLAN] Error: \(error)")
+            AppLogger.error("🍽️ [MEAL PLAN] Error: \(error)", category: .nutrition)
             isLoading = false
             return nil
         }
@@ -135,13 +135,13 @@ class SpoonacularAdvancedService: ObservableObject {
         shoppingList = aisles
         isLoading = false
         
-        print("🛒 [SHOPPING] Generated list with \(aisles.count) aisles")
+        AppLogger.debug("🛒 [SHOPPING] Generated list with \(aisles.count) aisles", category: .nutrition)
         return aisles
     }
     
     private func fetchRecipeIngredients(recipeId: Int) async -> [ShoppingIngredient]? {
         guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/ingredientWidget.json?apiKey=\(apiKey)") else {
-            print("❌ [SHOPPING] Invalid URL for recipe \(recipeId)")
+            AppLogger.error("❌ [SHOPPING] Invalid URL for recipe \(recipeId)", category: .network)
             return nil
         }
         
@@ -164,7 +164,7 @@ class SpoonacularAdvancedService: ObservableObject {
                 )
             }
         } catch {
-            print("🛒 [SHOPPING] Error fetching ingredients: \(error)")
+            AppLogger.error("🛒 [SHOPPING] Error fetching ingredients: \(error)", category: .nutrition)
             return nil
         }
     }
@@ -193,7 +193,7 @@ class SpoonacularAdvancedService: ObservableObject {
         
         let encoded = ingredientName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ingredientName
         guard let url = URL(string: "\(baseURL)/food/ingredients/substitutes?apiKey=\(apiKey)&ingredientName=\(encoded)") else {
-            print("❌ [SUBSTITUTES] Invalid URL for ingredient: \(ingredientName)")
+            AppLogger.error("❌ [SUBSTITUTES] Invalid URL for ingredient: \(ingredientName)", category: .network)
             isLoading = false
             return []
         }
@@ -221,11 +221,11 @@ class SpoonacularAdvancedService: ObservableObject {
             ingredientSubstitutes = substitutes
             isLoading = false
             
-            print("🔄 [SUBSTITUTE] Found \(substitutes.count) substitutes for \(ingredientName)")
+            AppLogger.debug("🔄 [SUBSTITUTE] Found \(substitutes.count) substitutes for \(ingredientName)", category: .nutrition)
             return substitutes
             
         } catch {
-            print("🔄 [SUBSTITUTE] Error: \(error)")
+            AppLogger.error("🔄 [SUBSTITUTE] Error: \(error)", category: .nutrition)
             isLoading = false
             return []
         }
@@ -239,12 +239,12 @@ class SpoonacularAdvancedService: ObservableObject {
         
         let encoded = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
         guard let url = URL(string: "\(baseURL)/recipes/extract?apiKey=\(apiKey)&url=\(encoded)&analyze=true&forceExtraction=true&addRecipeInformation=true") else {
-            print("❌ [EXTRACT] Invalid URL for extraction")
+            AppLogger.error("❌ [EXTRACT] Invalid URL for extraction", category: .network)
             isLoading = false
             return nil
         }
         
-        print("📥 [EXTRACT] Extracting recipe from URL")
+        AppLogger.debug("📥 [EXTRACT] Extracting recipe from URL", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -262,12 +262,12 @@ class SpoonacularAdvancedService: ObservableObject {
             extractedRecipe = recipe
             isLoading = false
             
-            print("📥 [EXTRACT] Successfully extracted: \(recipe.title)")
+            AppLogger.debug("📥 [EXTRACT] Successfully extracted: \(recipe.title)", category: .nutrition)
             return recipe
             
         } catch {
             errorMessage = "Failed to parse extracted recipe"
-            print("📥 [EXTRACT] Error: \(error)")
+            AppLogger.error("📥 [EXTRACT] Error: \(error)", category: .nutrition)
             isLoading = false
             return nil
         }
@@ -280,7 +280,7 @@ class SpoonacularAdvancedService: ObservableObject {
         
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         guard let url = URL(string: "\(baseURL)/recipes/autocomplete?apiKey=\(apiKey)&query=\(encoded)&number=\(number)") else {
-            print("❌ [AUTOCOMPLETE] Invalid URL for query: \(query)")
+            AppLogger.error("❌ [AUTOCOMPLETE] Invalid URL for query: \(query)", category: .network)
             return []
         }
         
@@ -299,7 +299,7 @@ class SpoonacularAdvancedService: ObservableObject {
             return results
             
         } catch {
-            print("🔍 [AUTOCOMPLETE] Error: \(error)")
+            AppLogger.error("🔍 [AUTOCOMPLETE] Error: \(error)", category: .nutrition)
             return []
         }
     }
@@ -311,7 +311,7 @@ class SpoonacularAdvancedService: ObservableObject {
         errorMessage = nil
         
         guard let url = URL(string: "\(baseURL)/recipes/parseIngredients?apiKey=\(apiKey)&includeNutrition=true") else {
-            print("❌ [NUTRITION] Invalid URL for ingredient analysis")
+            AppLogger.error("❌ [NUTRITION] Invalid URL for ingredient analysis", category: .network)
             isLoading = false
             return nil
         }
@@ -323,7 +323,7 @@ class SpoonacularAdvancedService: ObservableObject {
         let bodyString = "ingredientList=\(ingredientList.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&servings=\(servings)"
         request.httpBody = bodyString.data(using: .utf8)
         
-        print("📊 [ANALYZE] Analyzing ingredients")
+        AppLogger.debug("📊 [ANALYZE] Analyzing ingredients", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -369,12 +369,12 @@ class SpoonacularAdvancedService: ObservableObject {
             analyzedNutrition = analyzed
             isLoading = false
             
-            print("📊 [ANALYZE] Analyzed \(parsedIngredients.count) ingredients")
+            AppLogger.debug("📊 [ANALYZE] Analyzed \(parsedIngredients.count) ingredients", category: .nutrition)
             return analyzed
             
         } catch {
             errorMessage = "Failed to analyze ingredients"
-            print("📊 [ANALYZE] Error: \(error)")
+            AppLogger.error("📊 [ANALYZE] Error: \(error)", category: .nutrition)
             isLoading = false
             return nil
         }
@@ -388,12 +388,12 @@ class SpoonacularAdvancedService: ObservableObject {
         
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         guard let url = URL(string: "\(baseURL)/food/menuItems/search?apiKey=\(apiKey)&query=\(encoded)&number=\(number)") else {
-            print("❌ [MENU] Invalid URL for query: \(query)")
+            AppLogger.error("❌ [MENU] Invalid URL for query: \(query)", category: .network)
             isLoading = false
             return []
         }
         
-        print("🍔 [MENU] Searching for: \(query)")
+        AppLogger.debug("🍔 [MENU] Searching for: \(query)", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -411,12 +411,12 @@ class SpoonacularAdvancedService: ObservableObject {
             menuItems = menuResponse.menuItems
             isLoading = false
             
-            print("🍔 [MENU] Found \(menuResponse.menuItems.count) items")
+            AppLogger.debug("🍔 [MENU] Found \(menuResponse.menuItems.count) items", category: .nutrition)
             return menuResponse.menuItems
             
         } catch {
             errorMessage = "Failed to parse menu items"
-            print("🍔 [MENU] Error: \(error)")
+            AppLogger.error("🍔 [MENU] Error: \(error)", category: .nutrition)
             isLoading = false
             return []
         }
@@ -425,7 +425,7 @@ class SpoonacularAdvancedService: ObservableObject {
     /// Get menu item details
     func getMenuItemDetails(menuItemId: Int) async -> MenuItemDetail? {
         guard let url = URL(string: "\(baseURL)/food/menuItems/\(menuItemId)?apiKey=\(apiKey)") else {
-            print("❌ [MENU] Invalid URL for menu item \(menuItemId)")
+            AppLogger.error("❌ [MENU] Invalid URL for menu item \(menuItemId)", category: .network)
             return nil
         }
         
@@ -441,7 +441,7 @@ class SpoonacularAdvancedService: ObservableObject {
             return try decoder.decode(MenuItemDetail.self, from: data)
             
         } catch {
-            print("🍔 [MENU] Error getting details: \(error)")
+            AppLogger.debug("🍔 [MENU] Error getting details: \(error)", category: .nutrition)
             return nil
         }
     }
@@ -450,11 +450,11 @@ class SpoonacularAdvancedService: ObservableObject {
     /// Get price breakdown for a recipe
     func getPriceBreakdown(recipeId: Int) async -> RecipePriceBreakdown? {
         guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/priceBreakdownWidget.json?apiKey=\(apiKey)") else {
-            print("❌ [PRICE] Invalid URL for recipe \(recipeId)")
+            AppLogger.error("❌ [PRICE] Invalid URL for recipe \(recipeId)", category: .network)
             return nil
         }
         
-        print("💰 [PRICE] Getting price breakdown for recipe \(recipeId)")
+        AppLogger.debug("💰 [PRICE] Getting price breakdown for recipe \(recipeId)", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -469,11 +469,11 @@ class SpoonacularAdvancedService: ObservableObject {
             
             priceBreakdown = breakdown
             
-            print("💰 [PRICE] Total cost: $\(String(format: "%.2f", breakdown.totalCost / 100.0))")
+            AppLogger.debug("💰 [PRICE] Total cost: $\(String(format: "%.2f", breakdown.totalCost / 100.0))", category: .nutrition)
             return breakdown
             
         } catch {
-            print("💰 [PRICE] Error: \(error)")
+            AppLogger.error("💰 [PRICE] Error: \(error)", category: .nutrition)
             return nil
         }
     }
@@ -482,7 +482,7 @@ class SpoonacularAdvancedService: ObservableObject {
     /// Get detailed nutrition widget data for a recipe
     func getNutritionWidget(recipeId: Int) async -> NutritionWidgetData? {
         guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/nutritionWidget.json?apiKey=\(apiKey)") else {
-            print("❌ [NUTRITION] Invalid URL for recipe \(recipeId)")
+            AppLogger.error("❌ [NUTRITION] Invalid URL for recipe \(recipeId)", category: .network)
             return nil
         }
         
@@ -498,7 +498,7 @@ class SpoonacularAdvancedService: ObservableObject {
             return try decoder.decode(NutritionWidgetData.self, from: data)
             
         } catch {
-            print("📊 [NUTRITION] Error: \(error)")
+            AppLogger.error("📊 [NUTRITION] Error: \(error)", category: .nutrition)
             return nil
         }
     }

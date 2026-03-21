@@ -207,17 +207,17 @@ struct ChallengeCreationFlow: View {
                 .scrollIndicators(.hidden)
             }
             .onAppear {
-                print("🏆 [CHALLENGE FLOW] View appeared - challenging \(friend.displayName)")
-                print("🏆 [CHALLENGE FLOW] Current step: \(currentStep)")
+                AppLogger.debug("🏆 [CHALLENGE FLOW] View appeared - challenging \(friend.displayName)", category: .social)
+                AppLogger.debug("🏆 [CHALLENGE FLOW] Current step: \(currentStep)", category: .social)
             }
             .onChange(of: currentStep) { oldValue, newValue in
-                print("🏆 [CHALLENGE FLOW] Step changed: \(oldValue) → \(newValue)")
+                AppLogger.debug("🏆 [CHALLENGE FLOW] Step changed: \(oldValue) → \(newValue)", category: .social)
                 switch newValue {
-                case 1: print("📍 [CHALLENGE FLOW] Screen 1: Mode Selection")
-                case 2: print("📍 [CHALLENGE FLOW] Screen 2: Activity Type (selected mode: \(selectedMode?.title ?? "none"))")
-                case 3: print("📍 [CHALLENGE FLOW] Screen 3: Challenge Options (selected activity: \(selectedActivity?.rawValue ?? "none"))")
-                case 4: print("📍 [CHALLENGE FLOW] Screen 4: Duration (selected option: \(selectedOption?.title ?? "none"))")
-                case 5: print("📍 [CHALLENGE FLOW] Screen 5: Review (duration: \(selectedDuration) days)")
+                case 1: AppLogger.debug("📍 [CHALLENGE FLOW] Screen 1: Mode Selection", category: .social)
+                case 2: AppLogger.debug("📍 [CHALLENGE FLOW] Screen 2: Activity Type (selected mode: \(selectedMode?.title ?? "none"))", category: .social)
+                case 3: AppLogger.debug("📍 [CHALLENGE FLOW] Screen 3: Challenge Options (selected activity: \(selectedActivity?.rawValue ?? "none"))", category: .social)
+                case 4: AppLogger.debug("📍 [CHALLENGE FLOW] Screen 4: Duration (selected option: \(selectedOption?.title ?? "none"))", category: .social)
+                case 5: AppLogger.debug("📍 [CHALLENGE FLOW] Screen 5: Review (duration: \(selectedDuration) days)", category: .social)
                 default: break
                 }
             }
@@ -233,7 +233,7 @@ struct ChallengeCreationFlow: View {
         .navigationBarBackButtonHidden(true)
         .alert("Challenge Sent! 🎯", isPresented: $showingSuccess) {
             Button("Done") {
-                print("✅ [CHALLENGE FLOW] Success alert dismissed - closing flow")
+                AppLogger.info("✅ [CHALLENGE FLOW] Success alert dismissed - closing flow", category: .social)
                 dismiss()
             }
         } message: {
@@ -241,13 +241,13 @@ struct ChallengeCreationFlow: View {
         }
         .alert("Failed to Send Challenge 😔", isPresented: $showingError) {
             Button("OK") {
-                print("❌ [CHALLENGE FLOW] Error alert dismissed")
+                AppLogger.error("❌ [CHALLENGE FLOW] Error alert dismissed", category: .social)
             }
         } message: {
             Text("There was an issue sending your challenge. Please try again.")
         }
         .onDisappear {
-            print("👋 [CHALLENGE FLOW] View disappeared")
+            AppLogger.debug("👋 [CHALLENGE FLOW] View disappeared", category: .social)
         }
     }
     
@@ -257,12 +257,12 @@ struct ChallengeCreationFlow: View {
         HStack {
             Button(action: {
                 if currentStep > 1 {
-                    print("⬅️ [CHALLENGE FLOW] Back button tapped - going from step \(currentStep) to \(currentStep - 1)")
+                    AppLogger.debug("⬅️ [CHALLENGE FLOW] Back button tapped - going from step \(currentStep) to \(currentStep - 1)", category: .social)
                     withAnimation(.spring(response: 0.3)) {
                         currentStep -= 1
                     }
                 } else {
-                    print("❌ [CHALLENGE FLOW] Close button tapped - dismissing flow")
+                    AppLogger.error("❌ [CHALLENGE FLOW] Close button tapped - dismissing flow", category: .social)
                     dismiss()
                 }
             }) {
@@ -313,7 +313,7 @@ struct ChallengeCreationFlow: View {
                         mode: mode,
                         isSelected: selectedMode == mode,
                         onSelect: {
-                            print("✅ [CHALLENGE FLOW] Selected mode: \(mode.title)")
+                            AppLogger.info("✅ [CHALLENGE FLOW] Selected mode: \(mode.title)", category: .social)
                             HapticManager.impact(.light)
                             selectedMode = mode
                         }
@@ -345,12 +345,12 @@ struct ChallengeCreationFlow: View {
                         activity: activity,
                         isSelected: selectedActivity == activity,
                         onSelect: {
-                            print("✅ [CHALLENGE FLOW] Selected activity: \(activity.rawValue)")
+                            AppLogger.info("✅ [CHALLENGE FLOW] Selected activity: \(activity.rawValue)", category: .social)
                             HapticManager.impact(.light)
                             selectedActivity = activity
                             // Reset custom target to default for new activity
                             customTarget = getDefaultCustomTarget(activity)
-                            print("🔢 [CHALLENGE FLOW] Reset custom target to: \(customTarget)")
+                            AppLogger.debug("🔢 [CHALLENGE FLOW] Reset custom target to: \(customTarget)", category: .social)
                             // Reset hydration unit to ml
                             hydrationUnit = .ml
                             // Reset selected option when changing activity
@@ -389,7 +389,7 @@ struct ChallengeCreationFlow: View {
                             isSelected: selectedOption?.isCustom == true,
                             gradientColors: activity.gradientColors,
                             onSelect: {
-                                print("✅ [CHALLENGE FLOW] Selected custom option: \(customTarget) \(activity == .hydrate ? hydrationUnit.rawValue : getUnitForActivity(activity))")
+                                AppLogger.info("✅ [CHALLENGE FLOW] Selected custom option: \(customTarget) \(activity == .hydrate ? hydrationUnit.rawValue : getUnitForActivity(activity))", category: .social)
                                 HapticManager.impact(.medium)
                                 let unit = activity == .hydrate ? hydrationUnit.rawValue : getUnitForActivity(activity)
                                 withAnimation(.spring(response: 0.3)) {
@@ -402,7 +402,7 @@ struct ChallengeCreationFlow: View {
                                         isCustom: true
                                     )
                                 }
-                                print("📊 [CHALLENGE FLOW] Custom option set - isCustom: true")
+                                AppLogger.debug("📊 [CHALLENGE FLOW] Custom option set - isCustom: true", category: .social)
                             }
                         )
                         
@@ -430,13 +430,13 @@ struct ChallengeCreationFlow: View {
                                 isSelected: selectedOption?.id == option.id && selectedOption?.isCustom == false,
                                 gradientColors: activity.gradientColors,
                                 onSelect: {
-                                    print("✅ [CHALLENGE FLOW] Selected preset: \(option.title) (ID: \(option.id))")
-                                    print("📊 [CHALLENGE FLOW] Current selectedOption ID: \(selectedOption?.id ?? "nil")")
+                                    AppLogger.info("✅ [CHALLENGE FLOW] Selected preset: \(option.title) (ID: \(option.id))", category: .social)
+                                    AppLogger.debug("📊 [CHALLENGE FLOW] Current selectedOption ID: \(selectedOption?.id ?? "nil")", category: .social)
                                     HapticManager.impact(.medium)
                                     withAnimation(.spring(response: 0.3)) {
                                         selectedOption = option
                                     }
-                                    print("📊 [CHALLENGE FLOW] New selectedOption ID: \(selectedOption?.id ?? "nil"), isCustom: false")
+                                    AppLogger.debug("📊 [CHALLENGE FLOW] New selectedOption ID: \(selectedOption?.id ?? "nil"), isCustom: false", category: .social)
                                 }
                             )
                         }
@@ -564,7 +564,7 @@ struct ChallengeCreationFlow: View {
                         onSelect: {
                             isCustomDuration = false
                             durationFieldFocused = false
-                            print("✅ [CHALLENGE FLOW] Selected duration: \(days) days")
+                            AppLogger.info("✅ [CHALLENGE FLOW] Selected duration: \(days) days", category: .social)
                             HapticManager.impact(.light)
                             selectedDuration = days
                         }
@@ -666,7 +666,7 @@ struct ChallengeCreationFlow: View {
                     isEnabled: canContinue,
                     isLoading: false
                 ) {
-                    print("➡️ [CHALLENGE FLOW] Continue button tapped from step \(currentStep)")
+                    AppLogger.debug("➡️ [CHALLENGE FLOW] Continue button tapped from step \(currentStep)", category: .social)
                     withAnimation(.spring(response: 0.3)) {
                         currentStep += 1
                     }
@@ -680,7 +680,7 @@ struct ChallengeCreationFlow: View {
                     isEnabled: canSendChallenge,
                     isLoading: isCreating
                 ) {
-                    print("📤 [CHALLENGE FLOW] Send Challenge button tapped")
+                    AppLogger.debug("📤 [CHALLENGE FLOW] Send Challenge button tapped", category: .social)
                     Task {
                         await sendChallenge()
                     }
@@ -814,22 +814,22 @@ struct ChallengeCreationFlow: View {
     }
     
     private func sendChallenge() async {
-        print("🚀 [CHALLENGE FLOW] sendChallenge() called")
+        AppLogger.debug("🚀 [CHALLENGE FLOW] sendChallenge() called", category: .social)
         
         guard let mode = selectedMode,
               let activity = selectedActivity,
               let option = selectedOption else {
-            print("❌ [CHALLENGE FLOW] Missing selections - mode:\(selectedMode?.title ?? "nil") activity:\(selectedActivity?.rawValue ?? "nil") option:\(selectedOption?.title ?? "nil")")
+            AppLogger.error("❌ [CHALLENGE FLOW] Missing selections - mode:\(selectedMode?.title ?? "nil") activity:\(selectedActivity?.rawValue ?? "nil") option:\(selectedOption?.title ?? "nil")", category: .social)
             return
         }
         
-        print("📋 [CHALLENGE FLOW] Challenge details:")
-        print("   Mode: \(mode.title)")
-        print("   Activity: \(activity.rawValue)")
-        print("   Option: \(option.title)")
-        print("   Daily Target: \(option.dailyTarget) \(option.unit)")
-        print("   Duration: \(selectedDuration) days")
-        print("   Opponent: \(friend.displayName)")
+        AppLogger.debug("📋 [CHALLENGE FLOW] Challenge details:", category: .social)
+        AppLogger.debug("   Mode: \(mode.title)", category: .social)
+        AppLogger.debug("   Activity: \(activity.rawValue)", category: .social)
+        AppLogger.debug("   Option: \(option.title)", category: .social)
+        AppLogger.debug("   Daily Target: \(option.dailyTarget) \(option.unit)", category: .social)
+        AppLogger.debug("   Duration: \(selectedDuration) days", category: .social)
+        AppLogger.debug("   Opponent: \(friend.displayName)", category: .social)
         
         isCreating = true
         HapticManager.impact(.heavy)
@@ -849,10 +849,10 @@ struct ChallengeCreationFlow: View {
         case .sleep: challengeType = .steps // Sleep stored as custom type, resolved by unit
         }
         
-        print("🔄 [CHALLENGE FLOW] Mapped to ChallengeType: \(challengeType.rawValue)")
+        AppLogger.debug("🔄 [CHALLENGE FLOW] Mapped to ChallengeType: \(challengeType.rawValue)", category: .social)
         
         let title = "\(mode.titlePrefix) \(activity.emoji) \(option.title)"
-        print("📝 [CHALLENGE FLOW] Challenge title: \(title) (mode: \(mode.title))")
+        AppLogger.debug("📝 [CHALLENGE FLOW] Challenge title: \(title) (mode: \(mode.title))", category: .social)
         
         // Convert hydration to ml if needed (always store in ml)
         var finalDailyTarget = option.dailyTarget
@@ -861,10 +861,10 @@ struct ChallengeCreationFlow: View {
         if activity == .hydrate && option.unit == "oz" {
             finalDailyTarget = HydrationUnit.oz.convert(value: option.dailyTarget, to: .ml)
             finalUnit = "ml"
-            print("💧 [CHALLENGE FLOW] Converted hydration: \(option.dailyTarget)oz → \(finalDailyTarget)ml")
+            AppLogger.debug("💧 [CHALLENGE FLOW] Converted hydration: \(option.dailyTarget)oz → \(finalDailyTarget)ml", category: .social)
         }
         
-        print("📤 [CHALLENGE FLOW] Calling ChallengeService.createChallenge()...")
+        AppLogger.debug("📤 [CHALLENGE FLOW] Calling ChallengeService.createChallenge()...", category: .social)
         
         let challengeId = await ChallengeService.shared.createChallenge(
             opponentId: friend.friendId,
@@ -880,11 +880,11 @@ struct ChallengeCreationFlow: View {
         isCreating = false
         
         if let id = challengeId {
-            print("✅ [CHALLENGE FLOW] Challenge created successfully! ID: \(id)")
+            AppLogger.info("✅ [CHALLENGE FLOW] Challenge created successfully! ID: \(id)", category: .social)
             HapticManager.notification(.success)
             showingSuccess = true
         } else {
-            print("❌ [CHALLENGE FLOW] Challenge creation failed - no ID returned")
+            AppLogger.error("❌ [CHALLENGE FLOW] Challenge creation failed - no ID returned", category: .social)
             HapticManager.notification(.error)
             showingError = true
         }
@@ -941,7 +941,7 @@ struct ModeSelectionCard: View {
                     
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                             .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     }
                 }
@@ -1152,7 +1152,7 @@ struct CustomTargetCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Button(action: {
-                print("🎯 [CUSTOM TARGET] Card tapped - selecting custom option")
+                AppLogger.debug("🎯 [CUSTOM TARGET] Card tapped - selecting custom option", category: .social)
                 onSelect()
             }) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1166,7 +1166,7 @@ struct CustomTargetCard: View {
                         
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 24))
+                                .font(.ds_heading2)
                                 .foregroundStyle(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
                     }
@@ -1180,13 +1180,13 @@ struct CustomTargetCard: View {
                     // Minus button
                     Button(action: {
                         if customTarget > minValue {
-                            print("➖ [CUSTOM TARGET] Decreased to \(customTarget - stepAmount)")
+                            AppLogger.debug("➖ [CUSTOM TARGET] Decreased to \(customTarget - stepAmount)", category: .social)
                             HapticManager.impact(.light)
                             customTarget -= stepAmount
                         }
                     }) {
                         Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundColor(customTarget > minValue ? .white : .white.opacity(0.3))
                     }
                     .disabled(customTarget <= minValue)
@@ -1250,13 +1250,13 @@ struct CustomTargetCard: View {
                     // Plus button
                     Button(action: {
                         if customTarget < maxValue {
-                            print("➕ [CUSTOM TARGET] Increased to \(customTarget + stepAmount)")
+                            AppLogger.debug("➕ [CUSTOM TARGET] Increased to \(customTarget + stepAmount)", category: .social)
                             HapticManager.impact(.light)
                             customTarget += stepAmount
                         }
                     }) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundColor(customTarget < maxValue ? .white : .white.opacity(0.3))
                     }
                     .disabled(customTarget >= maxValue)
@@ -1539,7 +1539,7 @@ struct ChallengeDurationCard: View {
                 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
             }

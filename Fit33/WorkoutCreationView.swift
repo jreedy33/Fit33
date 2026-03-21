@@ -208,8 +208,9 @@ struct WorkoutCreationView: View {
         
         isGeneratingWorkout = true
         
-        // Simulate generation delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
             let recentMuscleGroups = userManager.getRecentMuscleGroups(days: 7)
             
             suggestedExercises = ExerciseLibraryService.shared.getSuggestedExercises(
@@ -226,10 +227,10 @@ struct WorkoutCreationView: View {
     private func startWorkout() {
         let exercises = workoutType == .generated ? suggestedExercises : selectedExercises
         
-        print("🏋️‍♂️ Starting workout with \(exercises.count) exercises")
+        AppLogger.debug("🏋️‍♂️ Starting workout with \(exercises.count) exercises", category: .workout)
         
         guard !exercises.isEmpty else { 
-            print("❌ No exercises selected")
+            AppLogger.error("❌ No exercises selected", category: .workout)
             return 
         }
         
@@ -244,7 +245,7 @@ struct WorkoutCreationView: View {
         newWorkout.isCompleted = false
         newWorkout.user = userManager.currentUser
         
-        print("🏋️‍♂️ Starting workout: \(finalWorkoutName) with \(exercises.count) exercises")
+        AppLogger.debug("🏋️‍♂️ Starting workout: \(finalWorkoutName) with \(exercises.count) exercises", category: .workout)
         
         // Start workout using WorkoutManager
         workoutManager.startWorkout(workout: newWorkout, exercises: exercises)
@@ -252,7 +253,7 @@ struct WorkoutCreationView: View {
         // Dismiss this view
         dismiss()
         
-        print("✅ Workout started successfully and navigating to Workout tab")
+        AppLogger.info("✅ Workout started successfully and navigating to Workout tab", category: .workout)
     }
     
     private func createTempWorkout() -> Workout {

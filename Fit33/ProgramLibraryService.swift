@@ -317,8 +317,9 @@ class ProgramLibraryService: ObservableObject {
             
             // Difficulty match (most important)
             if program.difficulty == difficulty { score += 30 }
-            else if abs(ProgramDifficulty.allCases.firstIndex(of: program.difficulty)! - 
-                       ProgramDifficulty.allCases.firstIndex(of: difficulty)!) == 1 { score += 15 }
+            else if let progIdx = ProgramDifficulty.allCases.firstIndex(of: program.difficulty),
+                    let diffIdx = ProgramDifficulty.allCases.firstIndex(of: difficulty),
+                    abs(progIdx - diffIdx) == 1 { score += 15 }
             
             // Goal match
             if program.goals.contains(programGoal) { score += 25 }

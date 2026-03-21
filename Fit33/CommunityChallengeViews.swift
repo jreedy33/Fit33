@@ -1941,7 +1941,7 @@ struct CommunityCreateChallengeView: View {
                                     }) {
                                         VStack(spacing: 4) {
                                             Text(type.emoji)
-                                                .font(.system(size: 24))
+                                                .font(.ds_heading2)
                                             Text(type.rawValue)
                                                 .font(.ds_caption)
                                                 .fontWeight(.medium)
@@ -2947,7 +2947,7 @@ struct CommunityDetailView: View {
                     .fill(LinearGradient(colors: d.resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 50, height: 50)
                 Text(d.displayEmoji)
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
             }
             
             VStack(alignment: .leading, spacing: 4) {

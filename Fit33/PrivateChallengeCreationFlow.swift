@@ -117,7 +117,7 @@ struct PrivateChallengeCreationFlow: View {
                         }
                     }) {
                         Image(systemName: currentStep == .naming ? "xmark" : "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.ds_labelLarge)
                     }
                 }
             }
@@ -523,8 +523,10 @@ struct PrivateChallengeCreationFlow: View {
                                 HapticManager.impact(.light)
                             }) {
                                 Image(systemName: "minus.circle.fill")
-                                    .font(.system(size: 24))
+                                    .font(.ds_heading2)
                                     .foregroundColor(.white.opacity(0.5))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Circle())
                             }
                             
                             Text("\(maxMembers)")
@@ -537,8 +539,10 @@ struct PrivateChallengeCreationFlow: View {
                                 HapticManager.impact(.light)
                             }) {
                                 Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 24))
+                                    .font(.ds_heading2)
                                     .foregroundColor(.purple)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Circle())
                             }
                         }
                     }
@@ -690,7 +694,7 @@ struct PrivateChallengeCreationFlow: View {
             if friendService.friends.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "person.2.slash")
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(.white.opacity(0.4))
                     Text("No friends yet")
                         .font(.subheadline)

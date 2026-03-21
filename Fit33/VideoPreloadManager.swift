@@ -16,7 +16,7 @@ import Combine
 private func prefetchLog(_ message: String, level: String = "INFO") {
     #if DEBUG
     let timestamp = ISO8601DateFormatter().string(from: Date())
-    print("[\(timestamp)] 🎬 PREFETCH [\(level)]: \(message)")
+    AppLogger.debug("[\(timestamp)] 🎬 PREFETCH [\(level)]: \(message)", category: .general)
     #endif
 }
 
@@ -114,8 +114,9 @@ final class VideoPreloadManager: ObservableObject {
     private init() {
         prefetchLog("VideoPreloadManager initializing...", level: "INIT")
         setupMemoryWarningObserver()
-        // Delay loading mappings to not block startup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled else { return }
             self?.loadVideoMappingsFromDatabase()
         }
         prefetchLog("VideoPreloadManager initialized", level: "INIT")
@@ -146,7 +147,10 @@ final class VideoPreloadManager: ObservableObject {
         debounceWorkItem = workItem
         
         // Execute after debounce interval
-        DispatchQueue.main.asyncAfter(deadline: .now() + Config.debounceInterval, execute: workItem)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Config.debounceInterval))
+            workItem.perform()
+        }
     }
     
     private func performVisibleExercisesUpdate(_ exerciseNames: [String], at indices: [Int]) {
@@ -254,7 +258,7 @@ final class VideoPreloadManager: ObservableObject {
                 }
                 
                 #if DEBUG
-                print("⚡ Instant playback: \(exerciseName)")
+                AppLogger.debug("⚡ Instant playback: \(exerciseName)", category: .general)
                 #endif
                 return cached.player
             }
@@ -296,7 +300,7 @@ final class VideoPreloadManager: ObservableObject {
             }
             
             #if DEBUG
-            print("🧹 Video cache cleared")
+            AppLogger.debug("🧹 Video cache cleared", category: .general)
             #endif
         }
     }
@@ -314,7 +318,7 @@ final class VideoPreloadManager: ObservableObject {
             }
             
             #if DEBUG
-            print("📉 Cache reduced to \(self.playerCache.count) items")
+            AppLogger.debug("📉 Cache reduced to \(self.playerCache.count) items", category: .general)
             #endif
         }
     }
@@ -400,7 +404,7 @@ final class VideoPreloadManager: ObservableObject {
                 
                 #if DEBUG
                 if request.priority == .visible {
-                    print("📥 Prefetched (visible): \(request.exerciseName)")
+                    AppLogger.debug("📥 Prefetched (visible): \(request.exerciseName)", category: .general)
                 }
                 #endif
             }
@@ -446,7 +450,7 @@ final class VideoPreloadManager: ObservableObject {
         cacheOrder.removeAll { $0 == name }
         
         #if DEBUG
-        print("🗑️ Evicted: \(name)")
+        AppLogger.debug("🗑️ Evicted: \(name)", category: .general)
         #endif
     }
     

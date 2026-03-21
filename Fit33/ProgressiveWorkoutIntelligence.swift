@@ -47,10 +47,10 @@ class ProgressiveWorkoutIntelligence {
             return []
         }
         
-        print("📊 Analyzing last performance for '\(exerciseName)':")
-        print("   Last workout: \(lastPerformance.sets.count) sets")
+        AppLogger.debug("📊 Analyzing last performance for '\(exerciseName)':", category: .workout)
+        AppLogger.debug("   Last workout: \(lastPerformance.sets.count) sets", category: .workout)
         if let week = programWeek {
-            print("   Program week: \(week) (\(ProgramPhase.from(weekNumber: week).rawValue))")
+            AppLogger.debug("   Program week: \(week) (\(ProgramPhase.from(weekNumber: week).rawValue))", category: .workout)
         }
         
         guard let analysis = analyzePerformanceForProgression(lastPerformance) else {
@@ -109,7 +109,7 @@ class ProgressiveWorkoutIntelligence {
                 ))
             }
             
-            print("   ✅ Progressive plan: \(progressiveSets)×\(Int(progressiveWeight))lbs + \(maintenanceSets)×\(Int(maintenanceWeight))lbs")
+            AppLogger.info("   ✅ Progressive plan: \(progressiveSets)×\(Int(progressiveWeight))lbs + \(maintenanceSets)×\(Int(maintenanceWeight))lbs", category: .workout)
             
         } else if analysis.shouldDeload {
             let deloadWeight = analysis.mostConsistentWeight * 0.9
@@ -122,7 +122,7 @@ class ProgressiveWorkoutIntelligence {
                     note: "🧘 Deload week - focus on form"
                 ))
             }
-            print("   ⚠️ Deload recommended: \(Int(deloadWeight))lbs for recovery")
+            AppLogger.warning("   ⚠️ Deload recommended: \(Int(deloadWeight))lbs for recovery", category: .workout)
             
         } else {
             let weight = analysis.mostConsistentWeight
@@ -135,7 +135,7 @@ class ProgressiveWorkoutIntelligence {
                     note: "💪 Build consistency"
                 ))
             }
-            print("   → Maintain: \(Int(weight))lbs × \(analysis.targetReps)")
+            AppLogger.debug("   → Maintain: \(Int(weight))lbs × \(analysis.targetReps)", category: .workout)
         }
         
         return recommendations
@@ -165,7 +165,7 @@ class ProgressiveWorkoutIntelligence {
                     note: "📐 Foundation - nail your form"
                 ))
             }
-            print("   📐 Foundation phase: \(Int(baseWeight))lbs × \(repTarget)")
+            AppLogger.debug("   📐 Foundation phase: \(Int(baseWeight))lbs × \(repTarget)", category: .workout)
             
         case .build:
             // Week 2: try progression on anchor sets (first half)
@@ -201,7 +201,7 @@ class ProgressiveWorkoutIntelligence {
                     ))
                 }
             }
-            print("   📈 Build phase for '\(exerciseName)'")
+            AppLogger.debug("   📈 Build phase for '\(exerciseName)'", category: .workout)
             
         case .push:
             // Week 3: higher volume, all sets at progression weight if ready
@@ -215,7 +215,7 @@ class ProgressiveWorkoutIntelligence {
                     note: "🔥 Push phase - challenge yourself"
                 ))
             }
-            print("   🔥 Push phase: \(Int(weight))lbs × \(repTarget)")
+            AppLogger.debug("   🔥 Push phase: \(Int(weight))lbs × \(repTarget)", category: .workout)
             
         case .peak:
             // Week 4: max intensity, last set to failure
@@ -230,7 +230,7 @@ class ProgressiveWorkoutIntelligence {
                     note: isLastSet ? "⚡ Peak - go to failure!" : "💪 Keep intensity high"
                 ))
             }
-            print("   ⚡ Peak phase: \(Int(weight))lbs, last set to failure")
+            AppLogger.debug("   ⚡ Peak phase: \(Int(weight))lbs, last set to failure", category: .workout)
             
         case .deload:
             // Week 5+: reduced volume and intensity for recovery
@@ -245,7 +245,7 @@ class ProgressiveWorkoutIntelligence {
                     note: "🧘 Deload - light and controlled"
                 ))
             }
-            print("   🧘 Deload phase: \(Int(deloadWeight))lbs × \(deloadReps)")
+            AppLogger.debug("   🧘 Deload phase: \(Int(deloadWeight))lbs × \(deloadReps)", category: .workout)
         }
         
         return recommendations
@@ -299,7 +299,7 @@ class ProgressiveWorkoutIntelligence {
             )
             
         } catch {
-            print("⚠️ Error fetching last workout: \(error)")
+            AppLogger.warning("⚠️ Error fetching last workout: \(error)", category: .workout)
             return nil
         }
     }
@@ -396,9 +396,9 @@ class ProgressiveWorkoutIntelligence {
                 .insert(data)
                 .execute()
             
-            print("📊 Progression tracked for community learning: \(exerciseName) \(Int(fromWeight))→\(Int(toWeight))lbs")
+            AppLogger.debug("📊 Progression tracked for community learning: \(exerciseName) \(Int(fromWeight))→\(Int(toWeight))lbs", category: .workout)
         } catch {
-            print("⚠️ Could not track progression: \(error)")
+            AppLogger.warning("⚠️ Could not track progression: \(error)", category: .workout)
             // Non-blocking - don't throw
         }
     }
@@ -447,7 +447,7 @@ class ProgressiveWorkoutIntelligence {
             )
             
         } catch {
-            print("⚠️ Could not fetch community insights: \(error)")
+            AppLogger.warning("⚠️ Could not fetch community insights: \(error)", category: .workout)
             return nil
         }
     }

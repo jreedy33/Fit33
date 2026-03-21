@@ -252,7 +252,7 @@ class WeeklyLeagueService: ObservableObject {
             cacheStanding(result)
             
             #if DEBUG
-            print("🏆 [LEAGUE] Joined/fetched league: \(result.tierName) league, rank #\(result.myRank)/\(result.groupSize), \(result.myPoints) pts")
+            AppLogger.debug("🏆 [LEAGUE] Joined/fetched league: \(result.tierName) league, rank #\(result.myRank)/\(result.groupSize), \(result.myPoints) pts", category: .social)
             #endif
             
             // Award daily login points (once per day)
@@ -261,7 +261,7 @@ class WeeklyLeagueService: ObservableObject {
         } catch {
             self.error = error.localizedDescription
             #if DEBUG
-            print("❌ [LEAGUE] Failed to fetch league: \(error)")
+            AppLogger.error("❌ [LEAGUE] Failed to fetch league: \(error)", category: .social)
             #endif
         }
         
@@ -328,12 +328,12 @@ class WeeklyLeagueService: ObservableObject {
                 }
                 
                 #if DEBUG
-                print("🏆 [LEAGUE] +\(source.points) pts (\(source.displayName)) → \(newPoints) total")
+                AppLogger.debug("🏆 [LEAGUE] +\(source.points) pts (\(source.displayName)) → \(newPoints) total", category: .social)
                 #endif
             }
         } catch {
             #if DEBUG
-            print("⚠️ [LEAGUE] Failed to add points: \(error)")
+            AppLogger.warning("⚠️ [LEAGUE] Failed to add points: \(error)", category: .social)
             #endif
         }
     }
@@ -361,7 +361,7 @@ class WeeklyLeagueService: ObservableObject {
             
         } catch {
             #if DEBUG
-            print("❌ [LEAGUE] Failed to fetch leaderboard: \(error)")
+            AppLogger.error("❌ [LEAGUE] Failed to fetch leaderboard: \(error)", category: .social)
             #endif
         }
         
@@ -383,7 +383,7 @@ class WeeklyLeagueService: ObservableObject {
             
         } catch {
             #if DEBUG
-            print("❌ [LEAGUE] Failed to fetch history: \(error)")
+            AppLogger.error("❌ [LEAGUE] Failed to fetch history: \(error)", category: .social)
             #endif
         }
     }
@@ -403,7 +403,7 @@ class WeeklyLeagueService: ObservableObject {
         UserDefaults.standard.set(today, forKey: dailyLoginKey)
         
         #if DEBUG
-        print("🏆 [LEAGUE] Daily login bonus awarded (+5 pts)")
+        AppLogger.debug("🏆 [LEAGUE] Daily login bonus awarded (+5 pts)", category: .social)
         #endif
     }
     

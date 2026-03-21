@@ -13,6 +13,8 @@ enum ReplayInsightType: String {
     case recoveryAdvisory
     case consistencyStreak
     case workoutDuration
+    case completionRate
+    case nutritionCorrelation
 }
 
 enum ReplayInsightPriority: Int, Comparable {
@@ -79,6 +81,12 @@ class WorkoutReplayEngine {
         insights.append(contentsOf: generateConsistencyInsights(
             recentWorkouts: recentWorkouts,
             currentDuration: workoutDuration
+        ))
+
+        insights.append(contentsOf: generateCompletionRateInsights(
+            exercises: exercises,
+            exerciseSets: exerciseSets,
+            recentWorkouts: recentWorkouts
         ))
         
         return insights.sorted { $0.priority < $1.priority }
@@ -148,11 +156,11 @@ class WorkoutReplayEngine {
         
         guard totalCurrentVolume > 0 else { return [] }
         
-        let currentMuscles = Set(exercises.compactMap { ($0.muscleGroups as? [String])?.first?.lowercased() })
+        let currentMuscles = Set(exercises.compactMap { (($0.muscleGroups as? [String]) ?? ($0.muscleGroups as? NSArray)?.compactMap { $0 as? String })?.first?.lowercased() })
         
         for pastWorkout in recentWorkouts {
             guard let pastExercises = pastWorkout.exercises?.allObjects as? [WorkoutExercise] else { continue }
-            let pastMuscles = Set(pastExercises.compactMap { ($0.exercise?.muscleGroups as? [String])?.first?.lowercased() })
+            let pastMuscles = Set(pastExercises.compactMap { (($0.exercise?.muscleGroups as? [String]) ?? ($0.exercise?.muscleGroups as? NSArray)?.compactMap { $0 as? String })?.first?.lowercased() })
             let overlap = currentMuscles.intersection(pastMuscles)
             guard overlap.count >= max(1, currentMuscles.count / 2) else { continue }
             
@@ -298,7 +306,8 @@ class WorkoutReplayEngine {
         for workout in lookback {
             guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
             for we in exercises {
-                guard let muscles = we.exercise?.muscleGroups as? [String] else { continue }
+                let muscles: [String] = (we.exercise?.muscleGroups as? [String]) ?? (we.exercise?.muscleGroups as? NSArray)?.compactMap { $0 as? String } ?? []
+                guard !muscles.isEmpty else { continue }
                 let primary = muscles.first?.lowercased() ?? ""
                 let vol = totalVolumeFromSets(completedSets(from: we))
                 if pushMuscles.contains(primary) { pushVolume += vol }
@@ -368,9 +377,8 @@ class WorkoutReplayEngine {
     private func generateRecoveryInsights(exercises: [Exercise]) -> [WorkoutInsightCard] {
         var musclesHit: [String] = []
         for exercise in exercises {
-            if let muscles = exercise.muscleGroups as? [String] {
-                musclesHit.append(contentsOf: muscles)
-            }
+            let muscles: [String] = (exercise.muscleGroups as? [String]) ?? (exercise.muscleGroups as? NSArray)?.compactMap { $0 as? String } ?? []
+            musclesHit.append(contentsOf: muscles)
         }
         let uniqueMuscles = Array(Set(musclesHit.map { $0.capitalized }))
         guard !uniqueMuscles.isEmpty else { return [] }
@@ -426,6 +434,67 @@ class WorkoutReplayEngine {
         return []
     }
     
+    // MARK: - Completion Rate Insights
+
+    private func generateCompletionRateInsights(
+        exercises: [Exercise],
+        exerciseSets: [String: [WorkoutSetData]],
+        recentWorkouts: [Workout]
+    ) -> [WorkoutInsightCard] {
+        var totalSets = 0
+        var completedSets = 0
+        for (_, sets) in exerciseSets {
+            totalSets += sets.count
+            completedSets += sets.filter { $0.isCompleted }.count
+        }
+        guard totalSets > 0 else { return [] }
+
+        let rate = Double(completedSets) / Double(totalSets)
+        let pct = Int(rate * 100)
+
+        var recentRates: [Double] = []
+        for w in recentWorkouts.prefix(10) {
+            guard let wExercises = w.exercises?.allObjects as? [WorkoutExercise] else { continue }
+            var wTotal = 0
+            var wDone = 0
+            for we in wExercises {
+                guard let sets = we.sets?.allObjects as? [WorkoutSet] else { continue }
+                wTotal += sets.count
+                wDone += sets.filter { $0.isCompleted }.count
+            }
+            if wTotal > 0 { recentRates.append(Double(wDone) / Double(wTotal)) }
+        }
+
+        let avgRecent = recentRates.isEmpty ? rate : recentRates.reduce(0, +) / Double(recentRates.count)
+        let avgPct = Int(avgRecent * 100)
+
+        var insights: [WorkoutInsightCard] = []
+
+        if rate >= 0.95 {
+            insights.append(WorkoutInsightCard(
+                type: .completionRate,
+                priority: .highlight,
+                icon: "checkmark.circle.fill",
+                iconColor: .green,
+                headline: "Perfect Completion",
+                detail: "You completed \(completedSets)/\(totalSets) sets (\(pct)%). Crushing it!",
+                actionTip: nil
+            ))
+        } else if rate < avgRecent - 0.15 {
+            insights.append(WorkoutInsightCard(
+                type: .completionRate,
+                priority: .coaching,
+                icon: "chart.bar.fill",
+                iconColor: .orange,
+                headline: "\(pct)% Completion (below your \(avgPct)% avg)",
+                detail: "You completed \(completedSets) of \(totalSets) sets. That's below your recent average.",
+                actionTip: "Consider fewer exercises or shorter sessions when energy is low."
+            ))
+        }
+
+        return insights
+    }
+
     // MARK: - Formatting
     
     private func formatWeight(_ weight: Double) -> String {

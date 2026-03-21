@@ -58,8 +58,8 @@ struct NotificationSettingsView: View {
             guard !hasAppeared else { return }
             hasAppeared = true
             
-            // Delay the check slightly to let navigation complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.1))
                 notificationManager.checkAuthorizationStatus()
             }
         }
@@ -92,7 +92,7 @@ struct NotificationSettingsView: View {
                     .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 4)
                 
                 Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             

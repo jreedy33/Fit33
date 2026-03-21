@@ -25,14 +25,14 @@ class SavedMealsService: ObservableObject {
         if !savedMeals.contains(where: { $0.id == meal.id }) {
             savedMeals.append(meal)
             persistSavedMeals()
-            print("✅ [SAVED MEALS] Saved meal: \(meal.name)")
+            AppLogger.info("✅ [SAVED MEALS] Saved meal: \(meal.name)", category: .nutrition)
         }
     }
     
     func removeSavedMeal(id: String) {
         savedMeals.removeAll { $0.id == id }
         persistSavedMeals()
-        print("🗑️ [SAVED MEALS] Removed meal with id: \(id)")
+        AppLogger.debug("🗑️ [SAVED MEALS] Removed meal with id: \(id)", category: .nutrition)
     }
     
     func isMealSaved(id: String) -> Bool {
@@ -62,7 +62,7 @@ class SavedMealsService: ObservableObject {
             }
         }
         persistShoppingList()
-        print("🛒 [SHOPPING] Added \(ingredients.count) items to shopping list")
+        AppLogger.debug("🛒 [SHOPPING] Added \(ingredients.count) items to shopping list", category: .nutrition)
     }
     
     func removeFromShoppingList(id: String) {
@@ -93,7 +93,7 @@ class SavedMealsService: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: savedMealsKey),
            let meals = try? JSONDecoder().decode([SavedMeal].self, from: data) {
             savedMeals = meals
-            print("📂 [SAVED MEALS] Loaded \(meals.count) saved meals")
+            AppLogger.debug("📂 [SAVED MEALS] Loaded \(meals.count) saved meals", category: .nutrition)
         }
     }
     
@@ -107,7 +107,7 @@ class SavedMealsService: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: shoppingListKey),
            let items = try? JSONDecoder().decode([ShoppingListItem].self, from: data) {
             shoppingListItems = items
-            print("📂 [SHOPPING] Loaded \(items.count) shopping list items")
+            AppLogger.debug("📂 [SHOPPING] Loaded \(items.count) shopping list items", category: .nutrition)
         }
     }
     

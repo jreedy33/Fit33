@@ -178,7 +178,7 @@ struct ProgramCardContent: View {
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: program.icon)
-                            .font(.system(size: 22, weight: .semibold))
+                            .font(.ds_heading2)
                             .foregroundColor(programColor)
                     }
                     
@@ -319,7 +319,7 @@ struct ProgramDetailView: View {
                         .shadow(color: programColor.opacity(0.2), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: program.icon)
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 }
                 
@@ -484,13 +484,14 @@ struct ProgramDetailView: View {
             
             // Visible Button
             Button(action: {
-                print("🔵 START BUTTON TAPPED")
+                AppLogger.debug("🔵 START BUTTON TAPPED", category: .workout)
                 workoutManager.startProgram(program)
-                print("✅ Started program: \(program.name)")
+                AppLogger.info("✅ Started program: \(program.name)", category: .workout)
                 
-                // Use a small delay to ensure the state is set properly
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    print("🚀 Activating navigation to Day 1")
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
+                    guard !Task.isCancelled else { return }
+                    AppLogger.debug("🚀 Activating navigation to Day 1", category: .workout)
                     navigateToDay1 = true
                 }
             }) {

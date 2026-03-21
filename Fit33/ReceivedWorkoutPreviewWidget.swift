@@ -437,7 +437,7 @@ struct ReceivedWorkoutPreviewWidget: View {
             }) {
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ds_caption)
                     Text("Start")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -475,7 +475,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                 HapticManager.notification(.success)
                 onDismiss()
             } catch {
-                print("❌ Error saving workout: \(error)")
+                AppLogger.error("❌ Error saving workout: \(error)", category: .workout)
                 HapticManager.notification(.error)
             }
             isSaving = false

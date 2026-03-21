@@ -82,7 +82,8 @@ struct ExerciseLibraryView: View {
         if selectedCategories.isEmpty {
             return ["All"]
         } else if selectedCategories.count == 1 {
-            return ExerciseFilterService.muscleGroupsForCategory(selectedCategories.first!)
+            guard let firstCategory = selectedCategories.first else { return ["All"] }
+            return ExerciseFilterService.muscleGroupsForCategory(firstCategory)
         } else {
             // Combine muscle groups from all selected categories
             var allMuscles = Set<String>()
@@ -167,19 +168,19 @@ struct ExerciseLibraryView: View {
             if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended && filterCache.isReady {
                 preFilteredExercises = filterCache.preFilteredRecommended
                 #if DEBUG
-                print("⚡️ [PERF] INSTANT recommended from pre-computed cache: \(preFilteredExercises.count) exercises (0ms)")
+                AppLogger.debug("⚡️ [PERF] INSTANT recommended from pre-computed cache: \(preFilteredExercises.count) exercises (0ms)", category: .workout)
                 #endif
             } else if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended {
                 // Fallback: cache not ready yet (very early cold start), compute inline
                 preFilteredExercises = applyOptimizedRecommendedFilter(to: exercises)
                 #if DEBUG
-                print("⚡️ [PERF] Optimized recommended filter (fallback): \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                AppLogger.debug("⚡️ [PERF] Optimized recommended filter (fallback): \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms", category: .workout)
                 #endif
             } else {
                 // Standard filter path for non-default filters
                 preFilteredExercises = applyFiltersOnly(to: exercises)
                 #if DEBUG
-                print("⚡️ [PERF] Rebuilt filter cache: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                AppLogger.debug("⚡️ [PERF] Rebuilt filter cache: \(preFilteredExercises.count) exercises in \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms", category: .workout)
                 #endif
             }
         }
@@ -192,7 +193,7 @@ struct ExerciseLibraryView: View {
             if let cached = searchResultsCache[searchKey] {
                 cachedFilteredExercises = cached
                 #if DEBUG
-                print("⚡️ [PERF] Search cache hit for '\(searchKey)': \(cached.count) results")
+                AppLogger.debug("⚡️ [PERF] Search cache hit for '\(searchKey)': \(cached.count) results", category: .workout)
                 #endif
                 return
             }
@@ -204,7 +205,7 @@ struct ExerciseLibraryView: View {
             
             #if DEBUG
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("⚡️ [PERF] Search '\(searchKey)': \(results.count) results in \(String(format: "%.1f", elapsed))ms")
+            AppLogger.debug("⚡️ [PERF] Search '\(searchKey)': \(results.count) results in \(String(format: "%.1f", elapsed))ms", category: .workout)
             #endif
             return
         }
@@ -474,7 +475,7 @@ struct ExerciseLibraryView: View {
                 
                 // Only trigger cloud sync if we have very few exercises (< 500)
                 if exercises.count < 500 && !WorkoutManager.shared.isWorkoutActive {
-                    print("📚 [LIBRARY] Exercise count (\(exercises.count)) very low, triggering cloud sync...")
+                    AppLogger.debug("📚 [LIBRARY] Exercise count (\(exercises.count)) very low, triggering cloud sync...", category: .workout)
                     SessionLogManager.shared.logDataSync(type: "Exercises", itemCount: exercises.count, direction: "download")
                     Task {
                         await ExerciseLibraryService.shared.syncExercisesFromCloud()
@@ -482,7 +483,7 @@ struct ExerciseLibraryView: View {
                             loadExercises()
                             lastFilterKey = "" // Force filter rebuild
                             updateFilteredExercises()
-                            print("📚 [LIBRARY] Sync complete, now have \(exercises.count) exercises")
+                            AppLogger.debug("📚 [LIBRARY] Sync complete, now have \(exercises.count) exercises", category: .workout)
                         }
                     }
                 }
@@ -543,7 +544,7 @@ struct ExerciseLibraryView: View {
             // 🔄 Reload when exercises become ready after cloud sync
             .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
                 if isReady {
-                    print("✅ [LIBRARY] Exercises now ready after sync - reloading list")
+                    AppLogger.info("✅ [LIBRARY] Exercises now ready after sync - reloading list", category: .workout)
                     viewContext.refreshAllObjects()
                     loadExercises()
                     
@@ -561,7 +562,7 @@ struct ExerciseLibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FavoriteExerciseChanged"))) { _ in
                 // Refresh when favorites are changed
-                print("📚 Exercise Library: Favorite changed, refreshing...")
+                AppLogger.debug("📚 Exercise Library: Favorite changed, refreshing...", category: .workout)
                 viewContext.refreshAllObjects()
                 loadExercises()
                 updateFilteredExercises()

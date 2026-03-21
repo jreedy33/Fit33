@@ -36,11 +36,6 @@ struct ChallengeSetupView: View {
     @State private var isLoadingTemplates = true
     
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     // Group templates by type (using local state)
     private var groupedTemplates: [ChallengeType: [ChallengeTemplate]] {
@@ -80,11 +75,11 @@ struct ChallengeSetupView: View {
                 }
             }
             .onAppear {
-                print("🏆 [CHALLENGE SETUP] View appeared for friend: \(friend.friendName ?? "unknown")")
+                AppLogger.debug("🏆 [CHALLENGE SETUP] View appeared for friend: \(friend.friendName ?? "unknown")", category: .social)
                 loadTemplates()
             }
             .onDisappear {
-                print("🏆 [CHALLENGE SETUP] View DISAPPEARED!")
+                AppLogger.debug("🏆 [CHALLENGE SETUP] View DISAPPEARED!", category: .social)
             }
             .alert("Challenge Sent! 🎯", isPresented: $showingSuccess) {
                 Button("Done") { dismiss() }
@@ -259,11 +254,7 @@ struct ChallengeSetupView: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -461,7 +452,7 @@ struct ChallengeSetupView: View {
                         // Decrease button
                         Button(action: { decreaseTarget() }) {
                             Image(systemName: "minus.circle.fill")
-                                .font(.system(size: 32))
+                                .font(.ds_heading1)
                                 .foregroundColor(.blue)
                         }
                         
@@ -479,7 +470,7 @@ struct ChallengeSetupView: View {
                         // Increase button
                         Button(action: { increaseTarget() }) {
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 32))
+                                .font(.ds_heading1)
                                 .foregroundColor(.blue)
                         }
                     }
@@ -775,7 +766,7 @@ struct ChallengeSetupView: View {
         // Load templates into local state WITHOUT triggering @Published updates
         // This prevents other views (DashboardView, etc.) from re-rendering
         // which could dismiss this sheet
-        print("🏆 [CHALLENGE SETUP] Starting template load (silent)...")
+        AppLogger.debug("🏆 [CHALLENGE SETUP] Starting template load (silent)...", category: .social)
         
         Task {
             // Use the silent method that doesn't update @Published
@@ -784,7 +775,7 @@ struct ChallengeSetupView: View {
             await MainActor.run {
                 self.templates = fetchedTemplates
                 self.isLoadingTemplates = false
-                print("🏆 [CHALLENGE SETUP] Template load complete - \(fetchedTemplates.count) templates")
+                AppLogger.debug("🏆 [CHALLENGE SETUP] Template load complete - \(fetchedTemplates.count) templates", category: .social)
             }
         }
     }
@@ -868,11 +859,6 @@ struct TemplateCard: View {
         template.type ?? .steps
     }
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: onSelect) {
@@ -891,7 +877,7 @@ struct TemplateCard: View {
                         .shadow(color: type.color.opacity(0.4), radius: 8, x: 0, y: 4)
                     
                     Text(template.displayEmoji)
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                 }
                 
                 VStack(spacing: 4) {
@@ -926,11 +912,7 @@ struct TemplateCard: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -980,11 +962,6 @@ struct TemplateRow: View {
         template.type ?? .steps
     }
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: onSelect) {
@@ -1049,11 +1026,7 @@ struct TemplateRow: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)

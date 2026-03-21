@@ -602,8 +602,9 @@ struct ImportedRecipeDetailView: View {
         
         HapticManager.tap()
         
-        // Hide toast after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) {
                 showingSaveConfirmation = false
             }
@@ -630,8 +631,9 @@ struct ImportedRecipeDetailView: View {
             showingAddedToList = true
         }
         
-        // Hide toast after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) {
                 showingAddedToList = false
             }
@@ -640,7 +642,7 @@ struct ImportedRecipeDetailView: View {
     
     private func addToMeal(_ mealType: MealType) {
         guard let user = userManager.currentUser else {
-            print("❌ [IMPORTED RECIPE] Cannot add to meal - no user")
+            AppLogger.error("❌ [IMPORTED RECIPE] Cannot add to meal - no user", category: .nutrition)
             return
         }
         
@@ -670,7 +672,7 @@ struct ImportedRecipeDetailView: View {
         MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
         HapticManager.success()
         
-        print("✅ [IMPORTED RECIPE] Added '\(recipe.title)' to \(mealType.displayName)")
+        AppLogger.info("✅ [IMPORTED RECIPE] Added '\(recipe.title)' to \(mealType.displayName)", category: .nutrition)
     }
 }
 

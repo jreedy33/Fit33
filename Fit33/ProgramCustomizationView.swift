@@ -103,7 +103,7 @@ struct ProgramCustomizationView: View {
                     .frame(width: 60, height: 60)
                 
                 Image(systemName: baseProgram.icon)
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
             
@@ -477,7 +477,7 @@ struct CustomProgramPreviewView: View {
                                 .frame(width: 80, height: 80)
                             
                             Image(systemName: program.icon)
-                                .font(.system(size: 32, weight: .bold))
+                                .font(.ds_heading1)
                                 .foregroundColor(programColor)
                         }
                         

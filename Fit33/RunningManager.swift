@@ -291,7 +291,7 @@ class RunningManager: NSObject, ObservableObject {
         startTimer()
         startLiveActivity()
         
-        print("🏃 [RUNNING] Started run tracking")
+        AppLogger.debug("🏃 [RUNNING] Started run tracking", category: .health)
     }
     
     func pauseRun() {
@@ -304,7 +304,7 @@ class RunningManager: NSObject, ObservableObject {
         locationManager.stopUpdatingLocation()
         updateLiveActivity()
         
-        print("⏸️ [RUNNING] Paused run")
+        AppLogger.debug("⏸️ [RUNNING] Paused run", category: .health)
     }
     
     func resumeRun() {
@@ -316,7 +316,7 @@ class RunningManager: NSObject, ObservableObject {
         startTimer()
         updateLiveActivity()
         
-        print("▶️ [RUNNING] Resumed run")
+        AppLogger.debug("▶️ [RUNNING] Resumed run", category: .health)
     }
     
     func stopRun() -> RunWorkoutResult? {
@@ -342,7 +342,7 @@ class RunningManager: NSObject, ObservableObject {
         isRunning = false
         isPaused = false
         
-        print("🏁 [RUNNING] Finished run: \(formattedDistance) in \(formattedElapsedTime)")
+        AppLogger.debug("🏁 [RUNNING] Finished run: \(formattedDistance) in \(formattedElapsedTime)", category: .health)
         
         return result
     }
@@ -410,7 +410,7 @@ class RunningManager: NSObject, ObservableObject {
         
         let now = Date()
         // Record every 10 seconds
-        if lastPaceRecordTime == nil || now.timeIntervalSince(lastPaceRecordTime!) >= 10 {
+        if lastPaceRecordTime.map({ now.timeIntervalSince($0) >= 10 }) ?? true {
             let point = PaceHistoryPoint(timestamp: now, pace: currentPace, distance: distance)
             paceHistory.append(point)
             lastPaceRecordTime = now
@@ -459,7 +459,7 @@ class RunningManager: NSObject, ObservableObject {
         lastSplitTime = elapsedTime
         
         HapticManager.notification(.success)
-        print("📍 [RUNNING] Manual lap recorded: \(formatPacePerMile(splitPace))")
+        AppLogger.debug("📍 [RUNNING] Manual lap recorded: \(formatPacePerMile(splitPace))", category: .health)
     }
     
     /// Toggle map following
@@ -503,14 +503,14 @@ class RunningManager: NSObject, ObservableObject {
             lastSplitDistance = Double(kmCompleted) * 1000
             lastSplitTime = elapsedTime
             
-            print("📍 [RUNNING] Split \(kmCompleted)km: \(formatPace(splitPace))")
+            AppLogger.debug("📍 [RUNNING] Split \(kmCompleted)km: \(formatPace(splitPace))", category: .health)
         }
     }
     
     // MARK: - Live Activity Management
     private func startLiveActivity() {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            print("⚠️ [RUNNING] Live Activities not enabled")
+            AppLogger.warning("⚠️ [RUNNING] Live Activities not enabled", category: .health)
             return
         }
         
@@ -535,9 +535,9 @@ class RunningManager: NSObject, ObservableObject {
                 pushType: nil
             )
             liveActivity = activity
-            print("🟢 [RUNNING] Live Activity started: \(activity.id)")
+            AppLogger.debug("🟢 [RUNNING] Live Activity started: \(activity.id)", category: .health)
         } catch {
-            print("❌ [RUNNING] Failed to start Live Activity: \(error.localizedDescription)")
+            AppLogger.error("❌ [RUNNING] Failed to start Live Activity: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -572,7 +572,7 @@ class RunningManager: NSObject, ObservableObject {
         
         Task {
             await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .default)
-            print("🔴 [RUNNING] Live Activity ended")
+            AppLogger.debug("🔴 [RUNNING] Live Activity ended", category: .health)
         }
         
         liveActivity = nil
@@ -657,12 +657,12 @@ extension RunningManager: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             locationAuthStatus = manager.authorizationStatus
-            print("📍 [RUNNING] Location auth changed: \(locationAuthStatus.rawValue)")
+            AppLogger.debug("📍 [RUNNING] Location auth changed: \(locationAuthStatus.rawValue)", category: .health)
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("❌ [RUNNING] Location error: \(error.localizedDescription)")
+        AppLogger.error("❌ [RUNNING] Location error: \(error.localizedDescription)", category: .health)
     }
 }
 

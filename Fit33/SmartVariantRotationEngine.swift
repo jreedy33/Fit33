@@ -51,7 +51,7 @@ class SmartVariantRotationEngine: ObservableObject {
            let rotations = try? JSONDecoder().decode([String: FamilyVariantRotation].self, from: data) {
             self.familyRotations = rotations
         }
-        print("🔄 [VARIANT ENGINE] Loaded \(familyRotations.count) family rotations")
+        AppLogger.debug("🔄 [VARIANT ENGINE] Loaded \(familyRotations.count) family rotations", category: .workout)
     }
     
     private func saveRotations() {
@@ -127,7 +127,7 @@ class SmartVariantRotationEngine: ObservableObject {
         familyRotations[familyKey] = rotation
         saveRotations()
         
-        print("🔄 [VARIANT] Family '\(family)': showing '\(nextVariant)' (rotation index \(index))")
+        AppLogger.debug("🔄 [VARIANT] Family '\(family)': showing '\(nextVariant)' (rotation index \(index))", category: .workout)
         return nextVariant
     }
     
@@ -165,7 +165,7 @@ class SmartVariantRotationEngine: ObservableObject {
             if swapData.swapCount >= 3 {
                 let penalty = Double(swapData.swapCount - 2) * 15  // -15 per swap after 2nd
                 score -= min(60, penalty)
-                print("   ⚠️ [VARIANT] '\(exerciseName)': -\(Int(min(60, penalty))) (swapped \(swapData.swapCount)x)")
+                AppLogger.warning("   ⚠️ [VARIANT] '\(exerciseName)': -\(Int(min(60, penalty))) (swapped \(swapData.swapCount)x)", category: .workout)
             }
             // No penalty for 1-2 swaps (equipment busy, broken, etc.)
             
@@ -185,7 +185,7 @@ class SmartVariantRotationEngine: ObservableObject {
         }
         if timesChosenAsReplacement > 0 {
             score += min(50, Double(timesChosenAsReplacement) * 15)
-            print("   ✅ [VARIANT] '\(exerciseName)': +\(Int(min(50, Double(timesChosenAsReplacement) * 15))) (chosen \(timesChosenAsReplacement)x as replacement)")
+            AppLogger.info("   ✅ [VARIANT] '\(exerciseName)': +\(Int(min(50, Double(timesChosenAsReplacement) * 15))) (chosen \(timesChosenAsReplacement)x as replacement)", category: .workout)
         }
         
         // ═══════════════════════════════════════════════════════════════
@@ -203,11 +203,11 @@ class SmartVariantRotationEngine: ObservableObject {
                 if wasRecentlyDone(exerciseKey) {
                     // Same exercise used recently - penalize to encourage variants
                     score -= 40
-                    print("   🔄 [VARIANT] '\(exerciseName)': -40 (favorite but used recently, show variant)")
+                    AppLogger.debug("   🔄 [VARIANT] '\(exerciseName)': -40 (favorite but used recently, show variant)", category: .workout)
                 } else {
                     // Fresh variant of favorite family - boost!
                     score += 50
-                    print("   ⭐ [VARIANT] '\(exerciseName)': +50 (fresh variant of favorite)")
+                    AppLogger.debug("   ⭐ [VARIANT] '\(exerciseName)': +50 (fresh variant of favorite)", category: .workout)
                 }
             }
         }
@@ -242,20 +242,20 @@ class SmartVariantRotationEngine: ObservableObject {
             familyRotations[familyKey] = FamilyVariantRotation(familyName: familyKey)
             saveRotations()
         }
-        print("⭐ [VARIANT] Initialized rotation for favorite family: \(family)")
+        AppLogger.debug("⭐ [VARIANT] Initialized rotation for favorite family: \(family)", category: .workout)
     }
     
     /// Record unfavorite - no additional action needed, existing systems handle it
     func recordUnfavorite(exerciseName: String, family: String) {
         // UserBehaviorLearningEngine handles this
-        print("⭐ [VARIANT] Unfavorite recorded for: \(exerciseName)")
+        AppLogger.debug("⭐ [VARIANT] Unfavorite recorded for: \(exerciseName)", category: .workout)
     }
     
     /// Record swap - delegates to UserBehaviorLearningEngine (already handles this)
     func recordSwapFrom(exerciseName: String, toExercise: String) {
         // UserBehaviorLearningEngine.recordExerciseSwap already handles this!
         // This method exists just for API consistency
-        print("🔄 [VARIANT] Swap tracked (via UserBehaviorLearningEngine)")
+        AppLogger.debug("🔄 [VARIANT] Swap tracked (via UserBehaviorLearningEngine)", category: .workout)
     }
     
     /// Record workout completion - for variant rotation tracking only
@@ -271,14 +271,14 @@ class SmartVariantRotationEngine: ObservableObject {
                 recordVariantShown(exerciseName: exercise.name, family: exercise.family)
             }
         }
-        print("🔄 [VARIANT] Recorded \(exercises.count) exercises for variant rotation")
+        AppLogger.debug("🔄 [VARIANT] Recorded \(exercises.count) exercises for variant rotation", category: .workout)
     }
     
     // MARK: - Debug
     
     func printDebugSummary() {
         let profile = learningCache.userPreferences
-        print("""
+        AppLogger.debug("""
         ╔══════════════════════════════════════════════════════════════╗
         ║         🔄 SMART VARIANT ROTATION ENGINE                     ║
         ╠══════════════════════════════════════════════════════════════╣
@@ -291,12 +291,12 @@ class SmartVariantRotationEngine: ObservableObject {
         ║ NEW DATA (variant rotation only):
         ║   • Family Rotations: \(familyRotations.count)
         ╚══════════════════════════════════════════════════════════════╝
-        """)
+        """, category: .workout)
     }
     
     func reset() {
         familyRotations = [:]
         UserDefaults.standard.removeObject(forKey: "familyVariantRotations")
-        print("🔄 [VARIANT ENGINE] Reset variant rotations (existing data preserved)")
+        AppLogger.debug("🔄 [VARIANT ENGINE] Reset variant rotations (existing data preserved)", category: .workout)
     }
 }

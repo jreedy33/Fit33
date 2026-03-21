@@ -27,11 +27,6 @@ struct DashboardView: View {
     
     
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     @State private var showingWorkoutCreation = false
     @State private var workoutCreationType: WorkoutCreationType = .custom
     @State private var scrollOffset: CGFloat = 0
@@ -207,6 +202,7 @@ struct DashboardView: View {
             ZStack {
                 // Animated background with colored orbs
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    .accessibilityHidden(true)
                 
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
@@ -341,7 +337,9 @@ struct DashboardView: View {
                         case "streakInfo":
                             // Scroll to header then show streak popup
                             scrollProxy.scrollTo("top", anchor: .top)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.3))
+                                guard !Task.isCancelled else { return }
                                 showStreakInfo = true
                             }
                         case "hydration", "weightTracker":
@@ -474,8 +472,9 @@ struct DashboardView: View {
         // MARK: - Challenge Deep Link Navigation
         .onReceive(deepLinkManager.$pendingDashboardRoute) { route in
             guard let route = route else { return }
-            // Small delay to ensure NavigationStack is ready after tab switch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.15))
+                guard !Task.isCancelled else { return }
                 if route == "ChallengeCreation" {
                     showingChallengeCreation = true
                 } else if route.hasPrefix("ChallengeDetail:") {
@@ -543,8 +542,9 @@ struct DashboardView: View {
             if let userId = userManager.currentUser?.id {
                 let welcomeKey = "has_been_welcomed_\(userId.uuidString)"
                 if !UserDefaults.standard.bool(forKey: welcomeKey) {
-                    // Delay marking as welcomed so they see "Welcome to Fit33" on first load
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2.0))
+                        guard !Task.isCancelled else { return }
                         UserDefaults.standard.set(true, forKey: welcomeKey)
                         AppLogger.debug("[WELCOME] User marked as welcomed - will show 'Welcome back' next time", category: .ui)
                     }
@@ -554,15 +554,15 @@ struct DashboardView: View {
             // 📱 PHONE VERIFICATION PROMPT (v1.14.3+)
             // Show one-time phone verification prompt for existing users who haven't verified
             if !hasSeenPhonePrompt && !userHasVerifiedPhone && userManager.hasCompletedOnboarding {
-                // Delay slightly to let the home screen render first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    // Double-check they still haven't seen it (in case of race conditions)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
                     if !hasSeenPhonePrompt && !userHasVerifiedPhone {
                         // Check if user already has a phone number from previous onboarding
                         Task {
                             let existingPhone = await SupabaseManager.shared.getUserPhoneNumber()
                             await MainActor.run {
-                                if existingPhone != nil && !existingPhone!.isEmpty {
+                                if let phone = existingPhone, !phone.isEmpty {
                                     // User already has phone verified, mark as seen
                                     userHasVerifiedPhone = true
                                     hasSeenPhonePrompt = true
@@ -927,7 +927,9 @@ struct DashboardView: View {
                                 showingProgramConflictAlert = false
                                 pendingWorkoutType = nil
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.1))
+                                guard !Task.isCancelled else { return }
                                 navigateToTodaysWorkout = true
                             }
                         }) {
@@ -938,13 +940,13 @@ struct DashboardView: View {
                                         .frame(width: 40, height: 40)
                                     
                                     Image(systemName: "play.fill")
-                                        .font(.system(size: 16, weight: .bold))
+                                        .font(.ds_labelLarge)
                                         .foregroundColor(.white)
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Continue Program")
-                                        .font(.system(size: 17, weight: .semibold))
+                                        .font(.ds_labelLarge)
                                     
                                     if let currentDay = generatedProgramService.currentDay {
                                         Text(currentDay.name)
@@ -988,11 +990,12 @@ struct DashboardView: View {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 showingProgramConflictAlert = false
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.1))
+                                guard !Task.isCancelled else { return }
                                 if pendingWorkoutType == .custom {
                                     navigateToCustomWorkout = true
                                 } else if pendingWorkoutType == .auto {
-                                    // 🔧 Redirect to Workout tab's auto-gen flow
                                     workoutManager.shouldNavigateToAutoGen = true
                                 }
                             }
@@ -1028,7 +1031,7 @@ struct DashboardView: View {
                             }
                         }) {
                             Text("Cancel")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.ds_bodyMedium)
                                 .foregroundColor(.secondary)
                                 .padding(.vertical, 10)
                         }
@@ -1091,6 +1094,7 @@ struct DashboardView: View {
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 140, height: 55)
                 .clipped()
+                .accessibilityHidden(true)
             
             Spacer()
             
@@ -1120,6 +1124,8 @@ struct DashboardView: View {
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                 }
+                .accessibilityLabel("Widget settings")
+                .accessibilityHint("Customize dashboard widgets")
                 .buttonStyle(PlainButtonStyle())
                 
                 // Add spacing between ... and profile icon
@@ -1182,7 +1188,8 @@ struct DashboardView: View {
                     }
                 }
                 .accessibilityLabel("Profile")
-                .offset(y: 2) // Nudge profile icon down slightly
+                .accessibilityHint("View your profile and settings")
+                .offset(y: 2)
             }
             .animation(.easeInOut(duration: 0.2), value: workoutManager.isWorkoutActive)
         }
@@ -1327,7 +1334,7 @@ struct DashboardView: View {
                 // User Level Display - floating badge (no background)
                 HStack(spacing: 4) {
                     Image(systemName: userManager.getLevelIcon())
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.ds_caption)
                         .foregroundColor(userManager.getLevelColor())
                     
                     Text(userManager.getLevelTitle())
@@ -1380,6 +1387,7 @@ struct DashboardView: View {
                     .frame(width: 58, height: 58)
                 }
                 .accessibilityLabel("Current streak: \(userManager.currentUser?.currentStreak ?? 0) days")
+                .accessibilityHint("Tap for streak details")
                 .buttonStyle(.plain)
                 
                 // User info section - moved to the right
@@ -1502,7 +1510,8 @@ struct DashboardView: View {
                             .multilineTextAlignment(.center)
                     }
                 }
-                .frame(width: 160, height: 140)
+                .frame(maxWidth: .infinity)
+                .frame(height: 140)
                 .background(
                     ZStack {
                         // Bottom shadow layer (deepest) - color glow
@@ -1519,11 +1528,7 @@ struct DashboardView: View {
                         // Main card background with gradient
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .fill(
-                                LinearGradient(
-                                    colors: cardBackgroundGradient,
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                                Color.cardBackground
                             )
                         
                         // Inner highlight (top edge glow)
@@ -1555,6 +1560,7 @@ struct DashboardView: View {
                 .shadow(color: .blue.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
                 }
                 .accessibilityLabel("Start custom workout")
+                .accessibilityHint("Build your own workout from scratch")
                 .buttonStyle(PlainButtonStyle())
                 
             // Auto Workout Button
@@ -1596,7 +1602,8 @@ struct DashboardView: View {
                             .multilineTextAlignment(.center)
                     }
                 }
-                .frame(width: 160, height: 140)
+                .frame(maxWidth: .infinity)
+                .frame(height: 140)
                 .background(
                     ZStack {
                         // Bottom shadow layer (deepest) - color glow
@@ -1613,11 +1620,7 @@ struct DashboardView: View {
                         // Main card background with gradient
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .fill(
-                                LinearGradient(
-                                    colors: cardBackgroundGradient,
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                                Color.cardBackground
                             )
                         
                         // Inner highlight (top edge glow)
@@ -1649,6 +1652,7 @@ struct DashboardView: View {
                 .shadow(color: .purple.opacity(0.12), radius: 20, x: 0, y: 10)
                 }
                 .accessibilityLabel("Start auto workout")
+                .accessibilityHint("Generate a workout based on your history")
                 .buttonStyle(PlainButtonStyle())
             
             }
@@ -1664,19 +1668,19 @@ struct DashboardView: View {
                 // Two widgets side by side
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
                     if showWeightTrackerWidget {
-                        DashboardWeightWidget(isCompact: true, cardBackgroundGradient: cardBackgroundGradient)
+                        DashboardWeightWidget(isCompact: true)
                     }
                     if showHydrationWidget {
-                        DashboardHydrationWidget(isCompact: true, cardBackgroundGradient: cardBackgroundGradient)
+                        DashboardHydrationWidget(isCompact: true)
                     }
                 }
             } else {
                 // Single widget expanded
                 if showWeightTrackerWidget {
-                    DashboardWeightWidget(isCompact: false, cardBackgroundGradient: cardBackgroundGradient)
+                    DashboardWeightWidget(isCompact: false)
                 }
                 if showHydrationWidget {
-                    DashboardHydrationWidget(isCompact: false, cardBackgroundGradient: cardBackgroundGradient)
+                    DashboardHydrationWidget(isCompact: false)
                 }
             }
         }
@@ -1841,11 +1845,7 @@ struct DashboardView: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -1968,11 +1968,7 @@ struct DashboardView: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -2015,10 +2011,7 @@ struct DashboardView: View {
         guard !isNavigating else { return }
         isNavigating = true
         
-        // Reset after a short delay to allow new navigation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isNavigating = false
-        }
+        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
         
         if generatedProgramService.activeProgram != nil {
             // Show alert if there's an active program
@@ -4121,7 +4114,7 @@ struct DashboardView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: "sparkles")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [accentColor, accentColor.opacity(0.7)],
@@ -4471,7 +4464,7 @@ struct DashboardView: View {
     private func challengeTypeButton(emoji: String, title: String, subtitle: String, gradient: [Color]) -> some View {
         VStack(spacing: 6) {
             Text(emoji)
-                .font(.system(size: 26))
+                .font(.ds_heading2)
             
             Text(title)
                 .font(.caption)
@@ -5496,7 +5489,7 @@ struct DashboardView: View {
                     // Today completed view - more compact
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                             .foregroundColor(.green)
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -5524,7 +5517,7 @@ struct DashboardView: View {
                     // Rest day - more compact
                     HStack(spacing: 10) {
                         Image(systemName: "moon.zzz.fill")
-                            .font(.system(size: 24))
+                            .font(.ds_heading2)
                             .foregroundColor(.blue)
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -5685,7 +5678,7 @@ struct DashboardView: View {
                 // Program info
                 VStack(alignment: .leading, spacing: 5) {
                     Text(program.personalizedName)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -5709,7 +5702,7 @@ struct DashboardView: View {
                     showStartProgramConfirm = true
                 } label: {
                     Text("Start")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.ds_bodySmall)
                         .foregroundColor(.white)
                         .padding(.horizontal, Spacing.md)
                         .padding(.vertical, Spacing.xs)
@@ -5754,11 +5747,7 @@ struct DashboardView: View {
                     // Main background
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
 
                     // Inner border - more evenly distributed
@@ -5845,11 +5834,7 @@ struct DashboardView: View {
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
-                        LinearGradient(
-                            colors: cardBackgroundGradient,
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        Color.cardBackground
                     )
             )
             .overlay(
@@ -5976,7 +5961,7 @@ struct SmartProgramMiniCard: View {
             // Header
             HStack(spacing: 8) {
                 Image(systemName: program.icon)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [programColor, programColor.opacity(0.7)],
@@ -6108,6 +6093,7 @@ struct RecentWorkoutCard: View {
             return "\(sortedMuscles[0].key.capitalized) & \(sortedMuscles[1].key.capitalized)"
         }
         
+        guard !sortedMuscles.isEmpty else { return "\(timeOfDay) Workout" }
         return "\(timeOfDay) \(sortedMuscles[0].key.capitalized)"
     }
     
@@ -6218,8 +6204,8 @@ struct RecentWorkoutCard: View {
             isFavorite.toggle()
         }
         
-        // Allow next tap after short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
             isProcessing = false
         }
     }
@@ -6228,7 +6214,7 @@ struct RecentWorkoutCard: View {
         VStack(spacing: 4) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(iconColor)
                 Text(value)
                     .font(.subheadline).fontWeight(.bold).fontDesign(.rounded)
@@ -6285,7 +6271,7 @@ struct RecentWorkoutCard: View {
                     
                     Button(action: { toggleFavorite() }) {
                         Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.ds_heading3)
                             .foregroundColor(isFavorite ? .yellow : .gray.opacity(0.4))
                             .animation(.easeInOut(duration: 0.15), value: isFavorite)
                     }
@@ -6359,7 +6345,7 @@ struct RecentWorkoutCard: View {
                 Text(reaction.emoji)
                     .font(.ds_bodyRegular)
                 Text("\(reaction.senderFirstName) sent you \(reaction.emoji)")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
                     .foregroundColor(.primary)
             }
             .padding(.horizontal, Spacing.xs)
@@ -6680,7 +6666,7 @@ struct RecentCardioWorkoutCard: View {
         VStack(spacing: 4) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .font(.ds_caption)
                     .foregroundColor(iconColor)
                 Text(value)
                     .font(.subheadline).fontWeight(.bold).fontDesign(.rounded)
@@ -7128,7 +7114,7 @@ struct WorkoutHistoryFullView: View {
                     .frame(width: 80, height: 80)
                 
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 32, weight: .medium))
+                    .font(.ds_heading1)
                     .foregroundStyle(
                         LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -7923,7 +7909,7 @@ struct WorkoutDetailBadge: View {
             
             VStack(spacing: 2) {
                 Text(value)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(.primary)
                 
                 Text(label)
@@ -7938,7 +7924,6 @@ struct WorkoutDetailBadge: View {
 // MARK: - Dashboard Weight Widget
 struct DashboardWeightWidget: View {
     let isCompact: Bool
-    let cardBackgroundGradient: [Color]
     
     @ObservedObject private var weightService = WeightTrackingService.shared
     @StateObject private var premiumManager = PremiumManager.shared
@@ -8228,11 +8213,7 @@ struct DashboardWeightWidget: View {
             // Main card background with gradient
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(
-                    LinearGradient(
-                        colors: cardBackgroundGradient,
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    Color.cardBackground
                 )
             
             // Inner highlight (top edge glow)
@@ -8383,7 +8364,6 @@ struct WeightInputSheet: View {
 // MARK: - Dashboard Hydration Widget
 struct DashboardHydrationWidget: View {
     let isCompact: Bool
-    let cardBackgroundGradient: [Color]
     
     @ObservedObject private var hydrationService = HydrationService.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -8554,11 +8534,7 @@ struct DashboardHydrationWidget: View {
             // Main card background with gradient
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(
-                    LinearGradient(
-                        colors: cardBackgroundGradient,
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    Color.cardBackground
                 )
             
             // Inner highlight (top edge glow)

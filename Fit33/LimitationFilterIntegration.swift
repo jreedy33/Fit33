@@ -41,7 +41,7 @@ class WorkoutLimitationFilter {
         let limitations = convertToFilterLimitations()
         
         guard !limitations.isEmpty else {
-            print("🛡️ [LIMITATION FILTER] No active limitations")
+            AppLogger.debug("🛡️ [LIMITATION FILTER] No active limitations", category: .workout)
             return LimitationFilterResult(
                 exercises: exercises,
                 excludedCount: 0,
@@ -50,9 +50,9 @@ class WorkoutLimitationFilter {
             )
         }
         
-        print("🛡️ [LIMITATION FILTER] Applying \(limitations.count) limitations:")
+        AppLogger.debug("🛡️ [LIMITATION FILTER] Applying \(limitations.count) limitations:", category: .workout)
         for lim in limitations {
-            print("   • \(lim.area.displayName): \(lim.severity.displayName)")
+            AppLogger.debug("   • \(lim.area.displayName): \(lim.severity.displayName)", category: .workout)
         }
         
         // Apply the metadata-driven filter engine
@@ -76,12 +76,12 @@ class WorkoutLimitationFilter {
             }
         }
         
-        print("🛡️ [LIMITATION FILTER] Result: \(exercises.count) → \(safeExercises.count) exercises")
+        AppLogger.debug("🛡️ [LIMITATION FILTER] Result: \(exercises.count) → \(safeExercises.count) exercises", category: .workout)
         if summary.exercisesExcluded > 0 {
-            print("   Excluded: \(summary.exercisesExcluded) exercises")
+            AppLogger.debug("   Excluded: \(summary.exercisesExcluded) exercises", category: .workout)
         }
         if summary.exercisesPenalized > 0 {
-            print("   Penalized: \(summary.exercisesPenalized) exercises")
+            AppLogger.debug("   Penalized: \(summary.exercisesPenalized) exercises", category: .workout)
         }
         
         return LimitationFilterResult(
@@ -475,7 +475,7 @@ struct EquipmentDiversityCap {
                 return aPreferred
             }
             
-            return byEquipment[a]!.count > byEquipment[b]!.count
+            return (byEquipment[a]?.count ?? 0) > (byEquipment[b]?.count ?? 0)
         }
         
         // Take only top N equipment types

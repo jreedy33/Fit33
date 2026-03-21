@@ -62,11 +62,11 @@ class FavoriteBasedDiscoveryEngine {
         let matchingFavorites = getMatchingFavorites(forMuscles: muscles)
         
         guard !matchingFavorites.isEmpty else {
-            print("🎯 [FAVORITES] No matching favorites for \(muscles)")
+            AppLogger.debug("🎯 [FAVORITES] No matching favorites for \(muscles)", category: .workout)
             return []
         }
         
-        print("🎯 [FAVORITES] Found \(matchingFavorites.count) matching favorites for \(muscles)")
+        AppLogger.debug("🎯 [FAVORITES] Found \(matchingFavorites.count) matching favorites for \(muscles)", category: .workout)
         
         var recommendations: [FavoriteRecommendation] = []
         var usedExercises: Set<String> = []
@@ -121,9 +121,9 @@ class FavoriteBasedDiscoveryEngine {
             }
         }
         
-        print("🎯 [FAVORITES] Generated \(recommendations.count) smart recommendations")
+        AppLogger.debug("🎯 [FAVORITES] Generated \(recommendations.count) smart recommendations", category: .workout)
         for rec in recommendations {
-            print("   - \(rec.exerciseName) (\(rec.type)) based on '\(rec.basedOnFavorite)'")
+            AppLogger.debug("   - \(rec.exerciseName) (\(rec.type)) based on '\(rec.basedOnFavorite)'", category: .workout)
         }
         
         return recommendations
@@ -381,7 +381,7 @@ class FavoriteBasedDiscoveryEngine {
         recentlyUsedFavorites.removeAll()
         recentlyUsedVariants.removeAll()
         saveState()
-        print("🔄 [FAVORITES] Cooldowns cleared")
+        AppLogger.debug("🔄 [FAVORITES] Cooldowns cleared", category: .workout)
     }
     
     func getDiscoveredExercisesCount() -> Int {

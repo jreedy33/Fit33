@@ -57,7 +57,7 @@ class ExerciseNameCache {
         if let data = UserDefaults.standard.dictionary(forKey: cacheKey) as? [String: String] {
             memoryCache = data
             #if DEBUG
-            print("📦 [ExerciseNameCache] Loaded \(memoryCache.count) cached names")
+            AppLogger.debug("📦 [ExerciseNameCache] Loaded \(memoryCache.count) cached names", category: .workout)
             #endif
         }
     }

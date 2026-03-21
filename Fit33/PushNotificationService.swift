@@ -21,7 +21,7 @@ class PushNotificationService: ObservableObject {
         let granted = await NotificationManager.shared.requestAuthorization()
         
         if !granted {
-            print("⚠️ [PUSH] Notification permission not granted via prompt")
+            AppLogger.warning("⚠️ [PUSH] Notification permission not granted via prompt", category: .network)
             // Don't return early - check if user enabled in Settings later
         }
         
@@ -30,14 +30,14 @@ class PushNotificationService: ObservableObject {
         
         guard settings.authorizationStatus == .authorized || 
               settings.authorizationStatus == .provisional else {
-            print("❌ [PUSH] Notifications not authorized (status: \(settings.authorizationStatus.rawValue))")
+            AppLogger.error("❌ [PUSH] Notifications not authorized (status: \(settings.authorizationStatus.rawValue))", category: .network)
             return
         }
         
         // Register with APNs - this will trigger handleDeviceToken on success
         await MainActor.run {
             UIApplication.shared.registerForRemoteNotifications()
-            print("📱 [PUSH] Registered for remote notifications")
+            AppLogger.debug("📱 [PUSH] Registered for remote notifications", category: .network)
         }
     }
     
@@ -56,7 +56,7 @@ class PushNotificationService: ObservableObject {
             }
             
             if deviceToken == nil {
-                print("📱 [PUSH] Notifications enabled but no token yet - waiting for APNs callback...")
+                AppLogger.debug("📱 [PUSH] Notifications enabled but no token yet - waiting for APNs callback...", category: .network)
             }
         }
     }
@@ -72,7 +72,7 @@ class PushNotificationService: ObservableObject {
         logger.log(.info, category: .pushNotification, message: "📱 Device token received", metadata: [
             "token_prefix": String(tokenString.prefix(12))
         ])
-        print("✅ [PUSH] Device token received: \(tokenString.prefix(20))...")
+        AppLogger.info("✅ [PUSH] Device token received: \(tokenString.prefix(20))...", category: .network)
         
         // Store token in Supabase
         Task {
@@ -83,7 +83,7 @@ class PushNotificationService: ObservableObject {
     /// Called when APNs registration fails
     func handleRegistrationError(_ error: Error) {
         logger.log(.error, category: .pushNotification, message: "APNs registration FAILED", metadata: ["error": error.localizedDescription])
-        print("❌ [PUSH] Failed to register: \(error.localizedDescription)")
+        AppLogger.error("❌ [PUSH] Failed to register: \(error.localizedDescription)", category: .network)
         self.isRegistered = false
     }
     
@@ -92,7 +92,7 @@ class PushNotificationService: ObservableObject {
     /// Save device token to Supabase for push notifications
     private func saveDeviceTokenToSupabase(_ token: String) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [PUSH] No user logged in, skipping token save")
+            AppLogger.warning("⚠️ [PUSH] No user logged in, skipping token save", category: .network)
             return
         }
         
@@ -112,7 +112,7 @@ class PushNotificationService: ObservableObject {
             
             // Detect APNs environment: TestFlight/App Store = production, Xcode = development
             let apnsEnvironment = Self.detectAPNsEnvironment()
-            print("📱 [PUSH] Detected APNs environment: \(apnsEnvironment)")
+            AppLogger.debug("📱 [PUSH] Detected APNs environment: \(apnsEnvironment)", category: .network)
             
             let record = DeviceTokenRecord(
                 user_id: userId.uuidString,
@@ -133,14 +133,14 @@ class PushNotificationService: ObservableObject {
                 "environment": apnsEnvironment,
                 "user_id": userId.uuidString.prefix(8)
             ])
-            print("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))")
+            AppLogger.info("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))", category: .network)
             
             // Store locally for reference
             UserDefaults.standard.set(token, forKey: "apns_device_token")
             UserDefaults.standard.set(apnsEnvironment, forKey: "apns_environment")
             
         } catch {
-            print("❌ [PUSH] Failed to save token: \(error)")
+            AppLogger.error("❌ [PUSH] Failed to save token: \(error)", category: .network)
         }
     }
     
@@ -189,9 +189,9 @@ class PushNotificationService: ObservableObject {
             self.isRegistered = false
             UserDefaults.standard.removeObject(forKey: "apns_device_token")
             
-            print("✅ [PUSH] Device token removed from Supabase")
+            AppLogger.info("✅ [PUSH] Device token removed from Supabase", category: .network)
         } catch {
-            print("❌ [PUSH] Failed to remove token: \(error)")
+            AppLogger.error("❌ [PUSH] Failed to remove token: \(error)", category: .network)
         }
     }
 }

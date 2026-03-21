@@ -567,6 +567,7 @@ struct NewOnboardingView: View {
                                         .background(Circle().fill(Color(.systemGray6)))
                                         .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
                                 }
+                                .accessibilityLabel("Go back")
                                 .accessibilityHint("Returns to previous step")
                             } else {
                                 // If on first password/email, go back to welcome screen
@@ -583,6 +584,7 @@ struct NewOnboardingView: View {
                                         .background(Circle().fill(Color(.systemGray6)))
                                         .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
                                 }
+                                .accessibilityLabel("Go back")
                                 .accessibilityHint("Returns to previous step")
                             }
                             
@@ -624,6 +626,7 @@ struct NewOnboardingView: View {
                                 )
                             }
                             .disabled(!isAuthFormValid || supabaseManager.isLoading)
+                            .accessibilityLabel(isSignUp ? "Continue" : "Sign In")
                             .accessibilityHint("Proceeds to next onboarding step")
                         }
                     }
@@ -853,10 +856,14 @@ struct NewOnboardingView: View {
                     DispatchQueue.main.async {
                         focusedField = fieldToFocus
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.1))
+                        guard !Task.isCancelled else { return }
                         focusedField = fieldToFocus
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.3))
+                        guard !Task.isCancelled else { return }
                         focusedField = fieldToFocus
                     }
                 }
@@ -905,14 +912,18 @@ struct NewOnboardingView: View {
                     DispatchQueue.main.async {
                         focusedField = targetField
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.1))
+                        guard !Task.isCancelled else { return }
                         focusedField = targetField
                     }
                 }
             case .basics:
                 focusedField = .birthday
             case .body:
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
+                    guard !Task.isCancelled else { return }
                     focusedField = .height
                 }
             case .equipment:
@@ -1035,10 +1046,14 @@ struct NewOnboardingView: View {
         DispatchQueue.main.async {
             focusedField = targetField
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
+            guard !Task.isCancelled else { return }
             focusedField = targetField
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
             focusedField = targetField
         }
         AppLogger.debug("OAuth focus set to: \(targetField)", category: .auth)
@@ -1167,6 +1182,7 @@ struct NewOnboardingView: View {
                     .background(Circle().fill(Color(.systemGray6)))
                     .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
             }
+            .accessibilityLabel("Go back")
             .accessibilityHint("Returns to previous step")
             
             // Continue button
@@ -1219,6 +1235,7 @@ struct NewOnboardingView: View {
                     )
             }
             .disabled(!isCurrentStepValid)
+            .accessibilityLabel("Continue to next step")
             .accessibilityHint("Proceeds to next onboarding step")
         }
     }
@@ -1695,8 +1712,9 @@ struct NewOnboardingView: View {
                     }
                 }
                 .onAppear {
-                    // Focus the code field to enable iOS auto-fill
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.3))
+                        guard !Task.isCancelled else { return }
                         focusedField = .verificationCode
                     }
                 }
@@ -1954,7 +1972,9 @@ struct NewOnboardingView: View {
         
         // Focus the code field after a brief delay for view to build
         AppLogger.verbose("Scheduling focus change to verificationCode in 0.3s", category: .ui)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
             AppLogger.verbose("Setting focusedField to .verificationCode", category: .ui)
             self.focusedField = .verificationCode
         }
@@ -2260,7 +2280,7 @@ struct NewOnboardingView: View {
                 
                 HStack(spacing: 16) {
                     Image(systemName: "person.fill")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: !name.isEmpty ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
@@ -2334,7 +2354,7 @@ struct NewOnboardingView: View {
                 HStack(spacing: 16) {
                     // @ symbol instead of icon
                     Text("@")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.ds_heading3)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: isUsernameValid ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
@@ -2411,7 +2431,9 @@ struct NewOnboardingView: View {
                         // Username is available! Auto-advance to next step
                         isCheckingUsername = false
                         // Small delay for smooth UX (show checkmark briefly)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.3))
+                            guard !Task.isCancelled else { return }
                             withAnimation {
                                 goToNextStep()
                             }
@@ -2564,10 +2586,14 @@ struct NewOnboardingView: View {
                     let isComplete = limitedDigits.count == 3 || 
                         (limitedDigits.count == 2 && !inches.isEmpty && inchValue >= 2)
                     if isComplete && isHeightValid {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.1))
+                            guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.2))
+                            guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
                     }
@@ -2578,10 +2604,14 @@ struct NewOnboardingView: View {
                     // Auto-advance to weight when cm height is complete (3 digits like 175)
                     let digits = newValue.filter { $0.isNumber }
                     if digits.count == 3 && isHeightValid {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.1))
+                            guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.2))
+                            guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
                     }
@@ -2589,7 +2619,9 @@ struct NewOnboardingView: View {
                 .onChange(of: isHeightValid) { oldValue, newValue in
                     // Auto-advance when height becomes valid
                     if newValue && !oldValue && focusedField == .height {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.15))
+                            guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
                     }
@@ -2641,7 +2673,7 @@ struct NewOnboardingView: View {
         
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .medium))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: isValid ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
@@ -2944,7 +2976,7 @@ struct NewOnboardingView: View {
                     }) {
                         VStack(spacing: 8) {
                             Text(loc.1)
-                                .font(.system(size: 32))
+                                .font(.ds_heading1)
                             Text(loc.2)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
@@ -3331,7 +3363,7 @@ struct NewOnboardingView: View {
                         .frame(width: 70, height: 70)
                     
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(.green)
                 }
             } else {
@@ -3433,8 +3465,9 @@ struct NewOnboardingView: View {
                                     AppLogger.debug("Auto-navigating to Add Friends step...", category: .social)
                                     HapticManager.notification(.success)
                                     
-                                    // Small delay for UI feedback, then navigate
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    Task { @MainActor in
+                                        try? await Task.sleep(for: .seconds(0.4))
+                                        guard !Task.isCancelled else { return }
                                         navigateTo(.addFriends)
                                     }
                                 }
@@ -3758,7 +3791,9 @@ struct NewOnboardingView: View {
                 
                 // Auto-focus the field after a short delay
                 if let field = focusField {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.4))
+                        guard !Task.isCancelled else { return }
                         focusedField = field
                     }
                 }
@@ -3815,6 +3850,7 @@ struct NewOnboardingView: View {
     // MARK: - Background with Animated Orbs
     private var backgroundGradient: some View {
         AnimatedOrbBackground.onboarding(colorScheme: colorScheme)
+            .accessibilityHidden(true)
     }
     
     // MARK: - Progress Indicator (UX Audit Fix #2)
@@ -3879,9 +3915,10 @@ struct NewOnboardingView: View {
                     .scrollDismissesKeyboard(.interactively)
                     .onChange(of: showingConfirmPassword) { _, isShowing in
                         if isShowing {
-                            // Multiple scroll attempts for reliability
                             for delay in [0.1, 0.3, 0.5] {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(delay))
+                                    guard !Task.isCancelled else { return }
                                     withAnimation(.easeOut(duration: 0.3)) {
                                         proxy.scrollTo("bottomSpacer", anchor: .bottom)
                                     }
@@ -3891,9 +3928,10 @@ struct NewOnboardingView: View {
                     }
                     .onChange(of: focusedField) { _, newFocus in
                         if newFocus == .confirmPassword {
-                            // Multiple scroll attempts for reliability
                             for delay in [0.05, 0.2, 0.4] {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(delay))
+                                    guard !Task.isCancelled else { return }
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         proxy.scrollTo("bottomSpacer", anchor: .bottom)
                                     }
@@ -3915,8 +3953,9 @@ struct NewOnboardingView: View {
                                     isOnConfirmPasswordStep = false
                                     confirmPassword = ""  // Clear confirm password
                                 }
-                                // Focus back on first password after animation
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(0.45))
+                                    guard !Task.isCancelled else { return }
                                     focusedField = .password
                                 }
                             }) {
@@ -4123,13 +4162,17 @@ struct NewOnboardingView: View {
                             DispatchQueue.main.async {
                                 focusedField = .confirmPassword
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            Task { @MainActor in
                                 focusedField = .confirmPassword
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.1))
+                                guard !Task.isCancelled else { return }
                                 focusedField = .confirmPassword
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.2))
+                                guard !Task.isCancelled else { return }
                                 focusedField = .confirmPassword
                             }
                         } else {
@@ -4138,10 +4181,12 @@ struct NewOnboardingView: View {
                             DispatchQueue.main.async {
                                 focusedField = .password
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            Task { @MainActor in
                                 focusedField = .password
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .seconds(0.1))
+                                guard !Task.isCancelled else { return }
                                 focusedField = .password
                             }
                         }
@@ -4707,8 +4752,9 @@ struct NewOnboardingView: View {
                     HapticManager.notification(.success)
                     AppLogger.info("Password reset email sent successfully", category: .auth)
                     
-                    // Auto-hide success message after 10 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(10))
+                        guard !Task.isCancelled else { return }
                         passwordResetSent = false
                     }
                 }
@@ -4773,7 +4819,7 @@ struct NewOnboardingView: View {
                 
                 VStack(spacing: 8) {
                     Text("You're all set!")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.primary)
                     
                     Text("Let's start building a stronger you")
@@ -4870,15 +4916,19 @@ struct NewOnboardingView: View {
                 focusedField = targetField
                 AppLogger.verbose("Auth focus set immediately: \(targetField)", category: .ui)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            Task { @MainActor in
                 focusedField = targetField
                 AppLogger.verbose("Auth focus reinforced at 50ms: \(targetField)", category: .ui)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.15))
+                guard !Task.isCancelled else { return }
                 focusedField = targetField
                 AppLogger.verbose("Auth focus reinforced at 150ms: \(targetField)", category: .ui)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled else { return }
                 focusedField = targetField
                 AppLogger.verbose("Auth focus reinforced at 300ms: \(targetField)", category: .ui)
             }
@@ -5053,7 +5103,7 @@ struct NewOnboardingView: View {
             await supabaseManager.logOnboardingField(fieldName: "email", stage: "collected", value: email.isEmpty ? supabaseManager.currentUser?.email : email)
             await supabaseManager.logOnboardingField(fieldName: "username", stage: "collected", value: username.isEmpty ? nil : username)
             await supabaseManager.logOnboardingField(fieldName: "birthday", stage: "collected", value: birthday, rawInput: birthday)
-            await supabaseManager.logOnboardingField(fieldName: "age", stage: "collected", value: ageValue, rawInput: birthday, convertedValue: ageValue != nil ? "\(ageValue!) years" : nil)
+            await supabaseManager.logOnboardingField(fieldName: "age", stage: "collected", value: ageValue, rawInput: birthday, convertedValue: ageValue.map { "\($0) years" })
             await supabaseManager.logOnboardingField(fieldName: "gender", stage: "collected", value: selectedGender)
             await supabaseManager.logOnboardingField(fieldName: "height_cm", stage: "collected", value: heightCmValue > 0 ? heightCmValue : nil, rawInput: heightUnit == .ftIn ? heightFeetInchesDigits : "\(heightCm) cm", convertedValue: "\(heightCmValue) cm")
             await supabaseManager.logOnboardingField(fieldName: "weight_kg", stage: "collected", value: weightKgValue > 0 ? weightKgValue : nil, rawInput: "\(weight) \(weightUnit.rawValue)", convertedValue: "\(weightKgValue) kg")
@@ -5414,10 +5464,14 @@ struct NewOnboardingView: View {
                                 DispatchQueue.main.async {
                                     focusedField = .username
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(0.1))
+                                    guard !Task.isCancelled else { return }
                                     focusedField = .username
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(0.3))
+                                    guard !Task.isCancelled else { return }
                                     focusedField = .username
                                 }
                             } else {
@@ -5585,7 +5639,7 @@ struct OnboardingTextField<F: Hashable>: View {
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .medium))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: isValid ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],
@@ -6136,7 +6190,7 @@ struct DaySelectorButton: View {
             Text("\(day)")
                 .font(.ds_heading2)
                 .foregroundColor(isSelected ? .white : .primary)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .background(
                     Circle()
                         .fill(
@@ -6255,7 +6309,7 @@ struct ExperienceCardLarge: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
@@ -6271,7 +6325,7 @@ struct ExperienceCardLarge: View {
                 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 26))
+                        .font(.ds_heading2)
                         .foregroundColor(.blue)
                 }
             }
@@ -6353,7 +6407,7 @@ struct EquipmentCardWithIcon: View {
                             .blur(radius: 10)
                     }
                     Image(systemName: iconName)
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.ds_heading1)
                         .foregroundStyle(
                             AnyShapeStyle(LinearGradient(colors: [.blue, .purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
                         )
@@ -6420,13 +6474,13 @@ struct WorkoutLocationCard: View {
                         .frame(width: 56, height: 56)
                     
                     Text(emoji)
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                 }
                 
                 // Text content
                 VStack(alignment: .leading, spacing: 4) {
                     Text(environment.displayName)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.ds_heading3)
                         .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
@@ -6439,7 +6493,7 @@ struct WorkoutLocationCard: View {
                 // Checkmark
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(.blue)
                 }
             }
@@ -6483,13 +6537,13 @@ struct StrengthLevelCard: View {
                         .frame(width: 52, height: 52)
                     
                     Text(emoji)
-                        .font(.system(size: 26))
+                        .font(.ds_heading2)
                 }
                 
                 // Text content
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(isSelected ? .orange : .primary)
                     
                     Text(subtitle)
@@ -6502,7 +6556,7 @@ struct StrengthLevelCard: View {
                 // Checkmark or strength indicator
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(.orange)
                 } else {
                     // Strength dots indicator
@@ -6558,7 +6612,7 @@ struct DaySelectorButtonLarge: View {
                 }
                 
                 Text("\(day)")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.ds_heading3)
                     .foregroundColor(isSelected ? .white : .primary)
                     .frame(width: 44, height: 44)
                     .background(
@@ -7006,7 +7060,7 @@ struct HeightInputField: View {
         HStack(spacing: 16) {
             // Icon - same as OnboardingTextField
             Image(systemName: "ruler")
-                .font(.system(size: 20, weight: .medium))
+                .font(.ds_heading3)
                 .foregroundStyle(
                     LinearGradient(
                         colors: isValid ? [Color.blue, Color.cyan] : [Color.gray.opacity(0.6), Color.gray.opacity(0.5)],

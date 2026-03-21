@@ -179,7 +179,7 @@ struct CardioWorkoutDetailView: View {
                 if cardioWorkout.goalAchieved {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 11))
+                            .font(.ds_caption)
                             .foregroundStyle(
                                 LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
@@ -202,7 +202,7 @@ struct CardioWorkoutDetailView: View {
             // Share button
             Button(action: shareWorkout) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.ds_heading3)
                     .foregroundColor(accentColor)
                     .frame(width: 44, height: 44)
                     .background(
@@ -601,7 +601,7 @@ struct CardioWorkoutDetailView: View {
             Button(action: shareWorkout) {
                 HStack(spacing: 10) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.ds_bodyMedium)
                     Text("Share Workout")
                         .font(.headline)
                         .fontWeight(.bold)

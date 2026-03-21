@@ -8,6 +8,7 @@ import Supabase
 /// - Searches USDA database via edge function
 /// - Caches results in cloud for instant retrieval
 /// - Tracks user history, favorites, and popular foods
+@MainActor
 class FoodDatabaseService: ObservableObject {
     static let shared = FoodDatabaseService()
     
@@ -32,6 +33,7 @@ class FoodDatabaseService: ObservableObject {
     
     // MARK: - Search Cache (for instant repeated searches)
     private var searchCache: [String: (foods: [CloudFood], timestamp: Date)] = [:]
+    private let searchCacheLock = NSLock()
     private let cacheValidityDuration: TimeInterval = 300 // 5 minutes
     
     private init() {
@@ -44,39 +46,24 @@ class FoodDatabaseService: ObservableObject {
     
     // MARK: - Frequently Used Foods
     
-    /// Load frequently used foods based on user's food history
+    /// Load frequently used foods via server-side aggregation RPC
     func loadFrequentFoods() async {
         guard SupabaseManager.shared.isAuthenticated,
-              let userId = SupabaseManager.shared.currentUser?.id else {
+              SupabaseManager.shared.currentUser != nil else {
             return
         }
         
-        await MainActor.run { isLoadingFrequent = true }
+        isLoadingFrequent = true
         
         do {
-            // Query to get food usage counts grouped by food name
-            // We use RPC or aggregate directly from user_food_history
-            struct FoodUsageRow: Codable {
+            struct FrequentFoodRow: Codable {
                 let fdcId: Int
                 let foodName: String
+                let calories: Double?
+                let protein: Double?
+                let carbs: Double?
+                let fat: Double?
                 let usageCount: Int
-                
-                enum CodingKeys: String, CodingKey {
-                    case fdcId = "fdc_id"
-                    case foodName = "food_name"
-                    case usageCount = "usage_count"
-                }
-            }
-            
-            // Get aggregated food usage from history
-            // Note: This requires a view or function in Supabase, so we'll query raw history and aggregate client-side
-            struct HistoryRow: Codable {
-                let fdcId: Int
-                let foodName: String
-                let calories: Int?
-                let protein: Int?
-                let carbs: Int?
-                let fat: Int?
                 let quantity: Double?
                 let servingUnit: String?
                 
@@ -87,106 +74,54 @@ class FoodDatabaseService: ObservableObject {
                     case protein
                     case carbs
                     case fat
+                    case usageCount = "usage_count"
                     case quantity
                     case servingUnit = "serving_unit"
                 }
             }
             
-            let historyRows: [HistoryRow] = try await supabase
-                .from("user_food_history")
-                .select("fdc_id, food_name, calories, protein, carbs, fat, quantity, serving_unit")
-                .eq("user_id", value: userId.uuidString)
+            let rows: [FrequentFoodRow] = try await supabase
+                .rpc("get_user_frequent_foods", params: ["p_limit": 20])
                 .execute()
                 .value
             
-            // Aggregate by food name and count occurrences
-            var usageByFdcId: [Int: (count: Int, row: HistoryRow)] = [:]
-            var usageByName: [String: (count: Int, row: HistoryRow)] = [:]
+            // Build usage-count dictionaries for search prioritization
+            var fdcCounts: [Int: Int] = [:]
+            var nameCounts: [String: Int] = [:]
             
-            for row in historyRows {
-                if row.fdcId > 0 {
-                    if let existing = usageByFdcId[row.fdcId] {
-                        usageByFdcId[row.fdcId] = (count: existing.count + 1, row: row)
-                    } else {
-                        usageByFdcId[row.fdcId] = (count: 1, row: row)
-                    }
-                } else {
-                    // Use food name for custom/scanned foods
-                    let key = row.foodName.lowercased()
-                    if let existing = usageByName[key] {
-                        usageByName[key] = (count: existing.count + 1, row: row)
-                    } else {
-                        usageByName[key] = (count: 1, row: row)
-                    }
-                }
-            }
-            
-            // Update usage counts for search prioritization
-            await MainActor.run {
-                self.foodUsageCount = usageByFdcId.mapValues { $0.count }
-                self.foodNameUsageCount = usageByName.mapValues { $0.count }
-            }
-            
-            // Sort by usage count and take top 15
-            let sortedByFdcId = usageByFdcId.sorted { $0.value.count > $1.value.count }
-            let sortedByName = usageByName.sorted { $0.value.count > $1.value.count }
-            
-            // Convert to FrequentFoodItem objects
             var frequentItems: [FrequentFoodItem] = []
             
-            // Add FDC-based frequent foods (top 10)
-            for (fdcId, data) in sortedByFdcId.prefix(10) {
-                let row = data.row
+            for row in rows {
                 let item = FrequentFoodItem(
-                    fdcId: fdcId,
+                    fdcId: row.fdcId,
                     name: row.foodName,
-                    calories: row.calories ?? 0,
-                    protein: row.protein ?? 0,
-                    carbs: row.carbs ?? 0,
-                    fat: row.fat ?? 0,
+                    calories: Int(row.calories ?? 0),
+                    protein: Int(row.protein ?? 0),
+                    carbs: Int(row.carbs ?? 0),
+                    fat: Int(row.fat ?? 0),
                     servingSize: row.quantity ?? 1.0,
                     servingUnit: row.servingUnit ?? "serving",
-                    usageCount: data.count
+                    usageCount: row.usageCount
                 )
                 frequentItems.append(item)
-            }
-            
-            // Add name-based frequent foods (top 5 that aren't duplicates)
-            var addedNames = Set(frequentItems.map { $0.name.lowercased() })
-            for (_, data) in sortedByName.prefix(5) {
-                let row = data.row
-                if !addedNames.contains(row.foodName.lowercased()) {
-                    addedNames.insert(row.foodName.lowercased())
-                    let item = FrequentFoodItem(
-                        fdcId: row.fdcId,
-                        name: row.foodName,
-                        calories: row.calories ?? 0,
-                        protein: row.protein ?? 0,
-                        carbs: row.carbs ?? 0,
-                        fat: row.fat ?? 0,
-                        servingSize: row.quantity ?? 1.0,
-                        servingUnit: row.servingUnit ?? "serving",
-                        usageCount: data.count
-                    )
-                    frequentItems.append(item)
+                
+                if row.fdcId > 0 {
+                    fdcCounts[row.fdcId] = row.usageCount
+                } else {
+                    nameCounts[row.foodName.lowercased()] = row.usageCount
                 }
             }
             
-            // Sort final list by usage count
-            frequentItems.sort { $0.usageCount > $1.usageCount }
-            
-            await MainActor.run {
-                self.frequentFoods = frequentItems
-                self.isLoadingFrequent = false
-                AppLogger.info("Successfully loaded \(frequentItems.count) frequently used foods", category: .nutrition)
-            }
+            self.foodUsageCount = fdcCounts
+            self.foodNameUsageCount = nameCounts
+            self.frequentFoods = frequentItems
+            self.isLoadingFrequent = false
+            AppLogger.info("Successfully loaded \(frequentItems.count) frequently used foods", category: .nutrition)
             
         } catch {
             AppLogger.error("Error loading frequent foods: \(error.localizedDescription)", category: .nutrition)
-            await MainActor.run {
-                self.frequentFoods = []
-                self.isLoadingFrequent = false
-            }
+            self.frequentFoods = []
+            self.isLoadingFrequent = false
         }
     }
     
@@ -203,14 +138,14 @@ class FoodDatabaseService: ObservableObject {
     /// Get cached results if available and not expired
     func getCachedResults(for query: String) -> [CloudFood]? {
         let normalizedQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        searchCacheLock.lock()
+        defer { searchCacheLock.unlock() }
         guard let cached = searchCache[normalizedQuery] else { return nil }
         
-        // Check if cache is still valid
         if Date().timeIntervalSince(cached.timestamp) < cacheValidityDuration {
             AppLogger.debug("Cache hit for '\(normalizedQuery)' - returning \(cached.foods.count) cached results", category: .nutrition)
             return cached.foods
         } else {
-            // Cache expired, remove it
             searchCache.removeValue(forKey: normalizedQuery)
             return nil
         }
@@ -219,11 +154,11 @@ class FoodDatabaseService: ObservableObject {
     /// Store results in cache
     private func cacheResults(_ foods: [CloudFood], for query: String) {
         let normalizedQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        searchCacheLock.lock()
+        defer { searchCacheLock.unlock() }
         searchCache[normalizedQuery] = (foods: foods, timestamp: Date())
         
-        // Limit cache size to 50 queries
         if searchCache.count > 50 {
-            // Remove oldest entries
             let sortedKeys = searchCache.sorted { $0.value.timestamp < $1.value.timestamp }
             for i in 0..<10 {
                 searchCache.removeValue(forKey: sortedKeys[i].key)
@@ -327,11 +262,11 @@ class FoodDatabaseService: ObservableObject {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else {
             AppLogger.warning("User not authenticated - skipping recent foods", category: .nutrition)
-            await MainActor.run { recentFoods = [] }
+            recentFoods = []
             return
         }
         
-        await MainActor.run { isLoadingRecent = true }
+        isLoadingRecent = true
         
         do {
             struct RecentFoodRow: Codable {
@@ -367,24 +302,18 @@ class FoodDatabaseService: ObservableObject {
                     .execute()
                     .value
                 
-                await MainActor.run {
-                    self.recentFoods = foods
-                    self.isLoadingRecent = false
-                }
+                self.recentFoods = foods
+                self.isLoadingRecent = false
                 
                 AppLogger.info("Successfully loaded \(foods.count) recent foods", category: .nutrition)
             } else {
-                await MainActor.run {
-                    self.recentFoods = []
-                    self.isLoadingRecent = false
-                }
-            }
-        } catch {
-            AppLogger.error("Error loading recent foods: \(error.localizedDescription)", category: .nutrition)
-            await MainActor.run {
                 self.recentFoods = []
                 self.isLoadingRecent = false
             }
+        } catch {
+            AppLogger.error("Error loading recent foods: \(error.localizedDescription)", category: .nutrition)
+            self.recentFoods = []
+            self.isLoadingRecent = false
         }
     }
     
@@ -393,11 +322,11 @@ class FoodDatabaseService: ObservableObject {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else {
             AppLogger.warning("User not authenticated - skipping favorites", category: .nutrition)
-            await MainActor.run { favoriteFoods = [] }
+            favoriteFoods = []
             return
         }
         
-        await MainActor.run { isLoadingFavorites = true }
+        isLoadingFavorites = true
         
         do {
             struct FavoriteRow: Codable {
@@ -428,31 +357,25 @@ class FoodDatabaseService: ObservableObject {
                     .execute()
                     .value
                 
-                await MainActor.run {
-                    self.favoriteFoods = foods
-                    self.isLoadingFavorites = false
-                }
+                self.favoriteFoods = foods
+                self.isLoadingFavorites = false
                 
                 AppLogger.info("Successfully loaded \(foods.count) favorite foods", category: .nutrition)
             } else {
-                await MainActor.run {
-                    self.favoriteFoods = []
-                    self.isLoadingFavorites = false
-                }
-            }
-        } catch {
-            AppLogger.error("Error loading favorite foods: \(error.localizedDescription)", category: .nutrition)
-            await MainActor.run {
                 self.favoriteFoods = []
                 self.isLoadingFavorites = false
             }
+        } catch {
+            AppLogger.error("Error loading favorite foods: \(error.localizedDescription)", category: .nutrition)
+            self.favoriteFoods = []
+            self.isLoadingFavorites = false
         }
     }
     
     /// Load globally popular foods across all users
     /// Uses both food_items.log_count and aggregated user_food_history
     func loadPopularFoods(limit: Int = 20) async {
-        await MainActor.run { isLoadingPopular = true }
+        isLoadingPopular = true
         
         do {
             // Strategy 1: Try food_items with log_count (fast, pre-computed)
@@ -467,10 +390,8 @@ class FoodDatabaseService: ObservableObject {
                 .value
             
             if !foods.isEmpty {
-                await MainActor.run {
-                    self.popularFoods = foods
-                    self.isLoadingPopular = false
-                }
+                self.popularFoods = foods
+                self.isLoadingPopular = false
                 AppLogger.info("Successfully loaded \(foods.count) globally popular foods", category: .nutrition)
                 return
             }
@@ -510,24 +431,18 @@ class FoodDatabaseService: ObservableObject {
                     foodItems.first(where: { $0.fdcId == fdcId })
                 }
                 
-                await MainActor.run {
-                    self.popularFoods = orderedFoods
-                    self.isLoadingPopular = false
-                }
+                self.popularFoods = orderedFoods
+                self.isLoadingPopular = false
                 AppLogger.info("Successfully loaded \(orderedFoods.count) popular foods from aggregation", category: .nutrition)
                 return
             }
             
-            await MainActor.run {
-                self.popularFoods = []
-                self.isLoadingPopular = false
-            }
+            self.popularFoods = []
+            self.isLoadingPopular = false
         } catch {
             AppLogger.error("Error loading popular foods: \(error.localizedDescription)", category: .nutrition)
-            await MainActor.run {
-                self.popularFoods = []
-                self.isLoadingPopular = false
-            }
+            self.popularFoods = []
+            self.isLoadingPopular = false
         }
     }
     
@@ -555,9 +470,7 @@ class FoodDatabaseService: ObservableObject {
                 .execute()
                 .value
             
-            await MainActor.run {
-                self.favoriteIds = Set(rows.map { $0.foodItemId })
-            }
+            self.favoriteIds = Set(rows.map { $0.foodItemId })
         } catch {
             AppLogger.error("Error loading favorite IDs: \(error.localizedDescription)", category: .nutrition)
         }
@@ -582,9 +495,7 @@ class FoodDatabaseService: ObservableObject {
             .insert(FavoriteInsert(user_id: userId.uuidString, food_item_id: foodItemId))
             .execute()
         
-        await MainActor.run {
-            favoriteIds.insert(foodItemId)
-        }
+        favoriteIds.insert(foodItemId)
         
         AppLogger.info("Successfully added food \(foodItemId) to favorites", category: .nutrition)
     }
@@ -601,9 +512,7 @@ class FoodDatabaseService: ObservableObject {
             .eq("food_item_id", value: foodItemId)
             .execute()
         
-        await MainActor.run {
-            favoriteIds.remove(foodItemId)
-        }
+        favoriteIds.remove(foodItemId)
         
         AppLogger.info("Successfully removed food \(foodItemId) from favorites", category: .nutrition)
     }
@@ -687,57 +596,47 @@ class FoodDatabaseService: ObservableObject {
         
         AppLogger.info("Successfully logged food to history", category: .nutrition)
         
-        // Update local usage count immediately for responsive UI
-        await MainActor.run {
-            if fdcId > 0 {
-                foodUsageCount[fdcId, default: 0] += 1
-            } else {
-                foodNameUsageCount[foodName.lowercased(), default: 0] += 1
-            }
+        if fdcId > 0 {
+            foodUsageCount[fdcId, default: 0] += 1
+        } else {
+            foodNameUsageCount[foodName.lowercased(), default: 0] += 1
         }
         
         // Immediately update frequent foods list with the new entry
         // This ensures the user sees their logged food in "Quick Add" right away
-        await MainActor.run {
-            let newItem = FrequentFoodItem(
-                fdcId: fdcId,
-                name: foodName,
+        let newItem = FrequentFoodItem(
+            fdcId: fdcId,
+            name: foodName,
+            calories: calories,
+            protein: protein,
+            carbs: carbs,
+            fat: fat,
+            servingSize: quantity,
+            servingUnit: servingUnit,
+            usageCount: (fdcId > 0 ? foodUsageCount[fdcId] : foodNameUsageCount[foodName.lowercased()]) ?? 1
+        )
+        
+        if let existingIdx = frequentFoods.firstIndex(where: { $0.fdcId == fdcId && fdcId > 0 || $0.name.lowercased() == foodName.lowercased() }) {
+            let existing = frequentFoods[existingIdx]
+            frequentFoods[existingIdx] = FrequentFoodItem(
+                fdcId: existing.fdcId,
+                name: existing.name,
                 calories: calories,
                 protein: protein,
                 carbs: carbs,
                 fat: fat,
                 servingSize: quantity,
                 servingUnit: servingUnit,
-                usageCount: (fdcId > 0 ? foodUsageCount[fdcId] : foodNameUsageCount[foodName.lowercased()]) ?? 1
+                usageCount: existing.usageCount + 1
             )
-            
-            // Update or insert into frequent foods
-            if let existingIdx = frequentFoods.firstIndex(where: { $0.fdcId == fdcId && fdcId > 0 || $0.name.lowercased() == foodName.lowercased() }) {
-                // Update count on existing entry
-                let existing = frequentFoods[existingIdx]
-                frequentFoods[existingIdx] = FrequentFoodItem(
-                    fdcId: existing.fdcId,
-                    name: existing.name,
-                    calories: calories, // Use latest nutrition
-                    protein: protein,
-                    carbs: carbs,
-                    fat: fat,
-                    servingSize: quantity,
-                    servingUnit: servingUnit,
-                    usageCount: existing.usageCount + 1
-                )
-            } else {
-                // Add as new frequent food
-                frequentFoods.insert(newItem, at: 0)
-                // Keep max 15 items
-                if frequentFoods.count > 15 {
-                    frequentFoods = Array(frequentFoods.prefix(15))
-                }
+        } else {
+            frequentFoods.insert(newItem, at: 0)
+            if frequentFoods.count > 15 {
+                frequentFoods = Array(frequentFoods.prefix(15))
             }
-            
-            // Re-sort by usage count
-            frequentFoods.sort { $0.usageCount > $1.usageCount }
         }
+        
+        frequentFoods.sort { $0.usageCount > $1.usageCount }
         
         // Also increment global popularity count in background
         await incrementGlobalFoodPopularity(fdcId: fdcId, foodName: foodName)
@@ -781,14 +680,10 @@ class FoodDatabaseService: ObservableObject {
                     .limit(1)
                     .execute()
                 
-                // Decrement local count
-                await MainActor.run {
-                    if let count = foodUsageCount[fdcId], count > 0 {
-                        foodUsageCount[fdcId] = count - 1
-                    }
+                if let count = foodUsageCount[fdcId], count > 0 {
+                    foodUsageCount[fdcId] = count - 1
                 }
             } else {
-                // Delete by food name
                 try await supabase
                     .from("user_food_history")
                     .delete()
@@ -798,12 +693,9 @@ class FoodDatabaseService: ObservableObject {
                     .limit(1)
                     .execute()
                 
-                // Decrement local count
-                await MainActor.run {
-                    let key = foodName.lowercased()
-                    if let count = foodNameUsageCount[key], count > 0 {
-                        foodNameUsageCount[key] = count - 1
-                    }
+                let key = foodName.lowercased()
+                if let count = foodNameUsageCount[key], count > 0 {
+                    foodNameUsageCount[key] = count - 1
                 }
             }
             

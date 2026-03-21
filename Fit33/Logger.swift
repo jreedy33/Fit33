@@ -29,14 +29,16 @@ enum AppLogger {
 
     /// Log categories matching major app domains
     enum Category: String {
-        case auth       = "Auth"
-        case workout    = "Workout"
-        case social     = "Social"
-        case nutrition  = "Nutrition"
-        case health     = "Health"
-        case network    = "Network"
-        case ui         = "UI"
-        case general    = "General"
+        case auth        = "Auth"
+        case workout     = "Workout"
+        case social      = "Social"
+        case nutrition   = "Nutrition"
+        case health      = "Health"
+        case network     = "Network"
+        case ui          = "UI"
+        case data        = "Data"
+        case performance = "Performance"
+        case general     = "General"
     }
 
     /// Severity levels
@@ -103,6 +105,16 @@ enum AppLogger {
             os_log("%{public}@", log: log, type: level.osLogType, text)
         }
         #endif
+        
+        // Forward to advanced session logger when active
+        if AdvancedSessionLogger.shared.isEnabled {
+            let logType = level >= .error ? "error" : (level >= .warning ? "warning" : "log")
+            AdvancedSessionLogger.shared.log(
+                type: logType,
+                detail: "[\(category.rawValue)] \(text)",
+                screen: nil
+            )
+        }
         
         // 🛡️ Auto-report errors and critical issues to crash reporting service
         if level >= .error {

@@ -267,7 +267,7 @@ final class SmartExercisePairingEngine {
     func initialize() {
         guard !isInitialized else { return }
         
-        print("🧠 [PAIRING ENGINE] Initializing smart pairing system...")
+        AppLogger.debug("🧠 [PAIRING ENGINE] Initializing smart pairing system...", category: .workout)
         
         Task(priority: .background) {
             await buildPairingDatabase()
@@ -287,7 +287,7 @@ final class SmartExercisePairingEngine {
             }
         }
         
-        print("🧠 [PAIRING ENGINE] Analyzing \(exerciseData.count) exercises...")
+        AppLogger.debug("🧠 [PAIRING ENGINE] Analyzing \(exerciseData.count) exercises...", category: .workout)
         
         // First pass: Analyze all exercises (now safe to do on background thread)
         for data in exerciseData {
@@ -296,11 +296,11 @@ final class SmartExercisePairingEngine {
             movementPatternCache[data.name] = analysis.movementPattern
         }
         
-        print("🧠 [PAIRING ENGINE] Exercise analysis complete")
+        AppLogger.debug("🧠 [PAIRING ENGINE] Exercise analysis complete", category: .workout)
         
         // Second pass: Build pairings (do this lazily on demand)
         isInitialized = true
-        print("✅ [PAIRING ENGINE] Ready for pairing queries")
+        AppLogger.info("✅ [PAIRING ENGINE] Ready for pairing queries", category: .workout)
     }
     
     // MARK: - Exercise Analysis
@@ -954,7 +954,7 @@ final class SmartExercisePairingEngine {
     
     func debugPrintAnalysis(for exercise: Exercise) {
         let analysis = analyzeExercise(exercise)
-        print("""
+        AppLogger.debug("""
         📊 Exercise Analysis: \(analysis.name)
         ├── Movement Pattern: \(analysis.movementPattern.rawValue)
         ├── Primary Muscles: \(analysis.primaryMuscles.joined(separator: ", "))
@@ -966,7 +966,7 @@ final class SmartExercisePairingEngine {
         ├── Body Position: \(analysis.bodyPosition ?? "N/A")
         ├── Plane of Motion: \(analysis.planeOfMotion ?? "N/A")
         └── Force Vector: \(analysis.forceVector ?? "N/A")
-        """)
+        """, category: .workout)
     }
 }
 

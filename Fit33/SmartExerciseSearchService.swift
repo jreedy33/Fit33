@@ -244,7 +244,7 @@ final class SmartExerciseSearchService: ObservableObject {
     ]
     
     private init() {
-        print("🔍 [SMART SEARCH] Initialized")
+        AppLogger.debug("🔍 [SMART SEARCH] Initialized", category: .workout)
     }
     
     // MARK: - Typo Correction
@@ -261,7 +261,7 @@ final class SmartExerciseSearchService: ObservableObject {
                 words[index] = correction
                 wasModified = true
                 #if DEBUG
-                print("🔤 [TYPO] Corrected '\(word)' → '\(correction)'")
+                AppLogger.debug("🔤 [TYPO] Corrected '\(word)' → '\(correction)'", category: .workout)
                 #endif
             } else {
                 // Check for partial matches (typo might be part of a word)
@@ -270,7 +270,7 @@ final class SmartExerciseSearchService: ObservableObject {
                         words[index] = word.replacingOccurrences(of: typo, with: correction)
                         wasModified = true
                         #if DEBUG
-                        print("🔤 [TYPO] Partial correction '\(word)' → '\(words[index])'")
+                        AppLogger.debug("🔤 [TYPO] Partial correction '\(word)' → '\(words[index])'", category: .workout)
                         #endif
                         break
                     }
@@ -456,8 +456,8 @@ final class SmartExerciseSearchService: ObservableObject {
             guard !name.isEmpty else { continue }
             
             var personalScore: Double = 0
-            if hasUserBehavior {
-                personalScore = personalBoost(for: exercise, name: name, userBehavior: userBehavior!)
+            if let behavior = userBehavior {
+                personalScore = personalBoost(for: exercise, name: name, userBehavior: behavior)
             }
             
             var matched = false
@@ -965,7 +965,7 @@ final class SmartExerciseSearchService: ObservableObject {
             
             #if DEBUG
             if isNewUser && commonBoost > 200 {
-                print("   🌟 Common exercise boost (new user): \(exercise.name ?? "") (+\(Int(commonBoost)))")
+                AppLogger.debug("   🌟 Common exercise boost (new user): \(exercise.name ?? "") (+\(Int(commonBoost)))", category: .workout)
             }
             #endif
         }
@@ -1254,7 +1254,7 @@ extension SmartExerciseSearchService {
         )
         
         #if DEBUG
-        print("🔍 [SMART SEARCH] User selected '\(exerciseName)' from search '\(searchQuery)' (position: \(resultPosition))")
+        AppLogger.debug("🔍 [SMART SEARCH] User selected '\(exerciseName)' from search '\(searchQuery)' (position: \(resultPosition))", category: .workout)
         #endif
     }
 }

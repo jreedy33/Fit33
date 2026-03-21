@@ -380,7 +380,7 @@ final class ExerciseFilterService {
         for excludedItem in excluded {
             if equipLower.contains(excludedItem.lowercased()) {
                 #if DEBUG
-                print("   🚫 [LOCATION] Excluded '\(exerciseName)': uses '\(excludedItem)' which is excluded for \(location.rawValue)")
+                AppLogger.debug("   🚫 [LOCATION] Excluded '\(exerciseName)': uses '\(excludedItem)' which is excluded for \(location.rawValue)", category: .workout)
                 #endif
                 return false
             }
@@ -394,7 +394,7 @@ final class ExerciseFilterService {
             for pattern in homePatterns {
                 if nameLower.contains(pattern) {
                     #if DEBUG
-                    print("   🚫 [LOCATION] Excluded '\(exerciseName)': home workout pattern '\(pattern)'")
+                    AppLogger.debug("   🚫 [LOCATION] Excluded '\(exerciseName)': home workout pattern '\(pattern)'", category: .workout)
                     #endif
                     return false
                 }
@@ -756,7 +756,7 @@ final class ExerciseFilterService {
             
             if nameIndicatesBands && !userHasBands {
                 #if DEBUG
-                print("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates bands but user doesn't have bands")
+                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates bands but user doesn't have bands", category: .workout)
                 #endif
                 return false
             }
@@ -768,7 +768,7 @@ final class ExerciseFilterService {
             
             if nameIndicatesKettlebell && !userHasKettlebell {
                 #if DEBUG
-                print("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates kettlebell but user doesn't have kettlebell")
+                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates kettlebell but user doesn't have kettlebell", category: .workout)
                 #endif
                 return false
             }
@@ -780,7 +780,7 @@ final class ExerciseFilterService {
             
             if nameIndicatesSuspension && !userHasSuspension {
                 #if DEBUG
-                print("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates suspension trainer but user doesn't have it")
+                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates suspension trainer but user doesn't have it", category: .workout)
                 #endif
                 return false
             }

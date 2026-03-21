@@ -226,7 +226,7 @@ struct ExerciseDetailView: View {
                     dismiss()
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.black)
                         .frame(width: 40, height: 40)
                         .background(
@@ -255,7 +255,7 @@ struct ExerciseDetailView: View {
                                 .offset(x: 0.3, y: 0.3) // Slight offset for shadow-like outline
                         }
                         Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(isFavorite ? .yellow : .black)
                     }
                     .frame(width: 40, height: 40)
@@ -327,7 +327,7 @@ struct ExerciseDetailView: View {
                 if let freshExercise = try viewContext.fetch(fetchRequest).first {
                     freshExercise.isFavorite = isFavorite
                     try viewContext.save()
-                    print("⭐ Exercise '\(freshExercise.name ?? "")' favorite status: \(isFavorite)")
+                    AppLogger.debug("⭐ Exercise '\(freshExercise.name ?? "")' favorite status: \(isFavorite)", category: .workout)
                     
                     // Record favorite for variant rotation
                     let exerciseFamily = freshExercise.value(forKey: "exerciseFamily") as? String ?? ""
@@ -358,13 +358,13 @@ struct ExerciseDetailView: View {
                                     exerciseName: freshExercise.name
                                 )
                             } catch {
-                                print("❌ Error syncing favorite to cloud: \(error)")
+                                AppLogger.error("❌ Error syncing favorite to cloud: \(error)", category: .workout)
                             }
                         }
                     }
                 }
             } catch {
-                print("❌ Error toggling favorite: \(error)")
+                AppLogger.error("❌ Error toggling favorite: \(error)", category: .workout)
                 // Revert on error
                 isFavorite.toggle()
             }
@@ -380,7 +380,7 @@ struct ExerciseDetailView: View {
                     .font(.ds_heading3).fontWeight(.semibold)
                 
                 Text("Add to Workout")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.ds_labelLarge)
                 
                 Spacer()
                 
@@ -427,14 +427,14 @@ struct ExerciseDetailView: View {
         workoutManager.exerciseToAddToCustomWorkout = exercise
         
         // Dismiss this view and navigate to custom workout builder
-        // Small delay to ensure smooth transition
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
+            guard !Task.isCancelled else { return }
             dismiss()
-            // Trigger navigation to custom workout builder via WorkoutManager
             workoutManager.shouldNavigateToCustomWorkoutBuilder = true
         }
         
-        print("➕ Adding exercise to custom workout: \(exercise.name ?? "Unknown")")
+        AppLogger.debug("➕ Adding exercise to custom workout: \(exercise.name ?? "Unknown")", category: .workout)
     }
     
     // MARK: - Video Section
@@ -582,7 +582,7 @@ struct ExerciseDetailView: View {
             Image(systemName: "dumbbell.fill")
                 .font(.ds_bodySmall)
             Text(exercise.equipment ?? "Bodyweight")
-                .font(.system(size: 13, weight: .medium))
+                .font(.ds_bodySmall)
         }
         .foregroundColor(colorScheme == .dark ? .white : .primary)
         .padding(.horizontal, 14)
@@ -641,7 +641,7 @@ struct ExerciseDetailView: View {
                 }
                 
                 Text("Your Progress")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
                 Spacer()
             }
@@ -810,7 +810,7 @@ struct ExerciseDetailView: View {
                         .foregroundColor(categoryColor)
                 }
                 Text("About")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
                 Spacer()
             }
@@ -865,7 +865,7 @@ struct ExerciseDetailView: View {
                         .foregroundColor(categoryColor)
                 }
                 Text("How To Perform")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
                 Spacer()
             }
@@ -1152,7 +1152,7 @@ struct ExerciseDetailView: View {
             }
             
         } catch {
-            print("❌ Error loading exercise history: \(error)")
+            AppLogger.error("❌ Error loading exercise history: \(error)", category: .workout)
         }
     }
     
@@ -1242,7 +1242,7 @@ struct NativeStyleBackButton: View {
         }) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.ds_labelLarge)
                 Text("Back")
                     .font(.ds_bodyLarge)
             }
@@ -1263,7 +1263,7 @@ struct BackButton: View {
             dismiss()
         }) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.ds_labelLarge)
                 .foregroundColor(colorScheme == .dark ? .white : .black)
                 .frame(width: 40, height: 40)
                 .background(
@@ -1363,7 +1363,7 @@ struct StatusBarStyler: UIViewControllerRepresentable {
 class StatusBarViewController: UIViewController {
     var statusBarStyle: UIStatusBarStyle {
         didSet {
-            print("📊 [STATUS BAR] Style changed to: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+            AppLogger.debug("📊 [STATUS BAR] Style changed to: \(statusBarStyle == .darkContent ? "dark content" : "default")", category: .workout)
             setNeedsStatusBarAppearanceUpdate()
         }
     }
@@ -1371,7 +1371,7 @@ class StatusBarViewController: UIViewController {
     init(statusBarStyle: UIStatusBarStyle) {
         self.statusBarStyle = statusBarStyle
         super.init(nibName: nil, bundle: nil)
-        print("📊 [STATUS BAR] Controller init with style: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+        AppLogger.debug("📊 [STATUS BAR] Controller init with style: \(statusBarStyle == .darkContent ? "dark content" : "default")", category: .workout)
     }
     
     required init?(coder: NSCoder) {
@@ -1379,7 +1379,7 @@ class StatusBarViewController: UIViewController {
     }
     
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        print("📊 [STATUS BAR] Returning preferredStatusBarStyle: \(statusBarStyle == .darkContent ? "dark content" : "default")")
+        AppLogger.debug("📊 [STATUS BAR] Returning preferredStatusBarStyle: \(statusBarStyle == .darkContent ? "dark content" : "default")", category: .workout)
         return statusBarStyle
     }
     
@@ -1390,13 +1390,13 @@ class StatusBarViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        print("📊 [STATUS BAR] viewDidLoad - requesting update")
+        AppLogger.debug("📊 [STATUS BAR] viewDidLoad - requesting update", category: .workout)
         setNeedsStatusBarAppearanceUpdate()
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        print("📊 [STATUS BAR] viewDidAppear - requesting update")
+        AppLogger.debug("📊 [STATUS BAR] viewDidAppear - requesting update", category: .workout)
         setNeedsStatusBarAppearanceUpdate()
     }
 }

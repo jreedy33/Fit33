@@ -26,7 +26,7 @@ final class FriendPhotoCache {
             try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         }
         
-        print("📸 [FRIEND CACHE] Initialized")
+        AppLogger.debug("📸 [FRIEND CACHE] Initialized", category: .social)
     }
     
     // Track cached URLs to detect when a friend updates their photo
@@ -95,7 +95,7 @@ final class FriendPhotoCache {
                 return image
             }
         } catch {
-            print("⚠️ [FRIEND CACHE] Failed to download photo for \(friendId): \(error.localizedDescription)")
+            AppLogger.warning("⚠️ [FRIEND CACHE] Failed to download photo for \(friendId): \(error.localizedDescription)", category: .social)
         }
         
         return nil
@@ -120,7 +120,7 @@ final class FriendPhotoCache {
                     }
                 }
             }
-            print("📸 [FRIEND CACHE] Preloaded \(needsDownload.count) photos")
+            AppLogger.debug("📸 [FRIEND CACHE] Preloaded \(needsDownload.count) photos", category: .social)
         }
     }
     
@@ -132,14 +132,14 @@ final class FriendPhotoCache {
             try? fileManager.removeItem(at: cacheDir)
             try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         }
-        print("🗑️ [FRIEND CACHE] Cache cleared")
+        AppLogger.debug("🗑️ [FRIEND CACHE] Cache cleared", category: .social)
     }
     
     /// ⚡️ MEMORY FIX: Clear only in-memory images (disk stays for fast reload).
     /// Called by MemoryPressureHandler when memory is critical.
     func clearMemoryCache() {
         memoryCache.removeAllObjects()
-        print("💾 [FRIEND CACHE] Memory cache cleared (disk cache retained)")
+        AppLogger.debug("💾 [FRIEND CACHE] Memory cache cleared (disk cache retained)", category: .social)
     }
     
     /// Remove cached photo for a specific friend

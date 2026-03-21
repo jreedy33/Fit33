@@ -68,11 +68,11 @@ class RecipePreferenceService: ObservableObject {
         
         let frequentFoods = FoodDatabaseService.shared.frequentFoods
         guard !frequentFoods.isEmpty else {
-            print("📊 [RECIPE PREFS] No food history yet - using defaults")
+            AppLogger.debug("📊 [RECIPE PREFS] No food history yet - using defaults", category: .nutrition)
             return
         }
         
-        print("📊 [RECIPE PREFS] Learning from \(frequentFoods.count) frequently logged foods...")
+        AppLogger.debug("📊 [RECIPE PREFS] Learning from \(frequentFoods.count) frequently logged foods...", category: .nutrition)
         
         // Extract ingredient categories from user's most logged foods
         var detectedIngredients: [String: Int] = [:] // ingredient -> weight
@@ -156,15 +156,15 @@ class RecipePreferenceService: ObservableObject {
                 hasPreferencesSet = true
                 saveLocalPreferences()
                 
-                print("🧠 [RECIPE PREFS] Auto-detected preferences from food history:")
+                AppLogger.debug("🧠 [RECIPE PREFS] Auto-detected preferences from food history:", category: .nutrition)
                 for (i, ingredient) in autoLikes.enumerated() {
                     let weight = detectedIngredients[ingredient] ?? 0
-                    print("  \(i+1). \(ingredient) (logged \(weight)x)")
+                    AppLogger.debug("  \(i+1). \(ingredient) (logged \(weight)x)", category: .nutrition)
                 }
             } else {
                 // Boost existing likes with food history data
                 saveLocalPreferences()
-                print("🧠 [RECIPE PREFS] Boosted existing preferences with food history data")
+                AppLogger.debug("🧠 [RECIPE PREFS] Boosted existing preferences with food history data", category: .nutrition)
             }
         }
     }
@@ -173,7 +173,7 @@ class RecipePreferenceService: ObservableObject {
     /// Sync preferences from Supabase cloud (called on app launch)
     func syncPreferencesFromCloud() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("📂 [RECIPE PREFS] No user logged in, using local preferences")
+            AppLogger.debug("📂 [RECIPE PREFS] No user logged in, using local preferences", category: .nutrition)
             return
         }
         
@@ -200,10 +200,10 @@ class RecipePreferenceService: ObservableObject {
             UserDefaults.standard.set(likedIngredients, forKey: "recipeLikedIngredients")
             UserDefaults.standard.set(dislikedIngredients, forKey: "recipeDislikedIngredients")
             
-            print("☁️ [RECIPE PREFS] Synced from cloud: \(likedIngredients.count) likes, \(dislikedIngredients.count) dislikes")
+            AppLogger.debug("☁️ [RECIPE PREFS] Synced from cloud: \(likedIngredients.count) likes, \(dislikedIngredients.count) dislikes", category: .nutrition)
             
         } catch {
-            print("⚠️ [RECIPE PREFS] Cloud sync failed: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Cloud sync failed: \(error)", category: .nutrition)
             // Keep using local preferences
         }
     }
@@ -235,7 +235,7 @@ class RecipePreferenceService: ObservableObject {
         // Clear cached recipes to force fresh results with new preferences
         invalidateRecipeCache()
         
-        print("💚 [RECIPE PREFS] Set \(ingredients.count) liked ingredients: \(ingredients.joined(separator: ", "))")
+        AppLogger.debug("💚 [RECIPE PREFS] Set \(ingredients.count) liked ingredients: \(ingredients.joined(separator: ", "))", category: .nutrition)
     }
     
     /// Set user's explicitly disliked ingredients
@@ -247,7 +247,7 @@ class RecipePreferenceService: ObservableObject {
         // Clear cached recipes to force fresh results with new preferences
         invalidateRecipeCache()
         
-        print("❌ [RECIPE PREFS] Set \(ingredients.count) disliked ingredients: \(ingredients.joined(separator: ", "))")
+        AppLogger.error("❌ [RECIPE PREFS] Set \(ingredients.count) disliked ingredients: \(ingredients.joined(separator: ", "))", category: .nutrition)
     }
     
     /// Invalidate recipe cache to force fresh fetch with new preferences
@@ -270,7 +270,7 @@ class RecipePreferenceService: ObservableObject {
         // Save updated state
         saveCarouselState()
         
-        print("🔄 [RECIPE PREFS] All caches invalidated - will fetch fresh HEALTHY recipes")
+        AppLogger.debug("🔄 [RECIPE PREFS] All caches invalidated - will fetch fresh HEALTHY recipes", category: .nutrition)
     }
     
     /// Force refresh recommendations (after preference change)
@@ -281,7 +281,7 @@ class RecipePreferenceService: ObservableObject {
         
         // Pre-fetch a fresh batch
         _ = await getPersonalizedRecipes(count: 20)
-        print("🔄 [RECIPE PREFS] Forced recommendation refresh with new preferences")
+        AppLogger.debug("🔄 [RECIPE PREFS] Forced recommendation refresh with new preferences", category: .nutrition)
     }
     
     /// Update explicit preferences from RecipePreferencesView
@@ -302,7 +302,7 @@ class RecipePreferenceService: ObservableObject {
         dailyRecipePool.removeAll()
         lastCarouselRefresh = nil
         
-        print("🔄 [RECIPE PREFS] Updated explicit: \(liked.count) likes, \(disliked.count) dislikes")
+        AppLogger.debug("🔄 [RECIPE PREFS] Updated explicit: \(liked.count) likes, \(disliked.count) dislikes", category: .nutrition)
     }
     
     // MARK: - Track User Interactions
@@ -311,7 +311,7 @@ class RecipePreferenceService: ObservableObject {
     func trackRecipeView(recipe: SpoonacularRecipe) {
         totalRecipesViewed += 1
         saveLocalPreferences()
-        print("👁️ [RECIPE PREFS] Tracked view: \(recipe.title)")
+        AppLogger.debug("👁️ [RECIPE PREFS] Tracked view: \(recipe.title)", category: .nutrition)
     }
     
     /// Track when user views recipe detail
@@ -326,7 +326,7 @@ class RecipePreferenceService: ObservableObject {
         }
         
         saveLocalPreferences()
-        print("👁️ [RECIPE PREFS] Tracked detail view: \(recipe.title)")
+        AppLogger.debug("👁️ [RECIPE PREFS] Tracked detail view: \(recipe.title)", category: .nutrition)
     }
     
     /// Track when user adds a recipe to their meals
@@ -354,7 +354,7 @@ class RecipePreferenceService: ObservableObject {
         }
         
         saveLocalPreferences()
-        print("✅ [RECIPE PREFS] Tracked meal addition: \(recipe.title) to \(mealType.displayName)")
+        AppLogger.info("✅ [RECIPE PREFS] Tracked meal addition: \(recipe.title) to \(mealType.displayName)", category: .nutrition)
     }
     
     /// Track when user favorites a recipe
@@ -365,7 +365,7 @@ class RecipePreferenceService: ObservableObject {
             totalRecipesFavorited = max(0, totalRecipesFavorited - 1)
         }
         saveLocalPreferences()
-        print("⭐ [RECIPE PREFS] Tracked favorite: \(recipeTitle) = \(isFavorite)")
+        AppLogger.debug("⭐ [RECIPE PREFS] Tracked favorite: \(recipeTitle) = \(isFavorite)", category: .nutrition)
     }
     
     /// Track when user searches for a food
@@ -380,7 +380,7 @@ class RecipePreferenceService: ObservableObject {
         }
         
         saveLocalPreferences()
-        print("🔍 [RECIPE PREFS] Tracked search: \(query) → \(normalized)")
+        AppLogger.debug("🔍 [RECIPE PREFS] Tracked search: \(query) → \(normalized)", category: .nutrition)
     }
     
     /// Track when user adds a food manually (not from recipe)
@@ -394,7 +394,7 @@ class RecipePreferenceService: ObservableObject {
         }
         
         saveLocalPreferences()
-        print("➕ [RECIPE PREFS] Tracked food addition: \(foodName) → \(normalized)")
+        AppLogger.debug("➕ [RECIPE PREFS] Tracked food addition: \(foodName) → \(normalized)", category: .nutrition)
     }
     
     // MARK: - Get Personalized Recommendations
@@ -551,7 +551,7 @@ class RecipePreferenceService: ObservableObject {
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: topDislikes))
         }
 
-        print("🍽️ [RECIPE PREFS] Smart match query: '\(searchQuery)' offset: \(randomOffset)")
+        AppLogger.debug("🍽️ [RECIPE PREFS] Smart match query: '\(searchQuery)' offset: \(randomOffset)", category: .nutrition)
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
@@ -563,17 +563,17 @@ class RecipePreferenceService: ObservableObject {
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                print("❌ [RECIPE PREFS] Smart match failed: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                AppLogger.error("❌ [RECIPE PREFS] Smart match failed: \((response as? HTTPURLResponse)?.statusCode ?? -1)", category: .network)
                 return []
             }
             
             let decoder = JSONDecoder()
             let searchResponse = try decoder.decode(RecipeSearchResponse.self, from: data)
             
-            print("✅ [RECIPE PREFS] Got \(searchResponse.results.count) recipes for '\(searchQuery)' (total: \(searchResponse.totalResults))")
+            AppLogger.info("✅ [RECIPE PREFS] Got \(searchResponse.results.count) recipes for '\(searchQuery)' (total: \(searchResponse.totalResults))", category: .nutrition)
             return searchResponse.results
         } catch {
-            print("❌ [RECIPE PREFS] Smart match error: \(error)")
+            AppLogger.error("❌ [RECIPE PREFS] Smart match error: \(error)", category: .nutrition)
             return []
         }
     }
@@ -695,7 +695,7 @@ class RecipePreferenceService: ObservableObject {
             queryItems.append(URLQueryItem(name: "excludeIngredients", value: excludeList))
         }
 
-        print("🍽️ [RECIPE PREFS] Strategy 2 query: '\(searchQuery)' exclude: \(excludeIngredients.prefix(30))...")
+        AppLogger.debug("🍽️ [RECIPE PREFS] Strategy 2 query: '\(searchQuery)' exclude: \(excludeIngredients.prefix(30))...", category: .nutrition)
         
         guard var urlComponents = URLComponents(string: "\(baseURL)/recipes/complexSearch") else { return [] }
         urlComponents.queryItems = queryItems
@@ -707,18 +707,18 @@ class RecipePreferenceService: ObservableObject {
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                print("⚠️ [RECIPE PREFS] API returned status: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                AppLogger.warning("⚠️ [RECIPE PREFS] API returned status: \((response as? HTTPURLResponse)?.statusCode ?? -1)", category: .network)
                 return []
             }
             
             let decoder = JSONDecoder()
             let searchResponse = try decoder.decode(RecipeSearchResponse.self, from: data)
             
-            print("✅ [RECIPE PREFS] Got \(searchResponse.results.count) HEALTHY recipes (query: \(queryIngredient))")
+            AppLogger.info("✅ [RECIPE PREFS] Got \(searchResponse.results.count) HEALTHY recipes (query: \(queryIngredient))", category: .nutrition)
             
             return Array(searchResponse.results.prefix(count))
         } catch {
-            print("❌ [RECIPE PREFS] Error fetching with preferences: \(error)")
+            AppLogger.error("❌ [RECIPE PREFS] Error fetching with preferences: \(error)", category: .nutrition)
             return []
         }
     }
@@ -918,7 +918,7 @@ class RecipePreferenceService: ObservableObject {
                 )
             }
         } catch {
-            print("❌ [RECIPE PREFS] Error fetching by ingredients: \(error)")
+            AppLogger.error("❌ [RECIPE PREFS] Error fetching by ingredients: \(error)", category: .nutrition)
             return []
         }
     }
@@ -965,7 +965,7 @@ class RecipePreferenceService: ObservableObject {
             
             return Array(searchResponse.results.filter { !excludeIds.contains($0.id) }.prefix(count))
         } catch {
-            print("❌ [RECIPE PREFS] Error fetching healthy recipes: \(error)")
+            AppLogger.error("❌ [RECIPE PREFS] Error fetching healthy recipes: \(error)", category: .nutrition)
             return []
         }
     }
@@ -1026,10 +1026,10 @@ class RecipePreferenceService: ObservableObject {
             let decoder = JSONDecoder()
             let searchResponse = try decoder.decode(RecipeSearchResponse.self, from: data)
 
-            print("✅ [RECIPE PREFS] Meal-time query returned \(searchResponse.results.count) results")
+            AppLogger.info("✅ [RECIPE PREFS] Meal-time query returned \(searchResponse.results.count) results", category: .nutrition)
             return Array(searchResponse.results.prefix(count))
         } catch {
-            print("❌ [RECIPE PREFS] Error fetching meal-time recipes: \(error)")
+            AppLogger.error("❌ [RECIPE PREFS] Error fetching meal-time recipes: \(error)", category: .nutrition)
             return []
         }
     }
@@ -1120,7 +1120,7 @@ class RecipePreferenceService: ObservableObject {
             lastCarouselRefresh = lastRefresh
         }
         
-        print("📊 [RECIPE PREFS] Loaded: \(likedIngredients.count) liked, \(dislikedIngredients.count) avoided, \(ingredientCounts.count) implicit")
+        AppLogger.debug("📊 [RECIPE PREFS] Loaded: \(likedIngredients.count) liked, \(dislikedIngredients.count) avoided, \(ingredientCounts.count) implicit", category: .nutrition)
     }
     
     private func saveCarouselState() {
@@ -1166,7 +1166,7 @@ class RecipePreferenceService: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "recipeTotalAdded")
         UserDefaults.standard.removeObject(forKey: "recipeTotalFavorited")
         
-        print("🗑️ [RECIPE PREFS] All preferences cleared")
+        AppLogger.debug("🗑️ [RECIPE PREFS] All preferences cleared", category: .nutrition)
     }
     
     /// Get current preference stats for debugging

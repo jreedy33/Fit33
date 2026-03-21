@@ -125,7 +125,7 @@ struct UserLimitation: Codable, Identifiable, Hashable {
             return date
         }
         
-        print("⚠️ [LIMITATIONS] Could not parse date: \(dateString)")
+        AppLogger.warning("⚠️ [LIMITATIONS] Could not parse date: \(dateString)", category: .workout)
         return nil
     }
 }
@@ -354,7 +354,7 @@ class LimitationsService: ObservableObject {
     /// Fetch user's active limitations from cloud
     func fetchUserLimitations() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [LIMITATIONS] No user ID available")
+            AppLogger.warning("⚠️ [LIMITATIONS] No user ID available", category: .workout)
             return
         }
         
@@ -372,9 +372,9 @@ class LimitationsService: ObservableObject {
             
             self.userLimitations = response
             updateCachedExercises()
-            print("✅ [LIMITATIONS] Loaded \(response.count) active limitations")
+            AppLogger.info("✅ [LIMITATIONS] Loaded \(response.count) active limitations", category: .workout)
         } catch {
-            print("❌ [LIMITATIONS] Failed to fetch: \(error)")
+            AppLogger.error("❌ [LIMITATIONS] Failed to fetch: \(error)", category: .workout)
         }
     }
     
@@ -402,7 +402,7 @@ class LimitationsService: ObservableObject {
         
         userLimitations.append(limitation)
         updateCachedExercises()
-        print("✅ [LIMITATIONS] Added limitation for \(limitation.affectedArea.rawValue)")
+        AppLogger.info("✅ [LIMITATIONS] Added limitation for \(limitation.affectedArea.rawValue)", category: .workout)
     }
     
     /// Add multiple limitations at once (for onboarding)
@@ -433,7 +433,7 @@ class LimitationsService: ObservableObject {
         
         userLimitations.append(contentsOf: limitations)
         updateCachedExercises()
-        print("✅ [LIMITATIONS] Added \(limitations.count) limitations")
+        AppLogger.info("✅ [LIMITATIONS] Added \(limitations.count) limitations", category: .workout)
     }
     
     /// Update an existing limitation
@@ -460,7 +460,7 @@ class LimitationsService: ObservableObject {
             userLimitations[index] = limitation
         }
         updateCachedExercises()
-        print("✅ [LIMITATIONS] Updated limitation \(limitation.id)")
+        AppLogger.info("✅ [LIMITATIONS] Updated limitation \(limitation.id)", category: .workout)
     }
     
     /// Mark a limitation as resolved (recovered)
@@ -478,7 +478,7 @@ class LimitationsService: ObservableObject {
         
         userLimitations.removeAll { $0.id == limitation.id }
         updateCachedExercises()
-        print("✅ [LIMITATIONS] Resolved limitation \(limitation.id)")
+        AppLogger.info("✅ [LIMITATIONS] Resolved limitation \(limitation.id)", category: .workout)
     }
     
     /// Delete a limitation completely
@@ -491,7 +491,7 @@ class LimitationsService: ObservableObject {
         
         userLimitations.removeAll { $0.id == limitation.id }
         updateCachedExercises()
-        print("✅ [LIMITATIONS] Deleted limitation \(limitation.id)")
+        AppLogger.info("✅ [LIMITATIONS] Deleted limitation \(limitation.id)", category: .workout)
     }
     
     // MARK: - Exercise Safety Filtering (nonisolated for cross-context access)
@@ -664,9 +664,9 @@ class LimitationsService: ObservableObject {
                 .value
             
             exerciseMappings = response
-            print("✅ [LIMITATIONS] Loaded \(response.count) exercise mappings")
+            AppLogger.info("✅ [LIMITATIONS] Loaded \(response.count) exercise mappings", category: .workout)
         } catch {
-            print("⚠️ [LIMITATIONS] Failed to load mappings, using defaults: \(error)")
+            AppLogger.warning("⚠️ [LIMITATIONS] Failed to load mappings, using defaults: \(error)", category: .workout)
             // Use built-in defaults if cloud fetch fails
             exerciseMappings = []
         }
@@ -700,7 +700,7 @@ class LimitationsService: ObservableObject {
         cachedLimitationsSnapshot = userLimitations
         cachedMappingsSnapshot = exerciseMappings
         
-        print("🛡️ [SAFETY] Cached \(toAvoid.count) exercises to avoid")
+        AppLogger.debug("🛡️ [SAFETY] Cached \(toAvoid.count) exercises to avoid", category: .workout)
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -718,16 +718,16 @@ extension LimitationsService {
     /// Uses the new metadata-driven filtering system for comprehensive safety checks
     nonisolated func filterSafeExercises(_ exercises: [Exercise]) -> [Exercise] {
         guard hasActiveLimitationsSync else { 
-            print("🛡️ [LIMITATIONS] No active limitations - all exercises safe")
+            AppLogger.debug("🛡️ [LIMITATIONS] No active limitations - all exercises safe", category: .workout)
             return exercises 
         }
         
         // Log active limitations
         let activeLimitations = cachedLimitationsSnapshot.filter { $0.isActive }
         if !activeLimitations.isEmpty {
-            print("🛡️ [LIMITATIONS] Active limitations being applied:")
+            AppLogger.debug("🛡️ [LIMITATIONS] Active limitations being applied:", category: .workout)
             for lim in activeLimitations {
-                print("   • \(lim.affectedArea.rawValue): \(lim.severity.displayName)")
+                AppLogger.debug("   • \(lim.affectedArea.rawValue): \(lim.severity.displayName)", category: .workout)
             }
         }
         
@@ -750,7 +750,7 @@ extension LimitationsService {
                 // Check if exercise should be excluded based on metadata
                 if shouldExcludeBasedOnMetadata(metadata: metadata, area: area, severity: severity) {
                     #if DEBUG
-                    print("   🚫 [METADATA] Excluding '\(exerciseName)' for \(area.displayName)")
+                    AppLogger.debug("   🚫 [METADATA] Excluding '\(exerciseName)' for \(area.displayName)", category: .workout)
                     #endif
                     return false
                 }
@@ -761,7 +761,7 @@ extension LimitationsService {
         
         let removedCount = exercises.count - filtered.count
         if removedCount > 0 {
-            print("🛡️ [LIMITATIONS] Filtered out \(removedCount) unsafe exercises")
+            AppLogger.debug("🛡️ [LIMITATIONS] Filtered out \(removedCount) unsafe exercises", category: .workout)
         }
         
         return filtered

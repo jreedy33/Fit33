@@ -73,7 +73,7 @@ class DeepLinkManager: ObservableObject {
     
     /// Handle incoming URL and route appropriately
     func handleURL(_ url: URL) -> Bool {
-        print("🔗 [DEEPLINK] Handling URL: \(url.absoluteString)")
+        AppLogger.debug("🔗 [DEEPLINK] Handling URL: \(url.absoluteString)", category: .network)
         
         guard let scheme = url.scheme?.lowercased() else { return false }
         
@@ -134,7 +134,7 @@ class DeepLinkManager: ObservableObject {
         case "strava":
             // Handle Strava OAuth callback
             // Format: fit33://strava?code=xxx&scope=xxx
-            print("🏃 [DEEPLINK] Strava OAuth callback received - forwarding to StravaService")
+            AppLogger.debug("🏃 [DEEPLINK] Strava OAuth callback received - forwarding to StravaService", category: .network)
             // The callback is handled via .onOpenURL in StravaAuthSheet
             // Post notification for any listening views
             NotificationCenter.default.post(name: Notification.Name("StravaCallback"), object: url)
@@ -143,7 +143,7 @@ class DeepLinkManager: ObservableObject {
         case "inbody":
             // Handle InBody OAuth callback
             // Format: fit33://inbody/callback?code=xxx
-            print("📊 [DEEPLINK] InBody OAuth callback received - forwarding to InBodyService")
+            AppLogger.debug("📊 [DEEPLINK] InBody OAuth callback received - forwarding to InBodyService", category: .network)
             // The callback is handled via .onOpenURL in InBodyAuthSheet
             // Post notification for any listening views
             NotificationCenter.default.post(name: Notification.Name("InBodyCallback"), object: url)
@@ -152,7 +152,7 @@ class DeepLinkManager: ObservableObject {
         case "fitbit":
             // Handle Fitbit OAuth callback
             // Format: fit33://fitbit?code=xxx
-            print("⌚ [DEEPLINK] Fitbit OAuth callback received - forwarding to FitbitService")
+            AppLogger.debug("⌚ [DEEPLINK] Fitbit OAuth callback received - forwarding to FitbitService", category: .network)
             // Post notification for any listening views
             NotificationCenter.default.post(name: Notification.Name("FitbitCallback"), object: url)
             return true
@@ -160,7 +160,7 @@ class DeepLinkManager: ObservableObject {
         case "login-callback":
             // Handle OAuth callback (Google, Facebook, etc.)
             // Format: fit33://login-callback#access_token=xxx&...
-            print("🔐 [DEEPLINK] OAuth login callback received")
+            AppLogger.debug("🔐 [DEEPLINK] OAuth login callback received", category: .network)
             // Post notification for authentication handling
             NotificationCenter.default.post(name: Notification.Name("OAuthCallback"), object: url)
             return true
@@ -168,61 +168,61 @@ class DeepLinkManager: ObservableObject {
         case "friendrequests", "friend-requests":
             // Format: fit33://friendrequests
             pendingDestination = .friendRequests
-            print("👥 [DEEPLINK] Navigating to friend requests")
+            AppLogger.debug("👥 [DEEPLINK] Navigating to friend requests", category: .network)
             return true
             
         case "friends":
             // Format: fit33://friends
             pendingDestination = .friends
-            print("👥 [DEEPLINK] Navigating to friends list")
+            AppLogger.debug("👥 [DEEPLINK] Navigating to friends list", category: .network)
             return true
             
         case "meals", "nutrition", "food":
             // Format: fit33://meals
             pendingDestination = .mealsTab
-            print("🍎 [DEEPLINK] Navigating to meals tab")
+            AppLogger.debug("🍎 [DEEPLINK] Navigating to meals tab", category: .network)
             return true
             
         case "stats", "progress", "achievements":
             // Format: fit33://stats
             pendingDestination = .statsTab
-            print("📊 [DEEPLINK] Navigating to stats tab")
+            AppLogger.debug("📊 [DEEPLINK] Navigating to stats tab", category: .network)
             return true
             
         case "water", "hydration":
             // Format: fit33://hydration
             pendingDestination = .hydration
-            print("💧 [DEEPLINK] Navigating to hydration widget")
+            AppLogger.debug("💧 [DEEPLINK] Navigating to hydration widget", category: .network)
             return true
             
         case "steps", "steptracker":
             // Format: fit33://steps
             pendingDestination = .stepTracker
-            print("👟 [DEEPLINK] Navigating to step tracker")
+            AppLogger.debug("👟 [DEEPLINK] Navigating to step tracker", category: .network)
             return true
             
         case "weight", "weighttracker":
             // Format: fit33://weight
             pendingDestination = .weightTracker
-            print("⚖️ [DEEPLINK] Navigating to weight tracker")
+            AppLogger.debug("⚖️ [DEEPLINK] Navigating to weight tracker", category: .network)
             return true
             
         case "history", "workouthistory":
             // Format: fit33://history
             pendingDestination = .workoutHistory
-            print("📜 [DEEPLINK] Navigating to workout history")
+            AppLogger.debug("📜 [DEEPLINK] Navigating to workout history", category: .network)
             return true
             
         case "streak":
             // Format: fit33://streak
             pendingDestination = .streakInfo
-            print("🔥 [DEEPLINK] Navigating to streak info")
+            AppLogger.debug("🔥 [DEEPLINK] Navigating to streak info", category: .network)
             return true
             
         case "personalrecord", "pr":
             // Format: fit33://personalrecord
             pendingDestination = .personalRecord
-            print("🏆 [DEEPLINK] Navigating to personal records")
+            AppLogger.debug("🏆 [DEEPLINK] Navigating to personal records", category: .network)
             return true
             
         case "challenge", "challenges":
@@ -232,10 +232,10 @@ class DeepLinkManager: ObservableObject {
             
             if !challengeId.isEmpty {
                 pendingDestination = .challengeDetail(challengeId: challengeId)
-                print("🏆 [DEEPLINK] Navigating to challenge: \(challengeId)")
+                AppLogger.debug("🏆 [DEEPLINK] Navigating to challenge: \(challengeId)", category: .network)
             } else {
                 pendingDestination = .challenges
-                print("🏆 [DEEPLINK] Navigating to challenges list")
+                AppLogger.debug("🏆 [DEEPLINK] Navigating to challenges list", category: .network)
             }
             return true
             
@@ -248,10 +248,10 @@ class DeepLinkManager: ObservableObject {
                 pendingCommunitySlug = slug
                 pendingDestination = .communityChallenge(slug: slug)
                 showCommunityJoinSheet = true
-                print("🌍 [DEEPLINK] Navigating to community challenge: \(slug)")
+                AppLogger.debug("🌍 [DEEPLINK] Navigating to community challenge: \(slug)", category: .network)
             } else {
                 pendingDestination = .communityChallengeBrowse
-                print("🌍 [DEEPLINK] Navigating to community challenges browse")
+                AppLogger.debug("🌍 [DEEPLINK] Navigating to community challenges browse", category: .network)
             }
             return true
             
@@ -264,7 +264,7 @@ class DeepLinkManager: ObservableObject {
                 pendingCommunitySlug = code
                 pendingDestination = .communityChallenge(slug: code)
                 showCommunityJoinSheet = true
-                print("🌍 [DEEPLINK] Join community challenge via code: \(code)")
+                AppLogger.debug("🌍 [DEEPLINK] Join community challenge via code: \(code)", category: .network)
             }
             return true
             
@@ -277,10 +277,10 @@ class DeepLinkManager: ObservableObject {
                 pendingPrivateChallengeId = challengeId
                 pendingDestination = .privateChallengeDetail(challengeId: challengeId)
                 showPrivateChallengeSheet = true
-                print("🔒 [DEEPLINK] Navigating to private challenge: \(challengeId)")
+                AppLogger.debug("🔒 [DEEPLINK] Navigating to private challenge: \(challengeId)", category: .network)
             } else {
                 pendingDestination = .dashboard
-                print("🔒 [DEEPLINK] Navigating to dashboard for private challenges")
+                AppLogger.debug("🔒 [DEEPLINK] Navigating to dashboard for private challenges", category: .network)
             }
             return true
             
@@ -293,7 +293,7 @@ class DeepLinkManager: ObservableObject {
                 pendingPrivateChallengeId = challengeId
                 pendingDestination = .privateChallengeInvite(challengeId: challengeId)
                 showPrivateChallengeSheet = true
-                print("🔒 [DEEPLINK] Navigating to private challenge invite: \(challengeId)")
+                AppLogger.debug("🔒 [DEEPLINK] Navigating to private challenge invite: \(challengeId)", category: .network)
             }
             return true
             
@@ -333,7 +333,7 @@ class DeepLinkManager: ObservableObject {
                 pendingCommunitySlug = slug
                 pendingDestination = .communityChallenge(slug: slug)
                 showCommunityJoinSheet = true
-                print("🌍 [DEEPLINK] Universal link to community challenge: \(slug)")
+                AppLogger.debug("🌍 [DEEPLINK] Universal link to community challenge: \(slug)", category: .network)
                 return true
             }
             return false
@@ -345,7 +345,7 @@ class DeepLinkManager: ObservableObject {
                 pendingCommunitySlug = code
                 pendingDestination = .communityChallenge(slug: code)
                 showCommunityJoinSheet = true
-                print("🌍 [DEEPLINK] Universal link join: \(code)")
+                AppLogger.debug("🌍 [DEEPLINK] Universal link join: \(code)", category: .network)
                 return true
             }
             return false
@@ -357,7 +357,7 @@ class DeepLinkManager: ObservableObject {
                 pendingPrivateChallengeId = challengeId
                 pendingDestination = .privateChallengeDetail(challengeId: challengeId)
                 showPrivateChallengeSheet = true
-                print("🔒 [DEEPLINK] Universal link to private challenge: \(challengeId)")
+                AppLogger.debug("🔒 [DEEPLINK] Universal link to private challenge: \(challengeId)", category: .network)
                 return true
             }
             return false
@@ -369,7 +369,7 @@ class DeepLinkManager: ObservableObject {
                 pendingPrivateJoinCode = joinCode
                 pendingDestination = .privateChallengeJoinByCode(code: joinCode)
                 showPrivateJoinSheet = true
-                print("🔒 [DEEPLINK] Universal link to private challenge join preview: \(joinCode)")
+                AppLogger.debug("🔒 [DEEPLINK] Universal link to private challenge join preview: \(joinCode)", category: .network)
                 return true
             }
             return false

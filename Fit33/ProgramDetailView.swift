@@ -486,7 +486,7 @@ struct DayCard: View {
                     
                     if day.isCompleted {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(color)
                     } else if day.exercises.isEmpty {
                         Image(systemName: "moon.fill")

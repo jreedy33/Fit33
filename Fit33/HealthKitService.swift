@@ -51,16 +51,18 @@ final class HealthKitService: ObservableObject {
     
     // Types we want to read from HealthKit
     private var readTypes: Set<HKObjectType> {
-        var types: Set<HKObjectType> = [
-            HKObjectType.quantityType(forIdentifier: .stepCount)!,
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
-            HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-            HKObjectType.workoutType()
-        ]
+        var types: Set<HKObjectType> = [HKObjectType.workoutType()]
         
-        // Sleep analysis (if available)
+        let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
+            .stepCount, .activeEnergyBurned, .distanceWalkingRunning,
+            .heartRate, .restingHeartRate
+        ]
+        for id in quantityIdentifiers {
+            if let qt = HKObjectType.quantityType(forIdentifier: id) {
+                types.insert(qt)
+            }
+        }
+        
         if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
             types.insert(sleepType)
         }
@@ -68,12 +70,12 @@ final class HealthKitService: ObservableObject {
         return types
     }
     
-    // Types we want to write to HealthKit
     private var writeTypes: Set<HKSampleType> {
-        return [
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.workoutType()
-        ]
+        var types: Set<HKSampleType> = [HKObjectType.workoutType()]
+        if let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
+            types.insert(energyType)
+        }
+        return types
     }
     
     // MARK: - Initialization
@@ -289,7 +291,9 @@ final class HealthKitService: ObservableObject {
                 let oneWeekAgo = calendar.date(byAdding: .day, value: -7, to: Date())!
                 let weekWorkouts = workouts.filter { $0.startDate >= oneWeekAgo }
                 weeklyWorkouts = weekWorkouts
-                todayActiveMinutes = weekWorkouts.reduce(0) { $0 + $1.durationMinutes }
+                let todayStart = calendar.startOfDay(for: Date())
+                let todayWorkouts = weekWorkouts.filter { $0.startDate >= todayStart }
+                todayActiveMinutes = todayWorkouts.reduce(0) { $0 + $1.durationMinutes }
             }
             
             AppLogger.info("HealthKit synced \(workouts.count) workouts", category: .health)
@@ -333,9 +337,9 @@ final class HealthKitService: ObservableObject {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
         
         let calendar = Calendar.current
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date()
         let startOfYesterday = calendar.startOfDay(for: yesterday)
-        let endOfToday = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: Date())!)
+        let endOfToday = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date())
         
         let predicate = HKQuery.predicateForSamples(withStart: startOfYesterday, end: endOfToday, options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)

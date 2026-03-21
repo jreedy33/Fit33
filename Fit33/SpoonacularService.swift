@@ -45,7 +45,7 @@ class SpoonacularService: ObservableObject {
         if let lastFetch = lastFetchTime,
            Date().timeIntervalSince(lastFetch) < cacheDuration,
            !healthyRecipes.isEmpty {
-            print("🍽️ [SPOONACULAR] Using cached recipes")
+            AppLogger.debug("🍽️ [SPOONACULAR] Using cached recipes", category: .nutrition)
             return
         }
         
@@ -88,7 +88,7 @@ class SpoonacularService: ObservableObject {
             return
         }
         
-        print("🍽️ [SPOONACULAR] Fetching HEALTHY recipes (minHealth: 50, main courses only)")
+        AppLogger.debug("🍽️ [SPOONACULAR] Fetching HEALTHY recipes (minHealth: 50, main courses only)", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -100,7 +100,7 @@ class SpoonacularService: ObservableObject {
             // Log quota usage
             if let quotaUsed = httpResponse.value(forHTTPHeaderField: "X-API-Quota-Used"),
                let quotaLeft = httpResponse.value(forHTTPHeaderField: "X-API-Quota-Left") {
-                print("🍽️ [SPOONACULAR] Quota used: \(quotaUsed), left: \(quotaLeft)")
+                AppLogger.debug("🍽️ [SPOONACULAR] Quota used: \(quotaUsed), left: \(quotaLeft)", category: .nutrition)
             }
             
             guard httpResponse.statusCode == 200 else {
@@ -121,14 +121,14 @@ class SpoonacularService: ObservableObject {
             // Cache the recipes
             cacheRecipes()
             
-            print("🍽️ [SPOONACULAR] Successfully fetched \(healthyRecipes.count) HEALTHY recipes")
+            AppLogger.debug("🍽️ [SPOONACULAR] Successfully fetched \(healthyRecipes.count) HEALTHY recipes", category: .nutrition)
             
         } catch let error as SpoonacularError {
             errorMessage = error.localizedDescription
-            print("🍽️ [SPOONACULAR] Error: \(error.localizedDescription)")
+            AppLogger.error("🍽️ [SPOONACULAR] Error: \(error.localizedDescription)", category: .nutrition)
         } catch {
             errorMessage = "Failed to fetch recipes: \(error.localizedDescription)"
-            print("🍽️ [SPOONACULAR] Error: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Error: \(error)", category: .nutrition)
         }
         
         isLoading = false
@@ -138,23 +138,23 @@ class SpoonacularService: ObservableObject {
     func fetchRecipeDetail(recipeId: Int) async -> RecipeDetail? {
         // Check cache first
         if let cached = recipeCache[recipeId] {
-            print("🍽️ [SPOONACULAR] Using cached detail for recipe \(recipeId)")
+            AppLogger.debug("🍽️ [SPOONACULAR] Using cached detail for recipe \(recipeId)", category: .nutrition)
             return cached
         }
         
         guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/information?apiKey=\(apiKey)&includeNutrition=true") else {
-            print("❌ [SPOONACULAR] Invalid URL for recipe detail")
+            AppLogger.error("❌ [SPOONACULAR] Invalid URL for recipe detail", category: .network)
             return nil
         }
         
-        print("🍽️ [SPOONACULAR] Fetching detail for recipe \(recipeId)")
+        AppLogger.debug("🍽️ [SPOONACULAR] Fetching detail for recipe \(recipeId)", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                print("🍽️ [SPOONACULAR] Failed to fetch recipe detail")
+                AppLogger.error("🍽️ [SPOONACULAR] Failed to fetch recipe detail", category: .nutrition)
                 return nil
             }
             
@@ -164,11 +164,11 @@ class SpoonacularService: ObservableObject {
             // Cache the detail
             recipeCache[recipeId] = detail
             
-            print("🍽️ [SPOONACULAR] Successfully fetched detail for: \(detail.title)")
+            AppLogger.debug("🍽️ [SPOONACULAR] Successfully fetched detail for: \(detail.title)", category: .nutrition)
             return detail
             
         } catch {
-            print("🍽️ [SPOONACULAR] Error fetching detail: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Error fetching detail: \(error)", category: .nutrition)
             return nil
         }
     }
@@ -176,7 +176,7 @@ class SpoonacularService: ObservableObject {
     /// Fetches recipes similar to a given recipe
     func fetchSimilarRecipes(recipeId: Int, number: Int = 4) async -> [SimilarRecipe] {
         guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/similar?apiKey=\(apiKey)&number=\(number)") else {
-            print("❌ [SPOONACULAR] Invalid URL for similar recipes")
+            AppLogger.error("❌ [SPOONACULAR] Invalid URL for similar recipes", category: .network)
             return []
         }
         
@@ -192,7 +192,7 @@ class SpoonacularService: ObservableObject {
             return try decoder.decode([SimilarRecipe].self, from: data)
             
         } catch {
-            print("🍽️ [SPOONACULAR] Error fetching similar recipes: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Error fetching similar recipes: \(error)", category: .nutrition)
             return []
         }
     }
@@ -231,11 +231,11 @@ class SpoonacularService: ObservableObject {
                 )
             }
             
-            print("🍽️ [SPOONACULAR] Fetched \(healthyRecipes.count) random recipes")
+            AppLogger.debug("🍽️ [SPOONACULAR] Fetched \(healthyRecipes.count) random recipes", category: .nutrition)
             
         } catch {
             errorMessage = "Failed to fetch random recipes"
-            print("🍽️ [SPOONACULAR] Error: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Error: \(error)", category: .nutrition)
         }
         
         isLoading = false
@@ -249,9 +249,9 @@ class SpoonacularService: ObservableObject {
             let data = try encoder.encode(healthyRecipes)
             UserDefaults.standard.set(data, forKey: "cachedSpoonacularRecipes")
             UserDefaults.standard.set(Date(), forKey: "cachedSpoonacularRecipesDate")
-            print("🍽️ [SPOONACULAR] Cached \(healthyRecipes.count) recipes")
+            AppLogger.debug("🍽️ [SPOONACULAR] Cached \(healthyRecipes.count) recipes", category: .nutrition)
         } catch {
-            print("🍽️ [SPOONACULAR] Failed to cache recipes: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Failed to cache recipes: \(error)", category: .nutrition)
         }
     }
     
@@ -266,9 +266,9 @@ class SpoonacularService: ObservableObject {
             let decoder = JSONDecoder()
             healthyRecipes = try decoder.decode([SpoonacularRecipe].self, from: data)
             lastFetchTime = cacheDate
-            print("🍽️ [SPOONACULAR] Loaded \(healthyRecipes.count) cached recipes")
+            AppLogger.debug("🍽️ [SPOONACULAR] Loaded \(healthyRecipes.count) cached recipes", category: .nutrition)
         } catch {
-            print("🍽️ [SPOONACULAR] Failed to load cached recipes: \(error)")
+            AppLogger.error("🍽️ [SPOONACULAR] Failed to load cached recipes: \(error)", category: .nutrition)
         }
     }
     
@@ -279,7 +279,7 @@ class SpoonacularService: ObservableObject {
         lastFetchTime = nil
         UserDefaults.standard.removeObject(forKey: "cachedSpoonacularRecipes")
         UserDefaults.standard.removeObject(forKey: "cachedSpoonacularRecipesDate")
-        print("🍽️ [SPOONACULAR] Cache cleared")
+        AppLogger.debug("🍽️ [SPOONACULAR] Cache cleared", category: .nutrition)
     }
 }
 

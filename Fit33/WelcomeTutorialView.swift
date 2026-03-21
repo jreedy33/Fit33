@@ -226,7 +226,7 @@ struct WelcomeTutorialView: View {
                     if currentPage < tutorialPages.count - 1 {
                         Button(action: skipTutorial) {
                             Text("Skip")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.ds_bodyMedium)
                                 .foregroundColor(.secondary.opacity(0.8))
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 10)
@@ -275,9 +275,9 @@ struct WelcomeTutorialView: View {
                         Button(action: completeTutorial) {
                             HStack(spacing: 10) {
                                 Text("Get Started")
-                                    .font(.system(size: 17, weight: .bold))
+                                    .font(.ds_labelLarge)
                                 Image(systemName: "arrow.right")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .font(.ds_bodyMedium)
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -300,7 +300,7 @@ struct WelcomeTutorialView: View {
                         Button(action: nextPage) {
                             HStack(spacing: 10) {
                                 Text("Continue")
-                                    .font(.system(size: 17, weight: .bold))
+                                    .font(.ds_labelLarge)
                                 Image(systemName: "chevron.right")
                                     .font(.ds_bodySmall).fontWeight(.bold)
                             }
@@ -590,7 +590,7 @@ struct TutorialPageView: View {
                     }
                     
                     Text(page.subtitle)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -1214,7 +1214,7 @@ struct TutorialTrialCTA: View {
                     .shadow(color: gradient[0].opacity(0.5), radius: 12, x: 0, y: 6)
 
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
             }
 

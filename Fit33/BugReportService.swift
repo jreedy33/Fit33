@@ -49,7 +49,7 @@ struct BugReport: Codable, Identifiable {
     var displayExpectedBehavior: String { expectedBehavior ?? "" }
     var displayUserName: String { userName ?? "Anonymous" }
     var displayUserEmail: String { userEmail ?? "No email" }
-    var hasSessionLog: Bool { sessionLog != nil && !sessionLog!.isEmpty }
+    var hasSessionLog: Bool { !(sessionLog ?? "").isEmpty }
 }
 
 struct BugReportInsert: Codable {
@@ -137,8 +137,9 @@ class ShakeDetectionManager: ObservableObject {
         // Capture screenshot immediately (before any UI changes)
         captureScreenshot()
         
-        // Show bug report sheet after a brief delay to ensure screenshot is captured
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.2))
+            guard !Task.isCancelled else { return }
             self.showBugReportSheet = true
         }
     }
@@ -148,12 +149,12 @@ class ShakeDetectionManager: ObservableObject {
         guard let windowScene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first else {
-            print("⚠️ Could not find window scene for screenshot")
+            AppLogger.warning("⚠️ Could not find window scene for screenshot", category: .general)
             return
         }
         
         guard let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first else {
-            print("⚠️ Could not find window for screenshot")
+            AppLogger.warning("⚠️ Could not find window for screenshot", category: .general)
             return
         }
         
@@ -164,7 +165,7 @@ class ShakeDetectionManager: ObservableObject {
         }
         
         capturedScreenshot = image
-        print("📸 Screenshot captured: \(image.size)")
+        AppLogger.debug("📸 Screenshot captured: \(image.size)", category: .general)
     }
     
     func clearScreenshot() {
@@ -196,15 +197,15 @@ class BugReportService: ObservableObject {
             }
         }
         
-        print("🔄 Fetching all bug reports...")
+        AppLogger.debug("🔄 Fetching all bug reports...", category: .general)
         
         // Check authentication first
         let isAuthenticated = SupabaseManager.shared.currentUser != nil
-        print("🔐 Authentication status: \(isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated")")
+        AppLogger.error("🔐 Authentication status: \(isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated")", category: .general)
         
         if !isAuthenticated {
             let errorMessage = "Not authenticated. Please sign in to view bug reports."
-            print("❌ \(errorMessage)")
+            AppLogger.error("❌ \(errorMessage)", category: .general)
             await MainActor.run {
                 lastError = errorMessage
             }
@@ -222,19 +223,19 @@ class BugReportService: ObservableObject {
             await MainActor.run {
                 bugReports = reports
             }
-            print("🐛 Loaded \(reports.count) bug reports")
+            AppLogger.debug("🐛 Loaded \(reports.count) bug reports", category: .general)
             
             if reports.isEmpty {
-                print("ℹ️ No bug reports found in database")
+                AppLogger.debug("ℹ️ No bug reports found in database", category: .general)
             }
             
             for report in reports {
-                print("  - Bug ID: \(report.id), Status: \(report.status), Created: \(report.createdAt)")
+                AppLogger.debug("  - Bug ID: \(report.id), Status: \(report.status), Created: \(report.createdAt)", category: .general)
             }
         } catch {
             let errorMessage = "Error fetching bug reports: \(error.localizedDescription)"
-            print("❌ \(errorMessage)")
-            print("❌ Error details: \(String(describing: error))")
+            AppLogger.error("❌ \(errorMessage)", category: .general)
+            AppLogger.error("❌ Error details: \(String(describing: error))", category: .general)
             
             await MainActor.run {
                 lastError = errorMessage
@@ -265,9 +266,9 @@ class BugReportService: ObservableObject {
                     let base64 = imageData.base64EncodedString()
                     if base64.count < 500_000 {
                         screenshotBase64 = base64
-                        print("📸 Screenshot size: \(base64.count) chars")
+                        AppLogger.debug("📸 Screenshot size: \(base64.count) chars", category: .general)
                     } else {
-                        print("⚠️ Screenshot too large (\(base64.count) chars), skipping")
+                        AppLogger.warning("⚠️ Screenshot too large (\(base64.count) chars), skipping", category: .general)
                     }
                 }
             }
@@ -313,12 +314,12 @@ class BugReportService: ObservableObject {
                 status: "new"
             )
             
-            print("📤 Submitting bug report to Supabase...")
-            print("  - Description: \(description.prefix(50))...")
-            print("  - Has screenshot: \(screenshotBase64 != nil)")
-            print("  - User ID: \(userIdString)")
-            print("  - User Name: \(userName ?? "anonymous")")
-            print("  - User Email: \(userEmail ?? "none")")
+            AppLogger.debug("📤 Submitting bug report to Supabase...", category: .network)
+            AppLogger.debug("  - Description: \(description.prefix(50))...", category: .general)
+            AppLogger.debug("  - Has screenshot: \(screenshotBase64 != nil)", category: .general)
+            AppLogger.debug("  - User ID: \(userIdString)", category: .general)
+            AppLogger.debug("  - User Name: \(userName ?? "anonymous")", category: .general)
+            AppLogger.debug("  - User Email: \(userEmail ?? "none")", category: .general)
             
             // Insert using Codable struct
             let response = try await SupabaseManager.shared.supabaseClient
@@ -326,8 +327,8 @@ class BugReportService: ObservableObject {
                 .insert(report)
                 .execute()
             
-            print("✅ Bug report submitted successfully!")
-            print("  - Response status: \(response.status)")
+            AppLogger.info("✅ Bug report submitted successfully!", category: .general)
+            AppLogger.debug("  - Response status: \(response.status)", category: .general)
             
             // Haptic feedback
             let generator = UINotificationFeedbackGenerator()
@@ -335,11 +336,11 @@ class BugReportService: ObservableObject {
             
             return true
         } catch {
-            print("❌ Error submitting bug report: \(error)")
-            print("❌ Error type: \(type(of: error))")
+            AppLogger.error("❌ Error submitting bug report: \(error)", category: .general)
+            AppLogger.error("❌ Error type: \(type(of: error))", category: .general)
             if let localizedError = error as? LocalizedError {
-                print("❌ Error description: \(localizedError.errorDescription ?? "none")")
-                print("❌ Failure reason: \(localizedError.failureReason ?? "none")")
+                AppLogger.error("❌ Error description: \(localizedError.errorDescription ?? "none")", category: .general)
+                AppLogger.error("❌ Failure reason: \(localizedError.failureReason ?? "none")", category: .general)
             }
             return false
         }
@@ -356,10 +357,10 @@ class BugReportService: ObservableObject {
             
             // Remove from local list
             bugReports.removeAll { $0.id == id }
-            print("🗑️ Bug report deleted: \(id)")
+            AppLogger.debug("🗑️ Bug report deleted: \(id)", category: .general)
             return true
         } catch {
-            print("❌ Error deleting bug report: \(error)")
+            AppLogger.error("❌ Error deleting bug report: \(error)", category: .general)
             return false
         }
     }
@@ -377,10 +378,10 @@ class BugReportService: ObservableObject {
             if bugReports.firstIndex(where: { $0.id == id }) != nil {
                 await fetchAllBugReports()
             }
-            print("✅ Bug status updated to: \(status)")
+            AppLogger.info("✅ Bug status updated to: \(status)", category: .general)
             return true
         } catch {
-            print("❌ Error updating bug status: \(error)")
+            AppLogger.error("❌ Error updating bug status: \(error)", category: .general)
             return false
         }
     }
@@ -406,7 +407,7 @@ class ShakeDetectingWindow: UIWindow {
     
     override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
-            print("📳 Shake detected in window!")
+            AppLogger.debug("📳 Shake detected in window!", category: .general)
             Task { @MainActor in
                 ShakeDetectionManager.shared.handleShake()
             }
@@ -419,7 +420,7 @@ class ShakeDetectingWindow: UIWindow {
 extension UIWindow {
     open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
-            print("📳 Shake detected via UIWindow extension!")
+            AppLogger.debug("📳 Shake detected via UIWindow extension!", category: .general)
             NotificationCenter.default.post(name: .deviceDidShake, object: nil)
         }
         super.motionEnded(motion, with: event)
@@ -476,10 +477,12 @@ class ShakeDetectingUIView: UIView {
         // Become first responder to receive motion events
         // Try multiple times to ensure it becomes first responder
         becomeFirstResponder()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.5))
             self.becomeFirstResponder()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.0))
             self.becomeFirstResponder()
         }
     }
@@ -490,7 +493,7 @@ class ShakeDetectingUIView: UIView {
     
     override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
-            print("📳 Shake detected!")
+            AppLogger.debug("📳 Shake detected!", category: .general)
             Task { @MainActor in
                 ShakeDetectionManager.shared.handleShake()
             }

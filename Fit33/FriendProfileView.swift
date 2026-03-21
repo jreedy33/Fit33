@@ -27,11 +27,6 @@ struct FriendProfileView: View {
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
     
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     // activeChallengesWithFriend is now a @State variable loaded on appear
     
@@ -91,17 +86,17 @@ struct FriendProfileView: View {
                 CreateWorkoutForFriendView(friend: friend)
             }
             .sheet(isPresented: $showingCreateChallenge, onDismiss: {
-                print("🔔 [CHALLENGE SHEET] onDismiss callback triggered")
+                AppLogger.debug("🔔 [CHALLENGE SHEET] onDismiss callback triggered", category: .social)
             }) {
                 ChallengeSetupView(friend: friend)
                     .onAppear {
-                        print("🔔 [CHALLENGE SHEET] Sheet content appeared")
+                        AppLogger.debug("🔔 [CHALLENGE SHEET] Sheet content appeared", category: .social)
                     }
             }
             .onChange(of: showingCreateChallenge) { oldValue, newValue in
-                print("🔔 [CHALLENGE SHEET] State changed: \(oldValue) → \(newValue)")
+                AppLogger.debug("🔔 [CHALLENGE SHEET] State changed: \(oldValue) → \(newValue)", category: .social)
                 if !newValue && oldValue {
-                    print("⚠️ [CHALLENGE SHEET] Sheet dismissed unexpectedly!")
+                    AppLogger.warning("⚠️ [CHALLENGE SHEET] Sheet dismissed unexpectedly!", category: .social)
                 }
             }
             .fullScreenCover(isPresented: $showingChallengeFlow) {
@@ -141,7 +136,7 @@ struct FriendProfileView: View {
                 Text("They won't be able to find you, send you requests, or see your activity. You will also be unfriended.")
             }
             .onAppear {
-                print("📱 [FRIEND PROFILE] View appeared for \(friend.friendName ?? "friend")")
+                AppLogger.debug("📱 [FRIEND PROFILE] View appeared for \(friend.friendName ?? "friend")", category: .social)
                 loadData()
             }
         }
@@ -170,7 +165,7 @@ struct FriendProfileView: View {
             )
         }
         
-        print("📱 [FRIEND PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts")
+        AppLogger.debug("📱 [FRIEND PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts", category: .social)
     }
     
     // MARK: - Active Challenge Section
@@ -284,11 +279,7 @@ struct FriendProfileView: View {
                 // Main card background with gradient
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
-                        LinearGradient(
-                            colors: cardBackgroundGradient,
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        Color.cardBackground
                     )
                 
                 // Inner highlight (top edge glow)
@@ -370,11 +361,7 @@ struct FriendProfileView: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -485,11 +472,7 @@ struct FriendProfileView: View {
                 // Main card background with gradient
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(
-                        LinearGradient(
-                            colors: cardBackgroundGradient,
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        Color.cardBackground
                     )
                 
                 // Inner highlight (top edge glow)
@@ -572,11 +555,7 @@ struct FriendProfileView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -675,11 +654,7 @@ struct FriendProfileView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
-                                LinearGradient(
-                                    colors: cardBackgroundGradient,
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                                Color.cardBackground
                             )
                         
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -721,11 +696,7 @@ struct FriendProfileView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
-                                LinearGradient(
-                                    colors: cardBackgroundGradient,
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                                Color.cardBackground
                             )
                         
                         RoundedRectangle(cornerRadius: 20, style: .continuous)

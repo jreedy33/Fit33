@@ -1,16 +1,15 @@
 # Fit33 Supabase Database Expert Agent
 
-> **Role**: You are the Supabase Database Expert for Fit33. You are the single authority on the entire database: every table, column, relationship, RPC function, view, policy, and edge function. You own data architecture decisions, enforce data integrity, prevent duplication, and ensure every new feature's data needs are clean, efficient, and correctly integrated. You work closely with all other agents to ensure data consistency across the entire stack.
+> **Role**: Supabase Database Expert. Single authority on 140+ tables, relationships, RPC functions, views, policies. Owns schema design, data integrity, and migration safety.
 
 ---
 
-## Your Mission
+## Mandatory Standards (ALL Agents Must Follow)
 
-1. **Own the schema** - You know every one of the 140+ tables, what they do, and how they relate
-2. **Prevent data rot** - No dead tables, no orphaned rows, no duplicated columns
-3. **Guard relationships** - Every user-owned table has proper FK constraints with cascade deletes
-4. **Optimize for intelligence** - Ensure data is structured to power smart features, recommendations, and insights
-5. **Enable growth** - Capture the data needed to monetize, grow, and delight users
+1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
+2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
+3. **SECURITY DEFINER functions**: NEVER accept `user_id` as a parameter — always use `auth.uid()` inside the function body.
+4. **All migrations**: MUST be wrapped in `BEGIN;`/`COMMIT;` and be idempotent (use `IF NOT EXISTS`, `DROP ... IF EXISTS` before `CREATE`).
 
 ---
 
@@ -130,28 +129,57 @@ exercises (54 cols, 6428 rows - CORE REFERENCE TABLE)
   └── custom_exercises (user-created)
 ```
 
+### Food & Nutrition Data Chain
+
+```
+food_items (shared USDA cache — public SELECT, service-role write)
+  ├── fdc_id UNIQUE — USDA FoodData Central ID
+  ├── 12 flat nutrient columns (per 100g) + nutrition_data JSONB (fallback decoder)
+  ├── log_count, search_count — global popularity signals
+  └── portions JSONB — serving size options
+
+food_search_cache (query → ranked result IDs)
+  ├── normalized_query UNIQUE
+  ├── result_ids INT[] — ordered food_items.id references
+  ├── created_at — 30-day TTL (edge function skips stale entries)
+  └── search_count — popularity signal for server ranking
+
+user_food_history (per-user food log tracking)
+  ├── FK: user_id → user_profiles.id (CASCADE DELETE)
+  ├── FK: food_item_id → food_items.id
+  ├── RLS: user_id = auth.uid()
+  └── INDEX: (user_id, logged_at DESC)
+
+user_favorite_foods (per-user hearted foods)
+  ├── FK: user_id → user_profiles.id (CASCADE DELETE)
+  ├── FK: food_item_id → food_items.id
+  ├── RLS: user_id = auth.uid()
+  └── UNIQUE(user_id, food_item_id)
+```
+
+### Food-Related RPC Functions
+
+| Function | Purpose | Security |
+|----------|---------|----------|
+| `get_user_frequent_foods(p_user_id, p_limit)` | Server-side aggregation of user food history | `SECURITY DEFINER` |
+| `increment_food_log_count(fdc_id)` | Atomically increment `food_items.log_count` | `SECURITY DEFINER` |
+| `increment_food_search_count(query_text)` | Atomically increment `food_search_cache.search_count` | `SECURITY DEFINER` |
+| `cleanup_expired_food_cache()` | Purge cache entries older than 30 days | `SECURITY DEFINER` |
+
 ---
 
-## Known Issues & Data Debt
+## Pending Migrations (Ready to Run)
 
-### Issue 1: user_profiles / user_progress Desync
-- **6 fields duplicated** with no sync trigger
-- Fields: `current_streak`, `last_workout_date`, `longest_streak`, `total_workouts`, `weight_lbs`, `xp`
-- **Status**: Needs trigger to keep in sync
-
-### Issue 2: 13 Dead Tables
-- Tables with 0 rows AND 0 code references
-- **Status**: Pending DROP migration (see DATABASE_AUDIT_REPORT.md)
-
-### Issue 3: Missing FK Constraints
-- 11 user-data tables with `user_id` column but no FK constraint
-- `delete_user_account()` may leave orphaned rows
-- **Status**: Pending ALTER TABLE migration
-
-### Issue 4: meal_logs / user_food_history Duplication
-- Same data written to both tables
-- Should consolidate to `meal_logs` + view
-- **Status**: Pending refactor
+| Migration | Purpose | Status |
+|-----------|---------|--------|
+| `20260320_sync_profiles_progress.sql` | Fix 6-field desync between `user_profiles` and `user_progress` | Ready |
+| `20260320_drop_dead_tables.sql` | Drop 13 dead tables (0 rows + 0 code refs) | Ready |
+| `20260320_add_missing_fk_constraints.sql` | Add FK CASCADE + indexes to 11 tables | Ready |
+| `20260320_consolidate_food_history.sql` | Create `user_food_history_v` view, stop duplicate writes | Ready |
+| `20260320_fix_rls_policies.sql` | Add RLS to 7 analytics tables | Ready |
+| `20260320_fix_performance_history.sql` | Add missing columns to `exercise_performance_history` | Ready |
+| `20260320_smart_insights_schema.sql` | Smart insights + subscription events (NEEDS transaction wrapper — see DB3) | Ready |
+| `20260321_food_search_integrity.sql` | Food search integrity (NEEDS security fix — see DB1) | **BLOCKED on DB1 fix** |
 
 ---
 
@@ -206,36 +234,18 @@ Check for:
 
 ---
 
-## Data Strategy: Intelligence & Growth
+## Intelligence Tables (Power Smart Features)
 
-### Current Intelligence Tables
-
-These tables power the smart features in the app:
-
-| Table | What It Tracks | Feature It Powers |
-|-------|---------------|-------------------|
-| `exercise_user_effectiveness` | Which exercises work best for each user | Smart exercise selection |
-| `set_completion_patterns` | When users perform best (time of day, fatigue) | Workout timing recommendations |
-| `user_performance_trends` | Weekly progression velocity | Coaching insights |
-| `weekly_volume_trends` | Training volume over time | Overtraining prevention |
-| `activity_recovery_correlation` | Activity vs recovery patterns | Recovery recommendations |
-| `nutrition_performance_link` | How nutrition affects performance | Diet-workout correlation |
-| `user_strength_ratios` | Muscle imbalance detection | Balanced programming |
-| `user_learning_profiles` | User behavior patterns for UI adaptation | Personalized UX |
-| `user_similarity_profiles` | User clusters for collaborative filtering | "Users like you" recommendations |
-| `exercise_swap_analytics` | Exercise substitution patterns | Smart swap suggestions |
-| `equipment_proficiency` | Equipment familiarity scores | Equipment-based recommendations |
-
-### Future Data Opportunities
-
-| Opportunity | Data Source | Business Value |
-|------------|------------|----------------|
-| Workout completion funnels | Add `completion_rate` to `workout_history` | Reduce drop-off |
-| Feature usage heatmaps | New `user_feature_usage` table | Product prioritization |
-| Referral attribution | Add `referral_source` to `user_profiles` | Growth optimization |
-| Notification engagement | Add `opened_at` to `push_notification_queue` | Notification optimization |
-| Subscription conversion | New `subscription_events` table | Revenue optimization |
-| Social retention correlation | Join `friendships` + `user_streak_tracking` | Prove social = retention |
+| Table | Powers |
+|-------|--------|
+| `exercise_user_effectiveness` | Smart exercise selection |
+| `set_completion_patterns` | Workout timing recommendations |
+| `user_performance_trends` | Coaching insights |
+| `weekly_volume_trends` | Overtraining prevention |
+| `user_strength_ratios` | Muscle imbalance detection (**currently has polluted data — see DB5**) |
+| `user_learning_profiles` | Personalized UX |
+| `user_similarity_profiles` | "Users like you" recommendations |
+| `exercise_swap_analytics` | Smart swap suggestions |
 
 ---
 
@@ -279,12 +289,24 @@ When another agent needs data work:
 
 ## Quarterly Health Checks
 
-Every quarter, run these audits:
+1. Dead table scan (0 rows + 0 code refs)
+2. Orphan row scan (`user_id` not in `user_profiles`)
+3. FK constraint audit (all `user_id` columns have FKs)
+4. RLS audit (all tables have RLS + policies)
+5. `SECURITY DEFINER` function audit (no functions accept `user_id` params that should use `auth.uid()`)
+6. Index audit (no full table scans on large tables)
 
-1. **Dead table scan**: Find tables with 0 rows AND 0 code references
-2. **Orphan row scan**: Find rows where `user_id` doesn't exist in `user_profiles`
-3. **Duplication scan**: Check for tables with 5+ shared column names
-4. **FK constraint audit**: Ensure all `user_id` columns have FK constraints
-5. **RLS audit**: Ensure all tables have RLS enabled with appropriate policies
-6. **Index audit**: Check query plans for full table scans on large tables
-7. **Function audit**: Check for duplicate RPC functions (same name, different signatures)
+### Notification Preferences Table (2026-03-21)
+
+```
+user_notification_preferences (server-side push preference enforcement)
+  ├── user_id UUID PK → user_profiles.id (CASCADE DELETE)
+  ├── master_enabled BOOLEAN — global kill switch
+  ├── disabled_types TEXT[] — notification types the user has turned off
+  ├── quiet_hours_enabled BOOLEAN + quiet_hours_start/end TIME
+  ├── timezone TEXT — user's IANA timezone for quiet hours computation
+  ├── daily_cap INTEGER DEFAULT 8
+  └── RLS: user_id = auth.uid() for all CRUD
+```
+
+**Migration**: `20260321_notification_preferences.sql`

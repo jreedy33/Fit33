@@ -505,8 +505,8 @@ struct StretchModeView: View {
                 let numStretches = min(stretchingExercises.count, 8)
                 let selectedStretches = Array(stretchingExercises.shuffled().prefix(numStretches))
                 
-                print("🧘 Selected \(selectedStretches.count) stretches for \(area):")
-                selectedStretches.forEach { print("   - \($0.name)") }
+                AppLogger.debug("🧘 Selected \(selectedStretches.count) stretches for \(area):", category: .workout)
+                selectedStretches.forEach { AppLogger.debug("   - \($0.name)", category: .workout) }
                 
                 await MainActor.run {
                     stretchQueue = selectedStretches
@@ -525,7 +525,7 @@ struct StretchModeView: View {
                     }
                 }
             } catch {
-                print("❌ Error fetching stretches: \(error)")
+                AppLogger.error("❌ Error fetching stretches: \(error)", category: .workout)
                 await MainActor.run {
                     isLoadingStretches = false
                 }
@@ -548,7 +548,7 @@ struct StretchModeView: View {
             
             if let encodedURLString = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                let url = URL(string: encodedURLString) {
-                print("🧘 Loading stretch video: \(url.absoluteString)")
+                AppLogger.debug("🧘 Loading stretch video: \(url.absoluteString)", category: .workout)
                 setupPlayer(with: url)
             }
         }
@@ -569,7 +569,7 @@ struct StretchModeView: View {
         queuePlayer = newQueuePlayer
         player = newQueuePlayer
         newQueuePlayer.play()
-        print("🎬 Video playing: \(url.lastPathComponent)")
+        AppLogger.debug("🎬 Video playing: \(url.lastPathComponent)", category: .workout)
     }
 }
 

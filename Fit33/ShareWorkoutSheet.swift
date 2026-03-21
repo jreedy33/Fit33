@@ -18,6 +18,7 @@ struct ShareWorkoutSheet: View {
     @State private var showingSuccess = false
     @State private var sendError: String?
     @State private var isCardExpanded = false
+    @State private var showingFriendSearch = false
     
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -120,6 +121,11 @@ struct ShareWorkoutSheet: View {
                 Button("OK") { sendError = nil }
             } message: {
                 Text(sendError ?? "")
+            }
+        }
+        .sheet(isPresented: $showingFriendSearch) {
+            NavigationStack {
+                FriendsListView()
             }
         }
         .task {
@@ -358,7 +364,7 @@ struct ShareWorkoutSheet: View {
                 // Search friend button
                 Button(action: {
                     HapticManager.impact(.light)
-                    // TODO: Navigate to friend search
+                    showingFriendSearch = true
                 }) {
                     VStack(spacing: Spacing.xs) {
                         ZStack {

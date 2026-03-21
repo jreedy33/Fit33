@@ -778,7 +778,7 @@ struct ReceivedWorkoutDetailView: View {
         let coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: workout.exerciseNames)
         
         guard !coreDataExercises.isEmpty else {
-                print("❌ No exercises found in Core Data")
+                AppLogger.error("❌ No exercises found in Core Data", category: .workout)
                 isStartingWorkout = false
                 return
             }
@@ -825,7 +825,7 @@ struct ReceivedWorkoutDetailView: View {
                 showingSavedConfirmation = true
                 HapticManager.notification(.success)
             } catch {
-                print("❌ Error saving workout: \(error)")
+                AppLogger.error("❌ Error saving workout: \(error)", category: .workout)
             }
         }
     }

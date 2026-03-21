@@ -144,7 +144,7 @@ struct PersonalizedProgramsView: View {
                                 .frame(width: 44, height: 44)
                             
                             Image(systemName: "figure.strengthtraining.traditional")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.white)
                         }
                     }
@@ -665,7 +665,7 @@ struct ProgramCard: View {
                         .shadow(color: program.template.category.color.opacity(0.3), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: program.template.category.icon)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.white)
                 }
                 
@@ -829,7 +829,7 @@ struct ProgramDetailSheet: View {
                     .frame(width: 70, height: 70)
                 
                 Image(systemName: program.template.category.icon)
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             

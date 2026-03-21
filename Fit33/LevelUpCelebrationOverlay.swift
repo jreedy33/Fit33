@@ -121,8 +121,9 @@ struct LevelUpCelebrationOverlay: View {
                 sparkleRotation = 360
             }
             
-            // Auto-dismiss after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5.0))
+                guard !Task.isCancelled else { return }
                 onDismiss()
             }
         }

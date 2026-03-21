@@ -847,6 +847,9 @@ struct FoodDetailsView: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
+            AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+
             VStack(spacing: 0) {
                 // Header bar
                 HStack {
@@ -929,7 +932,7 @@ struct FoodDetailsView: View {
                 // Food Info
                 VStack(alignment: .leading, spacing: 4) {
                     Text(food.displayName)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.ds_labelLarge)
                         .lineLimit(2)
                         .foregroundColor(.primary)
                     
@@ -995,7 +998,7 @@ struct FoodDetailsView: View {
                     TextField("100", text: $servingAmount)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.center)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.ds_labelLarge)
                         .frame(width: 60)
                         .padding(.horizontal, 10)
                         .padding(.vertical, Spacing.xs)
@@ -1026,7 +1029,7 @@ struct FoodDetailsView: View {
                                 .minimumScaleFactor(0.85)
                                 .fixedSize(horizontal: false, vertical: true)
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.ds_caption)
                         }
                         .foregroundColor(.primary)
                         .padding(.horizontal, 14)
@@ -1135,7 +1138,7 @@ struct FoodDetailsView: View {
         Button(action: addFoodToMeal) {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.ds_labelLarge)
                 Text("Add to \(mealType.displayName)")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -1173,7 +1176,7 @@ struct FoodDetailsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Text("\(formatValue(value))g")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(color)
             }
         }
@@ -1542,7 +1545,7 @@ struct FoodDetailsView: View {
         
         let foodEntry = FoodEntry(
             name: food.displayName,
-            quantity: Int(amount),
+            quantity: max(1, Int(amount.rounded())),
             unit: currentServingUnit,
             calories: Int(nutrition.calories),
             protein: Int(nutrition.protein),
@@ -1599,7 +1602,7 @@ struct CompactNutrientRow: View {
     var body: some View {
         HStack {
             Text(name)
-                .font(.system(size: 11))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
             Spacer()
             Text("\(formatValue(value))\(unit)")

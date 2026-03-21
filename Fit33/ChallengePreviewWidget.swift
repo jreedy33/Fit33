@@ -175,7 +175,7 @@ struct ChallengePreviewWidget: View {
         HStack(spacing: 16) {
             // Trophy icon
             Image(systemName: "trophy.fill")
-                .font(.system(size: 32))
+                .font(.ds_heading1)
                 .foregroundStyle(
                     LinearGradient(
                         colors: gradientColors,
@@ -236,7 +236,7 @@ struct ChallengePreviewWidget: View {
         HStack(spacing: 12) {
             // Decline button
             Button(action: {
-                print("❌ [CHALLENGE ACCEPT] Decline button tapped")
+                AppLogger.error("❌ [CHALLENGE ACCEPT] Decline button tapped", category: .social)
                 HapticManager.impact(.light)
                 showingDeclineConfirmation = true
             }) {
@@ -274,7 +274,7 @@ struct ChallengePreviewWidget: View {
                             .tint(.white)
                     } else {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.ds_bodySmall)
                     }
                     Text("Accept")
                         .font(.subheadline)
@@ -305,16 +305,16 @@ struct ChallengePreviewWidget: View {
     // MARK: - Actions
     
     private func acceptChallenge() {
-        print("✅ [CHALLENGE ACCEPT] Accept button tapped for challenge: \(invite.title)")
+        AppLogger.info("✅ [CHALLENGE ACCEPT] Accept button tapped for challenge: \(invite.title)", category: .social)
         HapticManager.impact(.medium)
         isAccepting = true
         
         Task {
-            print("📤 [CHALLENGE ACCEPT] Calling respondToChallenge...")
+            AppLogger.debug("📤 [CHALLENGE ACCEPT] Calling respondToChallenge...", category: .social)
             let success = await challengeService.respondToChallenge(challengeId: invite.challengeId, accept: true)
             if success {
-                print("✅ [CHALLENGE ACCEPT] Challenge accepted successfully!")
-                print("🔄 [CHALLENGE ACCEPT] Refreshing challenges...")
+                AppLogger.info("✅ [CHALLENGE ACCEPT] Challenge accepted successfully!", category: .social)
+                AppLogger.debug("🔄 [CHALLENGE ACCEPT] Refreshing challenges...", category: .social)
                 // Immediately refresh to show active challenge (both 1v1 AND group)
                 await challengeService.fetchActiveChallenges()
                 await challengeService.fetchActiveGroupChallenges()  // Group challenge may appear here
@@ -322,7 +322,7 @@ struct ChallengePreviewWidget: View {
                 HapticManager.notification(.success)
                 onAccept()
             } else {
-                print("❌ [CHALLENGE ACCEPT] Failed to accept challenge")
+                AppLogger.error("❌ [CHALLENGE ACCEPT] Failed to accept challenge", category: .social)
                 HapticManager.notification(.error)
             }
             isAccepting = false
@@ -572,18 +572,13 @@ struct FriendChallengeRow: View {
         challenge.resolvedType
     }
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark 
-            ? [Color(white: 0.18), Color.cardBackground]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 // Type emoji - floating
                 Text(challengeType.emoji)
-                    .font(.system(size: 32))
+                    .font(.ds_heading1)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(challenge.title)
@@ -632,11 +627,7 @@ struct FriendChallengeRow: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)
@@ -1193,7 +1184,7 @@ struct PrivateChallengeInviteWidget: View {
             
             // If accepted successfully, optionally navigate to the challenge
             if let challengeId = challengeId {
-                print("🔒 [PRIVATE] Successfully joined private challenge: \(challengeId)")
+                AppLogger.debug("🔒 [PRIVATE] Successfully joined private challenge: \(challengeId)", category: .social)
             }
         }
     }

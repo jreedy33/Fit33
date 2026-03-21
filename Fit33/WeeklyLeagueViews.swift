@@ -326,7 +326,7 @@ struct WeeklyLeagueWidget: View {
                     .frame(width: 56, height: 56)
                 
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
@@ -415,7 +415,7 @@ struct WeeklyLeagueDetailView: View {
             HStack {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.ds_labelLarge)
                         .foregroundColor(.primary)
                         .padding(10)
                         .background(Circle().fill(Color.gray.opacity(0.15)))
@@ -739,7 +739,7 @@ struct WeeklyLeagueDetailView: View {
         return HStack(spacing: 12) {
             // Tier emoji
             Text(tierEmoji)
-                .font(.system(size: 24))
+                .font(.ds_heading2)
                 .frame(width: 36)
             
             VStack(alignment: .leading, spacing: 3) {

@@ -29,10 +29,10 @@ class SmartProgramRecommender {
         let allPrograms = WorkoutProgramEngine.shared.getAllPrograms()
         let profile = SmartRecommendationEngine.shared.userProfileAnalyzer.analyzeUser(user)
         
-        print("🎯 Smart Program Recommender analyzing \(allPrograms.count) programs for user...")
-        print("   User Profile: \(profile.experienceLevel.rawValue), \(profile.fitnessGoal.rawValue)")
-        print("   Equipment: \(profile.prioritizedEquipment)")
-        print("   Available Days: \(profile.availableDays)")
+        AppLogger.debug("🎯 Smart Program Recommender analyzing \(allPrograms.count) programs for user...", category: .workout)
+        AppLogger.debug("   User Profile: \(profile.experienceLevel.rawValue), \(profile.fitnessGoal.rawValue)", category: .workout)
+        AppLogger.debug("   Equipment: \(profile.prioritizedEquipment)", category: .workout)
+        AppLogger.debug("   Available Days: \(profile.availableDays)", category: .workout)
         
         // Score each program
         let scoredPrograms = allPrograms.map { program -> ProgramRecommendation in
@@ -52,9 +52,9 @@ class SmartProgramRecommender {
         
         let top = Array(scoredPrograms.prefix(limit))
         
-        print("✅ Top \(top.count) programs recommended:")
+        AppLogger.info("✅ Top \(top.count) programs recommended:", category: .workout)
         for (index, rec) in top.enumerated() {
-            print("   \(index + 1). \(rec.program.name) - Score: \(Int(rec.matchScore)) (\(rec.reasons.first ?? ""))")
+            AppLogger.debug("   \(index + 1). \(rec.program.name) - Score: \(Int(rec.matchScore)) (\(rec.reasons.first ?? ""))", category: .workout)
         }
         
         return top
@@ -411,7 +411,7 @@ class SmartProgramRecommender {
     private func getDefaultProgram() -> ProgramRecommendation {
         guard let defaultProgram = WorkoutProgramEngine.shared.getAllPrograms().first else {
             // Return a safe fallback instead of crashing
-            print("⚠️ [RECOMMENDER] No programs available — returning empty recommendation")
+            AppLogger.warning("⚠️ [RECOMMENDER] No programs available — returning empty recommendation", category: .workout)
             let fallbackProgram = WorkoutProgram(
                 id: "fallback",
                 name: "Custom Workout",

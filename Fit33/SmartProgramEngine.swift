@@ -768,7 +768,7 @@ class SmartProgramEngine: ObservableObject {
             updatedProgram.isCompleted = true
             updatedProgram.completedDate = Date()
             userPrograms[index] = updatedProgram
-            print("✅ Marked previous program '\(oldProgram.personalizedName)' as completed when starting new program")
+            AppLogger.info("✅ Marked previous program '\(oldProgram.personalizedName)' as completed when starting new program", category: .workout)
         }
         
         let personalizedName = generatePersonalizedName(template: template, user: user)
@@ -799,7 +799,7 @@ class SmartProgramEngine: ObservableObject {
             self?.objectWillChange.send()
         }
         
-        print("🚀 Started new GAIN/LEAN program: '\(personalizedName)' (ID: \(program.id))")
+        AppLogger.debug("🚀 Started new GAIN/LEAN program: '\(personalizedName)' (ID: \(program.id))", category: .workout)
         return program
     }
     
@@ -821,7 +821,7 @@ class SmartProgramEngine: ObservableObject {
         let template: SmartProgramTemplate
         if baseTemplate.dayTemplates.isEmpty {
             template = generateCustomTemplateForUser(baseTemplate: baseTemplate, user: user)
-            print("🎨 Generated custom day templates for user: \(template.dayTemplates.count) days")
+            AppLogger.debug("🎨 Generated custom day templates for user: \(template.dayTemplates.count) days", category: .workout)
         } else {
             template = baseTemplate
         }
@@ -833,7 +833,7 @@ class SmartProgramEngine: ObservableObject {
             updatedProgram.isCompleted = true
             updatedProgram.completedDate = Date()
             userPrograms[index] = updatedProgram
-            print("✅ Marked previous program '\(oldProgram.personalizedName)' as completed when starting new program")
+            AppLogger.info("✅ Marked previous program '\(oldProgram.personalizedName)' as completed when starting new program", category: .workout)
         }
         
         let personalizedName = generatePersonalizedName(template: template, user: user)
@@ -868,7 +868,7 @@ class SmartProgramEngine: ObservableObject {
             self?.objectWillChange.send()
         }
         
-        print("🚀 Started new program: '\(personalizedName)' (ID: \(program.id))")
+        AppLogger.debug("🚀 Started new program: '\(personalizedName)' (ID: \(program.id))", category: .workout)
         
         return program
     }
@@ -893,7 +893,7 @@ class SmartProgramEngine: ObservableObject {
                 template = baseTemplate
             }
         } else {
-            print("❌ [PROGRAMS] Could not find template for program \(programId)")
+            AppLogger.error("❌ [PROGRAMS] Could not find template for program \(programId)", category: .workout)
             return
         }
         
@@ -965,7 +965,7 @@ class SmartProgramEngine: ObservableObject {
             }
         }
         
-        print("✅ [PROGRAMS] Day \(dayNumber) completed - Next day generated and synced to cloud")
+        AppLogger.info("✅ [PROGRAMS] Day \(dayNumber) completed - Next day generated and synced to cloud", category: .workout)
     }
     
     /// Get preview of all days in a program (without generating exercises)
@@ -1028,7 +1028,7 @@ class SmartProgramEngine: ObservableObject {
         
         // Safety guard: if dayTemplates is empty, create a default full body workout
         guard !template.dayTemplates.isEmpty else {
-            print("⚠️ [PROGRAMS] Warning: dayTemplates is empty, generating default day")
+            AppLogger.warning("⚠️ [PROGRAMS] Warning: dayTemplates is empty, generating default day", category: .workout)
             return generateDefaultDay(dayNumber: dayNumber, user: user)
         }
         
@@ -1089,7 +1089,7 @@ class SmartProgramEngine: ObservableObject {
         // 1. Determine which day template to use (cycling through training days)
         let trainingDays = programTemplate.weeklySchedule.filter { !$0.isRestDay }
         guard !trainingDays.isEmpty else {
-            print("⚠️ [PROGRAMS] No training day templates, generating default")
+            AppLogger.warning("⚠️ [PROGRAMS] No training day templates, generating default", category: .workout)
             return generateDefaultDay(dayNumber: dayNumber, user: user)
         }
         let dayIndex = (dayNumber - 1) % trainingDays.count
@@ -1101,8 +1101,8 @@ class SmartProgramEngine: ObservableObject {
         let currentBlock = ProgramTemplateLibrary.shared.getActiveBlock(for: weekNumber, in: programTemplate)
         
         #if DEBUG
-        print("🎯 [BLOCK-GEN] Day \(dayNumber) | Week \(weekNumber) | Block: \(currentBlock?.name ?? "default")")
-        print("   Template: \(dayTemplate.name) | Muscles: \(dayTemplate.primaryMuscles.joined(separator: ", "))")
+        AppLogger.debug("🎯 [BLOCK-GEN] Day \(dayNumber) | Week \(weekNumber) | Block: \(currentBlock?.name ?? "default")", category: .workout)
+        AppLogger.debug("   Template: \(dayTemplate.name) | Muscles: \(dayTemplate.primaryMuscles.joined(separator: ", "))", category: .workout)
         #endif
         
         // 3. Get user equipment and preferences
@@ -1893,7 +1893,7 @@ class SmartProgramEngine: ObservableObject {
         if let data = defaults.data(forKey: programsKey),
            let programs = try? JSONDecoder().decode([SmartActiveProgram].self, from: data) {
             userPrograms = programs
-            print("📦 [PROGRAMS] Loaded \(programs.count) programs from local cache")
+            AppLogger.debug("📦 [PROGRAMS] Loaded \(programs.count) programs from local cache", category: .workout)
         }
         
         // Then sync from cloud (async)
@@ -1906,7 +1906,7 @@ class SmartProgramEngine: ObservableObject {
         // Save locally (immediate)
         if let data = try? JSONEncoder().encode(userPrograms) {
             defaults.set(data, forKey: programsKey)
-            print("💾 [PROGRAMS] Saved \(userPrograms.count) programs to local cache")
+            AppLogger.debug("💾 [PROGRAMS] Saved \(userPrograms.count) programs to local cache", category: .workout)
         }
         
         // Sync to cloud (async)
@@ -1918,7 +1918,7 @@ class SmartProgramEngine: ObservableObject {
     /// Clear all user program data - called on logout/account deletion
     /// This ensures no data from one user is visible to another
     func clearAllData() {
-        print("🗑️ [PROGRAMS] Clearing all SmartProgramEngine data...")
+        AppLogger.debug("🗑️ [PROGRAMS] Clearing all SmartProgramEngine data...", category: .workout)
         
         // Clear in-memory state
         userPrograms = []
@@ -1932,14 +1932,14 @@ class SmartProgramEngine: ObservableObject {
             self?.objectWillChange.send()
         }
         
-        print("✅ [PROGRAMS] SmartProgramEngine data cleared")
+        AppLogger.info("✅ [PROGRAMS] SmartProgramEngine data cleared", category: .workout)
     }
     
     // MARK: - Cloud Sync (Supabase)
     
     private func loadProgramsFromCloud() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [PROGRAMS] Not authenticated, skipping cloud load")
+            AppLogger.warning("⚠️ [PROGRAMS] Not authenticated, skipping cloud load", category: .workout)
             return
         }
         
@@ -1977,16 +1977,16 @@ class SmartProgramEngine: ObservableObject {
                         }
                     }
                 }
-                print("☁️ [PROGRAMS] Synced \(cloudPrograms.count) programs from cloud")
+                AppLogger.debug("☁️ [PROGRAMS] Synced \(cloudPrograms.count) programs from cloud", category: .workout)
             }
         } catch {
-            print("❌ [PROGRAMS] Failed to load from cloud: \(error)")
+            AppLogger.error("❌ [PROGRAMS] Failed to load from cloud: \(error)", category: .workout)
         }
     }
     
     private func saveProgramsToCloud() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
-            print("⚠️ [PROGRAMS] Not authenticated, skipping cloud save")
+            AppLogger.warning("⚠️ [PROGRAMS] Not authenticated, skipping cloud save", category: .workout)
             return
         }
         
@@ -2017,10 +2017,10 @@ class SmartProgramEngine: ObservableObject {
                     .execute()
                 
             } catch {
-                print("❌ [PROGRAMS] Failed to save program \(program.id) to cloud: \(error)")
+                AppLogger.error("❌ [PROGRAMS] Failed to save program \(program.id) to cloud: \(error)", category: .workout)
             }
         }
-        print("☁️ [PROGRAMS] Saved \(userPrograms.count) programs to cloud")
+        AppLogger.debug("☁️ [PROGRAMS] Saved \(userPrograms.count) programs to cloud", category: .workout)
     }
     
     /// Saves completed day data for learning engine
@@ -2077,9 +2077,9 @@ class SmartProgramEngine: ObservableObject {
                 .insert(dto)
                 .execute()
             
-            print("☁️ [PROGRAMS] Saved day \(day.dayNumber) completion for learning engine")
+            AppLogger.debug("☁️ [PROGRAMS] Saved day \(day.dayNumber) completion for learning engine", category: .workout)
         } catch {
-            print("❌ [PROGRAMS] Failed to save day completion: \(error)")
+            AppLogger.error("❌ [PROGRAMS] Failed to save day completion: \(error)", category: .workout)
         }
     }
     
@@ -2119,9 +2119,9 @@ class SmartProgramEngine: ObservableObject {
                 .insert(dto)
                 .execute()
             
-            print("☁️ [PROGRAMS] Marked program \(templateId) as completed in cloud")
+            AppLogger.debug("☁️ [PROGRAMS] Marked program \(templateId) as completed in cloud", category: .workout)
         } catch {
-            print("❌ [PROGRAMS] Failed to save completed program: \(error)")
+            AppLogger.error("❌ [PROGRAMS] Failed to save completed program: \(error)", category: .workout)
         }
     }
     

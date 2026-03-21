@@ -34,9 +34,15 @@ class ActiveWorkoutTests {
     func runAllTests() -> [TestResult] {
         results = []
 
+        #if DEBUG
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        #endif
+        #if DEBUG
         print("🧪 ACTIVE WORKOUT TEST SUITE")
+        #endif
+        #if DEBUG
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        #endif
 
         // Set Initialization Tests
         testSetCountMatchesPreviousWorkout()
@@ -67,10 +73,18 @@ class ActiveWorkoutTests {
         // Print summary
         let passed = results.filter { $0.passed }.count
         let failed = results.filter { !$0.passed }.count
+        #if DEBUG
         print("")
+        #endif
+        #if DEBUG
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        #endif
+        #if DEBUG
         print("📊 RESULTS: \(passed) passed, \(failed) failed, \(results.count) total")
+        #endif
+        #if DEBUG
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        #endif
 
         return results
     }
@@ -79,7 +93,9 @@ class ActiveWorkoutTests {
 
     private func record(_ name: String, passed: Bool, details: String = "") {
         let emoji = passed ? "✅" : "❌"
+        #if DEBUG
         print("\(emoji) \(name)\(details.isEmpty ? "" : " — \(details)")")
+        #endif
         results.append(TestResult(name: name, passed: passed, details: details))
     }
 

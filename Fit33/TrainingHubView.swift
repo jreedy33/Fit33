@@ -166,11 +166,17 @@ struct TrainingInsightsWidget: View {
                 
                 for set in sets where set.isCompleted {
                     let currentBest = bestSets[exerciseName]
-                    let isNewPR = currentBest == nil || set.weight > currentBest!.weight || (set.weight == currentBest!.weight && set.reps > currentBest!.reps)
+                    let isNewPR: Bool
+                    if let best = currentBest {
+                        isNewPR = set.weight > best.weight || (set.weight == best.weight && set.reps > best.reps)
+                    } else {
+                        isNewPR = true
+                    }
                     
                     if isNewPR {
                         bestSets[exerciseName] = (weight: set.weight, reps: Int(set.reps))
-                        if let date = workout.date, date > Calendar.current.date(byAdding: .day, value: -14, to: Date())! {
+                        let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+                        if let date = workout.date, date > twoWeeksAgo {
                             prs.removeAll { $0.exercise == exerciseName }
                             prs.append((exercise: exerciseName, weight: set.weight, reps: Int(set.reps), date: date))
                         }
@@ -228,7 +234,7 @@ struct TrainingInsightsWidget: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(programName)
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.ds_labelLarge)
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         
@@ -370,7 +376,7 @@ struct WidgetStat: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ds_caption)
                     .foregroundColor(color)
                 Text(value)
                     .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)

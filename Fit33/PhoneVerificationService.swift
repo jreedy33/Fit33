@@ -73,7 +73,7 @@ class PhoneVerificationService: ObservableObject {
         error = nil
         
         do {
-            print("📱 [VERIFY] Sending verification code to: \(digits)")
+            AppLogger.debug("📱 [VERIFY] Sending verification code to: \(digits)", category: .auth)
             
             // Call Supabase Edge Function
             let response: VerificationResponse = try await supabaseManager.client
@@ -86,19 +86,19 @@ class PhoneVerificationService: ObservableObject {
                 )
             
             if response.success {
-                print("✅ [VERIFY] Code sent successfully")
+                AppLogger.info("✅ [VERIFY] Code sent successfully", category: .auth)
                 verificationSent = true
                 isLoading = false
                 return true
             } else {
-                print("❌ [VERIFY] Failed: \(response.error ?? "Unknown error")")
+                AppLogger.error("❌ [VERIFY] Failed: \(response.error ?? "Unknown error")", category: .auth)
                 error = response.error ?? "Failed to send verification code"
                 isLoading = false
                 return false
             }
             
         } catch {
-            print("❌ [VERIFY] Error sending code: \(error)")
+            AppLogger.error("❌ [VERIFY] Error sending code: \(error)", category: .auth)
             self.error = "Failed to send code. Please try again."
             isLoading = false
             return false
@@ -131,7 +131,7 @@ class PhoneVerificationService: ObservableObject {
         error = nil
         
         do {
-            print("🔐 [VERIFY] Checking code for: \(digits)")
+            AppLogger.debug("🔐 [VERIFY] Checking code for: \(digits)", category: .auth)
             
             // Call Supabase Edge Function
             let response: VerificationResponse = try await supabaseManager.client
@@ -147,12 +147,12 @@ class PhoneVerificationService: ObservableObject {
                 )
             
             if response.success && response.status == "approved" {
-                print("✅ [VERIFY] Phone verified successfully!")
+                AppLogger.info("✅ [VERIFY] Phone verified successfully!", category: .auth)
                 isVerified = true
                 isLoading = false
                 return true
             } else {
-                print("❌ [VERIFY] Invalid code: \(response.error ?? "Unknown error")")
+                AppLogger.error("❌ [VERIFY] Invalid code: \(response.error ?? "Unknown error")", category: .auth)
                 error = response.error ?? "Invalid code. Please try again."
                 remainingAttempts -= 1
                 isLoading = false
@@ -160,7 +160,7 @@ class PhoneVerificationService: ObservableObject {
             }
             
         } catch {
-            print("❌ [VERIFY] Error verifying code: \(error)")
+            AppLogger.error("❌ [VERIFY] Error verifying code: \(error)", category: .auth)
             self.error = "Verification failed. Please try again."
             isLoading = false
             return false

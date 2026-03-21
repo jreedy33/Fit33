@@ -160,8 +160,9 @@ class PersonalRecordService: ObservableObject {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
             
-            // Auto-hide celebration after 3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
                 self.showingPRCelebration = false
             }
             
@@ -174,7 +175,7 @@ class PersonalRecordService: ObservableObject {
             }
             
             #if DEBUG
-            print("🏆 NEW PR ACHIEVED: \(pr.celebrationMessage)")
+            AppLogger.debug("🏆 NEW PR ACHIEVED: \(pr.celebrationMessage)", category: .workout)
             #endif
         }
     }
@@ -240,7 +241,7 @@ class PersonalRecordService: ObservableObject {
                 data.setHistory.append((weight: weight, reps: reps, date: date))
             }
         } catch {
-            print("❌ Error fetching exercise history: \(error)")
+            AppLogger.error("❌ Error fetching exercise history: \(error)", category: .workout)
         }
         
         return data
@@ -299,7 +300,7 @@ struct PRCelebrationOverlay: View {
                             .shadow(color: pr.type.color.opacity(0.5), radius: 15, x: 0, y: 5)
                         
                         Image(systemName: pr.type.icon)
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.ds_heading1)
                             .foregroundColor(.white)
                     }
                     
@@ -380,7 +381,7 @@ struct PRIndicatorBadge: View {
                 Image(systemName: "trophy.fill")
                     .font(.ds_caption)
                 Text(prCount == 1 ? "PR!" : "\(prCount) PRs!")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.ds_caption)
             }
             .foregroundColor(.white)
             .padding(.horizontal, Spacing.xs)

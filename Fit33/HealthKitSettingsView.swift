@@ -60,6 +60,11 @@ struct HealthKitSettingsView: View {
             } message: {
                 Text("Your workouts from Nike Run Club, Apple Watch, and other apps will no longer sync. You can reconnect anytime.")
             }
+            .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
     }
     
@@ -157,7 +162,7 @@ struct HealthKitSettingsView: View {
                         .foregroundColor(.red)
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .background(Color.red.opacity(0.15))
             .cornerRadius(10)
             .disabled(healthKit.isLoading)

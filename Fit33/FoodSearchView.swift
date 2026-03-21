@@ -19,21 +19,8 @@ struct FoodSearchView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient matching the app aesthetic
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark ? [
-                    Color(white: 0.08),
-                    Color(white: 0.05),
-                    Color.black
-                ] : [
-                    Color(red: 0.85, green: 0.92, blue: 1.0),
-                    Color(red: 0.95, green: 0.97, blue: 1.0),
-                    Color.white
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AnimatedOrbBackground.meals(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
             
             VStack(spacing: 0) {
                 // Search Header
@@ -94,7 +81,7 @@ struct FoodSearchView: View {
                     destination: NutritionScannerView(
                         mealType: mealType,
                         onSave: { foodEntry in
-                            print("💾 [SEARCH VIEW] Saving scanned nutrition: \(foodEntry.name)")
+                            AppLogger.debug("💾 [SEARCH VIEW] Saving scanned nutrition: \(foodEntry.name)", category: .nutrition)
                             onAdd(foodEntry)
                             showingNutritionScanner = false
                             dismiss()
@@ -274,7 +261,7 @@ struct FoodSearchView: View {
                     gradient: [.purple, .pink],
                     isActive: false,
                     action: {
-                        print("📸 [SEARCH VIEW] Scan tile tapped")
+                        AppLogger.debug("📸 [SEARCH VIEW] Scan tile tapped", category: .nutrition)
                         showingNutritionScanner = true
                     }
                 )
@@ -286,7 +273,7 @@ struct FoodSearchView: View {
                     gradient: [.orange, .yellow],
                     isActive: false,
                     action: {
-                        print("🍔 [SEARCH VIEW] Eat Out tile tapped")
+                        AppLogger.debug("🍔 [SEARCH VIEW] Eat Out tile tapped", category: .nutrition)
                         showingRestaurantSearch = true
                     }
                 )
@@ -1291,11 +1278,6 @@ struct AddFoodActionTile: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    private var cardBackgroundGradient: [Color] {
-        colorScheme == .dark
-            ? [Color(white: 0.14), Color(white: 0.09)]
-            : [Color.white, Color.white.opacity(0.95)]
-    }
     
     var body: some View {
         Button(action: action) {
@@ -1340,11 +1322,7 @@ struct AddFoodActionTile: View {
                     // Main card background with gradient
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
-                            LinearGradient(
-                                colors: cardBackgroundGradient,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            Color.cardBackground
                         )
                     
                     // Inner highlight (top edge glow)

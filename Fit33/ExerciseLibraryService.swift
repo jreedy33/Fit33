@@ -47,7 +47,7 @@ class ExerciseLibraryService: ObservableObject {
         let count = (try? viewContext.count(for: Exercise.fetchRequest())) ?? 0
         if count > 100 {
             isExercisesReady = true
-            print("✅ [ExerciseLibrary] Exercises ready at init: \(count) in Core Data")
+            AppLogger.debug("✅ [ExerciseLibrary] Exercises ready at init: \(count) in Core Data", category: .data)
         }
         preWarmCache()
     }
@@ -63,14 +63,14 @@ class ExerciseLibraryService: ObservableObject {
             let startTime = CFAbsoluteTimeGetCurrent()
             let exercises = self?.getAllExercises() ?? []
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms")
+            AppLogger.debug("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms", category: .data)
             self?.isPreWarming = false
             
             // Mark as ready if we have valid exercises (with names)
-            let validCount = exercises.filter { $0.name != nil && !$0.name!.isEmpty }.count
+            let validCount = exercises.filter { !($0.name ?? "").isEmpty }.count
             if validCount > 100 {
                 self?.isExercisesReady = true
-                print("✅ [ExerciseLibrary] Exercises ready: \(validCount) valid exercises")
+                AppLogger.debug("✅ [ExerciseLibrary] Exercises ready: \(validCount) valid exercises", category: .data)
                 
                 // ⚡️ Also pre-compute the recommended list for instant Exercise tab loading
                 // This is a safety net — TabPreloader also does this, but whichever runs first wins
@@ -79,7 +79,7 @@ class ExerciseLibraryService: ObservableObject {
                     filterCache.precomputeRecommendedList(allExercises: exercises)
                 }
             } else {
-                print("⚠️ [ExerciseLibrary] Only \(validCount) valid exercises - waiting for sync")
+                AppLogger.warning("⚠️ [ExerciseLibrary] Only \(validCount) valid exercises - waiting for sync", category: .network)
             }
         }
     }
@@ -89,7 +89,7 @@ class ExerciseLibraryService: ObservableObject {
         // Build cache if needed (with lowercase keys for case-insensitive matching)
         if cachedExercisesByName == nil || !isCacheValid {
             #if DEBUG
-            print("📦 [ExerciseLibrary] Cache miss for '\(name)' - rebuilding...")
+            AppLogger.debug("📦 [ExerciseLibrary] Cache miss for '\(name)' - rebuilding...", category: .data)
             #endif
             let allExercises = getAllExercises()
             cachedExercisesByName = Dictionary(
@@ -103,7 +103,7 @@ class ExerciseLibraryService: ObservableObject {
         let result = cachedExercisesByName?[name.lowercased()]
         #if DEBUG
         if result == nil {
-            print("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))")
+            AppLogger.warning("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))", category: .data)
         }
         #endif
         return result
@@ -120,7 +120,7 @@ class ExerciseLibraryService: ObservableObject {
         cachedExercisesByName = nil
         cacheTimestamp = nil
         #if DEBUG
-        print("📦 Exercise cache invalidated")
+        AppLogger.debug("📦 Exercise cache invalidated", category: .data)
         #endif
         
         // Refresh the context to ensure it sees all changes after batch operations
@@ -132,7 +132,7 @@ class ExerciseLibraryService: ObservableObject {
         _ = getAllExercises()
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
         #if DEBUG
-        print("🔥 [ExerciseLibrary] Cache rebuilt synchronously: \(elapsed)ms, \(cachedExercises?.count ?? 0) exercises")
+        AppLogger.debug("🔥 [ExerciseLibrary] Cache rebuilt synchronously: \(elapsed)ms, \(cachedExercises?.count ?? 0) exercises", category: .data)
         #endif
         
         // ⚡️ Repair nil exercise relationships in workouts
@@ -159,7 +159,7 @@ class ExerciseLibraryService: ObservableObject {
                 if orphanedExercises.isEmpty { return }
                 
                 #if DEBUG
-                print("🔧 [ExerciseLibrary] Found \(orphanedExercises.count) WorkoutExercises with nil relationships")
+                AppLogger.warning("🔧 [ExerciseLibrary] Found \(orphanedExercises.count) WorkoutExercises with nil relationships", category: .data)
                 #endif
                 
                 var repaired = 0
@@ -181,12 +181,12 @@ class ExerciseLibraryService: ObservableObject {
                 if repaired > 0 {
                     try context.save()
                     #if DEBUG
-                    print("✅ [ExerciseLibrary] Repaired \(repaired) exercise relationships")
+                    AppLogger.debug("✅ [ExerciseLibrary] Repaired \(repaired) exercise relationships", category: .data)
                     #endif
                 }
             } catch {
                 #if DEBUG
-                print("❌ [ExerciseLibrary] Error repairing relationships: \(error)")
+                AppLogger.error("❌ [ExerciseLibrary] Error repairing relationships: \(error)", category: .data)
                 #endif
             }
         }
@@ -201,7 +201,7 @@ class ExerciseLibraryService: ObservableObject {
     func syncExercisesFromCloud(_ cloudExercises: [ExerciseDTO]) async {
         // 🛡️ CRITICAL: Never sync exercises during an active workout!
         if WorkoutManager.shared.isWorkoutActive {
-            print("⚠️ [SYNC] Skipping exercise sync - workout is active")
+            AppLogger.warning("⚠️ [SYNC] Skipping exercise sync - workout is active", category: .network)
             return
         }
         
@@ -209,7 +209,7 @@ class ExerciseLibraryService: ObservableObject {
         syncLock.lock()
         if isSyncing {
             syncLock.unlock()
-            print("⚠️ [SYNC] Skipping - sync already in progress")
+            AppLogger.warning("⚠️ [SYNC] Skipping - sync already in progress", category: .network)
             return
         }
         isSyncing = true
@@ -221,13 +221,13 @@ class ExerciseLibraryService: ObservableObject {
             syncLock.unlock()
         }
         
-        print("🔄 Syncing \(cloudExercises.count) exercises from audit to local database...")
+        AppLogger.debug("🔄 Syncing \(cloudExercises.count) exercises from audit to local database...", category: .network)
         await performSync(with: cloudExercises)
     }
     
     /// Force sync exercises - clears old data and pulls fresh from cloud
     func forceSyncExercises() async {
-        print("🔄 FORCE SYNC: Clearing old exercise data...")
+        AppLogger.debug("🔄 FORCE SYNC: Clearing old exercise data...", category: .network)
         
         // ⚠️ Mark as not ready FIRST so UI shows loading state
         // and onChange(isExercisesReady) fires when sync completes
@@ -244,9 +244,9 @@ class ExerciseLibraryService: ObservableObject {
                 try viewContext.execute(deleteRequest)
                 try viewContext.save()
                 invalidateCache()
-                print("✅ Cleared existing exercises from Core Data")
+                AppLogger.debug("✅ Cleared existing exercises from Core Data", category: .data)
             } catch {
-                print("❌ Error clearing exercises: \(error)")
+                AppLogger.error("❌ Error clearing exercises: \(error)", category: .data)
             }
         }
         
@@ -255,7 +255,7 @@ class ExerciseLibraryService: ObservableObject {
         
         // Mark as synced with latest data
         UserDefaults.standard.set(Date(), forKey: "lastExerciseDataUpdate")
-        print("✅ FORCE SYNC complete - fresh data loaded!")
+        AppLogger.debug("✅ FORCE SYNC complete - fresh data loaded!", category: .network)
     }
     
     /// How often exercises should be fully re-synced from cloud.
@@ -265,7 +265,7 @@ class ExerciseLibraryService: ObservableObject {
     func syncExercisesFromCloud() async {
         // 🛡️ CRITICAL: Never sync exercises during an active workout!
         if WorkoutManager.shared.isWorkoutActive {
-            print("⚠️ [SYNC] Skipping exercise sync - workout is active")
+            AppLogger.warning("⚠️ [SYNC] Skipping exercise sync - workout is active", category: .network)
             return
         }
         
@@ -284,7 +284,7 @@ class ExerciseLibraryService: ObservableObject {
         
         if cachedCount > 1000 && cacheAge < Self.exerciseSyncInterval {
             let hoursAgo = String(format: "%.1f", cacheAge / 3600)
-            print("⚡️ [SYNC] Skipping exercise sync — \(cachedCount) exercises cached, synced \(hoursAgo)h ago")
+            AppLogger.warning("⚡️ [SYNC] Skipping exercise sync — \(cachedCount) exercises cached, synced \(hoursAgo)h ago", category: .network)
             
             // Still mark exercises as ready if they aren't
             if !isExercisesReady {
@@ -297,7 +297,7 @@ class ExerciseLibraryService: ObservableObject {
         syncLock.lock()
         if isSyncing {
             syncLock.unlock()
-            print("⚠️ [SYNC] Skipping - sync already in progress")
+            AppLogger.warning("⚠️ [SYNC] Skipping - sync already in progress", category: .network)
             return
         }
         isSyncing = true
@@ -310,21 +310,21 @@ class ExerciseLibraryService: ObservableObject {
         }
         
         // Fetch exercises from Supabase and sync to Core Data
-        print("🔄 Starting exercise sync from cloud...")
+        AppLogger.debug("🔄 Starting exercise sync from cloud...", category: .network)
         do {
             let cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
-            print("✅ Fetched \(cloudExercises.count) exercises from cloud")
+            AppLogger.debug("✅ Fetched \(cloudExercises.count) exercises from cloud", category: .network)
             await performSync(with: cloudExercises)
             
             // Record sync timestamp
             UserDefaults.standard.set(Date(), forKey: "lastExerciseCloudSync")
         } catch {
-            print("❌ Failed to fetch exercises from cloud: \(error)")
+            AppLogger.error("❌ Failed to fetch exercises from cloud: \(error)", category: .network)
         }
     }
     
     private func performSync(with cloudExercises: [ExerciseDTO]) async {
-        print("✅ Processing \(cloudExercises.count) exercises for sync")
+        AppLogger.debug("✅ Processing \(cloudExercises.count) exercises for sync", category: .network)
         
         // ⚠️ Mark exercises as not ready during sync (UI will show loading)
         await MainActor.run {
@@ -348,9 +348,9 @@ class ExerciseLibraryService: ObservableObject {
                 let objectIDArray = result?.result as? [NSManagedObjectID]
                 let changes = [NSDeletedObjectsKey: objectIDArray ?? []]
                 NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [viewContext])
-                print("🗑️ Cleared existing exercises from Core Data")
+                AppLogger.debug("🗑️ Cleared existing exercises from Core Data", category: .data)
             } catch {
-                print("⚠️ Error clearing exercises: \(error)")
+                AppLogger.error("⚠️ Error clearing exercises: \(error)", category: .data)
             }
         }
         
@@ -448,7 +448,7 @@ class ExerciseLibraryService: ObservableObject {
                 
                 // Debug: Log workout types being synced (first 10)
                 if syncedCount <= 10 && cloudExercise.workoutType != nil {
-                    print("📊 Syncing workout_type: '\(cloudExercise.workoutType ?? "nil")' for '\(cloudExercise.name)'")
+                    AppLogger.debug("📊 Syncing workout_type: '\(cloudExercise.workoutType ?? "nil")' for '\(cloudExercise.name)'", category: .network)
                 }
                 
                 // Create intelligence profile with defaults for optional fields
@@ -499,7 +499,7 @@ class ExerciseLibraryService: ObservableObject {
             
             do {
                 try viewContext.save()
-                print("✅ Synced \(syncedCount) exercises to Core Data")
+                AppLogger.debug("✅ Synced \(syncedCount) exercises to Core Data", category: .network)
                 
                 // CRITICAL: Invalidate cache AFTER save completes
                 // This will synchronously rebuild the cache
@@ -507,15 +507,15 @@ class ExerciseLibraryService: ObservableObject {
                 
                 // Verify exercises are accessible
                 let verifyCount = getAllExercises().count
-                print("✅ [VERIFY] Cache now has \(verifyCount) exercises")
+                AppLogger.debug("✅ [VERIFY] Cache now has \(verifyCount) exercises", category: .data)
                 
                 // ✅ Mark exercises as ready now that sync is complete
                 if verifyCount > 100 {
                     isExercisesReady = true
-                    print("✅ [SYNC] Exercises ready: \(verifyCount) exercises available")
+                    AppLogger.debug("✅ [SYNC] Exercises ready: \(verifyCount) exercises available", category: .network)
                 }
             } catch {
-                print("❌ Error saving exercises to Core Data: \(error)")
+                AppLogger.error("❌ Error saving exercises to Core Data: \(error)", category: .data)
             }
         }
         
@@ -540,7 +540,7 @@ class ExerciseLibraryService: ObservableObject {
             // This prevents adding duplicates when cloud sync has already populated the database
             // Cloud sync should be the primary source - this is only a fallback for offline/first launch
             if existingExercises.count < 100 {
-                print("🔄 [DEFAULT] No cloud data available, initializing with \(defaultExercises.count) default exercises...")
+                AppLogger.debug("🔄 [DEFAULT] No cloud data available, initializing with \(defaultExercises.count) default exercises...", category: .network)
                 
                 // Delete any existing exercises first
                 let deleteRequest = NSBatchDeleteRequest(fetchRequest: Exercise.fetchRequest())
@@ -569,15 +569,15 @@ class ExerciseLibraryService: ObservableObject {
                 try viewContext.save()
                 invalidateCache()
                 #if DEBUG
-                print("✅ [DEFAULT] Initialized \(successCount) default exercises")
+                AppLogger.debug("✅ [DEFAULT] Initialized \(successCount) default exercises", category: .data)
                 #endif
             } else {
                 #if DEBUG
-                print("📦 [DEFAULT] Skipping - already have \(existingExercises.count) exercises from cloud")
+                AppLogger.warning("📦 [DEFAULT] Skipping - already have \(existingExercises.count) exercises from cloud", category: .network)
                 #endif
             }
         } catch {
-            print("❌ [DEFAULT] Error: \(error)")
+            AppLogger.error("❌ [DEFAULT] Error: \(error)", category: .data)
         }
     }
     
@@ -590,7 +590,7 @@ class ExerciseLibraryService: ObservableObject {
         let bundleExercises = ExerciseDataProvider.shared.exercises
         guard !bundleExercises.isEmpty else { return }
         
-        print("🌱 [ExerciseLibrary] Seeding \(bundleExercises.count) exercises from bundle...")
+        AppLogger.debug("🌱 [ExerciseLibrary] Seeding \(bundleExercises.count) exercises from bundle...", category: .data)
         var inserted = 0
         for data in bundleExercises {
             guard !data.name.isEmpty, !data.category.isEmpty else { continue }
@@ -609,9 +609,9 @@ class ExerciseLibraryService: ObservableObject {
             try viewContext.save()
             invalidateCache()
             isExercisesReady = true
-            print("✅ [ExerciseLibrary] Seeded \(inserted) exercises from bundle")
+            AppLogger.debug("✅ [ExerciseLibrary] Seeded \(inserted) exercises from bundle", category: .data)
         } catch {
-            print("❌ [ExerciseLibrary] Bundle seed failed: \(error)")
+            AppLogger.error("❌ [ExerciseLibrary] Bundle seed failed: \(error)", category: .data)
         }
     }
     
@@ -619,13 +619,13 @@ class ExerciseLibraryService: ObservableObject {
         // Return cached exercises if valid
         if isCacheValid, let cached = cachedExercises {
             #if DEBUG
-            print("📦 [ExerciseLibrary] Returning \(cached.count) cached exercises")
+            AppLogger.debug("📦 [ExerciseLibrary] Returning \(cached.count) cached exercises", category: .data)
             #endif
             return cached
         }
         
         #if DEBUG
-        print("📦 [ExerciseLibrary] Fetching exercises from Core Data...")
+        AppLogger.debug("📦 [ExerciseLibrary] Fetching exercises from Core Data...", category: .network)
         #endif
         
         let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
@@ -639,9 +639,9 @@ class ExerciseLibraryService: ObservableObject {
             let exercises = try viewContext.fetch(request)
             
             #if DEBUG
-            print("📦 [ExerciseLibrary] Fetched \(exercises.count) exercises from Core Data")
+            AppLogger.debug("📦 [ExerciseLibrary] Fetched \(exercises.count) exercises from Core Data", category: .network)
             if exercises.count > 0 {
-                print("📦 [ExerciseLibrary] Sample: \(exercises.prefix(3).compactMap { $0.name })")
+                AppLogger.debug("📦 [ExerciseLibrary] Sample: \(exercises.prefix(3).compactMap { $0.name })", category: .data)
             }
             #endif
             
@@ -658,19 +658,19 @@ class ExerciseLibraryService: ObservableObject {
             )
             
             #if DEBUG
-            print("📦 [ExerciseLibrary] Built name cache with \(cachedExercisesByName?.count ?? 0) entries")
+            AppLogger.debug("📦 [ExerciseLibrary] Built name cache with \(cachedExercisesByName?.count ?? 0) entries", category: .data)
             #endif
             
             // ✅ Update exercises ready state based on valid entries
             let validCount = cachedExercisesByName?.count ?? 0
             if validCount > 100 && !isExercisesReady {
                 isExercisesReady = true
-                print("✅ [ExerciseLibrary] Exercises now ready: \(validCount) valid")
+                AppLogger.debug("✅ [ExerciseLibrary] Exercises now ready: \(validCount) valid", category: .data)
             }
             
             return exercises
         } catch {
-            print("❌ Error fetching exercises: \(error)")
+            AppLogger.error("❌ Error fetching exercises: \(error)", category: .network)
             return []
         }
     }
@@ -683,7 +683,7 @@ class ExerciseLibraryService: ObservableObject {
         do {
             return try viewContext.fetch(request)
         } catch {
-            print("Error fetching exercises by equipment: \(error)")
+            AppLogger.error("Error fetching exercises by equipment: \(error)", category: .network)
             return []
         }
     }
@@ -696,7 +696,7 @@ class ExerciseLibraryService: ObservableObject {
         do {
             return try viewContext.fetch(request)
         } catch {
-            print("Error fetching exercises by category: \(error)")
+            AppLogger.error("Error fetching exercises by category: \(error)", category: .network)
             return []
         }
     }
@@ -714,7 +714,7 @@ class ExerciseLibraryService: ObservableObject {
         do {
             return try viewContext.fetch(request)
         } catch {
-            print("Error searching exercises: \(error)")
+            AppLogger.error("Error searching exercises: \(error)", category: .data)
             return []
         }
     }

@@ -173,7 +173,7 @@ class ProgramMuscleRecoveryTracker {
         
         saveRecoveryData()
         
-        print("💪 Recorded workout for: \(muscles.joined(separator: ", "))")
+        AppLogger.debug("💪 Recorded workout for: \(muscles.joined(separator: ", "))", category: .workout)
     }
     
     /// Record workout from completed exercises
@@ -419,7 +419,7 @@ class ProgramMuscleRecoveryTracker {
         workoutHistory = []
         UserDefaults.standard.removeObject(forKey: "\(userDefaultsKey)_states")
         UserDefaults.standard.removeObject(forKey: "\(userDefaultsKey)_history")
-        print("🗑️ Cleared all recovery tracking data")
+        AppLogger.debug("🗑️ Cleared all recovery tracking data", category: .workout)
     }
 }
 

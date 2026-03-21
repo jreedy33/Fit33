@@ -73,7 +73,7 @@ struct AuthView: View {
                             )
                         
                         Text("Welcome to your fitness journey")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.ds_bodyLarge)
                             .foregroundColor(.black.opacity(0.6))
                             .padding(.top, 4)
                     }
@@ -164,7 +164,7 @@ struct AuthView: View {
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 } else {
                                     Text(isSignUp ? "Create Account" : "Sign In")
-                                        .font(.system(size: 18, weight: .bold))
+                                        .font(.ds_heading3)
                                     Image(systemName: "arrow.right.circle.fill")
                                         .font(.ds_heading3)
                                 }
@@ -198,7 +198,7 @@ struct AuthView: View {
                             HStack(spacing: 12) {
                                 // Google "G" logo
                                 Image(systemName: "g.circle.fill")
-                                    .font(.system(size: 20, weight: .medium))
+                                    .font(.ds_heading3)
                                     .foregroundStyle(
                                         LinearGradient(
                                             colors: [.red, .yellow, .green, .blue],
@@ -278,8 +278,8 @@ struct AuthView: View {
         // Increment counter for next time
         testUserCounter += 1
         
-        // Small delay to show the filled fields, then auto-submit
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
             handleAuth()
         }
     }

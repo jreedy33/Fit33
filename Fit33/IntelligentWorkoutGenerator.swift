@@ -80,10 +80,10 @@ class IntelligentWorkoutGenerator {
         balanceMovementPatterns: Bool = true
     ) -> [ExerciseData] {
         
-        print("🧠 Intelligent Workout Generation Started")
-        print("   Target: \(targetBodyParts)")
-        print("   Equipment: \(availableEquipment)")
-        print("   Difficulty: \(difficulty.rawValue)")
+        AppLogger.debug("🧠 Intelligent Workout Generation Started", category: .workout)
+        AppLogger.debug("   Target: \(targetBodyParts)", category: .workout)
+        AppLogger.debug("   Equipment: \(availableEquipment)", category: .workout)
+        AppLogger.debug("   Difficulty: \(difficulty.rawValue)", category: .workout)
         
         // Step 1: Get all exercises and classify them
         let allExercises = ExerciseDataProvider.shared.exercises
@@ -97,13 +97,13 @@ class IntelligentWorkoutGenerator {
             difficulty: difficulty
         )
         
-        print("   Filtered exercises: \(filtered.count)")
+        AppLogger.debug("   Filtered exercises: \(filtered.count)", category: .workout)
         
         // Step 3: Remove recently used exercises
         var candidates = filtered
         if avoidRecentExercises {
             candidates = removeRecentExercises(filtered)
-            print("   After removing recent: \(candidates.count)")
+            AppLogger.debug("   After removing recent: \(candidates.count)", category: .workout)
         }
         
         // Step 4: Build balanced workout with smart selection
@@ -117,7 +117,7 @@ class IntelligentWorkoutGenerator {
         // Step 5: Track usage for future variety
         trackExerciseUsage(selectedExercises.map { $0.exercise.name })
         
-        print("✅ Generated \(selectedExercises.count) exercises with variety")
+        AppLogger.info("✅ Generated \(selectedExercises.count) exercises with variety", category: .workout)
         return selectedExercises.map { $0.exercise }
     }
     
@@ -131,10 +131,10 @@ class IntelligentWorkoutGenerator {
         duration: Int,
         goal: ExerciseIntelligenceEngine.FitnessGoal
     ) -> GeneratedWorkout {
-        print("🧠 Smart Workout Generation (Intelligence Engine)")
-        print("   Muscles: \(targetMuscles)")
-        print("   Equipment: \(availableEquipment)")
-        print("   Skill: \(skillLevel), Duration: \(duration)min, Goal: \(goal.rawValue)")
+        AppLogger.debug("🧠 Smart Workout Generation (Intelligence Engine)", category: .workout)
+        AppLogger.debug("   Muscles: \(targetMuscles)", category: .workout)
+        AppLogger.debug("   Equipment: \(availableEquipment)", category: .workout)
+        AppLogger.debug("   Skill: \(skillLevel), Duration: \(duration)min, Goal: \(goal.rawValue)", category: .workout)
         
         let workout = ExerciseIntelligenceEngine.shared.generateWorkout(
             targetMuscles: targetMuscles,
@@ -144,7 +144,7 @@ class IntelligentWorkoutGenerator {
             goal: goal
         )
         
-        print("✅ Generated \(workout.exercises.count) exercises, est. \(workout.estimatedDuration)min")
+        AppLogger.info("✅ Generated \(workout.exercises.count) exercises, est. \(workout.estimatedDuration)min", category: .workout)
         return workout
     }
     
@@ -591,9 +591,9 @@ class IntelligentWorkoutGenerator {
         }
         
         // Log the selection with favorite-based discovery info
-        print("📊 Workout Balance:")
-        print("   Patterns: \(patternCounts)")
-        print("   Emphasis: \(emphasisCounts)")
+        AppLogger.debug("📊 Workout Balance:", category: .workout)
+        AppLogger.debug("   Patterns: \(patternCounts)", category: .workout)
+        AppLogger.debug("   Emphasis: \(emphasisCounts)", category: .workout)
         
         // Log favorite-based recommendations
         for meta in selected {
@@ -603,9 +603,9 @@ class IntelligentWorkoutGenerator {
             )
             if favoriteScore > 0 {
                 if isFavoriteExercise(meta.exercise.name) {
-                    print("   ⭐ \(meta.exercise.name) - Your favorite!")
+                    AppLogger.debug("   ⭐ \(meta.exercise.name) - Your favorite!", category: .workout)
                 } else {
-                    print("   🔄 \(meta.exercise.name) - Based on your favorites (score: +\(Int(favoriteScore)))")
+                    AppLogger.debug("   🔄 \(meta.exercise.name) - Based on your favorites (score: +\(Int(favoriteScore)))", category: .workout)
                 }
             }
         }
@@ -652,7 +652,7 @@ class IntelligentWorkoutGenerator {
     func clearHistory() {
         userExerciseHistory.removeAll()
         lastGeneratedWorkouts.removeAll()
-        print("🧹 Exercise history cleared")
+        AppLogger.debug("🧹 Exercise history cleared", category: .workout)
     }
     
     func getUnusedExercises(forBodyParts bodyParts: Set<String>, equipment: Set<String>) -> [ExerciseData] {

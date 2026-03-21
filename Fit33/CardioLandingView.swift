@@ -191,8 +191,9 @@ struct CardioLandingView: View {
                 if shouldDismiss {
                     showingGoalSetup = false
                     dismiss()
-                    // Reset the flag after a short delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.5))
+                        guard !Task.isCancelled else { return }
                         WorkoutManager.shared.shouldDismissCardioFlow = false
                     }
                 }
@@ -519,7 +520,7 @@ struct EquipmentCard: View {
                         .frame(width: 80, height: 80)
                     
                     Image(systemName: activity.icon)
-                        .font(.system(size: 32))
+                        .font(.ds_heading1)
                         .foregroundColor(activity.color)
                 }
                 

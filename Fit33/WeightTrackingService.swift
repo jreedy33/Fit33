@@ -194,7 +194,7 @@ class WeightTrackingService: ObservableObject {
             UserDefaults.standard.removeObject(forKey: todayWeightLbsKey)
             UserDefaults.standard.removeObject(forKey: todayWeightDateKey)
             UserDefaults.standard.synchronize() // Force immediate write
-            print("🗑️ [Weight] Cleared cached weight")
+            AppLogger.debug("🗑️ [Weight] Cleared cached weight", category: .health)
             return
         }
         
@@ -203,21 +203,21 @@ class WeightTrackingService: ObservableObject {
         UserDefaults.standard.set(log.weightLbs, forKey: todayWeightLbsKey)
         UserDefaults.standard.set(today.timeIntervalSince1970, forKey: todayWeightDateKey)
         UserDefaults.standard.synchronize() // Force immediate write to disk
-        print("💾 [Weight] Cached weight: \(log.weightKg) kg / \(log.weightLbs) lbs (source: \(log.source))")
+        AppLogger.debug("💾 [Weight] Cached weight: \(log.weightKg) kg / \(log.weightLbs) lbs (source: \(log.source))", category: .health)
         
         // Verify it was saved
         let verifyKg = UserDefaults.standard.double(forKey: todayWeightKgKey)
         let verifyLbs = UserDefaults.standard.double(forKey: todayWeightLbsKey)
         let verifyDate = UserDefaults.standard.double(forKey: todayWeightDateKey)
-        print("✅ [Weight] Verified cache - kg:\(verifyKg) lbs:\(verifyLbs) date:\(verifyDate)")
+        AppLogger.info("✅ [Weight] Verified cache - kg:\(verifyKg) lbs:\(verifyLbs) date:\(verifyDate)", category: .health)
     }
     
     /// Load cached today's weight from UserDefaults (called on init for instant display)
     private func loadCachedTodayWeight() {
-        print("🔍 [Weight] Checking for cached weight...")
+        AppLogger.debug("🔍 [Weight] Checking for cached weight...", category: .health)
         let cachedDate = UserDefaults.standard.double(forKey: todayWeightDateKey)
         guard cachedDate > 0 else {
-            print("⚠️ [Weight] No cached date found")
+            AppLogger.warning("⚠️ [Weight] No cached date found", category: .health)
             return
         }
         
@@ -230,7 +230,7 @@ class WeightTrackingService: ObservableObject {
             UserDefaults.standard.removeObject(forKey: todayWeightKgKey)
             UserDefaults.standard.removeObject(forKey: todayWeightLbsKey)
             UserDefaults.standard.removeObject(forKey: todayWeightDateKey)
-            print("🗑️ [Weight] Cache is stale (from \(cachedDateObj)), clearing")
+            AppLogger.debug("🗑️ [Weight] Cache is stale (from \(cachedDateObj)), clearing", category: .health)
             return
         }
         
@@ -238,7 +238,7 @@ class WeightTrackingService: ObservableObject {
         let cachedLbs = UserDefaults.standard.double(forKey: todayWeightLbsKey)
         
         guard cachedKg > 0 || cachedLbs > 0 else {
-            print("⚠️ [Weight] Cached weight is 0")
+            AppLogger.warning("⚠️ [Weight] Cached weight is 0", category: .health)
             return
         }
         
@@ -256,7 +256,7 @@ class WeightTrackingService: ObservableObject {
         
         todayLog = cachedLog
         hasLoggedToday = true
-        print("✅ [Weight] Loaded cached today's weight: \(cachedKg) kg / \(cachedLbs) lbs")
+        AppLogger.info("✅ [Weight] Loaded cached today's weight: \(cachedKg) kg / \(cachedLbs) lbs", category: .health)
     }
     
     // MARK: - Computed Properties
@@ -377,9 +377,9 @@ class WeightTrackingService: ObservableObject {
             await MainActor.run {
                 self.recentLogs = logs
             }
-            print("✅ [Weight] Loaded \(logs.count) recent weight logs")
+            AppLogger.info("✅ [Weight] Loaded \(logs.count) recent weight logs", category: .health)
         } catch {
-            print("❌ [Weight] Failed to load recent logs: \(error)")
+            AppLogger.error("❌ [Weight] Failed to load recent logs: \(error)", category: .health)
         }
     }
     
@@ -404,25 +404,25 @@ class WeightTrackingService: ObservableObject {
                 // IMPORTANT: Only update if we got a result from server
                 // This prevents overwriting cached/optimistic updates with empty database results
                 if let serverLog = logs.first {
-                    print("✅ [Weight] Loaded today's log from server (id: \(serverLog.id))")
+                    AppLogger.info("✅ [Weight] Loaded today's log from server (id: \(serverLog.id))", category: .health)
                     self.todayLog = serverLog  // This will trigger cacheTodayWeight() via didSet
                     self.hasLoggedToday = true
                 } else {
                     // No server log found
                     if let existingLog = self.todayLog {
                         // Keep cached or manual entry - don't overwrite with empty result
-                        print("ℹ️ [Weight] No server log, keeping existing entry (source: \(existingLog.source))")
+                        AppLogger.debug("ℹ️ [Weight] No server log, keeping existing entry (source: \(existingLog.source))", category: .health)
                         // Don't change todayLog or hasLoggedToday
                     } else {
                         // No cached data either, truly no weight logged today
-                        print("ℹ️ [Weight] No weight logged today")
+                        AppLogger.debug("ℹ️ [Weight] No weight logged today", category: .health)
                         self.todayLog = nil
                         self.hasLoggedToday = false
                     }
                 }
             }
         } catch {
-            print("❌ [Weight] Failed to load today's log: \(error)")
+            AppLogger.error("❌ [Weight] Failed to load today's log: \(error)", category: .health)
             // On error, keep any cached data we have
         }
     }
@@ -441,7 +441,7 @@ class WeightTrackingService: ObservableObject {
                 self.statistics = stats.first
             }
         } catch {
-            print("❌ [Weight] Failed to load statistics: \(error)")
+            AppLogger.error("❌ [Weight] Failed to load statistics: \(error)", category: .health)
             // Calculate stats locally if view doesn't exist
             await calculateLocalStatistics()
         }
@@ -461,7 +461,7 @@ class WeightTrackingService: ObservableObject {
                 self.weightGoal = goals.first
             }
         } catch {
-            print("❌ [Weight] Failed to load weight goal: \(error)")
+            AppLogger.error("❌ [Weight] Failed to load weight goal: \(error)", category: .health)
         }
     }
     
@@ -470,7 +470,7 @@ class WeightTrackingService: ObservableObject {
     @MainActor
     func logWeight(_ weight: Double, notes: String? = nil) async -> Bool {
         guard let userId = supabase.currentUser?.id else {
-            print("❌ [Weight] No user ID available")
+            AppLogger.error("❌ [Weight] No user ID available", category: .health)
             return false
         }
         
@@ -499,8 +499,8 @@ class WeightTrackingService: ObservableObject {
         )
         
         // Update UI immediately (optimistic update)
-        print("📝 [Weight] Updating UI with new weight: \(weight) \(usesLbs ? "lbs" : "kg")")
-        print("📝 [Weight] Creating log: kg=\(weightKg), lbs=\(weightLbs), source=manual")
+        AppLogger.debug("📝 [Weight] Updating UI with new weight: \(weight) \(usesLbs ? "lbs" : "kg")", category: .health)
+        AppLogger.debug("📝 [Weight] Creating log: kg=\(weightKg), lbs=\(weightLbs), source=manual", category: .health)
         
         todayLog = newLog  // This triggers didSet → cacheTodayWeight()
         hasLoggedToday = true
@@ -510,8 +510,8 @@ class WeightTrackingService: ObservableObject {
         // Post notification so all weight widgets refresh (home screen + nutrition tab)
         NotificationCenter.default.post(name: .weightDidUpdate, object: nil)
         
-        print("✅ [Weight] UI updated - todayLog.id=\(newLog.id), hasLoggedToday=\(hasLoggedToday)")
-        print("✅ [Weight] didSet should have triggered cacheTodayWeight()")
+        AppLogger.info("✅ [Weight] UI updated - todayLog.id=\(newLog.id), hasLoggedToday=\(hasLoggedToday)", category: .health)
+        AppLogger.info("✅ [Weight] didSet should have triggered cacheTodayWeight()", category: .health)
         
         // Haptic feedback
         HapticManager.impact(.medium)
@@ -541,7 +541,7 @@ class WeightTrackingService: ObservableObject {
                 .insert(logInsert)
                 .execute()
             
-            print("✅ [Weight] Logged \(weight) \(weightUnitSuffix) to cloud")
+            AppLogger.info("✅ [Weight] Logged \(weight) \(weightUnitSuffix) to cloud", category: .health)
             
             // Update daily quest progress for weight logging
             Task { @MainActor in
@@ -560,10 +560,10 @@ class WeightTrackingService: ObservableObject {
                 await loadRecentLogs(userId: userId)
             }
             
-            print("✅ [Weight] Save complete, todayLog retained")
+            AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {
-            print("❌ [Weight] Failed to log weight: \(error)")
+            AppLogger.error("❌ [Weight] Failed to log weight: \(error)", category: .health)
             return false
         }
     }
@@ -603,10 +603,10 @@ class WeightTrackingService: ObservableObject {
                 goalType: goalType
             )
             
-            print("✅ [Weight] Goal updated: \(targetWeight) \(weightUnitSuffix)")
+            AppLogger.info("✅ [Weight] Goal updated: \(targetWeight) \(weightUnitSuffix)", category: .health)
             return true
         } catch {
-            print("❌ [Weight] Failed to set goal: \(error)")
+            AppLogger.error("❌ [Weight] Failed to set goal: \(error)", category: .health)
             return false
         }
     }
@@ -630,10 +630,10 @@ class WeightTrackingService: ObservableObject {
             }
             
             calculateTrends()
-            print("✅ [Weight] Deleted log")
+            AppLogger.info("✅ [Weight] Deleted log", category: .health)
             return true
         } catch {
-            print("❌ [Weight] Failed to delete log: \(error)")
+            AppLogger.error("❌ [Weight] Failed to delete log: \(error)", category: .health)
             return false
         }
     }
@@ -660,7 +660,7 @@ class WeightTrackingService: ObservableObject {
                 user.weight = Int16(weightKg)
                 user.weightLbs = weightLbs
                 try? viewContext.save()
-                print("✅ [Weight] Updated Core Data profile weight")
+                AppLogger.info("✅ [Weight] Updated Core Data profile weight", category: .health)
             }
         }
         
@@ -673,9 +673,9 @@ class WeightTrackingService: ObservableObject {
                 fitnessGoal: nil,
                 experienceLevel: nil
             )
-            print("✅ [Weight] Updated cloud profile weight")
+            AppLogger.info("✅ [Weight] Updated cloud profile weight", category: .health)
         } catch {
-            print("⚠️ [Weight] Failed to update cloud profile: \(error)")
+            AppLogger.warning("⚠️ [Weight] Failed to update cloud profile: \(error)", category: .health)
         }
     }
     

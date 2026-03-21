@@ -67,7 +67,7 @@ struct ShoppingListSheet: View {
                     .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
                 
                 Image(systemName: "cart.fill")
-                    .font(.system(size: 32, weight: .semibold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             
@@ -496,7 +496,7 @@ struct MyShoppingListView: View {
                     .shadow(color: .orange.opacity(0.4), radius: 10, x: 0, y: 5)
                 
                 Image(systemName: "cart.fill")
-                    .font(.system(size: 32, weight: .semibold))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             
@@ -681,7 +681,7 @@ struct ShoppingMealSection: View {
                         
                         if allChecked {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.ds_heading3)
                                 .foregroundColor(.white)
                         } else {
                             Image(systemName: "fork.knife")

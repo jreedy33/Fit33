@@ -31,7 +31,7 @@ final class ExerciseDataProvider {
         let startTime = CFAbsoluteTimeGetCurrent()
         
         guard let url = Bundle.main.url(forResource: "exercises", withExtension: "json") else {
-            print("❌ [ExerciseDataProvider] exercises.json not found in bundle!")
+            AppLogger.error("❌ [ExerciseDataProvider] exercises.json not found in bundle!", category: .workout)
             return []
         }
         
@@ -41,11 +41,11 @@ final class ExerciseDataProvider {
             let exercises = try decoder.decode([ExerciseData].self, from: data)
             
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("📦 [ExerciseDataProvider] Loaded \(exercises.count) exercises from JSON in \(String(format: "%.1f", elapsed))ms")
+            AppLogger.debug("📦 [ExerciseDataProvider] Loaded \(exercises.count) exercises from JSON in \(String(format: "%.1f", elapsed))ms", category: .workout)
             
             return exercises
         } catch {
-            print("❌ [ExerciseDataProvider] Failed to decode exercises.json: \(error)")
+            AppLogger.error("❌ [ExerciseDataProvider] Failed to decode exercises.json: \(error)", category: .workout)
             return []
         }
     }

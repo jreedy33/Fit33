@@ -74,12 +74,12 @@ final class RequestDeduplicationService {
     ) async throws -> T {
         // Check cache first
         if useCache, let cached = resultCache[key], cached.isValid, let value = cached.value as? T {
-            print("⚡️ [DEDUP] Cache hit for '\(key)'")
+            AppLogger.debug("⚡️ [DEDUP] Cache hit for '\(key)'", category: .general)
             return value
         }
         
         if let existingTask = inFlightRequests[key] {
-            print("⚡️ [DEDUP] Reusing in-flight request for '\(key)'")
+            AppLogger.debug("⚡️ [DEDUP] Reusing in-flight request for '\(key)'", category: .general)
             let existingResult = try await existingTask.value
             guard let typedResult = existingResult as? T else {
                 throw NSError(domain: "RequestDeduplication", code: -1,
@@ -117,7 +117,7 @@ final class RequestDeduplicationService {
     
     func invalidateAllCaches() {
         resultCache.removeAll()
-        print("🗑️ [DEDUP] All caches invalidated")
+        AppLogger.debug("🗑️ [DEDUP] All caches invalidated", category: .general)
     }
     
     private func cleanExpiredCache() {
@@ -212,7 +212,7 @@ final class MemoryPressureHandler {
                 emergencyAttemptCount = 0
                 criticalFailCount = 0
                 #if DEBUG
-                print("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — counters reset")
+                AppLogger.info("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — counters reset", category: .general)
                 #endif
             }
         }
@@ -232,7 +232,7 @@ final class MemoryPressureHandler {
         // (Use watchdog's thread-safe context instead of @MainActor TabSwitchOptimizer)
         let isDuringTabSwitch = MainThreadWatchdog.shared.isTabSwitchActive
         if isDuringTabSwitch {
-            print("🔍 [TAB FREEZE] ⚠️ MEMORY CLEANUP during active tab transition! level=\(level) memory=\(Int(beforeMB))MB thread=\(Thread.isMainThread ? "MAIN" : "bg")")
+            AppLogger.warning("🔍 [TAB FREEZE] ⚠️ MEMORY CLEANUP during active tab transition! level=\(level) memory=\(Int(beforeMB))MB thread=\(Thread.isMainThread ? "MAIN" : "bg")", category: .general)
         }
         
         // Respect cooldown for ALL levels to prevent main-thread churn
@@ -255,21 +255,21 @@ final class MemoryPressureHandler {
         
         switch level {
         case .warning:
-            print("⚠️ [MEMORY] Warning level (\(Int(beforeMB))MB) - clearing warm caches")
+            AppLogger.warning("⚠️ [MEMORY] Warning level (\(Int(beforeMB))MB) - clearing warm caches", category: .general)
             clearWarmCaches()
             
         case .critical:
-            print("🔴 [MEMORY] Critical level (\(Int(beforeMB))MB) - clearing all caches")
+            AppLogger.debug("🔴 [MEMORY] Critical level (\(Int(beforeMB))MB) - clearing all caches", category: .general)
             clearAllCaches()
             
         case .emergency:
-            print("🚨 [MEMORY] EMERGENCY (\(Int(beforeMB))MB) - aggressive cleanup! (attempt \(emergencyAttemptCount)/\(maxEmergencyAttempts))")
+            AppLogger.debug("🚨 [MEMORY] EMERGENCY (\(Int(beforeMB))MB) - aggressive cleanup! (attempt \(emergencyAttemptCount)/\(maxEmergencyAttempts))", category: .general)
             performEmergencyCleanup()
         }
         
         let cleanupMs = (CACurrentMediaTime() - cleanupStart) * 1000
         if cleanupMs > 50 || isDuringTabSwitch {
-            print("🔍 [TAB FREEZE] Memory cleanup took \(String(format: "%.1f", cleanupMs))ms (during_tab_switch=\(isDuringTabSwitch))")
+            AppLogger.debug("🔍 [TAB FREEZE] Memory cleanup took \(String(format: "%.1f", cleanupMs))ms (during_tab_switch=\(isDuringTabSwitch))", category: .general)
         }
         
         // Check if cleanup had any effect (no Thread.sleep — never block main thread)
@@ -278,14 +278,14 @@ final class MemoryPressureHandler {
         if freed > 5 {
             // Reset fail counter on success
             criticalFailCount = 0
-            print("💾 [MEMORY] Freed \(Int(freed))MB (now: \(Int(afterMB))MB)")
+            AppLogger.debug("💾 [MEMORY] Freed \(Int(freed))MB (now: \(Int(afterMB))MB)", category: .general)
         } else if level == .critical {
             criticalFailCount += 1
             if criticalFailCount >= maxCriticalAttempts {
-                print("ℹ️ [MEMORY] Critical cleanup ineffective \(criticalFailCount)x — suppressing until memory drops")
+                AppLogger.debug("ℹ️ [MEMORY] Critical cleanup ineffective \(criticalFailCount)x — suppressing until memory drops", category: .general)
             }
         } else if level == .emergency && freed <= 5 {
-            print("💾 [MEMORY] Emergency cleanup had no effect (\(Int(afterMB))MB) — memory held by active objects")
+            AppLogger.debug("💾 [MEMORY] Emergency cleanup had no effect (\(Int(afterMB))MB) — memory held by active objects", category: .general)
         }
     }
     
@@ -308,7 +308,7 @@ final class MemoryPressureHandler {
         }
         
         #if DEBUG
-        print("🧹 [MEMORY] Warm caches cleared (3 video systems + dedup)")
+        AppLogger.debug("🧹 [MEMORY] Warm caches cleared (3 video systems + dedup)", category: .general)
         #endif
     }
     
@@ -334,7 +334,7 @@ final class MemoryPressureHandler {
         }
         
         #if DEBUG
-        print("🧹 [MEMORY] All caches cleared (video + photos + URL + tab data)")
+        AppLogger.debug("🧹 [MEMORY] All caches cleared (video + photos + URL + tab data)", category: .network)
         #endif
     }
     
@@ -355,8 +355,8 @@ final class MemoryPressureHandler {
         URLCache.shared.diskCapacity = 0
         URLCache.shared.memoryCapacity = 0
         
-        // Reset URL cache capacity after brief delay to allow normal operation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.0))
             URLCache.shared.diskCapacity = 50 * 1024 * 1024  // 50MB
             URLCache.shared.memoryCapacity = 10 * 1024 * 1024 // 10MB
         }
@@ -375,7 +375,7 @@ final class MemoryPressureHandler {
         }
         
         #if DEBUG
-        print("🚨 [MEMORY] Emergency cleanup complete — all video players, photos, URL caches, and tab data freed")
+        AppLogger.debug("🚨 [MEMORY] Emergency cleanup complete — all video players, photos, URL caches, and tab data freed", category: .network)
         #endif
     }
     
@@ -526,7 +526,7 @@ final class StartupOptimizer {
         guard !hasCompletedCriticalPath else { return }
         hasCompletedCriticalPath = true
         
-        print("🚀 [STARTUP] Critical path complete - running \(deferredTasks.count) deferred tasks")
+        AppLogger.debug("🚀 [STARTUP] Critical path complete - running \(deferredTasks.count) deferred tasks", category: .general)
         
         // Run deferred tasks with delays to spread out the load
         for (index, task) in deferredTasks.enumerated() {
@@ -596,7 +596,7 @@ final class HeavyWorkSentinel {
         lock.unlock()
         
         #if DEBUG
-        print("🔴 [HEAVY WORK] Started: \(reason)")
+        AppLogger.debug("🔴 [HEAVY WORK] Started: \(reason)", category: .general)
         #endif
         
         // Pause video prefetching during heavy work
@@ -615,12 +615,14 @@ final class HeavyWorkSentinel {
         lock.unlock()
         
         #if DEBUG
-        print("🟢 [HEAVY WORK] Ended: \(reason)")
+        AppLogger.debug("🟢 [HEAVY WORK] Ended: \(reason)", category: .general)
         #endif
         
         // Resume video prefetching after a brief cooldown if no more heavy work
         if !stillWorking {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2.0))
+                guard !Task.isCancelled else { return }
                 if !self.isHeavyWorkInProgress {
                     VideoPlaybackEngine.shared.resumePrefetching()
                 }
@@ -641,7 +643,7 @@ final class HeavyWorkSentinel {
             pendingWork.append((id: id, work: work))
             lock.unlock()
             #if DEBUG
-            print("⏳ [HEAVY WORK] Queued: \(id) (queue size: \(pendingWork.count))")
+            AppLogger.debug("⏳ [HEAVY WORK] Queued: \(id) (queue size: \(pendingWork.count))", category: .general)
             #endif
             return
         }
@@ -665,7 +667,7 @@ final class HeavyWorkSentinel {
         lock.unlock()
         
         #if DEBUG
-        print("▶️ [HEAVY WORK] Processing queued: \(nextWork.id)")
+        AppLogger.debug("▶️ [HEAVY WORK] Processing queued: \(nextWork.id)", category: .general)
         #endif
         
         beginHeavyWork(reason: nextWork.id)
@@ -730,7 +732,7 @@ final class StartupCoordinator {
         completedPhases.insert(phase)
         
         #if DEBUG
-        print("✅ [STARTUP] Phase \(phase) complete")
+        AppLogger.info("✅ [STARTUP] Phase \(phase) complete", category: .general)
         #endif
         
         // Run handlers for this phase
@@ -743,7 +745,7 @@ final class StartupCoordinator {
         if completedPhases.count == Phase.allCases.count {
             isStartupComplete = true
             #if DEBUG
-            print("🎉 [STARTUP] All phases complete - app fully initialized")
+            AppLogger.debug("🎉 [STARTUP] All phases complete - app fully initialized", category: .general)
             #endif
         }
     }
@@ -860,7 +862,7 @@ enum PerformanceOptimizationsInitializer {
             StartupCoordinator.shared.beginStartupSequence()
         }
         
-        print("✅ [PERF] Performance optimizations initialized")
+        AppLogger.info("✅ [PERF] Performance optimizations initialized", category: .general)
     }
 }
 
@@ -906,11 +908,11 @@ final class PreviewWarmupService: ObservableObject {
         let newNamesSet = Set(exerciseNames)
         
         if newNamesSet == warmedExerciseNames && isWarmedUp {
-            print("⚡️ [WARMUP] Already warmed up")
+            AppLogger.debug("⚡️ [WARMUP] Already warmed up", category: .general)
             return
         }
         
-        print("🔥 [WARMUP] Starting for \(exercises.count) exercises...")
+        AppLogger.debug("🔥 [WARMUP] Starting for \(exercises.count) exercises...", category: .general)
         
         currentWarmupTask = Task { [weak self] in
             guard let self = self else { return }
@@ -940,8 +942,8 @@ final class PreviewWarmupService: ObservableObject {
             self.isWarmedUp = true
             
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            print("🔥 [WARMUP] Complete in \(String(format: "%.0f", elapsed))ms")
-            print("   └─ Previous: \(self.preFetchedPreviousSets.count), Smart: \(self.smartRecommendationsCache.count)")
+            AppLogger.debug("🔥 [WARMUP] Complete in \(String(format: "%.0f", elapsed))ms", category: .general)
+            AppLogger.debug("   └─ Previous: \(self.preFetchedPreviousSets.count), Smart: \(self.smartRecommendationsCache.count)", category: .general)
         }
     }
     

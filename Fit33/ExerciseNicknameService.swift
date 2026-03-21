@@ -79,12 +79,12 @@ class ExerciseNicknameService: ObservableObject {
                 
                 self.isLoaded = true
                 #if DEBUG
-                print("✅ [NICKNAMES] Loaded \(self.nicknames.count) exercise nicknames")
+                AppLogger.info("✅ [NICKNAMES] Loaded \(self.nicknames.count) exercise nicknames", category: .workout)
                 #endif
             }
         } catch {
             #if DEBUG
-            print("⚠️ [NICKNAMES] Failed to load: \(error)")
+            AppLogger.warning("⚠️ [NICKNAMES] Failed to load: \(error)", category: .workout)
             #endif
             await MainActor.run {
                 self.isLoaded = true // Mark as loaded even on error so app doesn't wait
@@ -122,7 +122,7 @@ class ExerciseNicknameService: ObservableObject {
         }
         
         #if DEBUG
-        print("✅ [NICKNAMES] Set '\(officialName)' -> '\(capitalizedNickname)'")
+        AppLogger.info("✅ [NICKNAMES] Set '\(officialName)' -> '\(capitalizedNickname)'", category: .workout)
         #endif
     }
     
@@ -139,7 +139,7 @@ class ExerciseNicknameService: ObservableObject {
         }
         
         #if DEBUG
-        print("✅ [NICKNAMES] Removed nickname for '\(officialName)'")
+        AppLogger.info("✅ [NICKNAMES] Removed nickname for '\(officialName)'", category: .workout)
         #endif
     }
     

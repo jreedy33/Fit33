@@ -325,9 +325,9 @@ struct PremiumUpgradeView: View {
             // PRO Badge
             HStack(spacing: 6) {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.ds_bodySmall)
                 Text("PRO")
-                    .font(.system(size: 17, weight: .black))
+                    .font(.ds_bodyLarge)
                     .tracking(2)
             }
             .foregroundColor(.black.opacity(0.8))
@@ -609,7 +609,7 @@ struct PremiumUpgradeView: View {
                         
                         if let savings = plan.savings {
                             Text(savings)
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.ds_caption)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -773,7 +773,9 @@ struct PremiumUpgradeView: View {
             contentOpacity = 1.0
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.2))
+            guard !Task.isCancelled else { return }
             withAnimation {
                 tilesAppeared = true
             }

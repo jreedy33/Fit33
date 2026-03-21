@@ -90,7 +90,7 @@ struct SmartProgramDayPreviewView: View {
                 // Prefetch exercise history
                 let exerciseNames = day.exercises.map { $0.exerciseName }
                 Task {
-                    print("🔮 [PROGRAM DAY] Pre-loading exercise history for \(exerciseNames.count) exercises...")
+                    AppLogger.debug("🔮 [PROGRAM DAY] Pre-loading exercise history for \(exerciseNames.count) exercises...", category: .workout)
                     _ = await ExerciseHistoryService.shared.fetchPreviousSetsForExercises(exerciseNames)
                 }
             }
@@ -301,7 +301,7 @@ struct SmartProgramDayPreviewView: View {
         let coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
         
         guard !coreDataExercises.isEmpty else {
-            print("⚠️ No Core Data exercises found")
+            AppLogger.warning("⚠️ No Core Data exercises found", category: .workout)
             return
         }
         
@@ -325,7 +325,7 @@ struct SmartProgramDayPreviewView: View {
         do {
             try context.save()
         } catch {
-            print("❌ Failed to save workout: \(error)")
+            AppLogger.error("❌ Failed to save workout: \(error)", category: .workout)
             return
         }
         

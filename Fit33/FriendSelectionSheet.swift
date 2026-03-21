@@ -54,11 +54,11 @@ struct FriendSelectionSheet: View {
                 }
             }
             .task {
-                print("📋 [FRIEND SELECTION] Sheet appeared")
+                AppLogger.debug("📋 [FRIEND SELECTION] Sheet appeared", category: .social)
                 // Give cached data a moment to load
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
                 isLoading = false
-                print("📋 [FRIEND SELECTION] Showing \(friendService.friends.count) friends")
+                AppLogger.debug("📋 [FRIEND SELECTION] Showing \(friendService.friends.count) friends", category: .social)
             }
         }
         // NavigationStack doesn't need .navigationViewStyle
@@ -128,7 +128,7 @@ struct FriendRowButton: View {
     
     var body: some View {
         Button(action: {
-            print("👤 [FRIEND SELECTION] Selected friend: \(friend.displayName)")
+            AppLogger.debug("👤 [FRIEND SELECTION] Selected friend: \(friend.displayName)", category: .social)
             HapticManager.impact(.light)
             onSelect(friend)
         }) {

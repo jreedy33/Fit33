@@ -155,14 +155,14 @@ final class AppHealthDiagnostics: ObservableObject {
         isRunning = false
         
         // Print summary
-        print(report.summary)
+        AppLogger.debug("\(report.summary)", category: .health)
         for result in report.results where result.severity != .passed {
-            print("  \(result.severity.rawValue) [\(result.category)] \(result.check): \(result.message)")
+            AppLogger.debug("  \(result.severity.rawValue) [\(result.category)] \(result.check): \(result.message)", category: .health)
             if let fix = result.fix {
-                print("    → Fix: \(fix)")
+                AppLogger.debug("    → Fix: \(fix)", category: .health)
             }
             if result.autoFixed {
-                print("    → ✅ AUTO-FIXED")
+                AppLogger.info("    → ✅ AUTO-FIXED", category: .health)
             }
         }
         

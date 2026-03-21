@@ -187,7 +187,7 @@ class WorkoutSharingService: ObservableObject {
         
         showSharedWorkoutSheet = true
         
-        print("📥 [SHARE] Received shared workout: \(name) (\(workoutId))")
+        AppLogger.debug("📥 [SHARE] Received shared workout: \(name) (\(workoutId))", category: .workout)
         return true
     }
     
@@ -203,11 +203,11 @@ class WorkoutSharingService: ObservableObject {
             if let workout = try context.fetch(fetchRequest).first {
                 let exercises = (workout.exercises?.allObjects as? [WorkoutExercise])?
                     .compactMap { $0.exercise } ?? []
-                print("✅ [SHARE] Loaded shared workout from local storage")
+                AppLogger.info("✅ [SHARE] Loaded shared workout from local storage", category: .workout)
                 return SharedWorkoutDetails(workout: workout, exercises: exercises)
             }
         } catch {
-            print("⚠️ [SHARE] Local fetch error (will try cloud): \(error)")
+            AppLogger.warning("⚠️ [SHARE] Local fetch error (will try cloud): \(error)", category: .workout)
         }
         
         // Step 2: Fetch from Supabase cloud (cross-account shared workouts)
@@ -232,14 +232,14 @@ class WorkoutSharingService: ObservableObject {
                 let exerciseNames = parseExerciseNames(from: exercisesJson)
                 let exercises = fetchLocalExercises(named: exerciseNames, in: context)
                 
-                print("✅ [SHARE] Loaded shared workout from cloud (\(exercises.count) exercises)")
+                AppLogger.info("✅ [SHARE] Loaded shared workout from cloud (\(exercises.count) exercises)", category: .workout)
                 return SharedWorkoutDetails(workout: workout, exercises: exercises)
             }
         } catch {
-            print("❌ [SHARE] Cloud fetch error: \(error)")
+            AppLogger.error("❌ [SHARE] Cloud fetch error: \(error)", category: .workout)
         }
         
-        print("⚠️ [SHARE] Workout not found locally or in cloud: \(workoutId)")
+        AppLogger.warning("⚠️ [SHARE] Workout not found locally or in cloud: \(workoutId)", category: .workout)
         return nil
     }
     
@@ -251,7 +251,7 @@ class WorkoutSharingService: ObservableObject {
                 return exercises.compactMap { $0["exercise_name"] as? String ?? $0["name"] as? String }
             }
         } catch {
-            print("⚠️ [SHARE] Could not parse exercises JSON: \(error)")
+            AppLogger.warning("⚠️ [SHARE] Could not parse exercises JSON: \(error)", category: .workout)
         }
         return []
     }
@@ -267,7 +267,7 @@ class WorkoutSharingService: ObservableObject {
             let lookup = Dictionary(grouping: found, by: { $0.name ?? "" })
             return names.compactMap { lookup[$0]?.first }
         } catch {
-            print("⚠️ [SHARE] Could not fetch local exercises: \(error)")
+            AppLogger.warning("⚠️ [SHARE] Could not fetch local exercises: \(error)", category: .workout)
             return []
         }
     }
@@ -460,7 +460,7 @@ struct ShareButton: View {
             switch style {
             case .icon:
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.ds_heading3)
                     .foregroundColor(.blue)
             
             case .iconWithLabel:

@@ -156,7 +156,7 @@ struct InBodySettingsView: View {
                         .frame(width: 50, height: 50)
                     
                     Image(systemName: "figure.stand")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(inbodyBlue)
                 }
                 

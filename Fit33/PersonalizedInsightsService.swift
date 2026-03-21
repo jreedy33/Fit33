@@ -222,7 +222,7 @@ class PersonalizedInsightsService: ObservableObject {
     }
     
     private init() {
-        print("🧠 [INSIGHTS] Personalized Insights Service initialized")
+        AppLogger.debug("🧠 [INSIGHTS] Personalized Insights Service initialized", category: .general)
     }
     
     // MARK: - Public API
@@ -247,9 +247,9 @@ class PersonalizedInsightsService: ObservableObject {
                 .value
             
             self.activeInsights = insights
-            print("🧠 [INSIGHTS] Fetched \(insights.count) active insights")
+            AppLogger.debug("🧠 [INSIGHTS] Fetched \(insights.count) active insights", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to fetch insights: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to fetch insights: \(error)", category: .general)
         }
     }
     
@@ -269,9 +269,9 @@ class PersonalizedInsightsService: ObservableObject {
                 .value
             
             self.streaks = streakData
-            print("🧠 [INSIGHTS] Fetched \(streakData.count) streak types")
+            AppLogger.debug("🧠 [INSIGHTS] Fetched \(streakData.count) streak types", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to fetch streaks: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to fetch streaks: \(error)", category: .general)
         }
     }
     
@@ -279,7 +279,7 @@ class PersonalizedInsightsService: ObservableObject {
     func runDailyAnalysis() async {
         guard let userId = supabase.currentUser?.id else { return }
         
-        print("🧠 [INSIGHTS] Running daily analysis...")
+        AppLogger.debug("🧠 [INSIGHTS] Running daily analysis...", category: .general)
         isLoading = true
         
         // 1. Update all streak tracking
@@ -297,17 +297,20 @@ class PersonalizedInsightsService: ObservableObject {
         // 5. Calculate performance windows
         await updatePerformanceWindows(userId: userId)
         
-        // 6. Generate weekly insights via RPC
+        // 6. Cross-table correlation insights
+        await generateCrossTableInsights(userId: userId)
+
+        // 7. Generate weekly insights via RPC
         await generateWeeklyInsightsRPC(userId: userId)
         
-        // 7. Fetch updated insights
+        // 8. Fetch updated insights
         await fetchActiveInsights()
         await fetchStreaks()
         
         lastAnalysisDate = Date()
         isLoading = false
         
-        print("🧠 [INSIGHTS] Daily analysis complete")
+        AppLogger.debug("🧠 [INSIGHTS] Daily analysis complete", category: .general)
     }
     
     /// Mark an insight as read
@@ -323,7 +326,7 @@ class PersonalizedInsightsService: ObservableObject {
                 activeInsights.remove(at: index)
             }
         } catch {
-            print("❌ [INSIGHTS] Failed to mark as read: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to mark as read: \(error)", category: .general)
         }
     }
     
@@ -340,14 +343,14 @@ class PersonalizedInsightsService: ObservableObject {
                 activeInsights.remove(at: index)
             }
         } catch {
-            print("❌ [INSIGHTS] Failed to dismiss: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to dismiss: \(error)", category: .general)
         }
     }
     
     // MARK: - Streak Tracking
     
     private func updateAllStreaks(userId: UUID) async {
-        print("🔥 [INSIGHTS] Updating streak tracking...")
+        AppLogger.debug("🔥 [INSIGHTS] Updating streak tracking...", category: .general)
         
         // Get recent daily summaries
         let recentData = await getRecentDailySummaries(userId: userId, days: 90)
@@ -515,20 +518,20 @@ class PersonalizedInsightsService: ObservableObject {
                 .upsert(data, onConflict: "user_id,streak_type")
                 .execute()
             
-            print("🔥 [INSIGHTS] Updated \(type) streak: \(current) current, \(longest) longest")
+            AppLogger.debug("🔥 [INSIGHTS] Updated \(type) streak: \(current) current, \(longest) longest", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to save streak: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to save streak: \(error)", category: .general)
         }
     }
     
     // MARK: - Correlation Analysis
     
     private func analyzeCorrelations(userId: UUID) async {
-        print("📊 [INSIGHTS] Analyzing correlations...")
+        AppLogger.debug("📊 [INSIGHTS] Analyzing correlations...", category: .general)
         
         let recentData = await getRecentDailySummaries(userId: userId, days: 30)
         guard recentData.count >= 7 else {
-            print("⚠️ [INSIGHTS] Not enough data for correlation analysis")
+            AppLogger.warning("⚠️ [INSIGHTS] Not enough data for correlation analysis", category: .general)
             return
         }
         
@@ -591,7 +594,7 @@ class PersonalizedInsightsService: ObservableObject {
         guard validDays.count >= 5 else { return }
         
         let hydrationValues = validDays.compactMap { $0.hydration.map { Double($0) } }
-        let volumeValues = validDays.compactMap { _ in Double.random(in: 8000...15000) } // Placeholder for workout volume
+        let volumeValues: [Double] = [] // TODO: Connect real workout volume data when available
         
         let correlation = calculatePearsonCorrelation(x: hydrationValues, y: volumeValues)
         
@@ -744,9 +747,9 @@ class PersonalizedInsightsService: ObservableObject {
                 .upsert(data, onConflict: "user_id,metric_a,metric_b,time_window_days")
                 .execute()
             
-            print("📊 [INSIGHTS] Saved correlation: \(metricA) ↔ \(metricB) = \(String(format: "%.2f", coefficient))")
+            AppLogger.debug("📊 [INSIGHTS] Saved correlation: \(metricA) ↔ \(metricB) = \(String(format: "%.2f", coefficient))", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to save correlation: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to save correlation: \(error)", category: .general)
         }
     }
     
@@ -755,7 +758,7 @@ class PersonalizedInsightsService: ObservableObject {
     private func generateGoalInsights(userId: UUID) async {
         guard let goal = getUserFitnessGoal() else { return }
         
-        print("🎯 [INSIGHTS] Generating goal-specific insights for: \(goal)")
+        AppLogger.debug("🎯 [INSIGHTS] Generating goal-specific insights for: \(goal)", category: .general)
         
         let recentData = await getRecentDailySummaries(userId: userId, days: 7)
         guard !recentData.isEmpty else { return }
@@ -822,7 +825,7 @@ class PersonalizedInsightsService: ObservableObject {
         let deficitDays = data.filter { ($0.calories ?? 0) > 0 && ($0.calories ?? 0) <= calorieGoal }
         
         let weightsThisWeek = data.compactMap { $0.weightLbs }
-        let weightChange = weightsThisWeek.count >= 2 ? (weightsThisWeek.last ?? 0) - (weightsThisWeek.first ?? 0) : 0
+        let weightChange = weightsThisWeek.count >= 2 ? (weightsThisWeek.first ?? 0) - (weightsThisWeek.last ?? 0) : 0
         
         let proteinGoal = getUserProteinGoal() ?? 120
         let proteinDays = data.filter { ($0.protein ?? 0) >= Int(proteinGoal * 0.85) }
@@ -934,7 +937,7 @@ class PersonalizedInsightsService: ObservableObject {
     // MARK: - Pattern Detection
     
     private func detectBehaviorPatterns(userId: UUID) async {
-        print("🔍 [INSIGHTS] Detecting behavior patterns...")
+        AppLogger.debug("🔍 [INSIGHTS] Detecting behavior patterns...", category: .general)
         
         // Detect best workout time
         await detectBestWorkoutTime(userId: userId)
@@ -979,7 +982,7 @@ class PersonalizedInsightsService: ObservableObject {
                 .upsert(pattern, onConflict: "user_id,pattern_type,pattern_name")
                 .execute()
         } catch {
-            print("❌ [INSIGHTS] Failed to save pattern: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to save pattern: \(error)", category: .general)
         }
     }
     
@@ -996,7 +999,7 @@ class PersonalizedInsightsService: ObservableObject {
     // MARK: - Performance Windows
     
     private func updatePerformanceWindows(userId: UUID) async {
-        print("📈 [INSIGHTS] Updating performance windows...")
+        AppLogger.debug("📈 [INSIGHTS] Updating performance windows...", category: .general)
         
         // Update 7-day, 14-day, 30-day windows
         for days in [7, 14, 30] {
@@ -1043,12 +1046,146 @@ class PersonalizedInsightsService: ObservableObject {
                 .upsert(window, onConflict: "user_id,window_type,window_end_date")
                 .execute()
         } catch {
-            print("❌ [INSIGHTS] Failed to save window: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to save window: \(error)", category: .general)
         }
     }
     
+    // MARK: - Cross-Table Correlation Insights
+
+    private func generateCrossTableInsights(userId: UUID) async {
+        let intelligence = AdvancedIntelligenceService.shared
+
+        if let nutr = await intelligence.getNutritionWorkoutCorrelation(userId: userId),
+           nutr.sampleSize >= 5 {
+            let diff = nutr.highProteinAvgCompletion - nutr.lowProteinAvgCompletion
+            if diff > 0.1 {
+                let pctBetter = Int(diff * 100)
+                await createInsight(
+                    userId: userId,
+                    type: .correlation,
+                    category: .nutrition,
+                    title: "Nutrition Powers Your Workouts",
+                    message: "Your workout completion is \(pctBetter)% higher on days after eating 120g+ protein.",
+                    detail: "Based on \(nutr.sampleSize) workouts. High protein days: \(Int(nutr.highProteinAvgCompletion * 100))% completion vs \(Int(nutr.lowProteinAvgCompletion * 100))% on low protein days.",
+                    dataPoints: ["high_protein_completion": nutr.highProteinAvgCompletion, "low_protein_completion": nutr.lowProteinAvgCompletion],
+                    priority: .high,
+                    icon: "fork.knife",
+                    color: "green",
+                    goal: nil
+                )
+            }
+        }
+
+        if let hyd = await intelligence.getHydrationWorkoutCorrelation(userId: userId),
+           hyd.sampleSize >= 5 {
+            let diff = hyd.hydratedAvgCompletion - hyd.dehydratedAvgCompletion
+            if diff > 0.1 {
+                let pctBetter = Int(diff * 100)
+                await createInsight(
+                    userId: userId,
+                    type: .correlation,
+                    category: .hydration,
+                    title: "Hydration Boosts Performance",
+                    message: "You complete \(pctBetter)% more sets when you hit your water goal.",
+                    detail: "Based on \(hyd.sampleSize) workouts. Hydrated: \(Int(hyd.hydratedAvgCompletion * 100))% completion vs \(Int(hyd.dehydratedAvgCompletion * 100))% when under-hydrated.",
+                    dataPoints: ["hydrated_completion": hyd.hydratedAvgCompletion, "dehydrated_completion": hyd.dehydratedAvgCompletion],
+                    priority: .high,
+                    icon: "drop.fill",
+                    color: "blue",
+                    goal: nil
+                )
+            }
+        }
+
+        if let comp = await intelligence.getCompletionRateInsight(userId: userId) {
+            if comp.avgRate < 0.85, let lowestCat = comp.lowestCategory, let lowestRate = comp.lowestRate {
+                await createInsight(
+                    userId: userId,
+                    type: .tip,
+                    category: .workout,
+                    title: "Completion Rate Insight",
+                    message: "\(lowestCat) days have a \(Int(lowestRate * 100))% completion rate. Try shorter sessions.",
+                    detail: "Your average completion across all workouts is \(Int(comp.avgRate * 100))%. \(lowestCat) workouts are pulling it down.",
+                    dataPoints: ["avg_rate": comp.avgRate, "lowest_rate": lowestRate],
+                    priority: .medium,
+                    icon: "chart.bar.fill",
+                    color: "orange",
+                    goal: nil
+                )
+            }
+        }
+
+        // Social nudge for users without friends
+        do {
+            struct SocialRow: Decodable {
+                let friend_count: Int
+                let days_since_last_workout: Double?
+            }
+            let rows: [SocialRow] = try await supabase.supabaseClient
+                .from("v_social_retention_correlation")
+                .select("friend_count, days_since_last_workout")
+                .eq("user_id", value: userId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+
+            if let row = rows.first, row.friend_count == 0 {
+                await createInsight(
+                    userId: userId,
+                    type: .tip,
+                    category: .social,
+                    title: "Train With Friends",
+                    message: "Users with friends work out 2x more often. Add a friend to stay motivated!",
+                    detail: nil,
+                    dataPoints: nil,
+                    priority: .medium,
+                    icon: "person.2.fill",
+                    color: "purple",
+                    goal: nil
+                )
+            }
+        } catch {
+            AppLogger.warning("⚠️ [INSIGHTS] Social correlation query failed: \(error)", category: .general)
+        }
+
+        // Challenge boost insight
+        do {
+            struct ChallengeRow: Decodable {
+                let total_challenges: Int
+                let completed_challenges: Int
+            }
+            let rows: [ChallengeRow] = try await supabase.supabaseClient
+                .from("v_challenge_progress_correlation")
+                .select("total_challenges, completed_challenges")
+                .eq("user_id", value: userId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+
+            if let row = rows.first, row.completed_challenges >= 1 {
+                await createInsight(
+                    userId: userId,
+                    type: .achievement,
+                    category: .social,
+                    title: "Challenge Champion",
+                    message: "You've completed \(row.completed_challenges) challenges! Challenge participants progress faster.",
+                    detail: "Join another challenge to keep the momentum going.",
+                    dataPoints: ["completed_challenges": Double(row.completed_challenges)],
+                    priority: .low,
+                    icon: "trophy.fill",
+                    color: "yellow",
+                    goal: nil
+                )
+            }
+        } catch {
+            AppLogger.warning("⚠️ [INSIGHTS] Challenge correlation query failed: \(error)", category: .general)
+        }
+
+        AppLogger.debug("🧠 [INSIGHTS] Cross-table correlation insights generated", category: .general)
+    }
+
     // MARK: - Weekly Insights RPC
-    
+
     private func generateWeeklyInsightsRPC(userId: UUID) async {
         struct GenerateParams: Encodable {
             let p_user_id: String
@@ -1061,9 +1198,9 @@ class PersonalizedInsightsService: ObservableObject {
                 .execute()
                 .value
             
-            print("🧠 [INSIGHTS] Generated \(result) weekly insights via RPC")
+            AppLogger.debug("🧠 [INSIGHTS] Generated \(result) weekly insights via RPC", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to generate weekly insights: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to generate weekly insights: \(error)", category: .general)
         }
     }
     
@@ -1129,9 +1266,9 @@ class PersonalizedInsightsService: ObservableObject {
                 .insert(insight)
                 .execute()
             
-            print("💡 [INSIGHTS] Created: \(title)")
+            AppLogger.debug("💡 [INSIGHTS] Created: \(title)", category: .general)
         } catch {
-            print("❌ [INSIGHTS] Failed to create insight: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to create insight: \(error)", category: .general)
         }
     }
     
@@ -1198,7 +1335,7 @@ class PersonalizedInsightsService: ObservableObject {
                 )
             }
         } catch {
-            print("❌ [INSIGHTS] Failed to fetch daily summaries: \(error)")
+            AppLogger.error("❌ [INSIGHTS] Failed to fetch daily summaries: \(error)", category: .general)
             return []
         }
     }

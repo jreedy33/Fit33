@@ -172,7 +172,7 @@ struct AutoWorkoutPreviewView: View {
                 "theme": themeColor.description
             ])
             
-            print("📱 [AutoWorkout] View appeared with \(exercises.count) exercises")
+            AppLogger.debug("📱 [AutoWorkout] View appeared with \(exercises.count) exercises", category: .workout)
             if !exercises.isEmpty {
                 GoButtonState.shared.show(
                     primaryColor: themeColor,
@@ -190,14 +190,14 @@ struct AutoWorkoutPreviewView: View {
                 let exerciseNames = exercises.map { $0.name }
                 Task {
                     let startTime = CFAbsoluteTimeGetCurrent()
-                    print("🔮 [PREFETCH] Pre-loading exercise history for \(exerciseNames.count) exercises...")
+                    AppLogger.debug("🔮 [PREFETCH] Pre-loading exercise history for \(exerciseNames.count) exercises...", category: .workout)
                     _ = await ExerciseHistoryService.shared.fetchPreviousSetsForExercises(exerciseNames)
-                    print("🔮 [PREFETCH] Complete in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms")
+                    AppLogger.debug("🔮 [PREFETCH] Complete in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - startTime) * 1000))ms", category: .workout)
                 }
             }
         }
         .onDisappear {
-            print("📱 [AutoWorkout] View disappeared")
+            AppLogger.debug("📱 [AutoWorkout] View disappeared", category: .workout)
             GoButtonState.shared.hide(reason: "AutoWorkoutPreview_disappeared")
         }
     }
@@ -261,7 +261,7 @@ struct AutoWorkoutPreviewView: View {
                                     } else {
                                         // 🆕 Fallback: Show detail with GeneratedExercise data (no Core Data)
                                         #if DEBUG
-                                        print("⚠️ [AUTO-WORKOUT] Core Data exercise not found, using fallback for: \(exercise.name)")
+                                        AppLogger.warning("⚠️ [AUTO-WORKOUT] Core Data exercise not found, using fallback for: \(exercise.name)", category: .workout)
                                         #endif
                                         selectedGeneratedExercise = exercise
                                         showingFallbackDetail = true
@@ -449,21 +449,21 @@ struct AutoWorkoutPreviewView: View {
     private func startWorkout() {
         #if DEBUG
         let totalStartTime = CFAbsoluteTimeGetCurrent()
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("🎯 [AUTO-WORKOUT] startWorkout() BEGIN")
-        print("   └─ Warmup ready: \(warmupService.isWarmedUp)")
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
+        AppLogger.debug("🎯 [AUTO-WORKOUT] startWorkout() BEGIN", category: .workout)
+        AppLogger.debug("   └─ Warmup ready: \(warmupService.isWarmedUp)", category: .workout)
         #endif
         
         // Early validation
         guard !exercises.isEmpty else {
             #if DEBUG
-            print("⚠️ [AUTO-WORKOUT] No exercises, aborting")
+            AppLogger.warning("⚠️ [AUTO-WORKOUT] No exercises, aborting", category: .workout)
             #endif
             return
         }
         guard !workoutManager.isWorkoutActive else {
             #if DEBUG
-            print("⚠️ [AUTO-WORKOUT] Workout already active, aborting")
+            AppLogger.warning("⚠️ [AUTO-WORKOUT] Workout already active, aborting", category: .workout)
             #endif
             return
         }
@@ -471,7 +471,7 @@ struct AutoWorkoutPreviewView: View {
         // ⚡️ If warmup hasn't completed, show brief loading and wait
         if !warmupService.isWarmedUp && warmupService.warmupProgress < 1.0 {
             #if DEBUG
-            print("⏳ [AUTO-WORKOUT] Waiting for warmup to complete (progress: \(warmupService.warmupProgress * 100)%)")
+            AppLogger.debug("⏳ [AUTO-WORKOUT] Waiting for warmup to complete (progress: \(warmupService.warmupProgress * 100)%)", category: .workout)
             #endif
             isPreparingWorkout = true
             
@@ -507,7 +507,7 @@ struct AutoWorkoutPreviewView: View {
         workoutManager.targetWorkoutDuration = targetDurationMinutes
         
         #if DEBUG
-        print("   Properties set: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms")
+        AppLogger.debug("   Properties set: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .workout)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
@@ -516,18 +516,18 @@ struct AutoWorkoutPreviewView: View {
         var coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: exerciseNames)
         
         #if DEBUG
-        print("   Exercise lookup: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms (\(coreDataExercises.count) found)")
-        print("   Looking for: \(exerciseNames.prefix(3))...")
+        AppLogger.debug("   Exercise lookup: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms (\(coreDataExercises.count) found)", category: .workout)
+        AppLogger.debug("   Looking for: \(exerciseNames.prefix(3))...", category: .workout)
         let totalInCoreData = ExerciseLibraryService.shared.getAllExercises().count
-        print("   Total exercises in Core Data: \(totalInCoreData)")
+        AppLogger.debug("   Total exercises in Core Data: \(totalInCoreData)", category: .workout)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
         // 🆕 If name lookup failed, try to find by ID or create exercises in Core Data
         if coreDataExercises.count < exercises.count {
             #if DEBUG
-            print("⚠️ [AUTO-WORKOUT] Only found \(coreDataExercises.count)/\(exercises.count) exercises by name")
-            print("   🔧 Attempting to create missing exercises in Core Data...")
+            AppLogger.warning("⚠️ [AUTO-WORKOUT] Only found \(coreDataExercises.count)/\(exercises.count) exercises by name", category: .workout)
+            AppLogger.debug("   🔧 Attempting to create missing exercises in Core Data...", category: .workout)
             #endif
             
             let context = PersistenceController.shared.container.viewContext
@@ -544,7 +544,7 @@ struct AutoWorkoutPreviewView: View {
                     if let foundById = ExerciseLibraryService.shared.getAllExercises().first(where: { $0.id == uuid }) {
                         createdExercises.append(foundById)
                         #if DEBUG
-                        print("   ✅ Found '\(generatedExercise.name)' by ID")
+                        AppLogger.info("   ✅ Found '\(generatedExercise.name)' by ID", category: .workout)
                         #endif
                         continue
                     }
@@ -565,7 +565,7 @@ struct AutoWorkoutPreviewView: View {
                 
                 createdExercises.append(newExercise)
                 #if DEBUG
-                print("   ✨ Created '\(generatedExercise.name)' in Core Data")
+                AppLogger.debug("   ✨ Created '\(generatedExercise.name)' in Core Data", category: .workout)
                 #endif
             }
             
@@ -576,11 +576,11 @@ struct AutoWorkoutPreviewView: View {
                     // Invalidate the cache so the new exercises are available
                     ExerciseLibraryService.shared.invalidateCache()
                     #if DEBUG
-                    print("   💾 Saved \(createdExercises.count) new exercises to Core Data")
+                    AppLogger.debug("   💾 Saved \(createdExercises.count) new exercises to Core Data", category: .workout)
                     #endif
                 } catch {
                     #if DEBUG
-                    print("   ❌ Failed to save exercises: \(error)")
+                    AppLogger.error("   ❌ Failed to save exercises: \(error)", category: .workout)
                     #endif
                 }
             }
@@ -599,14 +599,14 @@ struct AutoWorkoutPreviewView: View {
             }
             
             #if DEBUG
-            print("   📊 Final exercise count: \(coreDataExercises.count)/\(exercises.count)")
+            AppLogger.debug("   📊 Final exercise count: \(coreDataExercises.count)/\(exercises.count)", category: .workout)
             #endif
         }
         
         // Still couldn't resolve exercises - show error
         if coreDataExercises.isEmpty {
             #if DEBUG
-            print("❌ [AUTO-WORKOUT] Failed to resolve any exercises!")
+            AppLogger.error("❌ [AUTO-WORKOUT] Failed to resolve any exercises!", category: .workout)
             #endif
             errorMessage = "Unable to load exercise data. Please try regenerating the workout."
             showingError = true
@@ -617,8 +617,8 @@ struct AutoWorkoutPreviewView: View {
         proceedWithWorkout(title: workoutTitle, coreDataExercises: coreDataExercises)
         
         #if DEBUG
-        print("🎯 [AUTO-WORKOUT] proceedWithStartWorkout() COMPLETE")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        AppLogger.debug("🎯 [AUTO-WORKOUT] proceedWithStartWorkout() COMPLETE", category: .workout)
+        AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .workout)
         #endif
     }
     
@@ -628,7 +628,7 @@ struct AutoWorkoutPreviewView: View {
         let exercisesWithValidIds = coreDataExercises.filter { $0.id != nil }
         guard exercisesWithValidIds.count == coreDataExercises.count else {
             #if DEBUG
-            print("❌ [AUTO-WORKOUT] Some exercises missing IDs!")
+            AppLogger.error("❌ [AUTO-WORKOUT] Some exercises missing IDs!", category: .workout)
             #endif
             errorMessage = "Some exercises are missing data. Please regenerate the workout."
             showingError = true
@@ -645,8 +645,8 @@ struct AutoWorkoutPreviewView: View {
         workout.isCompleted = false
         
         #if DEBUG
-        print("   Validation complete")
-        print("🎯 [AUTO-WORKOUT] Calling workoutManager.startWorkout()...")
+        AppLogger.debug("   Validation complete", category: .workout)
+        AppLogger.debug("🎯 [AUTO-WORKOUT] Calling workoutManager.startWorkout()...", category: .workout)
         #endif
         
         // Start workout via WorkoutManager (uses tab navigation)
@@ -691,7 +691,7 @@ struct AutoWorkoutPreviewView: View {
                     }
                 }
                 
-                print("🔄 Regenerated workout with \(newExercises.count) exercises")
+                AppLogger.debug("🔄 Regenerated workout with \(newExercises.count) exercises", category: .workout)
                 
             } catch {
                 await MainActor.run {
@@ -1056,7 +1056,7 @@ struct ExerciseDataDetailView: View {
                                 Image(systemName: "dumbbell.fill")
                                     .font(.ds_bodySmall)
                                 Text(exerciseData.equipment)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.ds_bodySmall)
                             }
                             .foregroundColor(colorScheme == .dark ? .white : .black)
                             .padding(.horizontal, Spacing.sm)
@@ -1156,7 +1156,7 @@ struct ExerciseDataDetailView: View {
                     .foregroundColor(categoryColor)
                 
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.primary)
             }
             
@@ -1302,7 +1302,7 @@ struct GeneratedExerciseDetailView: View {
                                 Image(systemName: "dumbbell.fill")
                                     .font(.ds_bodySmall)
                                 Text(exercise.equipment)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.ds_bodySmall)
                             }
                             .foregroundColor(colorScheme == .dark ? .white : .black)
                             .padding(.horizontal, Spacing.sm)
@@ -1382,7 +1382,7 @@ struct GeneratedExerciseDetailView: View {
                     .foregroundColor(categoryColor)
                 
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.primary)
             }
             

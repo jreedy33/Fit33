@@ -135,7 +135,7 @@ final class CrashReportingService {
         // 4. Upload any crash reports from previous session
         uploadPendingReports()
         
-        print("🛡️ [CrashReporter] Initialized — signal handlers, exception handler, pending upload")
+        AppLogger.debug("🛡️ [CrashReporter] Initialized — signal handlers, exception handler, pending upload", category: .general)
     }
     
     // ═══════════════════════════════════════════════════════════════
@@ -417,7 +417,7 @@ final class CrashReportingService {
             error_message: String(message.prefix(2000)),
             error_domain: domain,
             error_code: code,
-            stack_trace: stackTrace != nil ? String(stackTrace!.prefix(8000)) : nil,
+            stack_trace: stackTrace.map { String($0.prefix(8000)) },
             fingerprint: fingerprint,
             breadcrumbs: getBreadcrumbsSnapshot(),
             device_model: getDeviceModel(),
@@ -589,7 +589,7 @@ final class CrashReportingService {
         let pending = loadPendingReports()
         guard !pending.isEmpty else { return }
         
-        print("🛡️ [CrashReporter] Found \(pending.count) pending crash reports from previous session")
+        AppLogger.debug("🛡️ [CrashReporter] Found \(pending.count) pending crash reports from previous session", category: .general)
         
         Task.detached(priority: .utility) {
             var uploaded = 0
@@ -599,7 +599,7 @@ final class CrashReportingService {
             }
             
             if uploaded > 0 {
-                print("🛡️ [CrashReporter] Uploaded \(uploaded)/\(pending.count) pending crash reports")
+                AppLogger.debug("🛡️ [CrashReporter] Uploaded \(uploaded)/\(pending.count) pending crash reports", category: .general)
                 self.clearPendingReports()
             }
         }
@@ -617,7 +617,7 @@ final class CrashReportingService {
             return true
         } catch {
             // If upload fails, persist to disk for retry
-            print("🛡️ [CrashReporter] Upload failed: \(error.localizedDescription)")
+            AppLogger.error("🛡️ [CrashReporter] Upload failed: \(error.localizedDescription)", category: .general)
             return false
         }
     }

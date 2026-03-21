@@ -80,7 +80,7 @@ struct PersistenceController {
         do {
             try viewContext.save()
         } catch {
-            print("⚠️ [PREVIEW] Failed to save preview data: \(error)")
+            AppLogger.warning("⚠️ [PREVIEW] Failed to save preview data: \(error)", category: .general)
         }
         
         return result
@@ -96,7 +96,7 @@ struct PersistenceController {
         
         if useInMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
-            print("🧪 Using in-memory Core Data (DEBUG mode)")
+            AppLogger.debug("🧪 Using in-memory Core Data (DEBUG mode)", category: .general)
         }
         
         // Configure store description with migration options
@@ -105,7 +105,7 @@ struct PersistenceController {
             description.shouldMigrateStoreAutomatically = true
             description.shouldInferMappingModelAutomatically = true
         } else {
-            print("⚠️ [CORE DATA] No persistent store description found — migration options skipped")
+            AppLogger.warning("⚠️ [CORE DATA] No persistent store description found — migration options skipped", category: .general)
         }
         
         var loadError: NSError?
@@ -113,19 +113,19 @@ struct PersistenceController {
         
         container.loadPersistentStores { storeDescription, error in
             if let error = error as NSError? {
-                print("⚠️ Core Data load failed: \(error)")
-                print("Error code: \(error.code)")
+                AppLogger.warning("⚠️ Core Data load failed: \(error)", category: .general)
+                AppLogger.error("Error code: \(error.code)", category: .general)
                 loadError = error
                 storeURL = storeDescription.url
             } else {
-                print("✅ Core Data loaded successfully")
+                AppLogger.info("✅ Core Data loaded successfully", category: .general)
             }
         }
         
         // Handle migration failures by resetting the store
         if let error = loadError, let url = storeURL {
-            print("🔄 Attempting automatic Core Data reset...")
-            print("Error details: \(error.localizedDescription)")
+            AppLogger.debug("🔄 Attempting automatic Core Data reset...", category: .general)
+            AppLogger.error("Error details: \(error.localizedDescription)", category: .general)
             
             PersistenceController.migrationError = error
             
@@ -170,9 +170,9 @@ struct PersistenceController {
                     }
                     
                     PersistenceController.storeBackupURL = backupDir
-                    print("💾 Core Data store backed up to: \(backupDir.path)")
+                    AppLogger.debug("💾 Core Data store backed up to: \(backupDir.path)", category: .general)
                 } catch {
-                    print("⚠️ Failed to backup Core Data store: \(error.localizedDescription)")
+                    AppLogger.warning("⚠️ Failed to backup Core Data store: \(error.localizedDescription)", category: .general)
                     CrashReportingService.shared.reportError(
                         message: "Failed to backup Core Data store before reset",
                         domain: "CoreData",
@@ -190,16 +190,16 @@ struct PersistenceController {
                 try? fileManager.removeItem(at: shmURL)
                 try? fileManager.removeItem(at: walURL)
                 
-                print("🗑️ Deleted old Core Data store files")
+                AppLogger.debug("🗑️ Deleted old Core Data store files", category: .general)
             }
             
             // STEP 3: Try loading again with fresh store
             var retrySuccess = false
             container.loadPersistentStores { _, retryError in
                 if let retryError = retryError as NSError? {
-                    print("❌ Retry failed: \(retryError.localizedDescription)")
+                    AppLogger.error("❌ Retry failed: \(retryError.localizedDescription)", category: .general)
                 } else {
-                    print("✅ Core Data successfully reset and loaded")
+                    AppLogger.info("✅ Core Data successfully reset and loaded", category: .general)
                     retrySuccess = true
                 }
             }
@@ -241,7 +241,7 @@ struct PersistenceController {
                     NotificationCenter.default.post(name: .coreDataLoadFailed, object: nil)
                 }
                 
-                print("❌ CRITICAL: Could not load Core Data even after reset. App will not function correctly.")
+                AppLogger.error("❌ CRITICAL: Could not load Core Data even after reset. App will not function correctly.", category: .general)
             }
         }
         
@@ -257,7 +257,7 @@ struct PersistenceController {
                 try context.save()
             } catch {
                 let nsError = error as NSError
-                print("Core Data save error: \(nsError), \(nsError.userInfo)")
+                AppLogger.error("Core Data save error: \(nsError), \(nsError.userInfo)", category: .general)
             }
         }
     }
@@ -273,18 +273,18 @@ struct PersistenceController {
             do {
                 try container.viewContext.execute(deleteRequest)
             } catch {
-                print("Error deleting \(entity): \(error)")
+                AppLogger.error("Error deleting \(entity): \(error)", category: .general)
             }
         }
         
         save()
-        print("🗑️ All Core Data entities deleted")
+        AppLogger.debug("🗑️ All Core Data entities deleted", category: .general)
     }
     
     /// Clears all user data for sign-out security
     /// This ensures no data from one user is visible to another
     func clearAllUserData() {
-        print("🔐 Clearing all local user data for sign-out/deletion...")
+        AppLogger.debug("🔐 Clearing all local user data for sign-out/deletion...", category: .general)
         
         // 1. Delete all Core Data entities
         deleteAll()
@@ -349,15 +349,15 @@ struct PersistenceController {
             }
         }
         
-        print("🗑️ UserDefaults cleared")
+        AppLogger.debug("🗑️ UserDefaults cleared", category: .general)
         
         // 3. Reset the view context
         container.viewContext.reset()
-        print("🔄 Core Data context reset")
+        AppLogger.debug("🔄 Core Data context reset", category: .general)
         
         // 4. Clear profile photo cache - critical for multi-user scenarios
         ProfilePhotoCache.shared.clearCache()
-        print("🗑️ Profile photo cache cleared")
+        AppLogger.debug("🗑️ Profile photo cache cleared", category: .general)
         
         // 5. Clear singleton service in-memory state
         // This is critical - clearing UserDefaults alone won't reset @Published properties
@@ -367,10 +367,10 @@ struct PersistenceController {
             GeneratedProgramService.shared.clearAllPrograms()
             CloudProgramService.shared.clearActiveProgramCache()
             UserManager.shared.resetForSignOut()
-            print("🔄 Singleton services reset")
+            AppLogger.debug("🔄 Singleton services reset", category: .general)
         }
         
-        print("✅ All local user data cleared successfully")
+        AppLogger.info("✅ All local user data cleared successfully", category: .general)
     }
     
     // MARK: - Cloud Restore After Store Reset
@@ -379,11 +379,11 @@ struct PersistenceController {
     /// Called automatically — the user never needs to know a reset happened.
     func attemptCloudRestore() async -> Bool {
         guard SupabaseManager.shared.isAuthenticated else {
-            print("⚠️ [RESTORE] Cannot restore from cloud — user not authenticated")
+            AppLogger.warning("⚠️ [RESTORE] Cannot restore from cloud — user not authenticated", category: .general)
             return false
         }
         
-        print("☁️ [RESTORE] Starting full cloud data restore...")
+        AppLogger.debug("☁️ [RESTORE] Starting full cloud data restore...", category: .general)
         
         CrashReportingService.shared.addBreadcrumb("Cloud restore started after Core Data reset")
         
@@ -395,7 +395,7 @@ struct PersistenceController {
         // - Exercise nicknames
         await SupabaseManager.shared.syncAllDataFromCloud()
         
-        print("✅ [RESTORE] Cloud data restore completed")
+        AppLogger.info("✅ [RESTORE] Cloud data restore completed", category: .general)
         
         CrashReportingService.shared.addBreadcrumb("Cloud restore completed successfully")
         
@@ -412,9 +412,9 @@ struct PersistenceController {
         do {
             try FileManager.default.removeItem(at: backupURL)
             PersistenceController.storeBackupURL = nil
-            print("🗑️ Cleaned up Core Data backup at \(backupURL.path)")
+            AppLogger.debug("🗑️ Cleaned up Core Data backup at \(backupURL.path)", category: .general)
         } catch {
-            print("⚠️ Failed to clean up Core Data backup: \(error.localizedDescription)")
+            AppLogger.warning("⚠️ Failed to clean up Core Data backup: \(error.localizedDescription)", category: .general)
         }
     }
 }

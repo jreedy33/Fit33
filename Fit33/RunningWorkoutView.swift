@@ -225,7 +225,7 @@ struct RunningWorkoutView: View {
             }
             
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ds_caption)
                 .foregroundColor(.white.opacity(0.5))
                 .tracking(1)
         }
@@ -251,7 +251,7 @@ struct RunningWorkoutView: View {
                     .foregroundColor(gpsStatusColor)
                 
                 Text(gpsStatusText)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ds_caption)
                     .foregroundColor(gpsStatusColor)
             }
             .padding(.horizontal, 10)
@@ -273,7 +273,7 @@ struct RunningWorkoutView: View {
                         .font(.ds_labelMedium)
                     
                     Text(runningManager.isMapFollowing ? "Following" : "Free")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ds_caption)
                 }
                 .foregroundColor(runningManager.isMapFollowing ? accentColor : .white.opacity(0.7))
                 .padding(.horizontal, 10)
@@ -358,7 +358,7 @@ struct RunningWorkoutView: View {
                         selectedChartTab = tab
                     }) {
                         Text(tab.title)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.ds_caption)
                             .foregroundColor(selectedChartTab == tab ? .white : .white.opacity(0.5))
                             .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, 6)
@@ -490,7 +490,7 @@ struct RunningWorkoutView: View {
                     Spacer()
                     
             Image(systemName: "mountain.2.fill")
-                .font(.system(size: 24))
+                .font(.ds_heading2)
                 .foregroundColor(accentColor.opacity(0.5))
         }
     }
@@ -504,13 +504,13 @@ struct RunningWorkoutView: View {
                     .foregroundColor(accentColor)
                 
                 Text("GOAL")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ds_caption)
                     .foregroundColor(.white.opacity(0.6))
                     
                     Spacer()
                     
                 Text(runningManager.formattedGoalRemaining)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.white)
             }
             
@@ -618,7 +618,7 @@ struct RunningWorkoutView: View {
                                     )
                                 
                                 Image(systemName: runningManager.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 26, weight: .semibold))
+                        .font(.ds_heading2)
                                     .foregroundColor(.white)
                             }
                         }
@@ -645,7 +645,7 @@ struct RunningWorkoutView: View {
                 
                 // Icon
                                 Image(systemName: "stop.fill")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.ds_heading1)
                                     .foregroundColor(.white)
                             }
             .shadow(color: .red.opacity(0.4), radius: 15, y: 5)
@@ -696,7 +696,7 @@ struct RunningWorkoutView: View {
                     .foregroundStyle(accentGradient)
                 
                 Text("RUN PAUSED")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.ds_heading2)
                 .foregroundColor(.white)
             
                 Text(runningManager.formattedElapsedTime)
@@ -903,7 +903,7 @@ struct RunningWorkoutView: View {
                             .shadow(color: accentColor.opacity(0.5), radius: 20, y: 10)
                         
                         Text("GO")
-                            .font(.system(size: 32, weight: .heavy))
+                            .font(.ds_heading1)
                             .foregroundColor(.black)
                     }
                 }
@@ -1079,8 +1079,10 @@ struct EnhancedRunningMapView: UIViewRepresentable {
             mapView.addOverlay(polyline)
             
             // Add start marker
-            let startAnnotation = RunAnnotation(coordinate: coordinates.first!, type: .start)
-            mapView.addAnnotation(startAnnotation)
+            if let firstCoord = coordinates.first {
+                let startAnnotation = RunAnnotation(coordinate: firstCoord, type: .start)
+                mapView.addAnnotation(startAnnotation)
+            }
         }
         
         // Add current position with heading
@@ -1268,7 +1270,7 @@ struct GoalSetupSheet: View {
         Button(action: { selectedGoalType = type }) {
             VStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 24))
+                    .font(.ds_heading2)
                 Text(title)
                     .font(.ds_bodySmall).fontWeight(.medium)
             }
@@ -1521,7 +1523,7 @@ struct RunCompletionView: View {
                     isSavingToHealth = false
                     HapticManager.notification(.error)
                 }
-                print("❌ Failed to save running workout to Health: \(error)")
+                AppLogger.error("❌ Failed to save running workout to Health: \(error)", category: .workout)
             }
         }
     }

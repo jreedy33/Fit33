@@ -279,3 +279,46 @@ Both tables have 0 rows and 6 overlapping columns. `user_taste_profile` has no c
 | Total users | ~25 |
 | Total workouts logged | ~92 |
 | Total challenges created | ~330 |
+
+---
+
+## Remediation Status (Updated 2026-03-20)
+
+### Migration Files Created
+
+| File | Phase | Status | What it does |
+|------|-------|--------|-------------|
+| `audit_before.sql` | Baseline | 🆕 Ready to run | Captures pre-remediation state |
+| `20260320_drop_dead_tables.sql` | Phase 1 | 🆕 Ready to run | DROPs 13 dead tables with row-count guards |
+| `20260320_add_missing_fk_constraints.sql` | Phase 1 | 🆕 Ready to run | Adds FK CASCADE to 11 tables + exercise_videos + indexes |
+| `20260320_sync_profiles_progress.sql` | Phase 2 | 🆕 Ready to run | One-time reconciliation + bidirectional sync trigger |
+| `20260320_consolidate_food_history.sql` | Phase 2 | 🆕 Ready to run | Creates user_food_history_v view from meal_logs |
+| `audit_after.sql` | Verification | 🆕 Ready to run | 7-test pass/fail verification suite |
+
+### Swift Changes Made
+
+| File | Change |
+|------|--------|
+| `MealService.swift` | Removed duplicate `logFoodToHistory()` call (meal_logs is now single source) |
+
+### Execution Order
+
+Run these in the Supabase SQL Editor in this exact order:
+
+1. `audit_before.sql` (save output)
+2. `20260320_drop_dead_tables.sql`
+3. `20260320_add_missing_fk_constraints.sql`
+4. `20260320_sync_profiles_progress.sql`
+5. `20260320_consolidate_food_history.sql`
+6. `audit_after.sql` (compare with step 1 output)
+
+### Expected After-State
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Total tables | 146 | 133 (-13 dead) |
+| Total views | 20 | 21 (+1 food history) |
+| Tables missing user_id FK | 11 | 0 |
+| Orphaned rows | Unknown | 0 |
+| Profile/progress drift | Unknown | 0 (trigger prevents) |
+| Duplicate food writes | 2 per meal | 1 per meal |

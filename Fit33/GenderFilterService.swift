@@ -73,7 +73,7 @@ final class GenderFilterService: ObservableObject {
         loadExerciseGenderCache()
         
         #if DEBUG
-        print("👤 GenderFilterService initialized - preference: \(preferredGender.rawValue)")
+        AppLogger.debug("👤 GenderFilterService initialized - preference: \(preferredGender.rawValue)", category: .workout)
         #endif
     }
     
@@ -98,7 +98,7 @@ final class GenderFilterService: ObservableObject {
         VideoPlaybackEngine.shared.clearAllCaches()
         
         #if DEBUG
-        print("👤 Gender preference updated to: \(gender.rawValue) - video caches cleared")
+        AppLogger.debug("👤 Gender preference updated to: \(gender.rawValue) - video caches cleared", category: .workout)
         #endif
         
         // Notify all listeners
@@ -136,7 +136,7 @@ final class GenderFilterService: ObservableObject {
         if let info = exerciseGenderCache[key] {
             let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
             #if DEBUG
-            print("👤 [Gender] Exact match: '\(exerciseName)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")")
+            AppLogger.debug("👤 [Gender] Exact match: '\(exerciseName)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
             #endif
             return filename
         }
@@ -146,7 +146,7 @@ final class GenderFilterService: ObservableObject {
         if let info = exerciseGenderCache[normalizedKey] {
             let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
             #if DEBUG
-            print("👤 [Gender] Normalized match: '\(exerciseName)' -> '\(normalizedKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")")
+            AppLogger.debug("👤 [Gender] Normalized match: '\(exerciseName)' -> '\(normalizedKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
             #endif
             return filename
         }
@@ -156,14 +156,14 @@ final class GenderFilterService: ObservableObject {
             if normalizeExerciseName(cacheKey) == normalizedKey {
                 let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
                 #if DEBUG
-                print("👤 [Gender] Fuzzy match: '\(exerciseName)' via '\(cacheKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")")
+                AppLogger.debug("👤 [Gender] Fuzzy match: '\(exerciseName)' via '\(cacheKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
                 #endif
                 return filename
             }
         }
         
         #if DEBUG
-        print("👤 [Gender] NO MATCH: '\(exerciseName)' (normalized: '\(normalizedKey)')")
+        AppLogger.debug("👤 [Gender] NO MATCH: '\(exerciseName)' (normalized: '\(normalizedKey)')", category: .workout)
         #endif
         return nil
     }
@@ -358,9 +358,9 @@ final class GenderFilterService: ObservableObject {
                 let maleOnly = newCache.values.filter { $0.hasMaleVersion && !$0.hasFemaleVersion }.count
                 let femaleOnly = newCache.values.filter { $0.hasFemaleVersion && !$0.hasMaleVersion }.count
                 let both = newCache.values.filter { $0.hasBothGenders }.count
-                print("👤 Gender cache loaded: \(newCache.count) exercises (including normalized keys)")
-                print("   Male only: \(maleOnly), Female only: \(femaleOnly), Both: \(both)")
-                print("👤 Video caches cleared to match gender preference")
+                AppLogger.debug("👤 Gender cache loaded: \(newCache.count) exercises (including normalized keys)", category: .workout)
+                AppLogger.debug("   Male only: \(maleOnly), Female only: \(femaleOnly), Both: \(both)", category: .workout)
+                AppLogger.debug("👤 Video caches cleared to match gender preference", category: .workout)
                 #endif
             }
         }

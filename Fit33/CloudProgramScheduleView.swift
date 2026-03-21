@@ -297,7 +297,7 @@ struct CloudDayTile: View {
                 
                 if isCompleted {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.ds_heading2)
                         .foregroundColor(.white)
                 } else if !isUnlocked {
                     Image(systemName: "lock.fill")
@@ -821,7 +821,7 @@ struct CloudWorkoutPreviewView: View {
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                     Text("\(dayNumber)")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.ds_heading3)
                         .foregroundColor(.white)
                 }
             }
@@ -835,14 +835,14 @@ struct CloudWorkoutPreviewView: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 4) {
                         Image(systemName: "figure.strengthtraining.traditional")
-                            .font(.system(size: 11))
+                            .font(.ds_caption)
                         Text("\(generatedExercises.count) exercises")
                             .font(.caption2)
                     }
                     
                     HStack(spacing: 4) {
                         Image(systemName: "flame.fill")
-                            .font(.system(size: 11))
+                            .font(.ds_caption)
                         Text(day.day.intensity.capitalized)
                             .font(.caption2)
                     }
@@ -861,7 +861,7 @@ struct CloudWorkoutPreviewView: View {
     private func loadDayAndGenerateExercises() async {
         // Check if we already have cached exercises for this day
         if let cachedExercises = programService.getCachedExercises(for: dayNumber), !cachedExercises.isEmpty {
-            print("📦 Using cached exercises for day \(dayNumber) - \(cachedExercises.count) exercises")
+            AppLogger.debug("📦 Using cached exercises for day \(dayNumber) - \(cachedExercises.count) exercises", category: .workout)
             generatedExercises = cachedExercises
             
             // Still load day details for the header
@@ -874,38 +874,38 @@ struct CloudWorkoutPreviewView: View {
         }
         
         isGenerating = true
-        print("🏃 loadDayAndGenerateExercises started for day \(dayNumber)")
+        AppLogger.debug("🏃 loadDayAndGenerateExercises started for day \(dayNumber)", category: .workout)
         
         // Wait for activeProgramDetails to load (retry up to 15 times)
         for attempt in 1...15 {
-            print("   Attempt \(attempt): checking activeProgramDetails...")
+            AppLogger.debug("   Attempt \(attempt): checking activeProgramDetails...", category: .workout)
             if programService.activeProgramDetails != nil {
-                print("   ✅ activeProgramDetails is available!")
+                AppLogger.info("   ✅ activeProgramDetails is available!", category: .workout)
                 break
             }
-            print("   activeProgramDetails is nil, loading...")
+            AppLogger.debug("   activeProgramDetails is nil, loading...", category: .workout)
             await programService.loadActiveProgram()
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         }
         
         // Debug: check what we have
-        print("   Final check - activeProgramDetails: \(programService.activeProgramDetails != nil ? "exists" : "nil")")
-        print("   Final check - days count: \(programService.activeProgramDetails?.days.count ?? 0)")
+        AppLogger.debug("   Final check - activeProgramDetails: \(programService.activeProgramDetails != nil ? "exists" : "nil")", category: .workout)
+        AppLogger.debug("   Final check - days count: \(programService.activeProgramDetails?.days.count ?? 0)", category: .workout)
         
         // Get day details
         dayDetails = programService.getDayDetails(for: dayNumber)
         
         guard let day = dayDetails else {
-            print("⚠️ Could not load day \(dayNumber) details")
-            print("   Available days: \(programService.activeProgramDetails?.days.map { $0.day.dayNumber } ?? [])")
+            AppLogger.warning("⚠️ Could not load day \(dayNumber) details", category: .workout)
+            AppLogger.debug("   Available days: \(programService.activeProgramDetails?.days.map { $0.day.dayNumber } ?? [])", category: .workout)
             isGenerating = false
             return
         }
         
-        print("📋 Generating exercises for Day \(dayNumber): \(day.day.name)")
-        print("   Focus areas: \(day.day.focusAreas)")
-        print("   Exercise count: \(day.day.exerciseCount)")
-        print("   Predefined exercises: \(day.exercises.count)")
+        AppLogger.debug("📋 Generating exercises for Day \(dayNumber): \(day.day.name)", category: .workout)
+        AppLogger.debug("   Focus areas: \(day.day.focusAreas)", category: .workout)
+        AppLogger.debug("   Exercise count: \(day.day.exerciseCount)", category: .workout)
+        AppLogger.debug("   Predefined exercises: \(day.exercises.count)", category: .workout)
         
         // Generate exercises
         generatedExercises = programService.generateExercisesForDay(day)
@@ -913,7 +913,7 @@ struct CloudWorkoutPreviewView: View {
         // Cache the generated exercises so they don't change
         programService.cacheExercises(generatedExercises, for: dayNumber)
         
-        print("✅ Generated and cached \(generatedExercises.count) exercises")
+        AppLogger.info("✅ Generated and cached \(generatedExercises.count) exercises", category: .workout)
         isGenerating = false
     }
     
@@ -1352,7 +1352,7 @@ struct ExerciseDataDetailSheet: View {
                         // Exercise Name & Category Badge
                         VStack(alignment: .leading, spacing: 12) {
                             Text(exerciseData.name)
-                                .font(.system(size: 24, weight: .bold))
+                                .font(.ds_heading2)
                                 .foregroundColor(.primary)
                             
                             HStack(spacing: 12) {
@@ -1380,7 +1380,7 @@ struct ExerciseDataDetailSheet: View {
                                     Image(systemName: "dumbbell.fill")
                                         .font(.ds_bodySmall)
                                     Text(exerciseData.equipment)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.ds_bodySmall)
                                 }
                                 .foregroundColor(colorScheme == .dark ? .white : .black)
                                 .padding(.horizontal, Spacing.sm)
@@ -1503,7 +1503,7 @@ struct ExerciseDataDetailSheet: View {
                     .foregroundColor(categoryColor)
                 
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.ds_labelLarge)
                     .foregroundColor(.primary)
             }
             

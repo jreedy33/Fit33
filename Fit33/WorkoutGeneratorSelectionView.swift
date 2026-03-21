@@ -438,7 +438,7 @@ struct WorkoutGeneratorSelectionView: View {
     }
     
     private func handleMainAction() {
-        print("🔘 [AUTOGEN] handleMainAction called - step: \(currentStep)")
+        AppLogger.debug("🔘 [AUTOGEN] handleMainAction called - step: \(currentStep)", category: .workout)
         impactFeedback.impactOccurred()
         switch currentStep {
         case .duration:
@@ -455,7 +455,7 @@ struct WorkoutGeneratorSelectionView: View {
             }
             advanceToStep(.equipment)
         case .equipment:
-            print("🔘 [AUTOGEN] Equipment step - calling generateCustomWorkout()")
+            AppLogger.debug("🔘 [AUTOGEN] Equipment step - calling generateCustomWorkout()", category: .workout)
             generateCustomWorkout()
         default:
             break
@@ -612,13 +612,13 @@ struct WorkoutGeneratorSelectionView: View {
             // 🔧 FIX: Reset navigation state when view appears
             // This ensures we can generate a new workout even if user navigated back from preview
             if navigateToPreview {
-                print("🔧 [AUTOGEN] Resetting navigateToPreview on appear (was stuck as true)")
+                AppLogger.debug("🔧 [AUTOGEN] Resetting navigateToPreview on appear (was stuck as true)", category: .workout)
                 navigateToPreview = false
             }
             
             // 🔧 FIX: Reset isGenerating state if it got stuck
             if isGenerating {
-                print("🔧 [AUTOGEN] Resetting isGenerating on appear (was stuck as true)")
+                AppLogger.debug("🔧 [AUTOGEN] Resetting isGenerating on appear (was stuck as true)", category: .workout)
                 isGenerating = false
             }
             
@@ -672,19 +672,19 @@ struct WorkoutGeneratorSelectionView: View {
         }
         .onChange(of: generatedExercises) { oldValue, newValue in
             // 🔧 DEBUG: Track when exercises are generated
-            print("🔘 [AUTOGEN] generatedExercises changed: \(oldValue.count) → \(newValue.count)")
+            AppLogger.debug("🔘 [AUTOGEN] generatedExercises changed: \(oldValue.count) → \(newValue.count)", category: .workout)
             
             // 🔧 FIX: Backup navigation trigger if exercises are generated but navigation didn't fire
             if !newValue.isEmpty && !navigateToPreview && !isGenerating && currentStep == .equipment {
-                print("🔧 [AUTOGEN] Backup trigger: navigating to preview")
+                AppLogger.debug("🔧 [AUTOGEN] Backup trigger: navigating to preview", category: .workout)
                 navigateToPreview = true
             }
         }
         .onChange(of: navigateToPreview) { _, shouldNavigate in
             // 🔧 DEBUG: Track navigation state changes
-            print("🔘 [AUTOGEN] navigateToPreview changed to: \(shouldNavigate)")
+            AppLogger.debug("🔘 [AUTOGEN] navigateToPreview changed to: \(shouldNavigate)", category: .workout)
             if shouldNavigate {
-                print("   └─ generatedExercises count: \(generatedExercises.count)")
+                AppLogger.debug("   └─ generatedExercises count: \(generatedExercises.count)", category: .workout)
             }
         }
         .alert("Error", isPresented: $showingError) {
@@ -718,7 +718,7 @@ struct WorkoutGeneratorSelectionView: View {
     private func generateSurpriseWorkout() {
         // 🔧 Guard against rapid re-generation (crash prevention)
         guard !isGenerating, !navigateToPreview, !workoutManager.isWorkoutActive else {
-            print("⚠️ [Generator] Blocked duplicate generation request")
+            AppLogger.warning("⚠️ [Generator] Blocked duplicate generation request", category: .workout)
             return
         }
         isGenerating = true
@@ -769,36 +769,36 @@ struct WorkoutGeneratorSelectionView: View {
                     isGenerating = false
                     errorMessage = "Failed to generate workout: \(error.localizedDescription)"
                     showingError = true
-                    print("❌ Failed to generate surprise workout: \(error)")
+                    AppLogger.error("❌ Failed to generate surprise workout: \(error)", category: .workout)
                 }
             }
         }
     }
     
     private func generateCustomWorkout() {
-        print("🔘 [AUTOGEN] generateCustomWorkout() called")
-        print("   └─ isGenerating: \(isGenerating)")
-        print("   └─ navigateToPreview: \(navigateToPreview)")
-        print("   └─ isWorkoutActive: \(workoutManager.isWorkoutActive)")
+        AppLogger.debug("🔘 [AUTOGEN] generateCustomWorkout() called", category: .workout)
+        AppLogger.debug("   └─ isGenerating: \(isGenerating)", category: .workout)
+        AppLogger.debug("   └─ navigateToPreview: \(navigateToPreview)", category: .workout)
+        AppLogger.debug("   └─ isWorkoutActive: \(workoutManager.isWorkoutActive)", category: .workout)
         
         // 🔧 Safety: If navigateToPreview is somehow stuck, reset it
         if navigateToPreview && generatedExercises.isEmpty {
-            print("🔧 [AUTOGEN] Resetting stuck navigateToPreview (no exercises)")
+            AppLogger.debug("🔧 [AUTOGEN] Resetting stuck navigateToPreview (no exercises)", category: .workout)
             navigateToPreview = false
         }
         
         // 🔧 Guard against rapid re-generation (but allow if previous was stuck)
         guard !isGenerating, !navigateToPreview, !workoutManager.isWorkoutActive else {
-            print("⚠️ [Generator] Blocked duplicate generation request")
-            print("   ❌ isGenerating=\(isGenerating), navigateToPreview=\(navigateToPreview), isWorkoutActive=\(workoutManager.isWorkoutActive)")
+            AppLogger.warning("⚠️ [Generator] Blocked duplicate generation request", category: .workout)
+            AppLogger.error("   ❌ isGenerating=\(isGenerating), navigateToPreview=\(navigateToPreview), isWorkoutActive=\(workoutManager.isWorkoutActive)", category: .workout)
             return
         }
         isGenerating = true
-        print("🔘 [AUTOGEN] Starting Task for workout generation...")
+        AppLogger.debug("🔘 [AUTOGEN] Starting Task for workout generation...", category: .workout)
 
         Task {
             do {
-                print("🔘 [AUTOGEN] Task started - about to call generatorService.generateWorkout")
+                AppLogger.debug("🔘 [AUTOGEN] Task started - about to call generatorService.generateWorkout", category: .workout)
                 // Use user's profile equipment if nothing selected
                 let userEquipment = (userManager.currentUser?.equipment as? [String]) ?? ["Barbell", "Dumbbells", "Bodyweight", "Cables"]
                 var equipment: [String] = selectedEquipment.isEmpty ? userEquipment : Array(selectedEquipment)
@@ -832,11 +832,11 @@ struct WorkoutGeneratorSelectionView: View {
                     }
                 }
                 
-                print("🔘 [AUTOGEN] Calling generatorService.generateWorkout with:")
-                print("   └─ primaryMuscles: \(Array(selectedPrimaryMuscles))")
-                print("   └─ secondaryMuscles: \(Array(selectedSecondaryMuscles))")
-                print("   └─ equipment: \(equipment)")
-                print("   └─ count: \(effectiveExerciseCount)")
+                AppLogger.debug("🔘 [AUTOGEN] Calling generatorService.generateWorkout with:", category: .workout)
+                AppLogger.debug("   └─ primaryMuscles: \(Array(selectedPrimaryMuscles))", category: .workout)
+                AppLogger.debug("   └─ secondaryMuscles: \(Array(selectedSecondaryMuscles))", category: .workout)
+                AppLogger.debug("   └─ equipment: \(equipment)", category: .workout)
+                AppLogger.debug("   └─ count: \(effectiveExerciseCount)", category: .workout)
                 
                 let exercises = try await generatorService.generateWorkout(
                     primaryMuscles: Array(selectedPrimaryMuscles),
@@ -845,18 +845,18 @@ struct WorkoutGeneratorSelectionView: View {
                     count: effectiveExerciseCount
                 )
                 
-                print("🔘 [AUTOGEN] generateWorkout returned \(exercises.count) exercises")
+                AppLogger.debug("🔘 [AUTOGEN] generateWorkout returned \(exercises.count) exercises", category: .workout)
 
                 await MainActor.run {
                     generatedExercises = exercises
                     isGenerating = false
 
                     if exercises.isEmpty {
-                        print("⚠️ [AUTOGEN] No exercises generated - showing error")
+                        AppLogger.warning("⚠️ [AUTOGEN] No exercises generated - showing error", category: .workout)
                         errorMessage = "No exercises found. Please try different options."
                         showingError = true
                     } else {
-                        print("✅ [AUTOGEN] Generated \(exercises.count) exercises - navigating to preview")
+                        AppLogger.info("✅ [AUTOGEN] Generated \(exercises.count) exercises - navigating to preview", category: .workout)
                         // 🚀 PERF: Dispatch prefetch to background immediately
                         // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand.
                         
@@ -869,7 +869,7 @@ struct WorkoutGeneratorSelectionView: View {
                     isGenerating = false
                     errorMessage = "Failed to generate workout: \(error.localizedDescription)"
                     showingError = true
-                    print("❌ [AUTOGEN] Failed to generate custom workout: \(error)")
+                    AppLogger.error("❌ [AUTOGEN] Failed to generate custom workout: \(error)", category: .workout)
                 }
             }
         }
@@ -989,7 +989,7 @@ struct HowItWorksRow: View {
                     .frame(width: 50, height: 50)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.ds_heading2)
                     .foregroundColor(color)
             }
             
@@ -1447,7 +1447,7 @@ struct PrimaryMuscleCard: View {
                             .clipShape(Circle())
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(.ds_heading2)
                             .foregroundColor(isSelected ? .white : .gray)
                     }
                 }

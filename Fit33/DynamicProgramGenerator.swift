@@ -204,12 +204,12 @@ class DynamicProgramGenerator {
     /// Mix of different types, splits, and durations to keep user engaged
     func generatePersonalizedPrograms(for profile: UserProgramProfile) -> [GeneratedProgram] {
         #if DEBUG
-        print("🎯 Generating 10 personalized programs...")
-        print("   Goals: \(profile.goals)")
-        print("   Experience: \(profile.experienceLevel.rawValue)")
-        print("   Days/week: \(profile.daysPerWeek)")
-        print("   Equipment: \(profile.availableEquipment)")
-        print("   Location: \(profile.workoutLocation.rawValue)")
+        AppLogger.debug("🎯 Generating 10 personalized programs...", category: .workout)
+        AppLogger.debug("   Goals: \(profile.goals)", category: .workout)
+        AppLogger.debug("   Experience: \(profile.experienceLevel.rawValue)", category: .workout)
+        AppLogger.debug("   Days/week: \(profile.daysPerWeek)", category: .workout)
+        AppLogger.debug("   Equipment: \(profile.availableEquipment)", category: .workout)
+        AppLogger.debug("   Location: \(profile.workoutLocation.rawValue)", category: .workout)
         #endif
         
         var programs: [GeneratedProgram] = []
@@ -245,7 +245,7 @@ class DynamicProgramGenerator {
         }
         
         #if DEBUG
-        print("✅ Generated \(programs.count) personalized programs with varying durations")
+        AppLogger.info("✅ Generated \(programs.count) personalized programs with varying durations", category: .workout)
         #endif
         return programs
     }
@@ -486,7 +486,7 @@ class DynamicProgramGenerator {
     ) -> GeneratedProgram? {
         
         #if DEBUG
-        print("🎬 Creating sequel for: \(previousProgram.name)")
+        AppLogger.debug("🎬 Creating sequel for: \(previousProgram.name)", category: .workout)
         #endif
         
         // Keep same type and split for continuity

@@ -87,7 +87,7 @@ struct HealthyRecipesCarousel: View {
         }
         // Refresh when preferences change (cache invalidated)
         .onChange(of: preferenceService.hasPreferencesSet) { newValue in
-            print("🔄 [CAROUSEL] Preferences changed (\(newValue)) - refreshing")
+            AppLogger.debug("🔄 [CAROUSEL] Preferences changed (\(newValue)) - refreshing", category: .nutrition)
             loadRecipes()
         }
         .background(
@@ -119,7 +119,7 @@ struct HealthyRecipesCarousel: View {
                 triggeringFeature: .recipes,
                 onUpgrade: { plan in
                     // Handle upgrade flow - this would connect to your payment system
-                    print("User selected plan: \(plan.rawValue)")
+                    AppLogger.debug("User selected plan: \(plan.rawValue)", category: .nutrition)
                     showingPremiumUpgrade = false
                 },
                 onRestore: {
@@ -248,7 +248,7 @@ struct HealthyRecipesCarousel: View {
                     }
                 }
                 
-                print("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes for 2-row layout (personalized: \(isPersonalized))")
+                AppLogger.debug("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes for 2-row layout (personalized: \(isPersonalized))", category: .nutrition)
             }
         }
     }

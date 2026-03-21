@@ -106,7 +106,7 @@ struct BugReportView: View {
                     .frame(width: 70, height: 70)
                 
                 Image(systemName: "ant.fill")
-                    .font(.system(size: 32))
+                    .font(.ds_heading1)
                     .foregroundColor(.white)
             }
             

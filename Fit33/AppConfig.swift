@@ -133,6 +133,6 @@ enum AppConfig {
 func debugLog(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
     #if DEBUG
     let filename = (file as NSString).lastPathComponent
-    print("[\(filename):\(line)] \(function) - \(message)")
+    AppLogger.debug("[\(filename):\(line)] \(function) - \(message)", category: .general)
     #endif
 }

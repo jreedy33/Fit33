@@ -1,16 +1,16 @@
 # Fit33 Lead Product Engineer Agent
 
-> **Role**: You are the Lead Product Engineer Agent for Fit33. You ensure every feature works correctly, every button leads where it should, every interaction feels intentional, and every new feature integrates seamlessly with existing systems. You work hand-in-hand with the Lead Designer Agent (`DESIGN_AGENT.md`) — they define how things look; you ensure they work.
+> **Role**: Lead Product Engineer. Owns functional correctness, navigation, component reuse, feature integration, and UI logic.
 
 ---
 
-## Your Responsibilities
+## Mandatory Standards (ALL Agents Must Follow)
 
-1. **Functional correctness**: Every button, link, and gesture does what the user expects
-2. **Navigation integrity**: Every entry point to a feature leads to the same destination via the same presentation pattern
-3. **Component reuse**: Use shared components from `DesignSystem.swift`, `AdaptiveColors.swift`, and `SharedUtilities.swift` — never duplicate
-4. **Performance**: Animations don't jank, lists scroll smoothly, backgrounds don't drain battery
-5. **Consistency enforcement**: When building new UI, cross-reference `DESIGN_AGENT.md` for every decision
+1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
+2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
+3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
+4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
+5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 
 ---
 
@@ -331,20 +331,7 @@ If a design decision conflicts with an engineering constraint:
 
 ---
 
-## Logic Audit Learnings
-
-### Ownership from Logic Audit (March 2026)
-- BUG-01: CollaborativeLearningEngine type safety (FIXED)
-- BUG-03: SmartExercisePairingEngine operator precedence (FIXED)
-- BUG-06: Challenge progress guard - pending status (FIXED)
-- BUG-07: ChallengeProgressResolver consistency (FIXED)
-- BUG-09: ForceExerciseRefresh delegation (FIXED)
-- BUG-12: ContextualMealEngine dynamic targets (FIXED)
-- GAP-01 through GAP-14: All logic gaps (FIXED)
-- DUP-01, DUP-02, DUP-04, DUP-05, DUP-06: Consolidation (FIXED)
-- DEAD-04 through DEAD-10: Dead code cleanup (FIXED)
-
-### Key Rules Established
+## Key Rules Established
 - "pending" challenges must NEVER receive progress updates — only "active"
 - Operator precedence: always use explicit parentheses in compound boolean conditions
 - Challenge progress must use `max(localValue, serverValue)` consistently
@@ -394,22 +381,10 @@ If a design decision conflicts with an engineering constraint:
 
 ---
 
-## Onboarding Responsibilities
+## Remaining Tasks
 
-**Primary owner** of `NewOnboardingView.swift` and `PhoneVerificationSheet.swift`.
-
-### Completed
-- **H-12**: Removed 1,327 lines of dead code (duplicate PageTemplate step views)
-- **H-13**: Added progress checkpoint persistence via UserDefaults
-- **H-14**: Synced PhoneVerificationSheet to 45 countries, dialingCode, fromLocale(), maxAttempts=3
-- **M-20**: Verified forgot-password link is accessible from sign-in form
-
-### Remaining
-- **M-18**: Add birthday date format toggle (MM/DD vs DD/MM override)
-- Reduce file size further (7,541 lines → consider per-step file extraction)
-
-### Reference
-- `ONBOARDING_AUDIT.md` — Sections 3 (flow detail), 13 (components), 17 (validation checklist)
+- **M-18**: Add birthday date format toggle (MM/DD vs DD/MM override) in `NewOnboardingView.swift`
+- Consider splitting `NewOnboardingView.swift` (7,541 lines) into per-step files
 
 ---
 
@@ -678,3 +653,48 @@ User Types → onChange(of: searchText)
 - SSE streaming in Next.js: `ReadableStream` + `text/event-stream` content type
 - Chat UI: message bubbles with `pre-wrap`, auto-scroll via `messagesEndRef`, Shift+Enter for newlines
 - Quick-ask buttons: array of pre-built prompts that call `sendMessage(text)` directly
+
+### 2026-03-20: Performance Audit — Code Fixes
+
+**PR Detection** (`ActiveWorkoutView.swift`):
+- `analyzeWorkoutWithAdvancedIntelligence()` now detects personal records before calling `AdvancedIntelligenceService`
+- Iterates completed exercises, compares best weight against `ExerciseHistoryService.shared.personalRecordsCache[exerciseName].maxWeight`
+- If any exercise exceeded its cached PR, passes `hadPR: true` to the intelligence service
+
+**Friend Search Navigation** (`ShareWorkoutSheet.swift`):
+- Search button in horizontal friend picker now presents `FriendsListView()` via `.sheet(isPresented: $showingFriendSearch)`
+- Same component used by `FriendsTabView` for "Add Friend" — consistent UX
+
+### 2026-03-20: Smart Treadmill Auto-Connect
+
+**Problem**: At gyms with multiple identical treadmills, all broadcasting cryptic BLE names, users couldn't identify which device was theirs.
+
+**Solution — Three-layer smart connect**:
+1. **RSSI Proximity Auto-Suggest**: 5-sample rolling average stabilizes signal strength. If the strongest device is 15+ dBm above the next, auto-suggest it with a prominent green "Treadmill Detected" banner.
+2. **Visual Signal Ranking**: Each device card shows signal bars (1-4), proximity label ("Very close" / "Nearby" / "Far"), and a "CLOSEST" badge on the strongest device. Green accent border highlights the closest.
+3. **Device Memory**: `@AppStorage("lastConnectedBLEDeviceId")` remembers the last connected device. On next scan, if it reappears, shows a "Reconnect" banner. If remembered device is also the closest by RSSI, `shouldAutoConnect` returns true.
+
+**Files modified**:
+- `BluetoothFitnessManager.swift` — RSSI averaging (`rssiHistory`), `suggestedDevice`, `rememberedDevice`, `shouldAutoConnect`, device memory on connect
+- `FitnessEquipmentView.swift` — `autoSuggestBanner()`, `reconnectBanner()`, updated `DiscoveredDeviceCard` with `isClosest`/`isLastUsed` badges, proximity labels
+
+**RSSI reference ranges**: >= -50 dBm = "Very close" (4 bars), -50 to -65 = "Nearby" (2-3 bars), < -65 = "Far" (1 bar)
+
+### 2026-03-21: Notification System Audit — Bug Fixes & Enhancements
+
+**Architecture**: 25+ notification types across 5 categories (Workout, Social, Achievements, Health, Motivation). Local scheduling via `UNUserNotificationCenter` + server push via `push_notification_queue` → APNs.
+
+**Key files**: `NotificationManager.swift` (scheduling, toggling, smart check), `NotificationSettingsView.swift` (settings UI), `PushNotificationService.swift` (token registration), `Fit33App.swift` (comeback reminder with dedup)
+
+**Critical fixes applied**:
+- `scheduleAllNotifications()` now checks `last_workout_date` before scheduling streak protection / workout reminder — prevents false "you haven't worked out" notifications
+- Comeback reminder logic removed from `performSmartCheck()` — only `Fit33App.checkForComebackReminder()` handles it (proper daily dedup via `last_comeback_reminder`)
+- 3 missing types added to `NotificationCategory.social`: `.contactJoined`, `.challengeProgress`, `.challengeCancelled`
+- `toggleNotification()` now has cases for `.morningMotivation`, `.weeklyProgress`, `.waterReminder`
+
+**New features**:
+- Weekly progress notification (Sunday 6 PM), water reminders (2h intervals 8AM-8PM), workout celebration (2s delay after completion)
+- Graduated re-engagement: 3-7 days daily, 14-day milestone, 30-day milestone, then stop
+- Achievement batching: 30-second window combines rapid-fire PR/level-up/streak into one notification
+- Daily notification cap: 8/day, critical types (friend request, challenge invite) bypass
+- `syncPreferencesToCloud()` upserts preferences to `user_notification_preferences` for server-side enforcement

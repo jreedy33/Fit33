@@ -150,7 +150,9 @@ struct DevSessionLogsView: View {
             showCopiedToast = true
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
             withAnimation {
                 showCopiedToast = false
             }

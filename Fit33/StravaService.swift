@@ -180,7 +180,7 @@ final class StravaService: ObservableObject {
         
         isConnected = true
         
-        print("✅ [STRAVA] Connected as \(tokenResponse.athlete?.firstname ?? "Unknown") \(tokenResponse.athlete?.lastname ?? "")")
+        AppLogger.info("✅ [STRAVA] Connected as \(tokenResponse.athlete?.firstname ?? "Unknown") \(tokenResponse.athlete?.lastname ?? "")", category: .health)
         
         // Update integration status in database
         Task {
@@ -226,7 +226,7 @@ final class StravaService: ObservableObject {
         self.refreshToken = tokenResponse.refreshToken
         tokenExpiresAt = Date(timeIntervalSince1970: Double(tokenResponse.expiresAt))
         
-        print("🔄 [STRAVA] Token refreshed")
+        AppLogger.debug("🔄 [STRAVA] Token refreshed", category: .health)
     }
     
     /// Ensure we have a valid access token
@@ -252,18 +252,18 @@ final class StravaService: ObservableObject {
     /// Sync activities from Strava
     func syncActivities(daysBack: Int = 30) async {
         guard isConnected else {
-            print("⏭️ [STRAVA] Skipping sync — not connected (token: \(accessToken != nil), refresh: \(refreshToken != nil))")
+            AppLogger.debug("⏭️ [STRAVA] Skipping sync — not connected (token: \(accessToken != nil), refresh: \(refreshToken != nil))", category: .health)
             return
         }
         
         isLoading = true
         errorMessage = nil
         
-        print("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), token expires: \(tokenExpiresAt?.description ?? "nil"))")
+        AppLogger.debug("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), token expires: \(tokenExpiresAt?.description ?? "nil"))", category: .health)
         
         do {
             let token = try await ensureValidToken()
-            print("🔑 [STRAVA] Token valid, fetching activities...")
+            AppLogger.debug("🔑 [STRAVA] Token valid, fetching activities...", category: .health)
             
             guard let after = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
                 throw StravaError.apiError("Failed to compute date range")
@@ -290,11 +290,11 @@ final class StravaService: ObservableObject {
                 throw StravaError.apiError("No HTTP response")
             }
             
-            print("📡 [STRAVA] API response: \(httpResponse.statusCode), body size: \(data.count) bytes")
+            AppLogger.debug("📡 [STRAVA] API response: \(httpResponse.statusCode), body size: \(data.count) bytes", category: .network)
             
             guard httpResponse.statusCode == 200 else {
                 let body = String(data: data, encoding: .utf8) ?? "no body"
-                print("❌ [STRAVA] API error body: \(body.prefix(500))")
+                AppLogger.error("❌ [STRAVA] API error body: \(body.prefix(500))", category: .network)
                 throw StravaError.apiError("HTTP \(httpResponse.statusCode): \(body.prefix(200))")
             }
             
@@ -309,9 +309,9 @@ final class StravaService: ObservableObject {
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: "strava_last_sync")
             
-            print("📊 [STRAVA] Decoded \(activities.count) activities")
+            AppLogger.debug("📊 [STRAVA] Decoded \(activities.count) activities", category: .health)
             for (i, activity) in activities.prefix(5).enumerated() {
-                print("   \(i+1). \(activity.type) — \(activity.name) — \(activity.startDate)")
+                AppLogger.debug("   \(i+1). \(activity.type) — \(activity.name) — \(activity.startDate)", category: .health)
             }
             
             // Save activities to Supabase for persistence
@@ -320,11 +320,11 @@ final class StravaService: ObservableObject {
             // Check new activities against challenges
             await syncActivitiesToChallenges(activities)
             
-            print("✅ [STRAVA] Synced \(activities.count) activities")
+            AppLogger.info("✅ [STRAVA] Synced \(activities.count) activities", category: .health)
             
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [STRAVA] Sync error: \(error)")
+            AppLogger.error("❌ [STRAVA] Sync error: \(error)", category: .health)
         }
         
         isLoading = false
@@ -456,12 +456,12 @@ final class StravaService: ObservableObject {
                         skippedCount += 1 // Already exists
                     }
                 } catch {
-                    print("⚠️ [STRAVA] Failed to save activity \(activity.id): \(error)")
+                    AppLogger.warning("⚠️ [STRAVA] Failed to save activity \(activity.id): \(error)", category: .health)
                 }
             }
         }
         
-        print("✅ [STRAVA] Synced \(savedCount) activities to cardio_workouts, skipped \(skippedCount)")
+        AppLogger.info("✅ [STRAVA] Synced \(savedCount) activities to cardio_workouts, skipped \(skippedCount)", category: .health)
         
         // Notify dashboard to reload cardio workouts so Strava workouts appear in Recent Activity
         if savedCount > 0 {
@@ -477,7 +477,7 @@ final class StravaService: ObservableObject {
         if !todayActivities.isEmpty {
             await MainActor.run {
                 UserManager.shared.updateStreak()
-                print("🔥 [STRAVA] Updated streak - found \(todayActivities.count) activities from today")
+                AppLogger.debug("🔥 [STRAVA] Updated streak - found \(todayActivities.count) activities from today", category: .health)
             }
         }
     }
@@ -515,11 +515,11 @@ final class StravaService: ObservableObject {
         let todayActivities = activities.filter { calendar.isDateInToday($0.startDate) }
         
         guard !todayActivities.isEmpty else {
-            print("📊 [STRAVA] No activities from today to sync to challenges")
+            AppLogger.debug("📊 [STRAVA] No activities from today to sync to challenges", category: .health)
             return
         }
         
-        print("🏆 [STRAVA] Checking \(todayActivities.count) today's activities against challenges...")
+        AppLogger.debug("🏆 [STRAVA] Checking \(todayActivities.count) today's activities against challenges...", category: .health)
         
         for activity in todayActivities {
             await ChallengeService.shared.checkStravaWorkoutForChallenges(
@@ -555,7 +555,7 @@ final class StravaService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: false)
         }
         
-        print("🔌 [STRAVA] Disconnected")
+        AppLogger.debug("🔌 [STRAVA] Disconnected", category: .health)
     }
     
     // MARK: - Computed Properties

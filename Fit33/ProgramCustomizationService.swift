@@ -913,10 +913,10 @@ class ProgramCustomizationService: ObservableObject {
             return nil
         }
         
-        print("🎨 Generating custom program from: \(baseProgram.program.name)")
-        print("   Equipment: \(request.availableEquipment)")
-        print("   Days/week: \(request.daysPerWeek)")
-        print("   Max duration: \(request.maxWorkoutMinutes) min")
+        AppLogger.debug("🎨 Generating custom program from: \(baseProgram.program.name)", category: .workout)
+        AppLogger.debug("   Equipment: \(request.availableEquipment)", category: .workout)
+        AppLogger.debug("   Days/week: \(request.daysPerWeek)", category: .workout)
+        AppLogger.debug("   Max duration: \(request.maxWorkoutMinutes) min", category: .workout)
         
         // Step 1: Adjust schedule based on days per week
         let adjustedDays = adjustSchedule(
@@ -967,8 +967,8 @@ class ProgramCustomizationService: ObservableObject {
         generatedProgram = customProgram
         isGenerating = false
         
-        print("✅ Generated custom program: \(customProgram.customName)")
-        print("   \(customProgram.days.count) days, \(customProgram.days.filter { !$0.isRestDay }.count) workout days")
+        AppLogger.info("✅ Generated custom program: \(customProgram.customName)", category: .workout)
+        AppLogger.debug("   \(customProgram.days.count) days, \(customProgram.days.filter { !$0.isRestDay }.count) workout days", category: .workout)
         
         return customProgram
     }
@@ -1482,11 +1482,11 @@ class ProgramCustomizationService: ObservableObject {
                 .insert(insert)
                 .execute()
             
-            print("✅ Custom program saved to cloud")
+            AppLogger.info("✅ Custom program saved to cloud", category: .workout)
             return true
         } catch {
             self.error = "Failed to save: \(error.localizedDescription)"
-            print("❌ Error saving custom program: \(error)")
+            AppLogger.error("❌ Error saving custom program: \(error)", category: .workout)
             return false
         }
     }

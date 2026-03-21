@@ -69,7 +69,7 @@ final class ExerciseSwapService: ObservableObject {
     }
     
     private init() {
-        print("🔄 [SWAP SERVICE] Initialized")
+        AppLogger.debug("🔄 [SWAP SERVICE] Initialized", category: .workout)
     }
     
     /// Pre-compute swap candidates for all exercises in a workout (call at workout start)
@@ -112,7 +112,7 @@ final class ExerciseSwapService: ObservableObject {
         }
         
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("🔄 [SWAP SERVICE] Pre-computed swap graph for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("🔄 [SWAP SERVICE] Pre-computed swap graph for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .workout)
     }
     
     /// Clear the cache (call on workout end)
@@ -137,9 +137,9 @@ final class ExerciseSwapService: ObservableObject {
         let family = exercise.value(forKey: "exerciseFamily") as? String ?? ""
         let complementaryFamiliesString = exercise.value(forKey: "complementaryFamilies") as? String ?? ""
         
-        print("🔄 [SWAP] Getting suggestions for: \(exercise.name ?? "Unknown")")
-        print("   Family: \(family)")
-        print("   Complementary: \(complementaryFamiliesString)")
+        AppLogger.debug("🔄 [SWAP] Getting suggestions for: \(exercise.name ?? "Unknown")", category: .workout)
+        AppLogger.debug("   Family: \(family)", category: .workout)
+        AppLogger.debug("   Complementary: \(complementaryFamiliesString)", category: .workout)
         
         // Section 1: Equipment Variants (same movement, different equipment)
         let equipmentVariants = getEquipmentVariants(
@@ -200,7 +200,7 @@ final class ExerciseSwapService: ObservableObject {
             }
         }
         
-        print("🔄 [SWAP] Found \(sections.count) sections with \(sections.reduce(0) { $0 + $1.suggestions.count }) total suggestions")
+        AppLogger.debug("🔄 [SWAP] Found \(sections.count) sections with \(sections.reduce(0) { $0 + $1.suggestions.count }) total suggestions", category: .workout)
         
         return sections
     }
@@ -242,7 +242,7 @@ final class ExerciseSwapService: ObservableObject {
             )
             
             if let first = variants.first {
-                print("🔄 [QUICK SWAP] Swap #\(swapCount): Equipment variant - \(first.exercise.name ?? "")")
+                AppLogger.debug("🔄 [QUICK SWAP] Swap #\(swapCount): Equipment variant - \(first.exercise.name ?? "")", category: .workout)
                 return first.exercise
             }
         }
@@ -259,7 +259,7 @@ final class ExerciseSwapService: ObservableObject {
         )
         
         if let first = complementary.first {
-            print("🔄 [QUICK SWAP] Swap #\(swapCount): Complementary - \(first.exercise.name ?? "")")
+            AppLogger.debug("🔄 [QUICK SWAP] Swap #\(swapCount): Complementary - \(first.exercise.name ?? "")", category: .workout)
             return first.exercise
         }
         
@@ -284,20 +284,20 @@ final class ExerciseSwapService: ObservableObject {
         // Swap 1-2: prefer equipment variants
         if swapCount < 3 {
             if let match = cached.equipmentVariants.first(where: filterExcluded) {
-                print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Equipment variant - \(match.exercise.name ?? "")")
+                AppLogger.debug("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Equipment variant - \(match.exercise.name ?? "")", category: .workout)
                 return match.exercise
             }
         }
         
         // Swap 3+: prefer complementary
         if let match = cached.complementary.first(where: filterExcluded) {
-            print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Complementary - \(match.exercise.name ?? "")")
+            AppLogger.debug("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Complementary - \(match.exercise.name ?? "")", category: .workout)
             return match.exercise
         }
         
         // Fallback from cache
         if let match = cached.fallback.first(where: filterExcluded) {
-            print("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Fallback - \(match.exercise.name ?? "")")
+            AppLogger.debug("🔄 [QUICK SWAP] Cache hit - Swap #\(swapCount): Fallback - \(match.exercise.name ?? "")", category: .workout)
             return match.exercise
         }
         

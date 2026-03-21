@@ -222,14 +222,14 @@ final class DebugPerformanceMonitor {
             // Frame should be ~16.67ms for 60fps
             if frameDuration > 0.02 { // More than 20ms = dropped frame
                 frameDrops += 1
-                print("⚠️ [PERF] Frame drop detected: \(String(format: "%.1f", frameDuration * 1000))ms")
+                AppLogger.warning("⚠️ [PERF] Frame drop detected: \(String(format: "%.1f", frameDuration * 1000))ms", category: .general)
             }
         }
         lastFrameTime = currentTime
     }
     
     func logMetric(_ name: String, value: Double, unit: String = "ms") {
-        print("📊 [PERF] \(name): \(String(format: "%.2f", value))\(unit)")
+        AppLogger.debug("📊 [PERF] \(name): \(String(format: "%.2f", value))\(unit)", category: .general)
     }
     
     func measureBlock(_ name: String, block: () -> Void) {

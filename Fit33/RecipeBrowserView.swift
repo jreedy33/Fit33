@@ -139,7 +139,7 @@ struct RecipeBrowserView: View {
             PremiumUpgradeView(
                 triggeringFeature: .recipes,
                 onUpgrade: { plan in
-                    print("User selected plan: \(plan.rawValue)")
+                    AppLogger.debug("User selected plan: \(plan.rawValue)", category: .nutrition)
                     showingPremiumUpgrade = false
                 },
                 onRestore: {
@@ -507,18 +507,18 @@ class RecipeBrowserViewModel: ObservableObject {
         // Build search query incorporating user preferences
         if !searchQuery.isEmpty {
             queryItems.append(URLQueryItem(name: "query", value: searchQuery))
-            print("🍽️ [BROWSER] User search: \(searchQuery)")
+            AppLogger.debug("🍽️ [BROWSER] User search: \(searchQuery)", category: .nutrition)
         } else if !includeIngredients.isEmpty {
             // Use top 2 liked ingredients for broader matching
             let topIngredients = includeIngredients.prefix(2).joined(separator: " ")
             queryItems.append(URLQueryItem(name: "query", value: "healthy \(topIngredients)"))
             // Also pass as includeIngredients for Spoonacular preference matching
             queryItems.append(URLQueryItem(name: "includeIngredients", value: includeIngredients.prefix(3).joined(separator: ",")))
-            print("🍽️ [BROWSER] Preference query: healthy \(topIngredients) (include: \(includeIngredients.prefix(3).joined(separator: ",")))")
+            AppLogger.debug("🍽️ [BROWSER] Preference query: healthy \(topIngredients) (include: \(includeIngredients.prefix(3).joined(separator: ",")))", category: .nutrition)
         } else {
             // Default to common healthy meals
             queryItems.append(URLQueryItem(name: "query", value: "healthy chicken vegetables protein"))
-            print("🍽️ [BROWSER] Default query: healthy chicken vegetables protein")
+            AppLogger.debug("🍽️ [BROWSER] Default query: healthy chicken vegetables protein", category: .nutrition)
         }
         
         // Add diet filter
@@ -563,7 +563,7 @@ class RecipeBrowserViewModel: ObservableObject {
             return
         }
         
-        print("🍽️ [BROWSER] Fetching: \(url.absoluteString.prefix(200))...")
+        AppLogger.debug("🍽️ [BROWSER] Fetching: \(url.absoluteString.prefix(200))...", category: .nutrition)
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -572,12 +572,12 @@ class RecipeBrowserViewModel: ObservableObject {
                 throw URLError(.badServerResponse)
             }
             
-            print("🍽️ [BROWSER] Response status: \(httpResponse.statusCode)")
+            AppLogger.debug("🍽️ [BROWSER] Response status: \(httpResponse.statusCode)", category: .network)
             
             guard httpResponse.statusCode == 200 else {
                 // Log the error response
                 if let errorBody = String(data: data, encoding: .utf8) {
-                    print("🍽️ [BROWSER] Error: \(errorBody)")
+                    AppLogger.error("🍽️ [BROWSER] Error: \(errorBody)", category: .nutrition)
                 }
                 throw URLError(.badServerResponse)
             }
@@ -589,10 +589,10 @@ class RecipeBrowserViewModel: ObservableObject {
             hasMoreResults = searchResponse.totalResults > pageSize
             currentOffset = pageSize
             
-            print("🍽️ [BROWSER] ✅ Loaded \(recipes.count) recipes (total available: \(searchResponse.totalResults))")
+            AppLogger.info("🍽️ [BROWSER] ✅ Loaded \(recipes.count) recipes (total available: \(searchResponse.totalResults))", category: .nutrition)
             
         } catch {
-            print("🍽️ [BROWSER] ❌ Error: \(error)")
+            AppLogger.error("🍽️ [BROWSER] ❌ Error: \(error)", category: .nutrition)
             errorMessage = error.localizedDescription
         }
         
@@ -717,7 +717,7 @@ class RecipeBrowserViewModel: ObservableObject {
             currentOffset += pageSize
             
         } catch {
-            print("Error loading more: \(error)")
+            AppLogger.error("Error loading more: \(error)", category: .nutrition)
         }
         
         isLoadingMore = false

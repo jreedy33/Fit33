@@ -1,6 +1,37 @@
 import SwiftUI
 import Combine
 
+// MARK: - Device Tier
+
+enum DeviceTier: String {
+    case compact   // iPhone SE (375pt and below)
+    case standard  // iPhone 14/15/16 (376-399pt)
+    case large     // iPhone Plus/Pro Max (400-450pt)
+    case tablet    // All iPads (451pt+)
+
+    static var current: DeviceTier {
+        let width = OrientationManager.shared.screenWidth
+        switch width {
+        case ...375: return .compact
+        case 376...399: return .standard
+        case 400...450: return .large
+        default: return .tablet
+        }
+    }
+
+    var spacingScale: CGFloat {
+        switch self {
+        case .compact: return 0.85
+        case .standard: return 1.0
+        case .large: return 1.1
+        case .tablet: return 1.25
+        }
+    }
+
+    var isTablet: Bool { self == .tablet }
+    var isCompact: Bool { self == .compact }
+}
+
 /// Global orientation manager that observes device orientation changes
 /// and provides updated screen dimensions to all views
 /// Thread-safe singleton - all UIKit calls are dispatched to main thread
@@ -22,6 +53,10 @@ class OrientationManager: ObservableObject {
     
     /// Current safe area insets
     @Published var safeAreaInsets: EdgeInsets = EdgeInsets()
+    
+    var deviceTier: DeviceTier { DeviceTier.current }
+    var isTablet: Bool { deviceTier.isTablet }
+    var isCompact: Bool { deviceTier.isCompact }
     
     private var cancellables = Set<AnyCancellable>()
     private var isInitialized = false
@@ -67,7 +102,8 @@ class OrientationManager: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(0.1))
                     self?.updateScreenDimensions()
                 }
             }
@@ -77,7 +113,8 @@ class OrientationManager: ObservableObject {
         NotificationCenter.default.publisher(for: UIScene.willEnterForegroundNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(0.1))
                     self?.updateScreenDimensions()
                 }
             }

@@ -150,7 +150,7 @@ struct SmartExerciseSwapView: View {
                         .frame(width: 60, height: 60)
                     
                     Image(systemName: "dumbbell.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundColor(categoryColor)
                 }
                 

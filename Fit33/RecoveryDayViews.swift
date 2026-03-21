@@ -177,7 +177,7 @@ struct RecoveryDayView: View {
                             .fill(Color.teal.opacity(0.12))
                             .frame(width: 80, height: 80)
                         Image(systemName: exercise.sfSymbol)
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                             .foregroundColor(.teal)
                     }
                     
@@ -427,7 +427,7 @@ struct RecoveryDayDashboardWidget: View {
                 HStack(spacing: 4) {
                     let routine = engine.generateRoutine()
                     Image(systemName: "clock")
-                        .font(.system(size: 11))
+                        .font(.ds_caption)
                     Text("~\(routine.totalDurationMinutes) min routine")
                         .font(.caption)
                 }

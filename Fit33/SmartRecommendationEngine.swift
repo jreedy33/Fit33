@@ -30,19 +30,19 @@ class SmartRecommendationEngine {
         context: NSManagedObjectContext
     ) -> PersonalizedWorkoutPlan {
         
-        print("🧠 Smart Recommendation Engine 2.0 Starting...")
+        AppLogger.debug("🧠 Smart Recommendation Engine 2.0 Starting...", category: .workout)
         
         // Step 1: Analyze user profile
         let profile = userProfileAnalyzer.analyzeUser(user)
-        print("   Profile Analysis: \(profile.summary)")
+        AppLogger.debug("   Profile Analysis: \(profile.summary)", category: .workout)
         
         // Step 2: Check muscle recovery status
         let recoveryStatus = muscleRecoveryTracker.getRecoveryStatus(for: user, context: context)
-        print("   Recovery Status: \(recoveryStatus.summary)")
+        AppLogger.debug("   Recovery Status: \(recoveryStatus.summary)", category: .workout)
         
         // Step 3: Get community insights
         let communityData = communityInsights.getCachedInsights()
-        print("   Community Data: \(communityData.topExercises.count) popular exercises loaded")
+        AppLogger.debug("   Community Data: \(communityData.topExercises.count) popular exercises loaded", category: .workout)
         
         // Step 4: Determine optimal muscles to train today
         let optimalMuscles = determineOptimalMuscles(
@@ -50,15 +50,15 @@ class SmartRecommendationEngine {
             recovery: recoveryStatus,
             profile: profile
         )
-        print("   Optimal Muscles: \(optimalMuscles)")
+        AppLogger.debug("   Optimal Muscles: \(optimalMuscles)", category: .workout)
         
         // Step 5: Get prioritized equipment
         let equipment = profile.prioritizedEquipment
-        print("   Equipment Priority: \(equipment)")
+        AppLogger.debug("   Equipment Priority: \(equipment)", category: .workout)
         
         // Step 6: Calculate personalized parameters
         let parameters = calculatePersonalizedParameters(profile: profile, duration: duration)
-        print("   Parameters: \(parameters.exerciseCount) exercises, \(parameters.setsPerExercise) sets avg")
+        AppLogger.debug("   Parameters: \(parameters.exerciseCount) exercises, \(parameters.setsPerExercise) sets avg", category: .workout)
         
         // Step 7: Generate exercises with all factors
         let exercises = generateSmartExercises(
@@ -77,7 +77,7 @@ class SmartRecommendationEngine {
             context: context
         )
         
-        print("✅ Generated \(exercisesWithProgression.count) personalized exercises")
+        AppLogger.info("✅ Generated \(exercisesWithProgression.count) personalized exercises", category: .workout)
         
         return PersonalizedWorkoutPlan(
             exercises: exercisesWithProgression,
@@ -108,7 +108,7 @@ class SmartRecommendationEngine {
             }
             
             // Otherwise suggest alternatives
-            print("   ⚠️ Some requested muscles need more recovery, adjusting...")
+            AppLogger.warning("   ⚠️ Some requested muscles need more recovery, adjusting...", category: .workout)
         }
         
         // Auto-select best muscles to train based on recovery
@@ -797,10 +797,10 @@ class CommunityInsightsEngine {
                 self.lastFetch = Date()
             }
             
-            print("✅ Community insights refreshed: \(popular.count) popular, \(trending.count) trending, \(favorited.count) favorited")
+            AppLogger.info("✅ Community insights refreshed: \(popular.count) popular, \(trending.count) trending, \(favorited.count) favorited", category: .workout)
             
         } catch {
-            print("⚠️ Error fetching community insights: \(error)")
+            AppLogger.warning("⚠️ Error fetching community insights: \(error)", category: .workout)
         }
     }
 }
@@ -850,7 +850,7 @@ class ProgressiveOverloadEngine {
                 return (best.weight, Int(best.reps))
             }
         } catch {
-            print("⚠️ Error fetching previous best: \(error)")
+            AppLogger.warning("⚠️ Error fetching previous best: \(error)", category: .workout)
         }
         
         return nil

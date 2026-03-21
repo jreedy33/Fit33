@@ -54,7 +54,7 @@ final class TabPreloader: ObservableObject {
         guard !isPreloadingComplete else { return }
         
         preloadStartTime = CACurrentMediaTime()
-        print("🚀 [TAB PRELOAD] Starting aggressive preloading...")
+        AppLogger.debug("🚀 [TAB PRELOAD] Starting aggressive preloading...", category: .ui)
         
         Task(priority: .userInitiated) {
             await preloadAllTabs(context: context)
@@ -99,7 +99,7 @@ final class TabPreloader: ObservableObject {
         releasePreloadedData()
         
         let elapsed = (CACurrentMediaTime() - preloadStartTime) * 1000
-        print("🚀 [TAB PRELOAD] Complete in \(String(format: "%.0f", elapsed))ms - ALL tabs ready!")
+        AppLogger.debug("🚀 [TAB PRELOAD] Complete in \(String(format: "%.0f", elapsed))ms - ALL tabs ready!", category: .ui)
     }
     
     // MARK: - Phase 1: Core Data Preload
@@ -131,8 +131,8 @@ final class TabPreloader: ObservableObject {
         )
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("  └─ Phase 1 (Core Data): \(String(format: "%.0f", elapsed))ms")
-        print("     └─ Exercises: \(exercises.count), Workouts: \(workouts.count)")
+        AppLogger.debug("  └─ Phase 1 (Core Data): \(String(format: "%.0f", elapsed))ms", category: .ui)
+        AppLogger.debug("     └─ Exercises: \(exercises.count), Workouts: \(workouts.count)", category: .ui)
     }
     
     private func fetchExercisesForLibrary(context: NSManagedObjectContext) async -> [Exercise] {
@@ -151,7 +151,7 @@ final class TabPreloader: ObservableObject {
                     // Faulting 5000+ objects at startup was causing massive CPU spikes
                     continuation.resume(returning: exercises)
                 } catch {
-                    print("⚠️ [TAB PRELOAD] Exercise fetch failed: \(error)")
+                    AppLogger.warning("⚠️ [TAB PRELOAD] Exercise fetch failed: \(error)", category: .ui)
                     continuation.resume(returning: [])
                 }
             }
@@ -176,7 +176,7 @@ final class TabPreloader: ObservableObject {
                     }
                     continuation.resume(returning: workouts)
                 } catch {
-                    print("⚠️ [TAB PRELOAD] Workout fetch failed: \(error)")
+                    AppLogger.warning("⚠️ [TAB PRELOAD] Workout fetch failed: \(error)", category: .ui)
                     continuation.resume(returning: [])
                 }
             }
@@ -241,7 +241,7 @@ final class TabPreloader: ObservableObject {
         nutritionTabData = nutritionData
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("  └─ Phase 2 (Cloud Data): \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("  └─ Phase 2 (Cloud Data): \(String(format: "%.0f", elapsed))ms", category: .ui)
     }
     
     private func fetchCardioWorkouts() async -> [CardioWorkoutDTO] {
@@ -249,7 +249,7 @@ final class TabPreloader: ObservableObject {
         do {
             return try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 20)
         } catch {
-            print("⚠️ [TAB PRELOAD] Cardio fetch failed: \(error)")
+            AppLogger.warning("⚠️ [TAB PRELOAD] Cardio fetch failed: \(error)", category: .ui)
             return []
         }
     }
@@ -298,7 +298,7 @@ final class TabPreloader: ObservableObject {
         )
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("  └─ Phase 3 (Computations): \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("  └─ Phase 3 (Computations): \(String(format: "%.0f", elapsed))ms", category: .ui)
     }
     
     private func precomputeAchievements() async -> [Achievement] {
@@ -372,7 +372,7 @@ final class TabPreloader: ObservableObject {
         ExerciseLibraryFilterCache.shared.precomputeRecommendedList(allExercises: exercises)
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("  └─ Pre-built search index + recommended list for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("  └─ Pre-built search index + recommended list for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .ui)
     }
     
     // MARK: - Phase 4: Pre-warm Services
@@ -413,7 +413,7 @@ final class TabPreloader: ObservableObject {
         }
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("  └─ Phase 4 (Services): \(String(format: "%.0f", elapsed))ms")
+        AppLogger.debug("  └─ Phase 4 (Services): \(String(format: "%.0f", elapsed))ms", category: .ui)
     }
     
     // MARK: - Public API
@@ -457,7 +457,7 @@ final class TabPreloader: ObservableObject {
         workoutTabData = nil
         nutritionTabData = nil
         progressTabData = nil
-        print("💾 [TAB PRELOAD] Released preloaded data (\(exerciseCount) exercises freed from memory)")
+        AppLogger.debug("💾 [TAB PRELOAD] Released preloaded data (\(exerciseCount) exercises freed from memory)", category: .ui)
     }
     
     /// Reset (for sign out)
@@ -679,7 +679,7 @@ final class ExerciseLibraryFilterCache: ObservableObject {
         isComputing = false
         
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        print("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms")
+        AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
     }
     
     /// Blended score: 60% community popularity + 40% personal usage (normalized)
@@ -862,7 +862,7 @@ final class InstantTabSwitchCoordinator: ObservableObject {
         HapticManager.selectionChanged()
         
         #if DEBUG
-        print("⚡️ [TAB SWITCH] Instant switch to tab \(tab)")
+        AppLogger.debug("⚡️ [TAB SWITCH] Instant switch to tab \(tab)", category: .ui)
         #endif
     }
 }
@@ -884,7 +884,7 @@ extension VideoPlaybackEngine {
     func prewarmPlayerPool() {
         // Create a few pre-warmed players in the pool
         // This is handled internally by VideoPlaybackEngine
-        print("🎬 [VIDEO] Player pool pre-warmed")
+        AppLogger.debug("🎬 [VIDEO] Player pool pre-warmed", category: .ui)
     }
 }
 

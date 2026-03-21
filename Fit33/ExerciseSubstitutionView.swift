@@ -449,9 +449,9 @@ struct ExerciseSubstitutionView: View {
                 isLoading = false
                 
                 #if DEBUG
-                print("🔄 [SUBSTITUTION] Found \(substitutes.count) substitutes for \(currentExercise.name ?? "exercise")")
+                AppLogger.debug("🔄 [SUBSTITUTION] Found \(substitutes.count) substitutes for \(currentExercise.name ?? "exercise")", category: .workout)
                 for sub in substitutes.prefix(5) {
-                    print("   • \(sub.exercise.name ?? "") - \(sub.matchScore)% (\(sub.matchReason.rawValue))")
+                    AppLogger.debug("   • \(sub.exercise.name ?? "") - \(sub.matchScore)% (\(sub.matchReason.rawValue))", category: .workout)
                 }
                 #endif
             }

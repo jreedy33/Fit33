@@ -141,13 +141,13 @@ struct CustomWorkoutBuilderView: View {
             searchCache.removeAll()
             preFilteredExercises = applyFiltersOnly(to: exercises)
             #if DEBUG
-            print("🔧 [FILTER] Rebuilt cache: \(preFilteredExercises.count) exercises")
+            AppLogger.debug("🔧 [FILTER] Rebuilt cache: \(preFilteredExercises.count) exercises", category: .workout)
             // Check for bench/incline/decline exercises
             let benchExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("bench") }
             let declineExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("decline") }
             let inclineExercises = preFilteredExercises.filter { ($0.name?.lowercased() ?? "").contains("incline") }
-            print("🔧 [FILTER] bench exercises: \(benchExercises.count), decline: \(declineExercises.count), incline: \(inclineExercises.count)")
-            if let first = benchExercises.first { print("🔧 [FILTER] Sample bench: '\(first.name ?? "nil")'") }
+            AppLogger.debug("🔧 [FILTER] bench exercises: \(benchExercises.count), decline: \(declineExercises.count), incline: \(inclineExercises.count)", category: .workout)
+            if let first = benchExercises.first { AppLogger.debug("🔧 [FILTER] Sample bench: '\(first.name ?? "nil")'", category: .workout) }
             #endif
         }
     }
@@ -156,17 +156,17 @@ struct CustomWorkoutBuilderView: View {
         if !searchText.isEmpty {
             let searchKey = searchText.lowercased()
             #if DEBUG
-            print("🔍 [CACHE] Search key: '\(searchKey)', preFilteredExercises.count: \(preFilteredExercises.count)")
+            AppLogger.debug("🔍 [CACHE] Search key: '\(searchKey)', preFilteredExercises.count: \(preFilteredExercises.count)", category: .workout)
             #endif
             if let cached = searchCache[searchKey] {
                 #if DEBUG
-                print("🔍 [CACHE] HIT - returning \(cached.count) cached results")
+                AppLogger.debug("🔍 [CACHE] HIT - returning \(cached.count) cached results", category: .workout)
                 #endif
                 cachedFilteredExercises = cached
                 return
             }
             #if DEBUG
-            print("🔍 [CACHE] MISS - computing fresh results")
+            AppLogger.debug("🔍 [CACHE] MISS - computing fresh results", category: .workout)
             #endif
             let results = ultraFastSearch(query: searchKey, in: preFilteredExercises)
             searchCache[searchKey] = results
@@ -188,8 +188,8 @@ struct CustomWorkoutBuilderView: View {
         let correctedQuery = queryWords.joined(separator: " ")
         
         #if DEBUG
-        print("🔍 [SEARCH] Query: '\(query)', Words: \(queryWords), isMultiWord: \(isMultiWord)")
-        print("🔍 [SEARCH] correctedQuery: '\(correctedQuery)', searching \(exercises.count) exercises")
+        AppLogger.debug("🔍 [SEARCH] Query: '\(query)', Words: \(queryWords), isMultiWord: \(isMultiWord)", category: .workout)
+        AppLogger.debug("🔍 [SEARCH] correctedQuery: '\(correctedQuery)', searching \(exercises.count) exercises", category: .workout)
         #endif
         
         // Priority buckets (highest to lowest):
@@ -250,7 +250,7 @@ struct CustomWorkoutBuilderView: View {
         
         #if DEBUG
         let totalResults = exactMatches.count + startsWithPhraseMatches.count + containsPhraseMatches.count + allWordsMatches.count
-        print("🔍 [SEARCH] Results: exact=\(exactMatches.count), startsWithPhrase=\(startsWithPhraseMatches.count), containsPhrase=\(containsPhraseMatches.count), allWords=\(allWordsMatches.count), TOTAL=\(totalResults)")
+        AppLogger.debug("🔍 [SEARCH] Results: exact=\(exactMatches.count), startsWithPhrase=\(startsWithPhraseMatches.count), containsPhrase=\(containsPhraseMatches.count), allWords=\(allWordsMatches.count), TOTAL=\(totalResults)", category: .workout)
         #endif
         
         // Return in priority order: exact phrase ordering is prioritized
@@ -593,7 +593,7 @@ struct CustomWorkoutBuilderView: View {
                         // Only add if not already selected
                         if !selectedExercises.contains(where: { $0.id == exerciseToAdd.id }) {
                             selectedExercises.append(exerciseToAdd)
-                            print("✅ Pre-selected exercise: \(exerciseToAdd.name ?? "Unknown")")
+                            AppLogger.info("✅ Pre-selected exercise: \(exerciseToAdd.name ?? "Unknown")", category: .workout)
                             
                             // Prefetch the video for this exercise
                             if let name = exerciseToAdd.name {
@@ -614,7 +614,7 @@ struct CustomWorkoutBuilderView: View {
                 // 🔄 Reload when exercises become ready after sync
                 .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
                     if isReady && exercises.isEmpty {
-                        print("✅ Exercises now ready - reloading list")
+                        AppLogger.info("✅ Exercises now ready - reloading list", category: .workout)
                         loadExercises()
                         lastFilterKey = "" // Force rebuild filters
                         updateFilteredExercises()
@@ -643,8 +643,6 @@ struct CustomWorkoutBuilderView: View {
                     lastFilterKey = ""
                     updateFilteredExercises() 
                 }
-                .onChange(of: exerciseFilter) { _, _ in updateFilteredExercises() }
-                .onChange(of: exercises) { _, _ in updateFilteredExercises() }
                 .onChange(of: selectedExercises) { _, newValue in
                     workoutManager.selectedCustomWorkoutExercises = newValue
                 }
@@ -945,7 +943,7 @@ struct CustomWorkoutBuilderView: View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.swap")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.ds_bodyMedium)
                     .foregroundColor(.blue)
                 Text("Replacing:")
                     .font(.subheadline)
@@ -968,7 +966,7 @@ struct CustomWorkoutBuilderView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ds_bodySmall)
                     .foregroundColor(.orange)
                 Text("Suggested Replacements")
                     .font(.subheadline)
@@ -988,7 +986,7 @@ struct CustomWorkoutBuilderView: View {
                                 .fill(swapTypeColor(suggestion.swapType).opacity(0.15))
                                 .frame(width: 36, height: 36)
                             Image(systemName: suggestion.swapType.icon)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.ds_bodyMedium)
                                 .foregroundColor(swapTypeColor(suggestion.swapType))
                         }
                         
@@ -1083,22 +1081,22 @@ struct CustomWorkoutBuilderView: View {
     private func loadExercises() {
         // Only load if exercises are ready (have valid names)
         guard exerciseLibrary.isExercisesReady else {
-            print("⏳ Waiting for exercises to be ready...")
+            AppLogger.debug("⏳ Waiting for exercises to be ready...", category: .workout)
             return
         }
         
         exercises = ExerciseLibraryService.shared.getAllExercises()
         let customCount = exercises.filter { $0.instructions?.contains("[CUSTOM_EXERCISE") ?? false }.count
-        print("📦 Loaded \(exercises.count) exercises for custom workout builder (including \(customCount) custom)")
+        AppLogger.debug("📦 Loaded \(exercises.count) exercises for custom workout builder (including \(customCount) custom)", category: .workout)
         
         // If no exercises found in Core Data, fetch from Supabase
         if exercises.isEmpty || exercises.allSatisfy({ $0.name == nil }) {
-            print("⚠️ No exercises found in Core Data, fetching from Supabase...")
+            AppLogger.warning("⚠️ No exercises found in Core Data, fetching from Supabase...", category: .network)
             isLoadingExercises = true
             Task {
                 do {
                     let exerciseDTOs = try await SupabaseManager.shared.fetchAllExercises()
-                    print("✅ Fetched \(exerciseDTOs.count) exercises from Supabase, saving to Core Data...")
+                    AppLogger.info("✅ Fetched \(exerciseDTOs.count) exercises from Supabase, saving to Core Data...", category: .network)
                     
                     // Save to Core Data on main thread
                     await MainActor.run {
@@ -1124,7 +1122,7 @@ struct CustomWorkoutBuilderView: View {
                         
                         do {
                             try viewContext.save()
-                            print("✅ Saved \(exerciseDTOs.count) exercises to Core Data")
+                            AppLogger.info("✅ Saved \(exerciseDTOs.count) exercises to Core Data", category: .workout)
                             
                             // Reload exercises from Core Data
                             exercises = ExerciseLibraryService.shared.getAllExercises()
@@ -1132,12 +1130,12 @@ struct CustomWorkoutBuilderView: View {
                             forceRenderID = UUID()
                             isLoadingExercises = false
                         } catch {
-                            print("❌ Error saving exercises to Core Data: \(error)")
+                            AppLogger.error("❌ Error saving exercises to Core Data: \(error)", category: .workout)
                             isLoadingExercises = false
                         }
                     }
                 } catch {
-                    print("❌ Error fetching exercises from Supabase: \(error)")
+                    AppLogger.error("❌ Error fetching exercises from Supabase: \(error)", category: .network)
                     await MainActor.run {
                         isLoadingExercises = false
                     }
@@ -1193,13 +1191,13 @@ struct CustomWorkoutBuilderView: View {
     
     private func startCustomWorkout() {
         guard !selectedExercises.isEmpty else {
-            print("❌ No exercises selected")
+            AppLogger.error("❌ No exercises selected", category: .workout)
             return
         }
         
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
-        print("🏋️‍♂️ Starting custom workout with \(selectedExercises.count) exercises")
+        AppLogger.debug("🏋️‍♂️ Starting custom workout with \(selectedExercises.count) exercises", category: .workout)
         #endif
         
         // Generate workout name
@@ -1224,7 +1222,7 @@ struct CustomWorkoutBuilderView: View {
         
         #if DEBUG
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        print("✅ Custom workout started in \(String(format: "%.2f", elapsed))ms")
+        AppLogger.info("✅ Custom workout started in \(String(format: "%.2f", elapsed))ms", category: .workout)
         #endif
     }
 }
@@ -1317,6 +1315,8 @@ struct CustomWorkoutExerciseRow: View {
                 Image(systemName: "info.circle")
                     .font(.ds_bodyRegular).fontWeight(.medium)
                     .foregroundColor(.blue)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
         }
@@ -1761,10 +1761,10 @@ struct AddCustomExerciseView: View {
         
         do {
             try viewContext.save()
-            print("✅ Custom exercise saved: \(exerciseName)")
-            print("   Name: \(exerciseName)")
-            print("   Instructions: \(exercise.instructions ?? "none")")
-            print("   Contains metadata: \(exercise.instructions?.contains("[CUSTOM_EXERCISE") ?? false)")
+            AppLogger.info("✅ Custom exercise saved: \(exerciseName)", category: .workout)
+            AppLogger.debug("   Name: \(exerciseName)", category: .workout)
+            AppLogger.debug("   Instructions: \(exercise.instructions ?? "none")", category: .workout)
+            AppLogger.debug("   Contains metadata: \(exercise.instructions?.contains("[CUSTOM_EXERCISE") ?? false)", category: .workout)
             
             // Sync to cloud (in background)
             Task {
@@ -1774,13 +1774,13 @@ struct AddCustomExerciseView: View {
             onSave(exercise)
             dismiss()
         } catch {
-            print("❌ Failed to save custom exercise: \(error)")
+            AppLogger.error("❌ Failed to save custom exercise: \(error)", category: .workout)
         }
     }
     
     private func syncCustomExerciseToCloud(exercise: Exercise) async {
         guard SupabaseManager.shared.isAuthenticated else {
-            print("ℹ️ User not authenticated, skipping custom exercise cloud sync")
+            AppLogger.debug("ℹ️ User not authenticated, skipping custom exercise cloud sync", category: .workout)
             return
         }
         
@@ -1804,13 +1804,13 @@ struct AddCustomExerciseView: View {
                     instructions: instructions,
                     iconName: icon
                 )
-                print("✅ Custom exercise synced to cloud!")
+                AppLogger.info("✅ Custom exercise synced to cloud!", category: .workout)
             } catch {
-                print("❌ Error syncing custom exercise to cloud: \(error)")
+                AppLogger.error("❌ Error syncing custom exercise to cloud: \(error)", category: .workout)
                 // Don't block the app if cloud sync fails
             }
         } else {
-            print("ℹ️ Custom exercise saved locally (user not signed in)")
+            AppLogger.debug("ℹ️ Custom exercise saved locally (user not signed in)", category: .workout)
         }
     }
 }
@@ -1847,7 +1847,7 @@ struct IconPickerView: View {
                                     .frame(width: 60, height: 60)
                                 
                                 Image(systemName: icon)
-                                    .font(.system(size: 24, weight: .semibold))
+                                    .font(.ds_heading2)
                                     .foregroundColor(selectedIcon == icon ? .white : .primary)
                             }
                         }

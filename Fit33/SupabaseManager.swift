@@ -16,7 +16,7 @@ class SupabaseManager: ObservableObject {
     private let supabaseURL = AppConfig.Supabase.url
     private let supabaseKey = AppConfig.Supabase.anonKey
     
-    internal var client: SupabaseClient!
+    internal private(set) var client: SupabaseClient!
     
     // MARK: - Cached Date Formatter (Performance Optimization)
     /// ISO8601DateFormatter is expensive to create - reuse this instance
@@ -184,8 +184,8 @@ class SupabaseManager: ObservableObject {
             }
             
             // If name and email are both null/empty, treat as incomplete profile
-            let hasName = profile.name != nil && !profile.name!.isEmpty
-            let hasEmail = profile.email != nil && !profile.email!.isEmpty
+            let hasName = !(profile.name ?? "").isEmpty
+            let hasEmail = !(profile.email ?? "").isEmpty
             
             if !hasName && !hasEmail {
                 AppLogger.warning("[VERIFY] Profile exists but has no name or email - treating as new user", category: .network)
@@ -1943,7 +1943,7 @@ class SupabaseManager: ObservableObject {
             longest_streak: Int(user.longestStreak),
             total_workouts: Int(user.totalWorkouts),
             xp: Int(user.xp),
-            last_workout_date: user.lastWorkoutDate != nil ? dateToISO( user.lastWorkoutDate!) : nil,
+            last_workout_date: user.lastWorkoutDate.map { dateToISO($0) },
             updated_at: dateToISO(Date()),
             weight_unit: unitSettings.weightUnit.rawValue,
             height_unit: unitSettings.heightUnit.rawValue,
@@ -2781,10 +2781,11 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Added to favorites: \(exerciseName ?? exerciseId)", category: .network)
         } else {
             // Remove favorite
+            guard let firstExisting = existing.first else { return }
             try await client
                 .from("user_favorites")
                 .delete()
-                .eq("id", value: existing.first!.id)
+                .eq("id", value: firstExisting.id)
                 .execute()
             
             AppLogger.info("Removed from favorites: \(exerciseName ?? exerciseId)", category: .network)
@@ -3910,6 +3911,14 @@ class SupabaseManager: ObservableObject {
             }
         }
         
+        var totalPlanned = 0
+        var totalCompleted = 0
+        for ex in exerciseDTOs {
+            totalPlanned += ex.sets.count
+            totalCompleted += ex.sets.filter { $0.isCompleted }.count
+        }
+        let rate = totalPlanned > 0 ? Double(totalCompleted) / Double(totalPlanned) : 1.0
+
         let workoutDTO = WorkoutHistoryDTO(
             id: workoutId,
             userId: userId.uuidString,
@@ -3919,7 +3928,10 @@ class SupabaseManager: ObservableObject {
             isCompleted: workout.isCompleted,
             xpEarned: Int(workout.xpEarned),
             notes: workout.notes,
-            exercises: exerciseDTOs
+            exercises: exerciseDTOs,
+            completionRate: rate,
+            totalSetsPlanned: totalPlanned,
+            totalSetsCompleted: totalCompleted
         )
         
         try await client

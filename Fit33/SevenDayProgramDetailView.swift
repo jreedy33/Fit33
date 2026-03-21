@@ -18,7 +18,7 @@ struct SevenDayProgramDetailView: View {
             return first
         }
         // Safe fallback instead of crash
-        print("⚠️ [SevenDayProgramDetailView] No programs available — using fallback")
+        AppLogger.warning("⚠️ [SevenDayProgramDetailView] No programs available — using fallback", category: .workout)
         return WorkoutProgram(
             id: "7_day_intro_fallback",
             name: "7-Day Starter",
@@ -154,9 +154,9 @@ struct SevenDayProgramDetailView: View {
                 Button(action: startProgram) {
                     HStack(spacing: 10) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.ds_labelLarge)
                         Text("Start 7-Day Intro Program")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.ds_labelLarge)
                     }
                     .foregroundStyle(accentGradient)
                     .frame(maxWidth: .infinity)
@@ -193,9 +193,9 @@ struct SevenDayProgramDetailView: View {
     }
     
     private func startProgram() {
-        print("🔵 [7DAY] START BUTTON TAPPED")
+        AppLogger.debug("🔵 [7DAY] START BUTTON TAPPED", category: .workout)
         workoutManager.startProgram(program)
-        print("🔵 [7DAY] Program started: \(program.name)")
+        AppLogger.debug("🔵 [7DAY] Program started: \(program.name)", category: .workout)
         onProgramStarted?()
     }
     

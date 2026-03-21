@@ -88,7 +88,7 @@ class ProgressPhotoService: ObservableObject {
         do {
             try data.write(to: fileURL)
         } catch {
-            print("Failed to save progress photo: \(error)")
+            AppLogger.error("Failed to save progress photo: \(error)", category: .general)
             return nil
         }
         

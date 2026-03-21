@@ -251,7 +251,7 @@ struct ChallengeFlowStartView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: handleToolbarTap) {
                         Image(systemName: toolbarIcon)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.ds_labelLarge)
                     }
                 }
             }
@@ -269,11 +269,11 @@ struct ChallengeFlowStartView: View {
                 QRCodeScannerView()
             }
             .onAppear {
-            print("🏆 [CHALLENGE FLOW] View appeared")
-            print("   └─ friends.count: \(friendService.friends.count)")
-            print("   └─ suggestedFriends.count: \(contactsService.suggestedFriends.count)")
-            print("   └─ hasCheckedContacts: \(contactsService.hasCheckedContacts)")
-            print("   └─ canAccessContacts: \(contactsService.canAccessContacts)")
+            AppLogger.debug("🏆 [CHALLENGE FLOW] View appeared", category: .social)
+            AppLogger.debug("   └─ friends.count: \(friendService.friends.count)", category: .social)
+            AppLogger.debug("   └─ suggestedFriends.count: \(contactsService.suggestedFriends.count)", category: .social)
+            AppLogger.debug("   └─ hasCheckedContacts: \(contactsService.hasCheckedContacts)", category: .social)
+            AppLogger.debug("   └─ canAccessContacts: \(contactsService.canAccessContacts)", category: .social)
             
             // If user has friends OR has suggested friends from contacts → go to friend selection
             // Only show contact sync if no friends AND no suggested friends AND hasn't synced
@@ -413,12 +413,12 @@ struct ChallengeFlowStartView: View {
             if !(currentStep == .friendSelection && isInviteMode) {
                 Button(action: {
                     if currentStep == .review {
-                        print("📤 [CHALLENGE FLOW] Send button tapped")
+                        AppLogger.debug("📤 [CHALLENGE FLOW] Send button tapped", category: .social)
                         Task {
                             await sendChallenge()
                         }
                     } else {
-                        print("➡️ [CHALLENGE FLOW] Continue from \(currentStep)")
+                        AppLogger.debug("➡️ [CHALLENGE FLOW] Continue from \(currentStep)", category: .social)
                         goForward()
                     }
                 }) {
@@ -1110,7 +1110,7 @@ struct ChallengeFlowStartView: View {
                         mode: mode,
                         isSelected: selectedMode == mode,
                         onSelect: {
-                            print("✅ [CHALLENGE FLOW] Selected mode: \(mode.title)")
+                            AppLogger.info("✅ [CHALLENGE FLOW] Selected mode: \(mode.title)", category: .social)
                             selectedMode = mode
                         }
                     )
@@ -1123,7 +1123,7 @@ struct ChallengeFlowStartView: View {
                 }) {
                     HStack(spacing: 14) {
                         Text("🔒")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Private Challenge")
@@ -1169,7 +1169,7 @@ struct ChallengeFlowStartView: View {
                 }) {
                     HStack(spacing: 14) {
                         Text("🌍")
-                            .font(.system(size: 32))
+                            .font(.ds_heading1)
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Community Challenges")
@@ -1223,7 +1223,7 @@ struct ChallengeFlowStartView: View {
                         activity: activity,
                         isSelected: selectedActivity == activity,
                         onSelect: {
-                            print("✅ [CHALLENGE FLOW] Selected activity: \(activity.rawValue)")
+                            AppLogger.info("✅ [CHALLENGE FLOW] Selected activity: \(activity.rawValue)", category: .social)
                             selectedActivity = activity
                             customTarget = getDefaultCustomTarget(activity)
                             hydrationUnit = .ml
@@ -1494,7 +1494,7 @@ struct ChallengeFlowStartView: View {
                                         Circle()
                                             .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                             .frame(width: 50, height: 50)
-                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 16, weight: .bold)).foregroundColor(.white))
+                                            .overlay(Text(String(userName.prefix(1)).uppercased()).font(.ds_labelLarge).foregroundColor(.white))
                                             .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
                                     }
                                     
@@ -1580,7 +1580,7 @@ struct ChallengeFlowStartView: View {
                                 Circle()
                                     .fill(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 50, height: 50)
-                                    .overlay(Text(String(userName.prefix(1)).uppercased()).font(.system(size: 16, weight: .bold)).foregroundColor(.white))
+                                    .overlay(Text(String(userName.prefix(1)).uppercased()).font(.ds_labelLarge).foregroundColor(.white))
                             }
                             
                             Text("VS")
@@ -1763,12 +1763,12 @@ struct ChallengeFlowStartView: View {
         guard let mode = selectedMode,
               let activity = selectedActivity,
               let option = selectedOption else {
-            print("❌ [CHALLENGE FLOW] Missing required selections")
+            AppLogger.error("❌ [CHALLENGE FLOW] Missing required selections", category: .social)
             return
         }
         
         guard !selectedFriends.isEmpty else {
-            print("❌ [CHALLENGE FLOW] No friends selected")
+            AppLogger.error("❌ [CHALLENGE FLOW] No friends selected", category: .social)
             return
         }
         
@@ -1793,7 +1793,7 @@ struct ChallengeFlowStartView: View {
         
         if selectedFriends.count > 1 && isGroupChallenge {
             // GROUP CHALLENGE: Create one group challenge with all members
-            print("👥 [CHALLENGE FLOW] Creating group challenge with \(selectedFriends.count) friends")
+            AppLogger.debug("👥 [CHALLENGE FLOW] Creating group challenge with \(selectedFriends.count) friends", category: .social)
             let groupId = await ChallengeService.shared.createGroupChallenge(
                 memberIds: selectedFriends.map(\.friendId),
                 type: challengeType,
@@ -1808,10 +1808,10 @@ struct ChallengeFlowStartView: View {
             success = groupId != nil
         } else {
             // SEPARATE CHALLENGES: Create individual 1v1 for each friend
-            print("🔀 [CHALLENGE FLOW] Creating \(selectedFriends.count) separate challenge(s)")
+            AppLogger.debug("🔀 [CHALLENGE FLOW] Creating \(selectedFriends.count) separate challenge(s)", category: .social)
             var allSucceeded = true
             for friend in selectedFriends {
-                print("📤 [CHALLENGE FLOW] Sending challenge to \(friend.displayName)")
+                AppLogger.debug("📤 [CHALLENGE FLOW] Sending challenge to \(friend.displayName)", category: .social)
                 let challengeId = await ChallengeService.shared.createChallenge(
                     opponentId: friend.friendId,
                     type: challengeType,
@@ -1830,11 +1830,11 @@ struct ChallengeFlowStartView: View {
         isCreating = false
         
         if success {
-            print("✅ [CHALLENGE FLOW] Challenge(s) created successfully")
+            AppLogger.info("✅ [CHALLENGE FLOW] Challenge(s) created successfully", category: .social)
             HapticManager.notification(.success)
             showingSuccess = true
         } else {
-            print("❌ [CHALLENGE FLOW] Challenge creation failed")
+            AppLogger.error("❌ [CHALLENGE FLOW] Challenge creation failed", category: .social)
             HapticManager.notification(.error)
             showingError = true
         }
@@ -2005,7 +2005,7 @@ struct ChallengeFlowFriendCard: View {
                 // Checkmark when selected, chevron when not
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.ds_heading2)
                         .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                 } else {
                     Image(systemName: "chevron.right")

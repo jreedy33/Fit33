@@ -167,7 +167,7 @@ struct NutritionScannerView: View {
         isProcessing = true
         
         guard let cgImage = image.cgImage else {
-            print("❌ Failed to get CGImage")
+            AppLogger.error("❌ Failed to get CGImage", category: .nutrition)
             isProcessing = false
             return
         }
@@ -175,13 +175,13 @@ struct NutritionScannerView: View {
         // Create Vision request
         let request = VNRecognizeTextRequest { request, error in
             if let error = error {
-                print("❌ Vision error: \(error.localizedDescription)")
+                AppLogger.error("❌ Vision error: \(error.localizedDescription)", category: .nutrition)
                 isProcessing = false
                 return
             }
             
             guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                print("❌ No text observations")
+                AppLogger.error("❌ No text observations", category: .nutrition)
                 isProcessing = false
                 return
             }
@@ -191,8 +191,8 @@ struct NutritionScannerView: View {
                 observation.topCandidates(1).first?.string
             }
             
-            print("📝 Recognized text lines: \(recognizedText.count)")
-            recognizedText.forEach { print("  - \($0)") }
+            AppLogger.debug("📝 Recognized text lines: \(recognizedText.count)", category: .nutrition)
+            recognizedText.forEach { AppLogger.debug("  - \($0)", category: .nutrition) }
             
             // Parse nutrition facts
             DispatchQueue.main.async {
@@ -212,7 +212,7 @@ struct NutritionScannerView: View {
             do {
                 try handler.perform([request])
             } catch {
-                print("❌ Failed to perform Vision request: \(error)")
+                AppLogger.error("❌ Failed to perform Vision request: \(error)", category: .nutrition)
                 DispatchQueue.main.async {
                     isProcessing = false
                 }
@@ -407,17 +407,17 @@ struct NutritionScannerView: View {
             }
         }
         
-        print("📊 Parsed nutrition:")
-        print("  Calories: \(calories)")
-        print("  Total Fat: \(totalFat)g")
-        print("  Saturated Fat: \(saturatedFat)g")
-        print("  Trans Fat: \(transFat)g")
-        print("  Cholesterol: \(cholesterol)mg")
-        print("  Sodium: \(sodium)mg")
-        print("  Total Carbs: \(totalCarbs)g")
-        print("  Fiber: \(dietaryFiber)g")
-        print("  Sugars: \(totalSugars)g")
-        print("  Protein: \(protein)g")
+        AppLogger.debug("📊 Parsed nutrition:", category: .nutrition)
+        AppLogger.debug("  Calories: \(calories)", category: .nutrition)
+        AppLogger.debug("  Total Fat: \(totalFat)g", category: .nutrition)
+        AppLogger.debug("  Saturated Fat: \(saturatedFat)g", category: .nutrition)
+        AppLogger.debug("  Trans Fat: \(transFat)g", category: .nutrition)
+        AppLogger.debug("  Cholesterol: \(cholesterol)mg", category: .nutrition)
+        AppLogger.debug("  Sodium: \(sodium)mg", category: .nutrition)
+        AppLogger.debug("  Total Carbs: \(totalCarbs)g", category: .nutrition)
+        AppLogger.debug("  Fiber: \(dietaryFiber)g", category: .nutrition)
+        AppLogger.debug("  Sugars: \(totalSugars)g", category: .nutrition)
+        AppLogger.debug("  Protein: \(protein)g", category: .nutrition)
         
         // Extract unit from serving size
         let extractedUnit = extractServingUnit(from: servingSize)
@@ -552,10 +552,10 @@ struct NutritionScannerView: View {
             foodItemId: nil
         )
         
-        print("💾 Saving scanned nutrition: \(nutrition.foodName)")
-        print("   Serving quantity: \(nutrition.servingQuantity)x")
-        print("   Base values - Calories: \(nutrition.calories), Protein: \(nutrition.protein)g, Carbs: \(nutrition.totalCarbs)g, Fat: \(nutrition.totalFat)g")
-        print("   Adjusted values - Calories: \(adjustedCalories), Protein: \(adjustedProtein)g, Carbs: \(adjustedCarbs)g, Fat: \(adjustedFat)g")
+        AppLogger.debug("💾 Saving scanned nutrition: \(nutrition.foodName)", category: .nutrition)
+        AppLogger.debug("   Serving quantity: \(nutrition.servingQuantity)x", category: .nutrition)
+        AppLogger.debug("   Base values - Calories: \(nutrition.calories), Protein: \(nutrition.protein)g, Carbs: \(nutrition.totalCarbs)g, Fat: \(nutrition.totalFat)g", category: .nutrition)
+        AppLogger.debug("   Adjusted values - Calories: \(adjustedCalories), Protein: \(adjustedProtein)g, Carbs: \(adjustedCarbs)g, Fat: \(adjustedFat)g", category: .nutrition)
         onSave(foodEntry)
         
         // Clean up
@@ -729,7 +729,7 @@ struct NutritionEditorView: View {
                                     }
                                 }) {
                                     Image(systemName: "minus.circle.fill")
-                                        .font(.system(size: 32))
+                                        .font(.ds_heading1)
                                         .foregroundColor(.red)
                                 }
                                 
@@ -750,7 +750,7 @@ struct NutritionEditorView: View {
                                     nutrition.servingQuantity += 0.25
                                 }) {
                                     Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 32))
+                                        .font(.ds_heading1)
                                         .foregroundColor(.green)
                                 }
                             }

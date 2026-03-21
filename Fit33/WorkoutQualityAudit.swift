@@ -122,16 +122,16 @@ class WorkoutQualityAudit {
     // MARK: - Main Audit Function
     
     func runFullAudit(userCount: Int = 200, completion: @escaping (AuditReport) -> Void) {
-        print("╔══════════════════════════════════════════════════════════════════════╗")
-        print("║        🧪 WORKOUT QUALITY AUDIT - \(userCount) USERS                         ║")
-        print("╚══════════════════════════════════════════════════════════════════════╝")
+        AppLogger.debug("╔══════════════════════════════════════════════════════════════════════╗", category: .workout)
+        AppLogger.debug("║        🧪 WORKOUT QUALITY AUDIT - \(userCount) USERS                         ║", category: .workout)
+        AppLogger.debug("╚══════════════════════════════════════════════════════════════════════╝", category: .workout)
         
         // Load exercises
         loadExercises()
         
         // Generate diverse test users
         let testUsers = generateTestUsers(count: userCount)
-        print("\n✅ Generated \(testUsers.count) diverse test users")
+        AppLogger.info("\n✅ Generated \(testUsers.count) diverse test users", category: .workout)
         
         // Run workouts and grade
         var results: [GeneratedWorkoutResult] = []
@@ -139,7 +139,7 @@ class WorkoutQualityAudit {
         
         for (index, user) in testUsers.enumerated() {
             if index % 20 == 0 {
-                print("📊 Testing user \(index + 1)/\(userCount)...")
+                AppLogger.debug("📊 Testing user \(index + 1)/\(userCount)...", category: .workout)
             }
             
             let result = generateAndGradeWorkout(for: user)
@@ -640,9 +640,9 @@ class WorkoutQualityAudit {
         let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
         do {
             allExercises = try context.fetch(request)
-            print("📊 Loaded \(allExercises.count) exercises for audit")
+            AppLogger.debug("📊 Loaded \(allExercises.count) exercises for audit", category: .workout)
         } catch {
-            print("❌ Failed to load exercises: \(error)")
+            AppLogger.error("❌ Failed to load exercises: \(error)", category: .workout)
         }
     }
     
@@ -794,43 +794,43 @@ class WorkoutQualityAudit {
     }
     
     private func printSummary(report: AuditReport) {
-        print("\n")
-        print("╔══════════════════════════════════════════════════════════════════════╗")
-        print("║                    📊 AUDIT RESULTS SUMMARY                          ║")
-        print("╠══════════════════════════════════════════════════════════════════════╣")
-        print("║ OVERALL:")
-        print("║   Total Users Tested: \(report.totalUsers)")
-        print("║   ✅ Passed: \(report.passedUsers) (\(String(format: "%.1f", report.passRate))%)")
-        print("║   ❌ Failed: \(report.failedUsers) (\(String(format: "%.1f", 100 - report.passRate))%)")
-        print("║   Average Overall Score: \(String(format: "%.1f", report.avgOverallScore))/100")
-        print("╠══════════════════════════════════════════════════════════════════════╣")
-        print("║ SCORE BREAKDOWN:")
-        print("║   🎯 Equipment Match:    \(String(format: "%.1f", report.avgEquipmentScore))%")
-        print("║   🛡️ Safety Score:       \(String(format: "%.1f", report.avgSafetyScore))%")
-        print("║   ✨ Practicality:       \(String(format: "%.1f", report.avgPracticalityScore))%")
-        print("║   🎯 Goal Alignment:     \(String(format: "%.1f", report.avgGoalScore))%")
-        print("║   📈 Experience Match:   \(String(format: "%.1f", report.avgExperienceScore))%")
-        print("║   🔄 Variety:            \(String(format: "%.1f", report.avgVarietyScore))%")
-        print("║   📍 Location Match:     \(String(format: "%.1f", report.avgLocationScore))%")
-        print("║   👤 Profile Safety:     \(String(format: "%.1f", report.avgProfileScore))%")
-        print("╠══════════════════════════════════════════════════════════════════════╣")
-        print("║ ISSUE BREAKDOWN:")
+        AppLogger.debug("\n", category: .workout)
+        AppLogger.debug("╔══════════════════════════════════════════════════════════════════════╗", category: .workout)
+        AppLogger.debug("║                    📊 AUDIT RESULTS SUMMARY                          ║", category: .workout)
+        AppLogger.debug("╠══════════════════════════════════════════════════════════════════════╣", category: .workout)
+        AppLogger.debug("║ OVERALL:", category: .workout)
+        AppLogger.debug("║   Total Users Tested: \(report.totalUsers)", category: .workout)
+        AppLogger.info("║   ✅ Passed: \(report.passedUsers) (\(String(format: "%.1f", report.passRate))%)", category: .workout)
+        AppLogger.error("║   ❌ Failed: \(report.failedUsers) (\(String(format: "%.1f", 100 - report.passRate))%)", category: .workout)
+        AppLogger.debug("║   Average Overall Score: \(String(format: "%.1f", report.avgOverallScore))/100", category: .workout)
+        AppLogger.debug("╠══════════════════════════════════════════════════════════════════════╣", category: .workout)
+        AppLogger.debug("║ SCORE BREAKDOWN:", category: .workout)
+        AppLogger.debug("║   🎯 Equipment Match:    \(String(format: "%.1f", report.avgEquipmentScore))%", category: .workout)
+        AppLogger.debug("║   🛡️ Safety Score:       \(String(format: "%.1f", report.avgSafetyScore))%", category: .workout)
+        AppLogger.debug("║   ✨ Practicality:       \(String(format: "%.1f", report.avgPracticalityScore))%", category: .workout)
+        AppLogger.debug("║   🎯 Goal Alignment:     \(String(format: "%.1f", report.avgGoalScore))%", category: .workout)
+        AppLogger.debug("║   📈 Experience Match:   \(String(format: "%.1f", report.avgExperienceScore))%", category: .workout)
+        AppLogger.debug("║   🔄 Variety:            \(String(format: "%.1f", report.avgVarietyScore))%", category: .workout)
+        AppLogger.debug("║   📍 Location Match:     \(String(format: "%.1f", report.avgLocationScore))%", category: .workout)
+        AppLogger.debug("║   👤 Profile Safety:     \(String(format: "%.1f", report.avgProfileScore))%", category: .workout)
+        AppLogger.debug("╠══════════════════════════════════════════════════════════════════════╣", category: .workout)
+        AppLogger.debug("║ ISSUE BREAKDOWN:", category: .workout)
         for (issue, count) in report.issueBreakdown.sorted(by: { $0.value > $1.value }) {
             let bar = String(repeating: "█", count: min(count / 5, 20))
-            print("║   \(issue): \(count) \(bar)")
+            AppLogger.debug("║   \(issue): \(count) \(bar)", category: .workout)
         }
-        print("╠══════════════════════════════════════════════════════════════════════╣")
-        print("║ PERFORMANCE:")
-        print("║   Total Time: \(String(format: "%.2f", report.totalTimeSeconds))s")
-        print("║   Avg Time/User: \(String(format: "%.2f", report.avgTimePerUser * 1000))ms")
-        print("╚══════════════════════════════════════════════════════════════════════╝")
+        AppLogger.debug("╠══════════════════════════════════════════════════════════════════════╣", category: .workout)
+        AppLogger.debug("║ PERFORMANCE:", category: .workout)
+        AppLogger.debug("║   Total Time: \(String(format: "%.2f", report.totalTimeSeconds))s", category: .workout)
+        AppLogger.debug("║   Avg Time/User: \(String(format: "%.2f", report.avgTimePerUser * 1000))ms", category: .workout)
+        AppLogger.debug("╚══════════════════════════════════════════════════════════════════════╝", category: .workout)
         
         if !report.worstPerformers.isEmpty {
-            print("\n⚠️ WORST PERFORMERS (need investigation):")
+            AppLogger.warning("\n⚠️ WORST PERFORMERS (need investigation):", category: .workout)
             for (name, score, violations) in report.worstPerformers.prefix(5) {
-                print("   • \(name): \(String(format: "%.1f", score))/100")
+                AppLogger.debug("   • \(name): \(String(format: "%.1f", score))/100", category: .workout)
                 for violation in violations.prefix(2) {
-                    print("     └─ \(violation)")
+                    AppLogger.debug("     └─ \(violation)", category: .workout)
                 }
             }
         }
@@ -1016,12 +1016,12 @@ extension WorkoutQualityAudit {
                 }
             }
             
-            print("\n\n📄 FULL REPORT:")
-            print(reportContent)
+            AppLogger.debug("\n\n📄 FULL REPORT:", category: .workout)
+            AppLogger.debug("\(reportContent)", category: .workout)
             
             // Apply any critical fixes automatically
             if !report.suggestedFixes.filter({ $0.priority == .critical }).isEmpty {
-                print("\n\n🔴 CRITICAL ISSUES FOUND - Manual review required!")
+                AppLogger.debug("\n\n🔴 CRITICAL ISSUES FOUND - Manual review required!", category: .workout)
             }
         }
     }

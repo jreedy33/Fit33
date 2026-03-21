@@ -60,9 +60,9 @@ class BackgroundChallengeSyncService {
         registerBackgroundTask()
         scheduleNextBackgroundSync()
         
-        print("🔄 [BG SYNC] BackgroundChallengeSyncService initialized")
-        print("   └─ HealthKit background delivery: enabled for steps, workouts, active energy")
-        print("   └─ BGTask periodic sync: registered")
+        AppLogger.debug("🔄 [BG SYNC] BackgroundChallengeSyncService initialized", category: .social)
+        AppLogger.debug("   └─ HealthKit background delivery: enabled for steps, workouts, active energy", category: .health)
+        AppLogger.debug("   └─ BGTask periodic sync: registered", category: .social)
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -76,19 +76,16 @@ class BackgroundChallengeSyncService {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         
         // Types that affect challenge progress
-        let challengeRelevantTypes: [(HKQuantityType, HKUpdateFrequency)] = [
-            // Steps — updates frequently from Apple Watch/phone pedometer
-            (HKQuantityType.quantityType(forIdentifier: .stepCount)!, .immediate),
-            
-            // Active energy — tracks active minutes / calorie burn
-            (HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!, .hourly),
-            
-            // Walking/running distance — for walk/run challenges
-            (HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!, .hourly),
-            
-            // Exercise time — for active minutes challenges
-            (HKQuantityType.quantityType(forIdentifier: .appleExerciseTime)!, .hourly),
+        let identifiersAndFreqs: [(HKQuantityTypeIdentifier, HKUpdateFrequency)] = [
+            (.stepCount, .immediate),
+            (.activeEnergyBurned, .hourly),
+            (.distanceWalkingRunning, .hourly),
+            (.appleExerciseTime, .hourly),
         ]
+        let challengeRelevantTypes: [(HKQuantityType, HKUpdateFrequency)] = identifiersAndFreqs.compactMap { id, freq in
+            guard let qt = HKQuantityType.quantityType(forIdentifier: id) else { return nil }
+            return (qt, freq)
+        }
         
         // Workout type — for lift/workout streak challenges (Strava, Nike RC, etc.)
         let workoutType = HKObjectType.workoutType()
@@ -97,9 +94,9 @@ class BackgroundChallengeSyncService {
         for (quantityType, frequency) in challengeRelevantTypes {
             healthStore.enableBackgroundDelivery(for: quantityType, frequency: frequency) { success, error in
                 if success {
-                    print("✅ [BG SYNC] Background delivery enabled: \(quantityType.identifier)")
+                    AppLogger.info("✅ [BG SYNC] Background delivery enabled: \(quantityType.identifier)", category: .social)
                 } else if let error = error {
-                    print("❌ [BG SYNC] Failed to enable background delivery for \(quantityType.identifier): \(error.localizedDescription)")
+                    AppLogger.error("❌ [BG SYNC] Failed to enable background delivery for \(quantityType.identifier): \(error.localizedDescription)", category: .social)
                 }
             }
         }
@@ -107,9 +104,9 @@ class BackgroundChallengeSyncService {
         // Enable for workout type separately (different API)
         healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
             if success {
-                print("✅ [BG SYNC] Background delivery enabled: workouts")
+                AppLogger.info("✅ [BG SYNC] Background delivery enabled: workouts", category: .social)
             } else if let error = error {
-                print("❌ [BG SYNC] Failed to enable background delivery for workouts: \(error.localizedDescription)")
+                AppLogger.error("❌ [BG SYNC] Failed to enable background delivery for workouts: \(error.localizedDescription)", category: .social)
             }
         }
         
@@ -192,12 +189,12 @@ class BackgroundChallengeSyncService {
         // High-priority events (workout completions) always sync immediately.
         // Low-priority events (steps, energy) throttle to once per 10 minutes.
         if !isHighPriority && elapsed < minimumSyncInterval {
-            print("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (throttled)")
+            AppLogger.debug("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (throttled)", category: .social)
             onComplete()
             return
         }
         
-        print("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")")
+        AppLogger.debug("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")", category: .health)
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: lastSyncKey)
         
         // Perform the sync and call the completion handler when done
@@ -219,14 +216,14 @@ class BackgroundChallengeSyncService {
             using: nil
         ) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
-                print("❌ [BG SYNC] Unexpected task type: \(type(of: task))")
+                AppLogger.error("❌ [BG SYNC] Unexpected task type: \(type(of: task))", category: .social)
                 task.setTaskCompleted(success: false)
                 return
             }
             self.handleBackgroundTask(refreshTask)
         }
         
-        print("✅ [BG SYNC] BGTask registered: \(Self.bgTaskIdentifier)")
+        AppLogger.info("✅ [BG SYNC] BGTask registered: \(Self.bgTaskIdentifier)", category: .social)
     }
     
     /// Schedule the next background refresh.
@@ -238,29 +235,29 @@ class BackgroundChallengeSyncService {
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            print("📅 [BG SYNC] Next background sync scheduled (earliest: ~15 min)")
+            AppLogger.debug("📅 [BG SYNC] Next background sync scheduled (earliest: ~15 min)", category: .social)
         } catch {
-            print("❌ [BG SYNC] Failed to schedule background task: \(error.localizedDescription)")
+            AppLogger.error("❌ [BG SYNC] Failed to schedule background task: \(error.localizedDescription)", category: .social)
         }
     }
     
     /// Handle the BGTask when iOS wakes the app.
     private func handleBackgroundTask(_ task: BGAppRefreshTask) {
-        print("🔄 [BG SYNC] BGTask fired — syncing challenge data...")
+        AppLogger.debug("🔄 [BG SYNC] BGTask fired — syncing challenge data...", category: .social)
         
         // Schedule the NEXT background sync immediately (so it keeps repeating)
         scheduleNextBackgroundSync()
         
         // Set up expiration handler
         task.expirationHandler = {
-            print("⏰ [BG SYNC] BGTask expired before completion")
+            AppLogger.debug("⏰ [BG SYNC] BGTask expired before completion", category: .social)
         }
         
         // Perform the sync
         Task {
             await performChallengeSyncInBackground()
             task.setTaskCompleted(success: true)
-            print("✅ [BG SYNC] BGTask completed successfully")
+            AppLogger.info("✅ [BG SYNC] BGTask completed successfully", category: .social)
         }
     }
     
@@ -281,32 +278,32 @@ class BackgroundChallengeSyncService {
     @MainActor
     func performChallengeSyncInBackground() async {
         guard SupabaseManager.shared.isAuthenticated else {
-            print("⏭️ [BG SYNC] Not authenticated — skipping")
+            AppLogger.debug("⏭️ [BG SYNC] Not authenticated — skipping", category: .social)
             return
         }
         
         let start = Date()
-        print("🔄 [BG SYNC] Starting background sync (all sources)...")
+        AppLogger.debug("🔄 [BG SYNC] Starting background sync (all sources)...", category: .social)
         
         // ── Step 1: Refresh HealthKit data ──
         // syncAllData now also persists workouts to Supabase (`cardio_workouts`)
         // and updates `lastSyncDate` which triggers Dashboard UI refresh
         await HealthKitService.shared.syncAllData(force: true)
-        print("   └─ HealthKit: \(HealthKitService.shared.todaySteps) steps, \(HealthKitService.shared.recentWorkouts.count) workouts")
+        AppLogger.debug("   └─ HealthKit: \(HealthKitService.shared.todaySteps) steps, \(HealthKitService.shared.recentWorkouts.count) workouts", category: .health)
         
         // ── Step 2: Refresh Strava data (if connected) ──
         // Strava workouts also write to HealthKit, but fetching from Strava API
         // gives us richer data (route, splits, elevation) for the cardio_workouts table
         if StravaService.shared.isConnected {
             await StravaService.shared.syncActivities(daysBack: 7)
-            print("   └─ Strava: synced recent activities")
+            AppLogger.debug("   └─ Strava: synced recent activities", category: .social)
         }
         
         // ── Step 3: Refresh Fitbit data (if connected) ──
         // Fitbit does NOT write to HealthKit, so we must pull from their API
         if FitbitService.shared.isConnected {
             await FitbitService.shared.syncAllData(force: true)
-            print("   └─ Fitbit: synced recent data")
+            AppLogger.debug("   └─ Fitbit: synced recent data", category: .social)
         }
         
         // ── Step 4: Refresh active challenges ──
@@ -318,7 +315,7 @@ class BackgroundChallengeSyncService {
         
         guard activeCount > 0 || groupCount > 0 else {
             let duration = Date().timeIntervalSince(start)
-            print("✅ [BG SYNC] Sync complete in \(String(format: "%.1f", duration))s (no active challenges)")
+            AppLogger.info("✅ [BG SYNC] Sync complete in \(String(format: "%.1f", duration))s (no active challenges)", category: .social)
             return
         }
         
@@ -340,7 +337,7 @@ class BackgroundChallengeSyncService {
         let communityChallengeCount = CommunityChallengeService.shared.myChallenges.count
         
         let duration = Date().timeIntervalSince(start)
-        print("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s")
-        print("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group + \(privateChallengeCount) private + \(communityChallengeCount) community challenges")
+        AppLogger.info("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s", category: .social)
+        AppLogger.debug("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group + \(privateChallengeCount) private + \(communityChallengeCount) community challenges", category: .social)
     }
 }

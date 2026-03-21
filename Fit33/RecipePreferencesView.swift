@@ -417,7 +417,7 @@ struct RecipePreferencesView: View {
         // Update disliked ingredients
         service.setDislikedIngredients(viewModel.dislikedIngredients)
         
-        print("🔄 [PREFS VIEW] Synced preferences to shared service - recipes will refresh")
+        AppLogger.debug("🔄 [PREFS VIEW] Synced preferences to shared service - recipes will refresh", category: .nutrition)
     }
     
     // MARK: - Background
@@ -548,10 +548,10 @@ class RecipePreferencesViewModel: ObservableObject {
                 PopularCuisine(name: $0.name, emoji: $0.emoji ?? "🍽️", apiValue: $0.apiValue)
             }
             
-            print("✅ [RECIPE PREFS] Loaded from cloud: \(likedIngredients.count) likes, \(dislikedIngredients.count) dislikes")
+            AppLogger.info("✅ [RECIPE PREFS] Loaded from cloud: \(likedIngredients.count) likes, \(dislikedIngredients.count) dislikes", category: .nutrition)
             
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to load from cloud: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to load from cloud: \(error)", category: .nutrition)
             loadLocalPreferences()
             loadDefaultPopularItems()
         }
@@ -673,7 +673,7 @@ class RecipePreferencesViewModel: ObservableObject {
         // Force refresh recommendations with new preferences
         await RecipePreferenceService.shared.forceRefreshRecommendations()
         
-        print("✅ [PREFS] Added \(trimmed) to \(type.rawValue)s - refreshing recommendations")
+        AppLogger.info("✅ [PREFS] Added \(trimmed) to \(type.rawValue)s - refreshing recommendations", category: .nutrition)
     }
     
     func removeIngredient(_ name: String, type: PreferenceType) async {
@@ -694,7 +694,7 @@ class RecipePreferencesViewModel: ObservableObject {
         // Force refresh recommendations
         await RecipePreferenceService.shared.forceRefreshRecommendations()
         
-        print("✅ [PREFS] Removed \(name) from \(type.rawValue)s - refreshing recommendations")
+        AppLogger.info("✅ [PREFS] Removed \(name) from \(type.rawValue)s - refreshing recommendations", category: .nutrition)
     }
     
     private func saveToCloud(ingredient: String, type: PreferenceType) async {
@@ -722,9 +722,9 @@ class RecipePreferencesViewModel: ObservableObject {
                 .insert(insert)
                 .execute()
             
-            print("✅ [RECIPE PREFS] Saved to cloud: \(ingredient) = \(type.rawValue)")
+            AppLogger.info("✅ [RECIPE PREFS] Saved to cloud: \(ingredient) = \(type.rawValue)", category: .nutrition)
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to save: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to save: \(error)", category: .nutrition)
         }
     }
     
@@ -740,9 +740,9 @@ class RecipePreferencesViewModel: ObservableObject {
                 .eq("preference_type", value: type.rawValue)
                 .execute()
             
-            print("✅ [RECIPE PREFS] Removed from cloud: \(ingredient)")
+            AppLogger.info("✅ [RECIPE PREFS] Removed from cloud: \(ingredient)", category: .nutrition)
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to remove: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to remove: \(error)", category: .nutrition)
         }
     }
     
@@ -793,7 +793,7 @@ class RecipePreferencesViewModel: ObservableObject {
                 .insert(insert)
                 .execute()
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to save cuisine: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to save cuisine: \(error)", category: .nutrition)
         }
     }
     
@@ -808,7 +808,7 @@ class RecipePreferencesViewModel: ObservableObject {
                 .eq("cuisine_name", value: name)
                 .execute()
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to remove cuisine: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to remove cuisine: \(error)", category: .nutrition)
         }
     }
     
@@ -859,7 +859,7 @@ class RecipePreferencesViewModel: ObservableObject {
                 .insert(insert)
                 .execute()
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to save dietary: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to save dietary: \(error)", category: .nutrition)
         }
     }
     
@@ -874,7 +874,7 @@ class RecipePreferencesViewModel: ObservableObject {
                 .eq("restriction_type", value: restriction.rawValue)
                 .execute()
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to remove dietary: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to remove dietary: \(error)", category: .nutrition)
         }
     }
     
@@ -913,7 +913,7 @@ class RecipePreferencesViewModel: ObservableObject {
                 .upsert(update)
                 .execute()
         } catch {
-            print("⚠️ [RECIPE PREFS] Failed to update summary: \(error)")
+            AppLogger.warning("⚠️ [RECIPE PREFS] Failed to update summary: \(error)", category: .nutrition)
         }
     }
 }

@@ -298,11 +298,13 @@ struct RecipeDetailView: View {
                         ZStack {
                             Circle()
                                 .fill(Color.white.opacity(servings > 1 ? 0.18 : 0.07))
-                                .frame(width: 32, height: 32)
+                                .frame(width: 36, height: 36)
                             Image(systemName: "minus")
                                 .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(servings > 1 ? .white : .white.opacity(0.3))
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                     }
                     .disabled(servings <= 1)
                     
@@ -319,11 +321,13 @@ struct RecipeDetailView: View {
                         ZStack {
                             Circle()
                                 .fill(Color.white.opacity(servings < detail.servings ? 0.18 : 0.07))
-                                .frame(width: 32, height: 32)
+                                .frame(width: 36, height: 36)
                             Image(systemName: "plus")
                                 .font(.ds_bodySmall).fontWeight(.bold)
                                 .foregroundColor(servings < detail.servings ? .white : .white.opacity(0.3))
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                     }
                     .disabled(servings >= detail.servings)
                 }
@@ -797,7 +801,7 @@ struct RecipeDetailView: View {
     private func addToMeal(_ mealType: MealType) {
         guard let detail = recipeDetail,
               let user = userManager.currentUser else {
-            print("❌ [RECIPE] Cannot add to meal - missing detail or user")
+            AppLogger.error("❌ [RECIPE] Cannot add to meal - missing detail or user", category: .nutrition)
             return
         }
         
@@ -827,9 +831,9 @@ struct RecipeDetailView: View {
         // Track this addition for personalized recommendations
         preferenceService.trackRecipeAddedToMeal(recipe: detail, mealType: mealType, servings: portionServings)
         
-        print("✅ [RECIPE] Added '\(detail.title)' to \(mealType.displayName)")
-        print("   Portion: \(portionServings) serving(s) out of \(detail.servings) total")
-        print("   Calories: \(adjustedCalories), Protein: \(adjustedProtein)g")
+        AppLogger.info("✅ [RECIPE] Added '\(detail.title)' to \(mealType.displayName)", category: .nutrition)
+        AppLogger.debug("   Portion: \(portionServings) serving(s) out of \(detail.servings) total", category: .nutrition)
+        AppLogger.debug("   Calories: \(adjustedCalories), Protein: \(adjustedProtein)g", category: .nutrition)
         
         // Show confirmation
         addedMealType = mealType
@@ -837,8 +841,9 @@ struct RecipeDetailView: View {
             showingAddedConfirmation = true
         }
         
-        // Hide confirmation after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) {
                 showingAddedConfirmation = false
             }
@@ -858,7 +863,7 @@ struct RecipeDetailView: View {
         }
         
         UserDefaults.standard.set(favorites, forKey: "favoriteRecipeIds")
-        print("⭐ [RECIPE] Favorite state saved: \(isFavorite) for recipe \(recipeId)")
+        AppLogger.debug("⭐ [RECIPE] Favorite state saved: \(isFavorite) for recipe \(recipeId)", category: .nutrition)
         
         // Track favorite interaction for recommendations
         preferenceService.trackRecipeFavorited(
@@ -913,7 +918,9 @@ struct RecipeDetailView: View {
             showingAddedToList = true
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) {
                 showingAddedToList = false
             }

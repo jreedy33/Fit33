@@ -270,7 +270,7 @@ class FoodDatabaseService: ObservableObject {
         
         do {
             struct RecentFoodRow: Codable {
-                let foodItemId: Int
+                let foodItemId: Int?
                 let loggedAt: String?
                 
                 enum CodingKeys: String, CodingKey {
@@ -279,7 +279,6 @@ class FoodDatabaseService: ObservableObject {
                 }
             }
             
-            // Get recent food IDs with logging info
             let recentRows: [RecentFoodRow] = try await supabase
                 .from("user_food_history")
                 .select("food_item_id, logged_at")
@@ -289,7 +288,7 @@ class FoodDatabaseService: ObservableObject {
                 .execute()
                 .value
             
-            let foodIds = recentRows.map { $0.foodItemId }
+            let foodIds = recentRows.compactMap { $0.foodItemId }
             
             if !foodIds.isEmpty {
                 // Fetch full food data

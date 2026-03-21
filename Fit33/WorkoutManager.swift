@@ -1081,45 +1081,52 @@ class WorkoutManager: ObservableObject {
         // ADVANCED SESSION LOGGER: Full workout snapshot for AI analysis
         // ═══════════════════════════════════════════════════════════════════
         if AdvancedSessionLogger.isActive, let workout = currentWorkout, let user = UserManager.shared.currentUser {
-            let userLimitations = LimitationsService.shared.userLimitations
-            let limitationsSummary = userLimitations.map { "\($0.limitationType.rawValue): \($0.affectedArea.rawValue) (\($0.severity.rawValue))" }.joined(separator: ", ")
-            let userProfile: [String: Any] = [
-                "name": user.name ?? "unknown",
-                "goal": user.fitnessGoal ?? "unknown",
-                "experience": user.experienceLevel ?? "unknown",
-                "weight_lbs": user.weightLbs,
-                "total_workouts": user.totalWorkouts,
-                "current_streak": user.currentStreak,
-                "xp": user.xp,
-                "injuries_limitations": limitationsSummary.isEmpty ? "none" : limitationsSummary,
-            ]
+            let userName = user.name ?? "unknown"
+            let userGoal = user.fitnessGoal ?? "unknown"
+            let userExp = user.experienceLevel ?? "unknown"
+            let userWeight = user.weightLbs
+            let userWorkouts = user.totalWorkouts
+            let userStreak = user.currentStreak
+            let userXP = user.xp
+            let workoutName = workout.name ?? "Workout"
+            let duration = actualDuration
+            let volume = totalVolume
+            
             var exerciseDetails: [[String: Any]] = []
-            if let captured = capturedSetsData {
-                for (exerciseId, sets) in captured {
-                    let completedSets = sets.filter { $0.isCompleted }
-                    if !completedSets.isEmpty {
-                        let name = exercises.first(where: { $0.id?.uuidString == exerciseId.uuidString })?.name ?? "Unknown"
-                        exerciseDetails.append([
-                            "name": name,
-                            "sets": completedSets.count,
-                            "reps": completedSets.map { $0.reps }.reduce(0, +),
-                            "weight": completedSets.first?.weight ?? 0,
-                        ])
-                    }
+            for (exerciseId, sets) in exerciseSetsData {
+                let completedSets = sets.filter { $0.isCompleted }
+                if !completedSets.isEmpty {
+                    let name = currentExercises.first(where: { $0.id?.uuidString == exerciseId })?.name ?? "Unknown"
+                    exerciseDetails.append([
+                        "name": name,
+                        "sets": completedSets.count,
+                        "reps": completedSets.map { $0.reps }.reduce(0, +),
+                        "weight": completedSets.first?.weight ?? 0,
+                    ])
                 }
             }
-            let totalSets = exerciseDetails.reduce(0) { $0 + ($1["sets"] as? Int ?? 0) }
-            let totalReps = exerciseDetails.reduce(0) { $0 + ($1["reps"] as? Int ?? 0) }
+            let setsCount = exerciseDetails.reduce(0) { $0 + ($1["sets"] as? Int ?? 0) }
+            let repsCount = exerciseDetails.reduce(0) { $0 + ($1["reps"] as? Int ?? 0) }
+            
             Task { @MainActor in
+                let limitations = LimitationsService.shared.userLimitations
+                let limitSummary = limitations.map { "\($0.limitationType.rawValue): \($0.affectedArea.rawValue) (\($0.severity.rawValue))" }.joined(separator: ", ")
+                
+                let profile: [String: Any] = [
+                    "name": userName, "goal": userGoal, "experience": userExp,
+                    "weight_lbs": userWeight, "total_workouts": userWorkouts,
+                    "current_streak": userStreak, "xp": userXP,
+                    "injuries_limitations": limitSummary.isEmpty ? "none" : limitSummary,
+                ]
                 AdvancedSessionLogger.shared.logWorkoutCompleted(
-                    userProfile: userProfile,
-                    workoutName: workout.name ?? "Workout",
-                    durationMinutes: actualDuration,
+                    userProfile: profile,
+                    workoutName: workoutName,
+                    durationMinutes: duration,
                     exercises: exerciseDetails,
-                    totalSets: totalSets,
-                    totalReps: totalReps,
-                    totalVolume: totalVolume,
-                    caloriesBurned: Int(workout.caloriesBurned),
+                    totalSets: setsCount,
+                    totalReps: repsCount,
+                    totalVolume: volume,
+                    caloriesBurned: 0,
                     personalRecords: []
                 )
             }

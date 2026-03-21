@@ -39,6 +39,7 @@ export default function DevLogsPage() {
   const [activeTab, setActiveTab] = useState<'sessions' | 'unified'>('sessions')
   const [unifiedEntries, setUnifiedEntries] = useState<(LogEntry & { user_id?: string; session_id?: string })[]>([])
   const [analyzingTrends, setAnalyzingTrends] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
 
   const loadDevUsers = useCallback(async () => {
     const data = await adminAction('get_dev_logging_users')
@@ -80,6 +81,7 @@ export default function DevLogsPage() {
 
   async function openSession(sessionId: string) {
     setSelectedSession(sessionId)
+    setDownloaded(false)
     const data = await adminAction('get_dev_session_entries', { session_id: sessionId })
     const allEntries = (data.batches || []).flatMap((b: { entries: string | LogEntry[] }) => {
       try { return typeof b.entries === 'string' ? JSON.parse(b.entries) : b.entries }
@@ -503,10 +505,11 @@ export default function DevLogsPage() {
                     <h3 style={{ fontSize: 14, fontWeight: 600 }}>Claude Suggestions ({suggestions.length})</h3>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
-                        onClick={() => downloadSuggestionsAsMD()}
-                        style={{ padding: '6px 16px', borderRadius: 8, background: '#7c3aed', color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer' }}
+                        onClick={() => { downloadSuggestionsAsMD(); setDownloaded(true) }}
+                        disabled={downloaded}
+                        style={{ padding: '6px 16px', borderRadius: 8, background: downloaded ? '#4b5563' : '#7c3aed', color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: downloaded ? 'default' : 'pointer', opacity: downloaded ? 0.6 : 1 }}
                       >
-                        Download .md Report
+                        {downloaded ? 'Report Downloaded' : 'Download .md Report'}
                       </button>
                       {suggestions.some(s => s.status === 'new' && s.file_path && s.code_diff) && (
                         <button

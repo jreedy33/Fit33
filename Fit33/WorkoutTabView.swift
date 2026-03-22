@@ -131,7 +131,7 @@ struct WorkoutTabView: View {
             case .privateChallengeDetail, .privateChallengeInvite, .privateChallengeJoinByCode:
                 break  // Handled by ContentView → DashboardView (sheet)
             case .dashboard, .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker,
-                 .workoutHistory, .personalRecord, .streakInfo:
+                 .workoutHistory, .personalRecord, .streakInfo, .addFood:
                 break  // Handled by ContentView (tab switch + scroll)
             }
         }

@@ -733,10 +733,9 @@ struct MainTabView: View {
                     AppLogger.debug("[TAB FREEZE] onChange FULLY DONE: tab \(oldValue)→\(newValue) (\(String(format: "%.1f", totalMs))ms)", category: .ui)
                 }
             }
-            // Defer HealthKit fetches to not block tab switch animation
-            if newValue == 0 {
+            if newValue == 0 && HealthKitManager.shared.isAuthorized {
                 Task.detached(priority: .background) {
-                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms delay
+                    try? await Task.sleep(nanoseconds: 300_000_000)
                     await HealthKitManager.shared.fetchTodaySteps()
                     await HealthKitManager.shared.fetchWeeklySteps()
                     await HealthKitManager.shared.fetchMonthlyAverage()

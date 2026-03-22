@@ -12,6 +12,7 @@
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 6. **Thread safety**: Shared mutable state must use `NSLock`, `@MainActor`, or actor isolation. `@Published` properties must only be mutated on the main thread.
+7. **HealthKit permission checks**: All HealthKit fetch methods must check `isAuthorized` before executing queries. Query callbacks must log errors via `AppLogger` instead of silently returning nil. iOS can revoke health data access at any time.
 
 ---
 

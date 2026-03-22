@@ -421,6 +421,7 @@ class HealthKitManager: ObservableObject {
     
     /// Fetch today's step count from HealthKit
     func fetchTodaySteps() async {
+        guard isAuthorized else { return }
         await MainActor.run { isLoading = true }
         
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
@@ -456,6 +457,7 @@ class HealthKitManager: ObservableObject {
     
     /// Fetch weekly step data for the chart
     func fetchWeeklySteps() async {
+        guard isAuthorized else { return }
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let calendar = Calendar.current
         let now = Date()
@@ -499,6 +501,7 @@ class HealthKitManager: ObservableObject {
     
     /// Fetch monthly average steps
     func fetchMonthlyAverage() async {
+        guard isAuthorized else { return }
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let calendar = Calendar.current
         let now = Date()

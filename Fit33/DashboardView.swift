@@ -603,10 +603,11 @@ struct DashboardView: View {
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
             
-            // Load friend data — also populates Friends tab cache for instant display
+            // Load friend data — only if authenticated (avoids "Not authenticated" crashes)
+            guard SupabaseManager.shared.isAuthenticated else { return }
             await FriendService.shared.loadPendingRequests()
             await FriendService.shared.loadReceivedWorkouts()
-            await FriendService.shared.fetchFriends() // ⚡️ Pre-fetch for Friends tab (caches to disk)
+            await FriendService.shared.fetchFriends()
             
             // Pre-fetch contact suggestions so friend icons are ready before tapping Friends tab
             await ContactsService.shared.refreshSuggestions()

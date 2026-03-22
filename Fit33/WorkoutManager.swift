@@ -1229,18 +1229,30 @@ class WorkoutManager: ObservableObject {
         AppLogger.debug("🔄 WorkoutManager: Replacing '\(oldExercise.name ?? "?")' with '\(newExercise.name ?? "?")'", category: .data)
         #endif
         
-        // Get the old exercise ID for sets data
         let oldExerciseId = oldExercise.id?.uuidString ?? ""
         let newExerciseId = newExercise.id?.uuidString ?? UUID().uuidString
         
-        // Replace the exercise in the array
         currentExercises[index] = newExercise
         
-        // Remove old exercise sets and initialize fresh empty sets for the new exercise.
-        // Fresh sets allow loadHistoricalDataForExercise to populate from the new
-        // exercise's history via syncSetsWithPreviousData (which skips non-empty sets).
+        // Preserve set structure: keep the same number of sets so completed
+        // progress isn't lost. Transfer completed set count but clear the
+        // exercise-specific weight/rep data since the new exercise may differ.
+        let oldSets = exerciseSetsData[oldExerciseId] ?? []
+        let preservedSetCount = max(oldSets.count, 3)
+        
+        var newSets: [WorkoutSetData] = []
+        for i in 0..<preservedSetCount {
+            let setData = WorkoutSetData()
+            if i < oldSets.count && oldSets[i].isCompleted {
+                setData.isCompleted = true
+                setData.reps = oldSets[i].reps
+                setData.weight = oldSets[i].weight
+            }
+            newSets.append(setData)
+        }
+        
         exerciseSetsData.removeValue(forKey: oldExerciseId)
-        initializeSetsForExercise(id: newExerciseId)
+        exerciseSetsData[newExerciseId] = newSets
         
         // Save updated state
         saveActiveWorkoutToStorage()

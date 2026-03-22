@@ -555,6 +555,7 @@ class CommunityChallengeService: ObservableObject {
     /// Central refresh method — call from pull-to-refresh, tab switches, and app foreground.
     /// Throttled to avoid redundant network calls within 10 seconds.
     func refreshAll(force: Bool = false) async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         let now = Date()
         if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
             #if DEBUG
@@ -578,6 +579,7 @@ class CommunityChallengeService: ObservableObject {
     // MARK: - Fetch My Community Challenges
     
     func fetchMyChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String

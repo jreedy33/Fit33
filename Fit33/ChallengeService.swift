@@ -319,6 +319,7 @@ class ChallengeService: ObservableObject {
     // MARK: - Fetch Pending Invites
     
     func fetchPendingInvites() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             let result: [ChallengeInvite] = try await withCancelRetry(label: "pending_invites") {
                 try await SupabaseManager.shared.supabaseClient

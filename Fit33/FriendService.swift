@@ -213,6 +213,7 @@ class FriendService: ObservableObject {
     // MARK: - Friends
     
     func fetchFriends() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             let result: [Friend] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_friends")
@@ -298,6 +299,7 @@ class FriendService: ObservableObject {
     // MARK: - Friend Requests
     
     func fetchPendingRequests() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             let result: [FriendRequest] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_pending_friend_requests")
@@ -420,6 +422,7 @@ class FriendService: ObservableObject {
     // MARK: - Sent Friend Requests (Outgoing)
     
     func fetchSentRequests() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             let result: [SentFriendRequest] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_sent_friend_requests")
@@ -461,9 +464,10 @@ class FriendService: ObservableObject {
         
         // If not in cache, check server
         do {
+            guard let currentId = SupabaseManager.shared.currentUser?.id else { return false }
             let result: Bool = try await SupabaseManager.shared.supabaseClient
                 .rpc("are_friends", params: [
-                    "user_a": SupabaseManager.shared.currentUser?.id.uuidString ?? "",
+                    "user_a": currentId.uuidString,
                     "user_b": userId.uuidString
                 ])
                 .execute()
@@ -506,6 +510,7 @@ class FriendService: ObservableObject {
     // MARK: - Shared Workouts
     
     func fetchReceivedWorkouts() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             let result: [ReceivedWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_received_workouts")
@@ -813,11 +818,12 @@ class FriendService: ObservableObject {
     // MARK: - Notifications
     
     func fetchNotifications() async {
+        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         do {
             let result: [AppNotification] = try await SupabaseManager.shared.supabaseClient
                 .from("app_notifications")
                 .select()
-                .eq("user_id", value: SupabaseManager.shared.currentUser?.id.uuidString ?? "")
+                .eq("user_id", value: userId.uuidString)
                 .order("created_at", ascending: false)
                 .limit(50)
                 .execute()

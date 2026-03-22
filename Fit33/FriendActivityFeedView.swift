@@ -121,6 +121,7 @@ class ActivityFeedService: ObservableObject {
     private init() {}
     
     func fetchFeed() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         await MainActor.run { isLoading = true }
         
         do {

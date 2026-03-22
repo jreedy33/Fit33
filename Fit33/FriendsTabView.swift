@@ -162,13 +162,10 @@ struct FriendsTabView: View {
             }
         }
         .task {
-            // ⚡️ INSTANT DISPLAY: FriendService and FriendRankingService load cached
-            // data in their init(), so the Friends tab shows populated data immediately.
-            // This .task just refreshes from the server in the background.
-            
             // Small debounce to avoid competing with Dashboard's initial load
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
             guard !Task.isCancelled else { return }
+            guard SupabaseManager.shared.isAuthenticated else { return }
             
             await refreshAllFriendsData(force: false)
             lastRefreshedAt = Date()

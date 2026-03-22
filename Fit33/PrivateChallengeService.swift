@@ -521,6 +521,7 @@ class PrivateChallengeService: ObservableObject {
     // MARK: - Fetch My Private Challenges
     
     func fetchMyChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             struct Params: Encodable {
                 let p_timezone: String
@@ -559,6 +560,7 @@ class PrivateChallengeService: ObservableObject {
     // MARK: - Fetch Pending Invites
     
     func fetchPendingInvites() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
         do {
             struct EmptyParams: Encodable {}
             

@@ -11,6 +11,7 @@
 3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
+6. **Auth guards on all social fetches**: Every async fetch method in social/challenge/friend services MUST start with `guard SupabaseManager.shared.isAuthenticated else { return }`. MainTabView appears based on `hasCompletedOnboarding`, NOT `isAuthenticated` -- `.task` modifiers fire before auth completes, causing "Not authenticated" crashes if unguarded.
 
 ---
 

@@ -186,6 +186,9 @@ The Support Agent maintains a living registry of user pain points:
 | PP-008 | Cards look slightly different colors on different screens | Low | `Color(white: 0.12)` inconsistency (UI-3) |
 | PP-009 | Can't take progress photos | High | Feature not yet built (FEATURE_GAME_PLAN.md #1) |
 | PP-010 | Rest days feel empty/useless | Medium | Recovery Day feature exists but may need promotion |
+| PP-011 | Social features fail on cold launch | Critical | Auth race condition: MainTabView loads before `checkAuth()` completes; social fetches fire unauthenticated. **FIXED March 2026** — auth guards added to all social service methods |
+| PP-012 | Blank step/workout data with no guidance | High | HealthKit permission revoked shows empty data with no user guidance to re-enable. **FIXED March 2026** — `isAuthorized` checks added to all HealthKit fetches |
+| PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded all set data. **FIXED March 2026** — completed sets now preserved during swap |
 
 ---
 

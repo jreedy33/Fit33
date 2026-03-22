@@ -424,6 +424,7 @@ final class HealthKitService: ObservableObject {
     // MARK: - Helper Methods
     
     private func fetchSum(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
+        guard isAuthorized else { return nil }
         guard let quantityType = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
         
         return await withCheckedContinuation { continuation in
@@ -432,6 +433,11 @@ final class HealthKitService: ObservableObject {
                 quantitySamplePredicate: predicate,
                 options: .cumulativeSum
             ) { _, result, error in
+                if let error = error {
+                    AppLogger.warning("HealthKit fetchSum(\(identifier.rawValue)) failed: \(error.localizedDescription)", category: .health)
+                    continuation.resume(returning: nil)
+                    return
+                }
                 guard let result = result, let sum = result.sumQuantity() else {
                     continuation.resume(returning: nil)
                     return

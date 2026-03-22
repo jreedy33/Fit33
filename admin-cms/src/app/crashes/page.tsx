@@ -359,35 +359,130 @@ export default function CrashesPage() {
     }
   }
 
-  // ─── CSV Export ─────────────────────────────────────────
+  // ─── .md Export (selected or all) ────────────────────────
 
-  const exportCrashesCSV = () => {
-    const source = activeTab === 'crashes' ? crashReports : (overview?.recent_reports || [])
+  const exportCrashesMD = () => {
+    const allSource = activeTab === 'crashes' ? crashReports : (overview?.recent_reports || [])
+    const source = selectedIds.size > 0 ? allSource.filter(r => selectedIds.has(r.id)) : allSource
     if (source.length === 0) return
 
-    const headers = ['ID', 'Type', 'Severity', 'Status', 'Error Message', 'Domain', 'User Email', 'Device', 'App Version', 'OS', 'Screen', 'Created At']
-    const rows = source.map(r => [
-      r.id,
-      r.report_type,
-      r.severity,
-      r.status,
-      `"${(r.error_message || '').replace(/"/g, '""')}"`,
-      r.error_domain || '',
-      r.user_email || '',
-      r.device_model || '',
-      r.app_version || '',
-      r.os_version || '',
-      r.current_screen || '',
-      r.created_at,
-    ])
+    const lines = [
+      '# Crash & Bug Reports Export',
+      '',
+      `**Date:** ${new Date().toISOString().split('T')[0]}`,
+      `**Reports exported:** ${source.length}${selectedIds.size > 0 ? ` (${selectedIds.size} selected)` : ' (all)'}`,
+      '',
+      '---',
+      '',
+      '## Instructions',
+      '',
+      'Drag this file into Cursor and ask: "Fix all the issues in this report."',
+      '',
+      '---',
+      '',
+    ]
 
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+    for (const r of source) {
+      lines.push(`## ${r.report_type.toUpperCase()} — ${r.error_message?.slice(0, 100) || 'Unknown Error'}`)
+      lines.push('')
+      lines.push(`**Severity:** ${r.severity} | **Status:** ${r.status}`)
+      lines.push(`**ID:** \`${r.id}\``)
+      lines.push(`**Occurred:** ${r.occurred_at}`)
+      lines.push(`**Uploaded:** ${r.uploaded_at}`)
+      lines.push('')
+
+      lines.push('### Details')
+      lines.push('')
+      lines.push(`- **Report Type:** ${r.report_type}`)
+      lines.push(`- **Error Domain:** ${r.error_domain || '—'}`)
+      lines.push(`- **Error Code:** ${r.error_code || '—'}`)
+      lines.push(`- **Fingerprint:** \`${r.fingerprint}\``)
+      lines.push(`- **Current Screen:** ${r.current_screen || 'Unknown'}`)
+      lines.push(`- **Session Duration:** ${r.session_duration_seconds ? `${Math.floor(r.session_duration_seconds / 60)}m ${r.session_duration_seconds % 60}s` : '—'}`)
+      lines.push(`- **Actions Before Crash:** ${r.actions_before_crash ?? '—'}`)
+      lines.push(`- **Session ID:** ${r.session_id || '—'}`)
+      lines.push('')
+
+      lines.push('### Device Context')
+      lines.push('')
+      lines.push(`- **Device:** ${r.device_model || 'Unknown'}`)
+      lines.push(`- **OS:** ${r.os_version || 'Unknown'}`)
+      lines.push(`- **App Version:** ${r.app_version || '?'}${r.build_number ? ` (${r.build_number})` : ''}`)
+      lines.push(`- **Memory Usage:** ${r.memory_usage_mb ? `${r.memory_usage_mb.toFixed(1)} MB` : '—'}`)
+      lines.push(`- **Free Memory:** ${r.free_memory_mb ? `${r.free_memory_mb.toFixed(1)} MB` : '—'}`)
+      lines.push(`- **Battery:** ${r.battery_level != null ? `${r.battery_level}%` : '—'}`)
+      lines.push(`- **Low Power Mode:** ${r.is_low_power_mode ? 'Yes' : 'No'}`)
+      lines.push(`- **Network:** ${r.network_type || 'Unknown'}`)
+      lines.push('')
+
+      lines.push('### User Context')
+      lines.push('')
+      lines.push(`- **Name:** ${r.user_name || 'Anonymous'}`)
+      lines.push(`- **Email:** ${r.user_email || '—'}`)
+      lines.push(`- **User ID:** ${r.user_id || '—'}`)
+      lines.push('')
+
+      if (r.breadcrumbs && r.breadcrumbs.length > 0) {
+        lines.push(`### Breadcrumbs (${r.breadcrumbs.length} actions)`)
+        lines.push('')
+        for (const b of r.breadcrumbs) {
+          lines.push(`- \`${b.timestamp}\` [${b.screen}] ${b.action}`)
+        }
+        lines.push('')
+      }
+
+      if (r.stack_trace) {
+        lines.push('### Stack Trace')
+        lines.push('')
+        lines.push('```')
+        lines.push(r.stack_trace)
+        lines.push('```')
+        lines.push('')
+      }
+
+      if (r.additional_context && Object.keys(r.additional_context).length > 0) {
+        lines.push('### Additional Context')
+        lines.push('')
+        for (const [key, val] of Object.entries(r.additional_context)) {
+          lines.push(`- **${key}:** ${val}`)
+        }
+        lines.push('')
+      }
+
+      if (r.session_log_snippet) {
+        lines.push('### Session Log')
+        lines.push('')
+        lines.push('```')
+        lines.push(r.session_log_snippet)
+        lines.push('```')
+        lines.push('')
+      }
+
+      if (r.admin_notes) {
+        lines.push('### Admin Notes')
+        lines.push('')
+        lines.push(r.admin_notes)
+        lines.push('')
+      }
+
+      if (r.resolved_at) {
+        lines.push(`*Resolved at ${r.resolved_at}${r.resolved_by ? ` by ${r.resolved_by}` : ''}*`)
+        lines.push('')
+      }
+
+      lines.push('---')
+      lines.push('')
+    }
+
+    const content = lines.join('\n')
+    const blob = new Blob([content], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `crash-reports-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `crash-reports-${new Date().toISOString().slice(0, 10)}.md`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
 
@@ -667,14 +762,14 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
             >
               {analyzing ? '⏳ Analyzing...' : analysisDownloaded ? '✓ Report Downloaded' : '🧠 Analyze with Claude'}
             </button>
-            {/* Export CSV */}
+            {/* Export .md */}
             <button
-              onClick={exportCrashesCSV}
+              onClick={exportCrashesMD}
               className="text-sm px-3 py-2 rounded-lg"
               style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-              title="Export crash reports to CSV"
+              title={selectedIds.size > 0 ? `Export ${selectedIds.size} selected reports as .md` : 'Export all reports as .md'}
             >
-              📥 Export
+              📥 Export{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''} .md
             </button>
             {/* Clean up resolved */}
             {overview && (overview.status_counts['resolved'] || 0) + (overview.status_counts['wont_fix'] || 0) + (overview.status_counts['duplicate'] || 0) > 0 && (

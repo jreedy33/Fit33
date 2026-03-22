@@ -11,6 +11,7 @@
 3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
+6. **UUID type safety**: NEVER use `?? ""` as a fallback for `currentUser?.id.uuidString` in Supabase queries. Always use `guard let userId = currentUser?.id else { return }`. Passing an empty string to a UUID column causes Postgres `operator does not exist: uuid = text`.
 
 ---
 

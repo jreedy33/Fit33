@@ -69,7 +69,8 @@ class FriendRankingService: ObservableObject {
     
     /// Fetches all friends sorted by relationship strength
     func fetchRankedFriends(forceRefresh: Bool = false) async {
-        // Use cache if fresh
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        
         if !forceRefresh,
            let lastRefresh = lastRefreshed,
            Date().timeIntervalSince(lastRefresh) < cacheDuration,

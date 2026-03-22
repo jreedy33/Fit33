@@ -134,7 +134,7 @@ async function fetchLiveDataContext(): Promise<string> {
 
     const [crashRes, bugRes, devSessionRes] = await Promise.all([
       admin.from('crash_reports')
-        .select('id, error_message, severity, status, device_model, ios_version, app_version, screen_name, stack_trace, steps_to_reproduce, occurrence_count, first_seen, last_seen, created_at')
+        .select('id, error_message, severity, status, device_model, ios_version, app_version, screen_name, stack_trace, steps_to_reproduce, occurrence_count, first_seen, last_seen, created_at, additional_context')
         .order('created_at', { ascending: false })
         .limit(30),
       admin.from('bug_reports')
@@ -160,20 +160,30 @@ async function fetchLiveDataContext(): Promise<string> {
           acc[st] = (acc[st] || 0) + 1
           return acc
         }, {}),
-        recent_crashes: crashRes.data.slice(0, 15).map(c => ({
-          id: (c.id as string).slice(0, 8),
-          error: c.error_message,
-          severity: c.severity,
-          status: c.status,
-          device: c.device_model,
-          ios: c.ios_version,
-          app_version: c.app_version,
-          screen: c.screen_name,
-          occurrences: c.occurrence_count,
-          first_seen: c.first_seen,
-          last_seen: c.last_seen,
-          stack_trace_preview: typeof c.stack_trace === 'string' ? (c.stack_trace as string).slice(0, 300) : null,
-        })),
+        by_thermal: crashRes.data.reduce((acc: Record<string, number>, c) => {
+          const ctx = c.additional_context as Record<string, string> | null
+          const thermal = ctx?.thermal_state || 'unknown'
+          acc[thermal] = (acc[thermal] || 0) + 1
+          return acc
+        }, {}),
+        recent_crashes: crashRes.data.slice(0, 15).map(c => {
+          const ctx = c.additional_context as Record<string, string> | null
+          return {
+            id: (c.id as string).slice(0, 8),
+            error: c.error_message,
+            severity: c.severity,
+            status: c.status,
+            device: c.device_model,
+            ios: c.ios_version,
+            app_version: c.app_version,
+            screen: c.screen_name,
+            occurrences: c.occurrence_count,
+            first_seen: c.first_seen,
+            last_seen: c.last_seen,
+            thermal_state: ctx?.thermal_state || null,
+            stack_trace_preview: typeof c.stack_trace === 'string' ? (c.stack_trace as string).slice(0, 300) : null,
+          }
+        }),
       }
       parts.push(`--- CRASH REPORTS (${crashRes.data.length} recent) ---\n${JSON.stringify(crashSummary, null, 2)}\n--- END CRASH REPORTS ---`)
     }
@@ -209,12 +219,18 @@ async function fetchLiveDataContext(): Promise<string> {
     if (devSessionRes.data && devSessionRes.data.length > 0) {
       const sessionSummary = devSessionRes.data.map(s => {
         let errorCount = 0
-        let entries: Array<{ type?: string; detail?: string; ts?: number }> = []
+        let perfCount = 0
+        let entries: Array<{ type?: string; detail?: string; ts?: number; duration_ms?: number }> = []
         try {
           entries = typeof s.entries === 'string' ? JSON.parse(s.entries as string) : (s.entries as typeof entries) || []
           errorCount = entries.filter((e: { type?: string }) => e.type === 'error').length
+          perfCount = entries.filter((e: { type?: string }) => e.type === 'perf').length
         } catch { /* skip parse errors */ }
         const errors = entries.filter((e: { type?: string }) => e.type === 'error').slice(0, 5)
+        const perfEvents = entries.filter((e: { type?: string }) => e.type === 'perf').slice(0, 10)
+        const fpsDrops = perfEvents.filter(e => (e.detail || '').includes('FPS_DROP'))
+        const hangs = perfEvents.filter(e => (e.detail || '').includes('METRICKIT_HANG'))
+        const slowOps = entries.filter(e => e.duration_ms && e.duration_ms > 500)
         return {
           session_id: (s.session_id as string).slice(0, 8),
           user_id: (s.user_id as string).slice(0, 8),
@@ -222,8 +238,17 @@ async function fetchLiveDataContext(): Promise<string> {
           created_at: s.created_at,
           entry_count: entries.length,
           error_count: errorCount,
+          perf_event_count: perfCount,
+          fps_drops: fpsDrops.length,
+          metrickit_hangs: hangs.length,
+          slow_operations: slowOps.length,
           recent_errors: errors.map((e: { detail?: string; ts?: number }) => ({
             detail: e.detail,
+            time: e.ts ? new Date(e.ts).toISOString() : null,
+          })),
+          recent_perf_issues: [...fpsDrops, ...hangs, ...slowOps].slice(0, 5).map(e => ({
+            detail: e.detail,
+            duration_ms: e.duration_ms,
             time: e.ts ? new Date(e.ts).toISOString() : null,
           })),
         }

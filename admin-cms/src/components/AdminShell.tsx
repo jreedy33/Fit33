@@ -11,6 +11,7 @@ const navItems = [
   { href: '/insights', label: 'AI Insights', icon: '🧠' },
   { href: '/dev-logs', label: 'Dev Logs', icon: '🔬' },
   { href: '/crashes', label: 'Crashes & Bugs', icon: '🛡️' },
+  { href: '/faq', label: 'FAQ Manager', icon: '❓' },
 ]
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {

@@ -2034,22 +2034,26 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Image(systemName: "clock.fill")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.blue)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
                 Text("Recent Activity")
-                    .font(.ds_heading3)
+                    .font(.title3)
+                    .fontWeight(.bold)
                 
                 Spacer()
                 
                 NavigationLink(value: DashboardRoute.workoutHistory) {
                     Text("View All")
-                        .font(.ds_labelSmall)
+                        .font(.caption)
+                        .fontWeight(.semibold)
                         .foregroundColor(.blue)
                 }
             }
             
             Text("\(totalCombinedWorkouts) workouts completed")
-                .font(.ds_bodySmall)
+                .font(.caption)
                 .foregroundColor(.secondary)
             
             VStack(spacing: Spacing.sm) {

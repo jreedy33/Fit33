@@ -17,6 +17,7 @@
 | **Staff Fitness Expert** | `FITNESS_EXPERT_AGENT.md` | Exercise science, program design, workout validation, training recommendations | "What the workout should actually be" |
 | **Staff Device Compatibility** | `DEVICE_COMPATIBILITY_AGENT.md` | Responsive layout, cross-device sizing, iPad support, Apple Watch planning | "How it fits every screen" |
 | **Staff Supabase Database Expert** | `SUPABASE_AGENT.md` | Database architecture, table relationships, data integrity, schema optimization, growth data strategy | "How the database stays clean, smart, and efficient" |
+| **Staff Support & Knowledge** | `SUPPORT_AGENT.md` | User-facing knowledge, FAQ management, feature documentation, pain point tracking, user education | "How users understand, use, and get help with the app" |
 
 ---
 
@@ -63,6 +64,11 @@ When a task comes in, route it to the right agent:
 | Data growth/monetization strategy | Supabase Database Expert | Product Engineer |
 | Dead table cleanup | Supabase Database Expert | Data & Backend |
 | Cross-table relationship design | Supabase Database Expert | Data & Backend |
+| FAQ content management | Support & Knowledge | Product Engineer (feature context) |
+| User pain point tracking | Support & Knowledge | Quality & Performance (bug triage) |
+| Feature documentation | Support & Knowledge | All Agents (knowledge input) |
+| Help center / FAQ page | Support & Knowledge | Infra (deployment), Product Engineer (in-app) |
+| Bug-to-feature mapping | Support & Knowledge | Product Engineer (feature planning) |
 
 ---
 
@@ -102,6 +108,9 @@ When one agent needs something from another:
 | `OrientationManager.swift` | Device Compatibility | Product Engineer | Device detection, screen dims, DeviceTier |
 | `DEVICE_COMPATIBILITY_AGENT.md` | Device Compatibility | — | Agent spec, device matrix, patterns |
 | `DEVICE_COMPATIBILITY_TASKS.md` | Device Compatibility | All Agents | Retroactive fix tracker, Watch log |
+| `SUPPORT_AGENT.md` | Support & Knowledge | — | Agent spec, app knowledge base, pain points |
+| `FAQ_PLAN.md` | Support & Knowledge | All Agents | FAQ content plan, 87 entries across 11 categories |
+| `Website/help-center.html` | Support & Knowledge | Infra (deployment) | Public-facing help center |
 
 ---
 
@@ -123,7 +132,8 @@ Step 7: Quality Agent runs through testing checklist:
         - Memory profiling
         - Accessibility audit
         - Error handling review
-Step 8: Feature ships
+Step 8: Support Agent updates FAQ and feature documentation
+Step 9: Feature ships
 ```
 
 ---
@@ -140,6 +150,7 @@ Step 2: Route to appropriate agent:
         - Workout/exercise logic bug → Fitness Expert validates against training science
 Step 3: Fix implemented by owning agent
 Step 4: Quality Agent verifies fix doesn't regress
+Step 5: Support Agent updates FAQ if user-facing behavior changed
 ```
 
 ---
@@ -235,6 +246,9 @@ When you're an agent and unsure what to do, check this:
 - Layout/spacing/device issues → Device Compatibility Agent
 - iPad adaptation → Device Compatibility Agent
 - Apple Watch planning → Device Compatibility Agent
+- User questions / FAQ → Support & Knowledge Agent
+- Pain points / user confusion → Support & Knowledge Agent
+- Feature documentation → Support & Knowledge Agent
 
 ---
 

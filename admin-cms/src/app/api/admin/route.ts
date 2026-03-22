@@ -17,9 +17,12 @@ const RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
 const WRITE_ACTIONS = new Set([
   'update_user', 'delete_user', 'update_bug_report', 'delete_bug_report',
   'update_crash_report', 'delete_crash_report',
+  'create_faq_entry', 'update_faq_entry', 'delete_faq_entry', 'publish_faq_entry',
+  'create_faq_category', 'update_faq_category', 'delete_faq_category',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
+  'bulk_publish_faq_entries',
 ])
 
 function getActionTier(action: string): 'read' | 'write' | 'bulk' {
@@ -1380,6 +1383,121 @@ export async function POST(req: NextRequest) {
         const { error } = await admin.from('dev_log_suggestions')
           .update(update)
           .eq('id', suggestion_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // FAQ MANAGEMENT
+      // ═══════════════════════════════════════════════════
+
+      case 'get_faq_categories': {
+        const { data, error } = await admin.from('faq_categories')
+          .select('*, faq_entries(count)')
+          .order('display_order')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        const categories = (data || []).map((c: Record<string, unknown>) => ({
+          ...c,
+          entry_count: Array.isArray(c.faq_entries) && c.faq_entries.length > 0
+            ? (c.faq_entries[0] as { count: number }).count
+            : 0,
+        }))
+        return NextResponse.json({ categories })
+      }
+
+      case 'get_faq_entries': {
+        const { category_id, status: filterStatus, search } = params as {
+          category_id?: string; status?: string; search?: string
+        }
+        let query = admin.from('faq_entries')
+          .select('*, faq_categories(slug, name)')
+          .order('display_order')
+        if (category_id) query = query.eq('category_id', category_id)
+        if (filterStatus && filterStatus !== 'all') query = query.eq('status', filterStatus)
+        if (search) query = query.or(`question.ilike.%${search}%,answer.ilike.%${search}%`)
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ entries: data || [] })
+      }
+
+      case 'create_faq_entry': {
+        const { entry_id, category_id, question, answer, keywords, channel, status: entryStatus } = params as {
+          entry_id: string; category_id: string; question: string; answer: string
+          keywords?: string[]; channel?: string; status?: string
+        }
+        const { data, error } = await admin.from('faq_entries').insert({
+          entry_id, category_id, question, answer,
+          keywords: keywords || [],
+          channel: channel || 'both',
+          status: entryStatus || 'draft',
+        }).select().single()
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ entry: data })
+      }
+
+      case 'update_faq_entry': {
+        const { id: faqId, ...updates } = params as {
+          id: string; question?: string; answer?: string; status?: string
+          display_order?: number; keywords?: string[]; channel?: string; entry_id?: string
+        }
+        const { error } = await admin.from('faq_entries')
+          .update({ ...updates, updated_at: new Date().toISOString() })
+          .eq('id', faqId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'delete_faq_entry': {
+        const { id: delId } = params as { id: string }
+        const { error } = await admin.from('faq_entries').delete().eq('id', delId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'publish_faq_entry': {
+        const { id: pubId } = params as { id: string }
+        const { error } = await admin.from('faq_entries')
+          .update({ status: 'published', updated_at: new Date().toISOString() })
+          .eq('id', pubId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'bulk_publish_faq_entries': {
+        const { error } = await admin.from('faq_entries')
+          .update({ status: 'published', updated_at: new Date().toISOString() })
+          .eq('status', 'draft')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'create_faq_category': {
+        const { slug, name: catName, icon, display_order: catOrder } = params as {
+          slug: string; name: string; icon?: string; display_order?: number
+        }
+        const { data, error } = await admin.from('faq_categories').insert({
+          slug, name: catName, icon: icon || '', display_order: catOrder || 0,
+        }).select().single()
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ category: data })
+      }
+
+      case 'update_faq_category': {
+        const { id: catId, ...catUpdates } = params as {
+          id: string; name?: string; slug?: string; icon?: string; display_order?: number
+        }
+        const { error } = await admin.from('faq_categories').update(catUpdates).eq('id', catId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'delete_faq_category': {
+        const { id: delCatId } = params as { id: string }
+        const entryCheck = await admin.from('faq_entries').select('id').eq('category_id', delCatId).limit(1)
+        if (entryCheck.data && entryCheck.data.length > 0) {
+          return NextResponse.json({ error: 'Cannot delete category with existing entries' }, { status: 400 })
+        }
+        const { error } = await admin.from('faq_categories').delete().eq('id', delCatId)
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ success: true })
       }

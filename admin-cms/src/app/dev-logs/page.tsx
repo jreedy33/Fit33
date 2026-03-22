@@ -450,22 +450,40 @@ export default function DevLogsPage() {
             <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recent Sessions</h2>
             {loading ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</p> : sessions.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions recorded yet.</p>
-            ) : sessions.map(s => (
-              <button
-                key={s.session_id}
-                onClick={() => openSession(s.session_id)}
-                style={{
-                  display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4, border: 'none', cursor: 'pointer',
-                  background: selectedSession === s.session_id ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{s.session_id.slice(0, 8)}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {new Date(s.started_at).toLocaleString()} &middot; {s.batch_count} batches
-                </div>
-              </button>
-            ))}
+            ) : sessions.map(s => {
+              const sessionUser = devUsers.find(u => u.user_id === s.user_id)
+              const userName = sessionUser?.user_profiles?.name || sessionUser?.user_profiles?.username || null
+              const di = (typeof s.device_info === 'string' ? (() => { try { return JSON.parse(s.device_info) } catch { return {} } })() : s.device_info) || {}
+              const deviceModel = di.model || di.name || ''
+              const deviceOS = di.systemVersion ? `iOS ${di.systemVersion}` : ''
+              const appVer = di.appVersion ? `v${di.appVersion}` : ''
+              const deviceLabel = [deviceModel, deviceOS, appVer].filter(Boolean).join(' · ')
+              return (
+                <button
+                  key={s.session_id}
+                  onClick={() => openSession(s.session_id)}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4, border: 'none', cursor: 'pointer',
+                    background: selectedSession === s.session_id ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    {userName && <span style={{ fontSize: 13, fontWeight: 600 }}>{userName}</span>}
+                    {!userName && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.user_id.slice(0, 8)}</span>}
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.session_id.slice(0, 8)}</span>
+                  </div>
+                  {deviceLabel && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                      {deviceLabel}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {new Date(s.started_at).toLocaleString()} · {s.batch_count} batches
+                  </div>
+                </button>
+              )
+            })}
           </div>
 
           {/* Session Detail */}

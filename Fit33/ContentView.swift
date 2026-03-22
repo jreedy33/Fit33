@@ -870,6 +870,12 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Meals tab", category: .ui)
             
+        case .addFood(let mealType):
+            selectedTab = 3
+            deepLinkManager.pendingMealType = mealType
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Meals tab → Add Food (\(mealType))", category: .ui)
+            
         case .statsTab, .personalRecord:
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
@@ -1080,6 +1086,7 @@ struct SimpleMealPlanView: View {
     @EnvironmentObject var userManager: UserManager
     @StateObject private var mealService = MealService.shared
     @StateObject private var insightsService = PersonalizedInsightsService.shared
+    @StateObject private var deepLinkManager = DeepLinkManager.shared
     @State private var showingProfileSetup = false
     @State private var showingMacroGoalsExplainer = false
     @AppStorage("hasSeenMacroGoalsExplainer") private var hasSeenMacroGoalsExplainer = false
@@ -1227,6 +1234,16 @@ struct SimpleMealPlanView: View {
         }
         .sheet(isPresented: $showShoppingList) {
             MyShoppingListView()
+        }
+        .onReceive(deepLinkManager.$pendingMealType) { mealType in
+            guard let mealType = mealType else { return }
+            if let meal = MealType(rawValue: mealType) {
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    selectedMeal = meal
+                    deepLinkManager.pendingMealType = nil
+                }
+            }
         }
     }
     

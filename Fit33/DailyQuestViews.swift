@@ -281,9 +281,15 @@ struct DailyQuestsWidget: View {
              .upperBodyWorkout, .lowerBodyWorkout, .earlyBirdWorkout:
             dl.pendingDestination = .workout
             
-        // Nutrition quests → meals tab
-        case .logBreakfast, .logLunch, .logDinner, .log3Meals,
-             .logSnack, .hitProteinGoal, .logHighProteinMeal:
+        case .logBreakfast:
+            dl.pendingDestination = .addFood(mealType: "breakfast")
+        case .logLunch:
+            dl.pendingDestination = .addFood(mealType: "lunch")
+        case .logDinner:
+            dl.pendingDestination = .addFood(mealType: "dinner")
+        case .logSnack:
+            dl.pendingDestination = .addFood(mealType: "snacks")
+        case .log3Meals, .hitProteinGoal, .logHighProteinMeal:
             dl.pendingDestination = .mealsTab
             
         // Water quests → hydration widget

@@ -12,6 +12,7 @@ class DeepLinkManager: ObservableObject {
         case workout
         case dashboard
         case mealsTab           // Navigate to Meals tab (tab 3)
+        case addFood(mealType: String)  // Navigate to Meals tab + open Add Food for specific meal
         case statsTab           // Navigate to Stats tab (tab 4)
         
         // Social / Friends
@@ -61,6 +62,7 @@ class DeepLinkManager: ObservableObject {
     // Tab-specific pending routes for deep navigation after tab switch
     @Published var pendingFriendsRoute: String?           // Route to push on FriendsTabView's NavigationStack
     @Published var pendingDashboardRoute: String?         // Route to push on DashboardView's NavigationStack
+    @Published var pendingMealType: String?              // Meal type to auto-open Add Food (breakfast/lunch/dinner/snacks)
     
     private init() {}
     

@@ -267,7 +267,9 @@ class SmartDayGenerator {
             ]
         }
         
-        for i in 0..<min(days, broSplitDays.count) {
+        let cappedDays = min(days, 6)
+        
+        for i in 0..<min(cappedDays, broSplitDays.count) {
             let day = broSplitDays[i]
             titles.append(DayTitleTemplate(
                 title: day.title,
@@ -276,16 +278,13 @@ class SmartDayGenerator {
             ))
         }
         
-        // If more days than 5, cycle back
-        if days > 5 {
-            for i in 5..<days {
-                let day = broSplitDays[i % 5]
-                titles.append(DayTitleTemplate(
-                    title: "\(day.title) II",
-                    targetMuscles: day.primary,
-                    secondaryMuscles: day.secondary
-                ))
-            }
+        if cappedDays == 6 {
+            let weakPoint = broSplitDays[0]
+            titles.append(DayTitleTemplate(
+                title: "\(weakPoint.title) II",
+                targetMuscles: weakPoint.primary,
+                secondaryMuscles: weakPoint.secondary
+            ))
         }
         
         return titles

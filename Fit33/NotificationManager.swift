@@ -687,6 +687,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [NotificationType.dailyWorkoutReminder.rawValue]
         )
+        if let last = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
+           Calendar.current.isDateInToday(last) {
+            return
+        }
         if isNotificationEnabled(.dailyWorkoutReminder) {
             scheduleWorkoutReminder()
         }

@@ -727,13 +727,8 @@ struct Fit33App: App {
         }
     }
     
-    // Check if user should receive a comeback reminder
     private func checkForComebackReminder() async {
-        // Skip if user worked out today (check UserDefaults which is updated on workout completion)
-        if let lastWorkout = UserDefaults.standard.object(forKey: "last_workout_date") as? Date,
-           Calendar.current.isDateInToday(lastWorkout) {
-            return
-        }
+        let udDate = UserDefaults.standard.object(forKey: "last_workout_date") as? Date
         
         let context = persistenceController.container.viewContext
         let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -741,31 +736,31 @@ struct Fit33App: App {
         
         do {
             let users = try context.fetch(fetchRequest)
-            if let user = users.first, let lastWorkout = user.lastWorkoutDate {
-                let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
+            let cdDate = users.first?.lastWorkoutDate
+            
+            guard let lastWorkout = [udDate, cdDate].compactMap({ $0 }).max() else { return }
+            if Calendar.current.isDateInToday(lastWorkout) { return }
+            
+            let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
                 
-                // Graduated re-engagement: 3-7 days (standard), 14 days, 30 days, then stop.
-                if daysSinceLastWorkout >= 3 && daysSinceLastWorkout <= 30 {
-                    let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
-                    
-                    // Frequency: daily for 3-7 days, then only at 14 and 30 day milestones
-                    if daysSinceLastWorkout <= 7 {
-                        if let lastReminder = lastComebackReminder {
-                            let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
-                            if daysSinceReminder < 1 { return }
-                        }
-                    } else {
-                        // Only send at the 14-day and 30-day milestones
-                        guard daysSinceLastWorkout == 14 || daysSinceLastWorkout == 30 else { return }
-                        if let lastReminder = lastComebackReminder {
-                            let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
-                            if daysSinceReminder < 1 { return }
-                        }
+            if daysSinceLastWorkout >= 3 && daysSinceLastWorkout <= 30 {
+                let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
+                
+                if daysSinceLastWorkout <= 7 {
+                    if let lastReminder = lastComebackReminder {
+                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                        if daysSinceReminder < 1 { return }
                     }
-                    
-                    notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)
-                    UserDefaults.standard.set(Date(), forKey: "last_comeback_reminder")
+                } else {
+                    guard daysSinceLastWorkout == 14 || daysSinceLastWorkout == 30 else { return }
+                    if let lastReminder = lastComebackReminder {
+                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                        if daysSinceReminder < 1 { return }
+                    }
                 }
+                
+                notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)
+                UserDefaults.standard.set(Date(), forKey: "last_comeback_reminder")
             }
         } catch {
             AppLogger.error("Error checking for comeback reminder: \(error.localizedDescription)", category: .general)

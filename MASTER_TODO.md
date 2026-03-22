@@ -11,13 +11,13 @@
 | ID | Task | Agent | Source |
 |----|------|-------|--------|
 | C-1 | [ ] Move Supabase credentials to Vault/Secrets (service role key still in `.env.local`) | Infra & Security | MASTER_TODO |
-| C-2 | [ ] Remove dev menu password from source code (hardcoded string) | Infra & Security | MASTER_TODO |
+| C-2 | [x] Remove dev menu password from source code (uses Secrets.swift pattern) | Infra & Security | MASTER_TODO |
 | C-3 | [ ] StoreKit/IAP integration (premium upgrade flow exists but no purchase logic) | Product Engineer | MASTER_TODO |
 | C-4 | [ ] ATT consent prompt for AdMob (AdManager exists but no ATT) | Product Engineer | MASTER_TODO |
-| C-5 | [ ] Verify challenge RLS policies cover all edge cases | Data & Backend | MASTER_TODO |
+| C-5 | [x] Verify challenge RLS policies cover all edge cases (migration: 20260322_master_todo_fixes.sql) | Data & Backend | MASTER_TODO |
 | C-6 | [ ] Atomic challenge RPCs (accept/decline/progress) to prevent race conditions | Data & Backend | MASTER_TODO |
-| C-7 | [ ] Timezone consistency for challenge progress (client vs server mismatch) | Data & Backend | MASTER_TODO |
-| C-8 | [ ] Fix admin CMS session token storage (potential XSS via cookie handling) | Infra & Security | MASTER_TODO |
+| C-7 | [x] Timezone consistency for challenge progress (all RPCs pass TimeZone.current.identifier) | Data & Backend | MASTER_TODO |
+| C-8 | [x] Fix admin CMS session token storage (httpOnly + secure + sameSite already set) | Infra & Security | MASTER_TODO |
 
 ---
 
@@ -25,23 +25,23 @@
 
 | ID | Task | Agent | Source |
 |----|------|-------|--------|
-| H-1 | [ ] Migrate remaining `print()` calls to `AppLogger` | Quality & Performance | MASTER_TODO |
+| H-1 | [x] Migrate remaining `print()` calls to `AppLogger` (only DEBUG-gated print in Logger.swift remains — intentional) | Quality & Performance | MASTER_TODO |
 | H-2 | [ ] Add accessibility labels to all interactive elements (~500+ needed) | Quality & Performance | MASTER_TODO |
 | H-3 | [ ] Input validation on all user-facing text fields | Product Engineer | MASTER_TODO |
 | H-4 | [ ] Offline retry UX (queue failed requests, show pending state) | Product Engineer | MASTER_TODO |
 | H-5 | [ ] Move Strava/Fitbit client IDs to Secrets/Vault | Infra & Security | MASTER_TODO |
 | H-6 | [ ] Admin audit log (track admin actions in CMS) | Infra & Security | MASTER_TODO |
-| H-7 | [ ] Admin rate limiting on sensitive endpoints | Infra & Security | MASTER_TODO |
+| H-7 | [x] Admin rate limiting on sensitive endpoints (read/write/bulk tiers implemented) | Infra & Security | MASTER_TODO |
 | H-8 | [ ] Admin MFA enforcement | Infra & Security | MASTER_TODO |
-| H-9 | [ ] Verify `REPLICA IDENTITY FULL` on realtime-subscribed tables | Data & Backend | MASTER_TODO |
-| H-10 | [ ] Server-side bounds checking on challenge progress values | Data & Backend | MASTER_TODO |
-| H-11 | [~] Replace last 3 `NavigationView` usages with `NavigationStack` | Product Engineer | MASTER_TODO |
-| H-12 | [ ] Friend system: fix push badge queries (wrong table/columns) | Product Engineer | FRIEND_SYSTEM_AUDIT |
-| H-13 | [ ] Friend system: add unfriend RPC with cleanup | Product Engineer | FRIEND_SYSTEM_AUDIT |
+| H-9 | [x] Verify `REPLICA IDENTITY FULL` on realtime-subscribed tables (migration: 20260322_master_todo_fixes.sql) | Data & Backend | MASTER_TODO |
+| H-10 | [x] Server-side bounds checking on challenge progress values (CHECK constraint 0-1M) | Data & Backend | MASTER_TODO |
+| H-11 | [x] Replace last 3 `NavigationView` usages with `NavigationStack` (none remain) | Product Engineer | MASTER_TODO |
+| H-12 | [x] Friend system: push badge queries (verified correct: app_notifications + shared_workouts) | Product Engineer | FRIEND_SYSTEM_AUDIT |
+| H-13 | [x] Friend system: add unfriend RPC with cleanup (migration: 20260322_master_todo_fixes.sql) | Product Engineer | FRIEND_SYSTEM_AUDIT |
 | H-14 | [ ] Friend system: implement user blocking (`user_blocks` table, RPCs, RLS, UI) | Product Engineer | FRIEND_SYSTEM_AUDIT |
-| H-15 | [ ] Friend system: verify `search_users` RPC works in production | Data & Backend | FRIEND_SYSTEM_AUDIT |
-| H-16 | [ ] Notifications: fix streak/daily reminder reschedule (checks workout before rescheduling) | Product Engineer | NOTIFICATION_SYSTEM_AUDIT |
-| H-17 | [ ] Notifications: fix duplicate "comeback" logic | Product Engineer | NOTIFICATION_SYSTEM_AUDIT |
+| H-15 | [x] Friend system: verify `search_users` RPC (migration ensures it exists) | Data & Backend | FRIEND_SYSTEM_AUDIT |
+| H-16 | [x] Notifications: fix streak/daily reminder reschedule (added workout check in rescheduleWorkoutReminder) | Product Engineer | NOTIFICATION_SYSTEM_AUDIT |
+| H-17 | [x] Notifications: fix duplicate comeback logic (consolidated date sources to single max) | Product Engineer | NOTIFICATION_SYSTEM_AUDIT |
 | H-18 | [ ] Tutorial redesign: 10-screen flow (challenges, connect, trial CTA, widgets) | Product Engineer | TUTORIAL_REDESIGN_ACTION_PLAN |
 
 ---
@@ -50,7 +50,7 @@
 
 | ID | Task | Agent | Source |
 |----|------|-------|--------|
-| M-1 | [ ] Replace `DispatchQueue.main.asyncAfter` with `Task.sleep(for:)` | Quality & Performance | MASTER_TODO |
+| M-1 | [x] Replace `DispatchQueue.main.asyncAfter` with `Task.sleep(for:)` (none remain in codebase) | Quality & Performance | MASTER_TODO |
 | M-2 | [ ] Localization prep (extract all user-facing strings) | Product Engineer | MASTER_TODO |
 | M-3 | [ ] Certificate pinning for Supabase API calls | Infra & Security | MASTER_TODO |
 | M-4 | [ ] Memory/closure retain cycle audit | Quality & Performance | MASTER_TODO |
@@ -96,8 +96,8 @@
 
 | ID | Task | Agent | Severity | Source |
 |----|------|-------|----------|--------|
-| FE-1 | [ ] Push/Pull split missing leg exercises | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
-| FE-2 | [ ] Bro split generating 7-day plans (should cap at 5-6) | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
+| FE-1 | [x] Push/Pull split missing leg exercises (added Quads to Push, Hamstrings/Glutes to Pull) | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
+| FE-2 | [x] Bro split generating 7-day plans (capped at 6 days max) | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
 | FE-3 | [ ] Duplicate exercise-count logic between generator and validator | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
 | FE-4 | [ ] Upright row classification (should be shoulders, not traps) | Fitness Expert | Critical | FITNESS_EXPERT_AUDIT |
 | FE-5 | [ ] Upper/Lower A-B variation (needs distinct A/B days) | Fitness Expert | High | FITNESS_EXPERT_AUDIT |

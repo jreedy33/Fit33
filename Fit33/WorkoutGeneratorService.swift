@@ -462,8 +462,8 @@ class WorkoutGeneratorService: ObservableObject {
         // Smart workout splits based on user goal
         let workoutSplits: [(name: String, muscles: [String], forGoals: [String])] = [
             // Muscle building splits
-            ("Push Day", ["Chest", "Shoulders", "Triceps"], ["build muscle", "get stronger"]),
-            ("Pull Day", ["Back", "Biceps"], ["build muscle", "get stronger"]),
+            ("Push Day", ["Chest", "Shoulders", "Triceps", "Quads"], ["build muscle", "get stronger"]),
+            ("Pull Day", ["Back", "Biceps", "Hamstrings", "Glutes"], ["build muscle", "get stronger"]),
             ("Leg Day", ["Quads", "Hamstrings", "Glutes", "Calves"], ["build muscle", "get stronger"]),
             ("Chest & Triceps", ["Chest", "Triceps"], ["build muscle"]),
             ("Back & Biceps", ["Back", "Biceps"], ["build muscle"]),

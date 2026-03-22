@@ -497,7 +497,15 @@ class ChallengeService: ObservableObject {
     
     // MARK: - Fetch Active Challenges
     
+    private var lastActiveFetchTime: Date = .distantPast
+    private var lastGroupFetchTime: Date = .distantPast
+    private let fetchMinInterval: TimeInterval = 5.0
+    
     func fetchActiveChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastActiveFetchTime) > fetchMinInterval else { return }
+        lastActiveFetchTime = now
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String
@@ -1081,6 +1089,10 @@ class ChallengeService: ObservableObject {
     // MARK: - Fetch Active Group Challenges
     
     func fetchActiveGroupChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastGroupFetchTime) > fetchMinInterval else { return }
+        lastGroupFetchTime = now
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String

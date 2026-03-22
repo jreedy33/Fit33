@@ -94,7 +94,7 @@ struct WorkoutTabView: View {
         }
         .onReceive(deepLinkManager.$pendingDestination) { destination in
             // Handle deep links that belong to the Workout tab (tab 2)
-            // Other destinations are handled by ContentView (tab switching) + their target tab views
+            // Other destinations are handled by ContentView (tab switching) + t`   qheir target tab views
             guard let destination = destination else { return }
             switch destination {
             case .running:

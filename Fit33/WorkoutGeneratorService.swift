@@ -145,22 +145,20 @@ class WorkoutGeneratorService: ObservableObject {
         // 🚀 SIMPLE & CLEAN: Generate exercises that hit user's selected muscles
         // Exercises hitting MULTIPLE targets get bonus (compound value)
         
-        // Convert excludeExerciseIds to exercise names for filtering
+        let allExercisesSnapshot = ExerciseLibraryService.shared.getAllExercises()
+        
         var excludeNames: Set<String> = []
         if !excludeExerciseIds.isEmpty {
-            let allExercises = ExerciseLibraryService.shared.getAllExercises()
             for exerciseId in excludeExerciseIds {
-                if let exercise = allExercises.first(where: { $0.id?.uuidString == exerciseId }),
+                if let exercise = allExercisesSnapshot.first(where: { $0.id?.uuidString == exerciseId }),
                    let name = exercise.name {
                     excludeNames.insert(name)
                 }
             }
-            #if DEBUG
-            AppLogger.debug("Excluding \(excludeNames.count) previously used exercises", category: .workout)
-            #endif
         }
         
         let coreDataExercises = await generateFromCoreData(
+            allExercisesInput: allExercisesSnapshot,
             targetMuscles: allTargetMuscles,
             equipment: equipment,
             count: count,
@@ -548,6 +546,7 @@ class WorkoutGeneratorService: ObservableObject {
     // MARK: - Smart Exercise Generation from 7000+ Library
     
     private func generateFromCoreData(
+        allExercisesInput: [Exercise]? = nil,
         targetMuscles: [String],
         equipment: [String],
         count: Int,
@@ -555,8 +554,7 @@ class WorkoutGeneratorService: ObservableObject {
         excludeNames: Set<String> = [],
         workoutLocation: ExerciseFilterService.WorkoutLocation = .gym
     ) async -> [GeneratedExercise] {
-        // Get exercises from the new 7000+ library
-        var allExercises = ExerciseLibraryService.shared.getAllExercises()
+        var allExercises = allExercisesInput ?? ExerciseLibraryService.shared.getAllExercises()
         
         // Filter out already selected exercises
         if !excludeNames.isEmpty {

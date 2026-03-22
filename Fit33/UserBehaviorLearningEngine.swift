@@ -665,11 +665,7 @@ class UserBehaviorLearningEngine: ObservableObject {
         }
         boost += maxSimilarityBoost
         
-        #if DEBUG
-        if maxSimilarityBoost > 30 {
-            AppLogger.debug("   🔗 Similar exercise boost: \(exerciseName) (+\(Int(maxSimilarityBoost)))", category: .workout)
-        }
-        #endif
+        // Similarity boost logging suppressed for performance (was flooding main thread during generation)
         
         // ═══════════════════════════════════════════════════════════════
         // EQUIPMENT PREFERENCE (user prefers dumbbells → boost dumbbell exercises)

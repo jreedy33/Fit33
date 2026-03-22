@@ -496,6 +496,8 @@ struct WorkoutProgressView: View {
     @State private var cachedMostSets: Int = 0
     @State private var cachedLongestWorkoutMinutes: Int = 0
     @State private var hasComputedPRs = false
+    @State private var cachedIntensityMap: [String: Double] = [:]
+    @State private var hasComputedIntensity = false
     
     /// When true, renders only the stats content sections (no NavigationView/ScrollView/background)
     let isEmbedded: Bool
@@ -679,44 +681,65 @@ struct WorkoutProgressView: View {
         }
     }
     
-    // ⚡️ PERFORMANCE: Background PR computation
     private func computePRsInBackground() async {
-        // Compute on main thread since workouts is a @FetchRequest
-        // But do it after a tiny delay so UI renders first
-        var maxWeight: Double = 0
-        var maxReps: Int = 0
-        var maxSets: Int = 0
-        var maxMinutes: Int = 0
+        let context = PersistenceController.shared.container.newBackgroundContext()
         
-        // This iterates all workouts
-        for workout in workouts {
-            guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
-            maxSets = max(maxSets, exercises.count)
+        let results: (Double, Int, Int, Int, [String: Double]) = await context.perform {
+            let request = Workout.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
             
-            let duration = workout.duration
-            if duration > 0 {
-                maxMinutes = max(maxMinutes, Int(duration / 60))
+            guard let allWorkouts = try? context.fetch(request) else {
+                return (0, 0, 0, 0, [:])
             }
             
-            for exercise in exercises {
-                guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { continue }
-                for set in sets {
-                    maxWeight = max(maxWeight, set.weight)
-                    maxReps = max(maxReps, Int(set.reps))
+            var maxWeight: Double = 0
+            var maxReps: Int = 0
+            var maxSets: Int = 0
+            var maxMinutes: Int = 0
+            var intensityMap: [String: Double] = [:]
+            let calendar = Calendar.current
+            
+            for workout in allWorkouts {
+                guard let exercises = workout.exercises?.allObjects as? [WorkoutExercise] else { continue }
+                maxSets = max(maxSets, exercises.count)
+                
+                let duration = workout.duration
+                if duration > 0 {
+                    maxMinutes = max(maxMinutes, Int(duration / 60))
+                }
+                
+                if workout.isCompleted, let workoutDate = workout.date {
+                    let dayKey = calendar.startOfDay(for: workoutDate).timeIntervalSince1970.description
+                    let durationMin = Int(duration / 60)
+                    let existing = intensityMap[dayKey] ?? 0
+                    let additional: Double = durationMin >= 90 ? 1.0 : durationMin >= 60 ? 0.75 : durationMin >= 30 ? 0.5 : 0.25
+                    intensityMap[dayKey] = max(existing, additional)
+                }
+                
+                for exercise in exercises {
+                    guard let sets = exercise.sets?.allObjects as? [WorkoutSet] else { continue }
+                    for set in sets {
+                        maxWeight = max(maxWeight, set.weight)
+                        maxReps = max(maxReps, Int(set.reps))
+                    }
                 }
             }
+            
+            return (maxWeight, maxReps, maxSets, maxMinutes, intensityMap)
         }
         
-        cachedHeaviestWeight = maxWeight
-        cachedHighestReps = maxReps
-        cachedMostSets = maxSets
-        cachedLongestWorkoutMinutes = maxMinutes
-        hasComputedPRs = true
+        await MainActor.run {
+            cachedHeaviestWeight = results.0
+            cachedHighestReps = results.1
+            cachedMostSets = results.2
+            cachedLongestWorkoutMinutes = results.3
+            cachedIntensityMap = results.4
+            hasComputedPRs = true
+            hasComputedIntensity = true
+        }
     }
     
-    // ⚡️ PERFORMANCE: Background achievement computation
     private func computeAchievementsInBackground() async {
-        // Get values on main thread first
         let totalWorkoutsCount = workouts.count
         let streak = Int(userManager.currentUser?.currentStreak ?? 0)
         let longest = Int(userManager.currentUser?.longestStreak ?? 0)
@@ -728,19 +751,20 @@ struct WorkoutProgressView: View {
         let level = userManager.getLevel()
         let xp = Int(userManager.currentUser?.xp ?? 0)
         
-        // Generate achievements (can be done synchronously since AchievementService caches)
-        let achievements = AchievementService.shared.generateAllAchievements(
-            totalWorkouts: totalWorkoutsCount,
-            currentStreak: streak,
-            longestStreak: longest,
-            heaviestWeight: heaviest,
-            highestReps: reps,
-            longestWorkoutMinutes: minutes,
-            mostSetsInWorkout: sets,
-            workoutsThisMonth: monthWorkouts,
-            userLevel: level,
-            userXP: xp
-        )
+        let achievements = await Task.detached(priority: .userInitiated) {
+            AchievementService.shared.generateAllAchievements(
+                totalWorkouts: totalWorkoutsCount,
+                currentStreak: streak,
+                longestStreak: longest,
+                heaviestWeight: heaviest,
+                highestReps: reps,
+                longestWorkoutMinutes: minutes,
+                mostSetsInWorkout: sets,
+                workoutsThisMonth: monthWorkouts,
+                userLevel: level,
+                userXP: xp
+            )
+        }.value
         
         cachedAchievements = achievements
         hasLoadedAchievements = true
@@ -1776,26 +1800,8 @@ struct WorkoutProgressView: View {
     }
     
     private func workoutIntensity(for date: Date) -> Double {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: date)
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return 0 }
-        
-        let dayWorkouts = workouts.filter { workout in
-            guard let workoutDate = workout.date else { return false }
-            return workoutDate >= startOfDay && workoutDate < endOfDay && workout.isCompleted
-        }
-        
-        if dayWorkouts.isEmpty { return 0 }
-        
-        // Calculate intensity based on duration
-        let totalDuration = dayWorkouts.reduce(0) { $0 + Int($1.duration) }
-        let durationMinutes = totalDuration / 60
-        
-        // Scale: 0-30 min = 0.25, 30-60 = 0.5, 60-90 = 0.75, 90+ = 1.0
-        if durationMinutes >= 90 { return 1.0 }
-        if durationMinutes >= 60 { return 0.75 }
-        if durationMinutes >= 30 { return 0.5 }
-        return 0.25
+        let dayKey = Calendar.current.startOfDay(for: date).timeIntervalSince1970.description
+        return cachedIntensityMap[dayKey] ?? 0
     }
     
     private func activityColor(for intensity: Double, date: Date) -> Color {

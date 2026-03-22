@@ -341,6 +341,7 @@ class ChallengeService: ObservableObject {
             
             AppLogger.info("Fetched \(result.count) pending challenge invites", category: .social)
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             AppLogger.error("Error fetching pending invites: \(error.localizedDescription)", category: .social)
         }
     }
@@ -407,6 +408,7 @@ class ChallengeService: ObservableObject {
             AppLogger.debug("Cached \(result.count) pending sent challenges", category: .social)
             AppLogger.info("Fetched \(result.count) pending sent challenges", category: .social)
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             logger.log(.error, category: .challenge, message: "Failed to fetch pending sent challenges", metadata: ["error": "\(error)"])
             AppLogger.error("Error fetching pending sent challenges: \(error.localizedDescription)", category: .social)
         }
@@ -531,6 +533,7 @@ class ChallengeService: ObservableObject {
             ])
             AppLogger.info("Fetched \(result.count) active challenges", category: .social)
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             logger.log(.error, category: .challenge, message: "Failed to fetch active challenges", metadata: ["error": "\(error)"])
             AppLogger.error("Error fetching active challenges: \(error.localizedDescription)", category: .social)
         }
@@ -1109,6 +1112,7 @@ class ChallengeService: ObservableObject {
             
             AppLogger.info("Fetched \(result.count) active group challenges", category: .social)
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             AppLogger.error("Error fetching group challenges: \(error.localizedDescription)", category: .social)
         }
     }

@@ -553,6 +553,7 @@ class PrivateChallengeService: ObservableObject {
             AppLogger.info("Successfully fetched \(result.count) private challenges", category: .social)
             #endif
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             AppLogger.error("Error fetching my private challenges: \(error.localizedDescription)", category: .social)
         }
     }
@@ -583,6 +584,7 @@ class PrivateChallengeService: ObservableObject {
             AppLogger.info("Successfully fetched \(result.count) pending invites", category: .social)
             #endif
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             AppLogger.error("Error fetching private invites: \(error.localizedDescription)", category: .social)
         }
     }

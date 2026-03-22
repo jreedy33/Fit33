@@ -619,6 +619,7 @@ class CommunityChallengeService: ObservableObject {
             AppLogger.info("Successfully fetched \(result.count) community challenges", category: .social)
             #endif
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             AppLogger.error("Error fetching my community challenges: \(error.localizedDescription)", category: .social)
         }
     }

@@ -236,7 +236,13 @@ final class CrashReportingService {
         line: Int = #line,
         additionalContext: [String: String]? = nil
     ) {
-        // Rate limiting
+        if let error = error {
+            if error is CancellationError { return }
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
+        }
+        if message.hasSuffix(": cancelled") || message.hasSuffix(": The operation couldn't be completed. (NSURLErrorDomain error -999.)") { return }
+        
         reportLock.lock()
         defer { reportLock.unlock() }
         

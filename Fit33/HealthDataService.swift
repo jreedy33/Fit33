@@ -313,8 +313,8 @@ final class HealthDataService: ObservableObject {
         // Save workouts (Nike Run Club runs, Apple Watch workouts, etc.)
         var savedCount = 0
         for workout in healthKit.recentWorkouts {
-            // Skip Fit33's own workouts read back from HealthKit
             if workout.isFromFit33 { continue }
+            if workout.isFromStrava { continue }
             
             // Only save workouts from today/recent (7 days)
             if calendar.isDate(workout.startDate, inSameDayAs: today) ||
@@ -366,7 +366,6 @@ final class HealthDataService: ObservableObject {
     private func saveHealthKitWorkout(_ workout: HealthKitWorkout) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
-        // Map workout type to cardio type
         let workoutType: String
         switch workout.workoutType {
         case .running: workoutType = "Run"
@@ -376,7 +375,17 @@ final class HealthDataService: ObservableObject {
         case .hiking: workoutType = "Hike"
         case .elliptical: workoutType = "Elliptical"
         case .rowing: workoutType = "Rowing"
-        default: workoutType = "Other"
+        case .yoga: workoutType = "Yoga"
+        case .dance: workoutType = "Dance"
+        case .highIntensityIntervalTraining: workoutType = "HIIT"
+        case .coreTraining: workoutType = "Core Training"
+        case .pilates: workoutType = "Pilates"
+        case .stairClimbing: workoutType = "Stair Climbing"
+        case .crossTraining: workoutType = "Cross Training"
+        case .functionalStrengthTraining, .traditionalStrengthTraining: workoutType = "Strength Training"
+        case .flexibility: workoutType = "Flexibility"
+        case .cooldown: workoutType = "Cooldown"
+        default: workoutType = workout.workoutName
         }
         
         // Determine source name for display

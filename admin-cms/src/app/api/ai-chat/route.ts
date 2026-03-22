@@ -64,6 +64,19 @@ The data snapshot already contains these JOIN results — USE THEM, don't sugges
 - cross_nutrition_vs_workout: nutrition trackers vs non-trackers (workout frequency)
 - user_lifecycle_stages: new_inactive, beginner, developing, established, power_user counts
 
+## DATA ACCESS — You have LIVE access to:
+1. **Platform analytics** — user growth, workout activity, social engagement, nutrition, streaks, cross-table correlations
+2. **Crash reports** — error messages, severity, device/iOS/app version, screen name, stack traces, occurrence counts, status
+3. **Bug reports** — user descriptions, priority, category, device info, session logs
+4. **Dev session logs** — real-time session data from dogfooding users, including errors, screen flows, API calls, performance data
+
+When analyzing crashes or bugs:
+- Cross-reference crash error messages with bug report descriptions to find patterns
+- Map crash screen names to user-reported bug locations
+- Check dev session error logs for related issues
+- Note device/iOS version patterns across crashes
+- Prioritize by: severity × occurrence_count × user impact
+
 ## CRITICAL RULES
 1. NEVER suggest creating tables, columns, views, indexes, or SQL. The schema is complete and all relationships exist via user_id joins. The cross-table data is ALREADY in the snapshot.
 2. NEVER say "missing relationship" or "missing link" — every table can be joined via user_id. The pre-computed analytics above already do these joins for you.
@@ -71,6 +84,7 @@ The data snapshot already contains these JOIN results — USE THEM, don't sugges
 4. Focus ONLY on actionable product decisions: what feature to build next, what to fix, what user segment to target, what content to create.
 5. NEVER output SQL code blocks. The admin is a product owner, not a database engineer.
 6. If asked "what data is missing" — nothing is missing. Suggest what PRODUCT FEATURES or EXPERIMENTS would improve metrics instead.
+7. When asked about crashes or bugs, ALWAYS reference the actual crash/bug data provided. Cite specific error messages, severity, and occurrence counts. Map crashes to likely user-facing symptoms.
 
 Format: headers, bullet points, bold metrics. Be a senior product manager, not a database consultant.`
 
@@ -93,7 +107,9 @@ async function verifyAdmin(req: NextRequest): Promise<{ valid: boolean; userId?:
 async function fetchLiveDataContext(): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const parts: string[] = []
 
+  // 1. Platform analytics from Edge Function
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/generate-ai-insights`, {
       method: 'POST',
@@ -106,12 +122,121 @@ async function fetchLiveDataContext(): Promise<string> {
 
     if (res.ok) {
       const data = await res.json()
-      return `\n\n--- LIVE PLATFORM DATA (${new Date().toISOString()}) ---\n${JSON.stringify(data, null, 2)}\n--- END DATA ---`
+      parts.push(`--- LIVE PLATFORM DATA (${new Date().toISOString()}) ---\n${JSON.stringify(data, null, 2)}\n--- END PLATFORM DATA ---`)
     }
   } catch (e) {
     console.error('[ai-chat] Failed to fetch live data context:', e)
   }
 
+  // 2. Crash reports, bug reports, and dev session logs (direct queries)
+  try {
+    const admin = createAdminClient()
+
+    const [crashRes, bugRes, devSessionRes] = await Promise.all([
+      admin.from('crash_reports')
+        .select('id, error_message, severity, status, device_model, ios_version, app_version, screen_name, stack_trace, steps_to_reproduce, occurrence_count, first_seen, last_seen, created_at')
+        .order('created_at', { ascending: false })
+        .limit(30),
+      admin.from('bug_reports')
+        .select('id, description, status, priority, category, device_info, app_version, created_at, session_log')
+        .order('created_at', { ascending: false })
+        .limit(30),
+      admin.from('dev_session_logs')
+        .select('session_id, user_id, device_info, created_at, entries')
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ])
+
+    if (crashRes.data && crashRes.data.length > 0) {
+      const crashSummary = {
+        total: crashRes.data.length,
+        by_severity: crashRes.data.reduce((acc: Record<string, number>, c) => {
+          const sev = (c.severity as string) || 'unknown'
+          acc[sev] = (acc[sev] || 0) + 1
+          return acc
+        }, {}),
+        by_status: crashRes.data.reduce((acc: Record<string, number>, c) => {
+          const st = (c.status as string) || 'new'
+          acc[st] = (acc[st] || 0) + 1
+          return acc
+        }, {}),
+        recent_crashes: crashRes.data.slice(0, 15).map(c => ({
+          id: (c.id as string).slice(0, 8),
+          error: c.error_message,
+          severity: c.severity,
+          status: c.status,
+          device: c.device_model,
+          ios: c.ios_version,
+          app_version: c.app_version,
+          screen: c.screen_name,
+          occurrences: c.occurrence_count,
+          first_seen: c.first_seen,
+          last_seen: c.last_seen,
+          stack_trace_preview: typeof c.stack_trace === 'string' ? (c.stack_trace as string).slice(0, 300) : null,
+        })),
+      }
+      parts.push(`--- CRASH REPORTS (${crashRes.data.length} recent) ---\n${JSON.stringify(crashSummary, null, 2)}\n--- END CRASH REPORTS ---`)
+    }
+
+    if (bugRes.data && bugRes.data.length > 0) {
+      const bugSummary = {
+        total: bugRes.data.length,
+        by_status: bugRes.data.reduce((acc: Record<string, number>, b) => {
+          const st = (b.status as string) || 'new'
+          acc[st] = (acc[st] || 0) + 1
+          return acc
+        }, {}),
+        by_category: bugRes.data.reduce((acc: Record<string, number>, b) => {
+          const cat = (b.category as string) || 'uncategorized'
+          acc[cat] = (acc[cat] || 0) + 1
+          return acc
+        }, {}),
+        recent_bugs: bugRes.data.slice(0, 15).map(b => ({
+          id: (b.id as string).slice(0, 8),
+          description: typeof b.description === 'string' ? (b.description as string).slice(0, 200) : b.description,
+          status: b.status,
+          priority: b.priority,
+          category: b.category,
+          device: b.device_info,
+          app_version: b.app_version,
+          created_at: b.created_at,
+          has_session_log: !!b.session_log,
+        })),
+      }
+      parts.push(`--- BUG REPORTS (${bugRes.data.length} recent) ---\n${JSON.stringify(bugSummary, null, 2)}\n--- END BUG REPORTS ---`)
+    }
+
+    if (devSessionRes.data && devSessionRes.data.length > 0) {
+      const sessionSummary = devSessionRes.data.map(s => {
+        let errorCount = 0
+        let entries: Array<{ type?: string; detail?: string; ts?: number }> = []
+        try {
+          entries = typeof s.entries === 'string' ? JSON.parse(s.entries as string) : (s.entries as typeof entries) || []
+          errorCount = entries.filter((e: { type?: string }) => e.type === 'error').length
+        } catch { /* skip parse errors */ }
+        const errors = entries.filter((e: { type?: string }) => e.type === 'error').slice(0, 5)
+        return {
+          session_id: (s.session_id as string).slice(0, 8),
+          user_id: (s.user_id as string).slice(0, 8),
+          device: s.device_info,
+          created_at: s.created_at,
+          entry_count: entries.length,
+          error_count: errorCount,
+          recent_errors: errors.map((e: { detail?: string; ts?: number }) => ({
+            detail: e.detail,
+            time: e.ts ? new Date(e.ts).toISOString() : null,
+          })),
+        }
+      })
+      parts.push(`--- DEV SESSION LOGS (${devSessionRes.data.length} recent sessions) ---\n${JSON.stringify(sessionSummary, null, 2)}\n--- END DEV SESSION LOGS ---`)
+    }
+  } catch (e) {
+    console.error('[ai-chat] Failed to fetch crash/bug/session data:', e)
+  }
+
+  if (parts.length > 0) {
+    return '\n\n' + parts.join('\n\n')
+  }
   return '\n\n(Live data context unavailable - answering based on conversation context only)'
 }
 

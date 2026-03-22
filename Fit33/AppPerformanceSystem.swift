@@ -22,13 +22,8 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
                 AppLogger.info("[METRICKIT] Daily metrics received (\(summary.count) bytes)", category: .performance)
             }
             
-            if let launchMetrics = payload.applicationLaunchMetrics {
-                let resumeTime = launchMetrics.histogrammedResumeTime.bucketEnumerator
-                AppLogger.info("[METRICKIT] Launch metrics available, resume histogram entries: \(resumeTime.allObjects.count)", category: .performance)
-            }
-            
-            if let hangMetrics = payload.applicationResponsivenessMetrics {
-                AppLogger.warning("[METRICKIT] Hang metrics: \(hangMetrics)", category: .performance)
+            if payload.applicationResponsivenessMetrics != nil {
+                AppLogger.warning("[METRICKIT] Responsiveness metrics available", category: .performance)
             }
         }
     }
@@ -37,14 +32,16 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
         for payload in payloads {
             if let hangDiagnostics = payload.hangDiagnostics {
                 for hang in hangDiagnostics {
-                    let duration = hang.hangDuration
-                    AppLogger.error("[METRICKIT] Hang diagnostic: \(duration)s hang detected", category: .performance)
+                    let durationMs = Int(hang.hangDuration.converted(to: .milliseconds).value)
+                    AppLogger.error("[METRICKIT] Hang diagnostic: \(durationMs)ms hang detected", category: .performance)
                     
                     if AdvancedSessionLogger.isActive {
-                        AdvancedSessionLogger.shared.logPerformance(
-                            "METRICKIT_HANG: \(duration)s",
-                            durationMs: Int(duration.converted(to: .milliseconds).value)
-                        )
+                        Task { @MainActor in
+                            AdvancedSessionLogger.shared.logPerformance(
+                                "METRICKIT_HANG: \(durationMs)ms",
+                                durationMs: durationMs
+                            )
+                        }
                     }
                 }
             }

@@ -240,8 +240,14 @@ final class CrashReportingService {
             if error is CancellationError { return }
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorNetworkConnectionLost { return }
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorNotConnectedToInternet { return }
+            if nsError.domain == "com.apple.AuthenticationServices.AuthorizationError" && nsError.code == 1000 { return }
+            if nsError.domain == "com.apple.AuthenticationServices.AuthorizationError" && nsError.code == 1001 { return }
         }
-        if message.hasSuffix(": cancelled") || message.hasSuffix(": The operation couldn't be completed. (NSURLErrorDomain error -999.)") { return }
+        if message.hasSuffix(": cancelled") || message.contains("NSURLErrorDomain error -999") { return }
+        if message.contains("network connection was lost") || message.contains("not connected to the Internet") { return }
+        if message.contains("[APPLE AUTH]") && message.contains("1000") { return }
         
         reportLock.lock()
         defer { reportLock.unlock() }

@@ -287,6 +287,49 @@ final class ScrollPerformanceTracker: ObservableObject {
     }
 }
 
+struct ScrollOffsetTracker: ViewModifier {
+    let screenName: String
+    @State private var lastLogTime: Date = .distantPast
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(key: ScrollOffsetKey.self, value: geo.frame(in: .global).minY)
+                }
+            )
+            .onPreferenceChange(ScrollOffsetKey.self) { offset in
+                ScrollPerformanceTracker.shared.updateScroll(offset: -offset)
+                
+                if ScrollPerformanceTracker.shared.isScrollingFast {
+                    let now = Date()
+                    if now.timeIntervalSince(lastLogTime) > 2.0 {
+                        lastLogTime = now
+                        SessionLogManager.shared.logScroll(
+                            screen: screenName,
+                            direction: offset < 0 ? "down" : "up",
+                            position: "\(Int(-offset))"
+                        )
+                    }
+                }
+            }
+    }
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+extension View {
+    func trackScrollJank(screen: String) -> some View {
+        modifier(ScrollOffsetTracker(screenName: screen))
+    }
+}
+
 // MARK: - Image Loading Optimizer
 
 /// Async image loading with memory caching

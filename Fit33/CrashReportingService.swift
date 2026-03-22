@@ -281,6 +281,16 @@ final class CrashReportingService {
             context["error_detail"] = String(describing: error)
         }
         
+        let thermalState: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermalState = "nominal"
+        case .fair: thermalState = "fair"
+        case .serious: thermalState = "serious"
+        case .critical: thermalState = "critical"
+        @unknown default: thermalState = "unknown"
+        }
+        context["thermal_state"] = thermalState
+        
         let stackTrace = Thread.callStackSymbols.joined(separator: "\n")
         
         let report = buildReport(

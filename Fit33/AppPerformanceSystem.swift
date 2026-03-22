@@ -1,6 +1,137 @@
 import SwiftUI
 import CoreData
 import Combine
+import MetricKit
+
+// MARK: - MetricKit Performance Subscriber
+
+final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
+    static let shared = MetricKitSubscriber()
+    
+    private override init() {
+        super.init()
+        MXMetricManager.shared.add(self)
+        AppLogger.info("[METRICKIT] Subscriber registered", category: .performance)
+    }
+    
+    func didReceive(_ payloads: [MXMetricPayload]) {
+        for payload in payloads {
+            let json = payload.jsonRepresentation()
+            if let data = try? JSONSerialization.data(withJSONObject: json, options: []),
+               let summary = String(data: data, encoding: .utf8) {
+                AppLogger.info("[METRICKIT] Daily metrics received (\(summary.count) bytes)", category: .performance)
+            }
+            
+            if let launchMetrics = payload.applicationLaunchMetrics {
+                let resumeTime = launchMetrics.histogrammedResumeTime.bucketEnumerator
+                AppLogger.info("[METRICKIT] Launch metrics available, resume histogram entries: \(resumeTime.allObjects.count)", category: .performance)
+            }
+            
+            if let hangMetrics = payload.applicationResponsivenessMetrics {
+                AppLogger.warning("[METRICKIT] Hang metrics: \(hangMetrics)", category: .performance)
+            }
+        }
+    }
+    
+    func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        for payload in payloads {
+            if let hangDiagnostics = payload.hangDiagnostics {
+                for hang in hangDiagnostics {
+                    let duration = hang.hangDuration
+                    AppLogger.error("[METRICKIT] Hang diagnostic: \(duration)s hang detected", category: .performance)
+                    
+                    if AdvancedSessionLogger.isActive {
+                        AdvancedSessionLogger.shared.logPerformance(
+                            "METRICKIT_HANG: \(duration)s",
+                            durationMs: Int(duration.converted(to: .milliseconds).value)
+                        )
+                    }
+                }
+            }
+            
+            if let crashDiagnostics = payload.crashDiagnostics {
+                for crash in crashDiagnostics {
+                    AppLogger.error("[METRICKIT] Crash diagnostic received: \(crash.applicationVersion)", category: .performance)
+                }
+            }
+            
+            if let cpuDiagnostics = payload.cpuExceptionDiagnostics {
+                for cpu in cpuDiagnostics {
+                    AppLogger.warning("[METRICKIT] CPU exception: \(cpu.totalCPUTime)", category: .performance)
+                }
+            }
+            
+            if let diskDiagnostics = payload.diskWriteExceptionDiagnostics {
+                for disk in diskDiagnostics {
+                    AppLogger.warning("[METRICKIT] Disk write exception: \(disk.totalWritesCaused)", category: .performance)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Production FPS Monitor
+
+final class ProductionFPSMonitor {
+    static let shared = ProductionFPSMonitor()
+    
+    private var displayLink: CADisplayLink?
+    private var lastTimestamp: CFTimeInterval = 0
+    private var frameCount: Int = 0
+    private var lowFPSStartTime: CFTimeInterval = 0
+    private var isTrackingLowFPS = false
+    private let lowFPSThreshold: Double = 55.0
+    private let reportAfterMs: Double = 500.0
+    
+    func start() {
+        guard displayLink == nil else { return }
+        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+    
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    @objc private func tick(_ link: CADisplayLink) {
+        if lastTimestamp == 0 {
+            lastTimestamp = link.timestamp
+            return
+        }
+        
+        frameCount += 1
+        let elapsed = link.timestamp - lastTimestamp
+        
+        if elapsed >= 1.0 {
+            let fps = Double(frameCount) / elapsed
+            frameCount = 0
+            lastTimestamp = link.timestamp
+            
+            if fps < lowFPSThreshold {
+                if !isTrackingLowFPS {
+                    isTrackingLowFPS = true
+                    lowFPSStartTime = CACurrentMediaTime()
+                } else {
+                    let dropDuration = (CACurrentMediaTime() - lowFPSStartTime) * 1000
+                    if dropDuration >= reportAfterMs {
+                        AppLogger.warning("[FPS] Sustained drop: \(String(format: "%.0f", fps))fps for \(String(format: "%.0f", dropDuration))ms", category: .performance)
+                        
+                        if AdvancedSessionLogger.isActive {
+                            AdvancedSessionLogger.shared.logPerformance(
+                                "FPS_DROP: \(String(format: "%.0f", fps))fps",
+                                durationMs: Int(dropDuration)
+                            )
+                        }
+                        isTrackingLowFPS = false
+                    }
+                }
+            } else {
+                isTrackingLowFPS = false
+            }
+        }
+    }
+}
 
 // MARK: - App Performance System (Senior Engineer Grade)
 /// Comprehensive performance optimization system for buttery-smooth 120fps experience

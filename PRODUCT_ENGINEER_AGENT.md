@@ -12,6 +12,7 @@
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 6. **Auth guards on all social fetches**: Every async fetch method in social/challenge/friend services MUST start with `guard SupabaseManager.shared.isAuthenticated else { return }`. MainTabView appears based on `hasCompletedOnboarding`, NOT `isAuthenticated` -- `.task` modifiers fire before auth completes, causing "Not authenticated" crashes if unguarded.
+7. **Performance tracking on scrollable views**: Apply `.trackScrollJank(screen: "ScreenName")` to all new scrollable content. Heavy computation MUST run off the main thread (use background Core Data context or `Task.detached`). Never iterate `@FetchRequest` results in nested loops on the main thread.
 
 ---
 

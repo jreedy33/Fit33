@@ -13,6 +13,12 @@
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 6. **Thread safety**: Shared mutable state must use `NSLock`, `@MainActor`, or actor isolation. `@Published` properties must only be mutated on the main thread.
 7. **HealthKit permission checks**: All HealthKit fetch methods must check `isAuthorized` before executing queries. Query callbacks must log errors via `AppLogger` instead of silently returning nil. iOS can revoke health data access at any time.
+8. **Performance monitoring stack**: The app has 4 production performance systems — use them, don't add new ones:
+   - `MetricKitSubscriber` — Apple hang/launch/CPU/disk diagnostics (auto-delivered every 24h, zero overhead)
+   - `ProductionFPSMonitor` — CADisplayLink-based, logs only when FPS drops below 55 for 500ms+
+   - `MainThreadWatchdog` — semaphore ping every 0.5s, reports freezes > 1.5s
+   - `ScrollPerformanceTracker` + `trackScrollJank(screen:)` — logs fast-scroll events via `SessionLogManager.logScroll`
+   - Crash reports now include `thermal_state` in `additional_context`
 
 ---
 

@@ -854,15 +854,17 @@ enum PerformanceOptimizationsInitializer {
         // Initialize heavy work sentinel
         _ = HeavyWorkSentinel.shared
         
-        // 🐕 Start main thread watchdog (freeze detection)
         MainThreadWatchdog.shared.start()
         
-        // Begin coordinated startup sequence
+        _ = MetricKitSubscriber.shared
+        
+        ProductionFPSMonitor.shared.start()
+
         Task { @MainActor in
             StartupCoordinator.shared.beginStartupSequence()
         }
-        
-        AppLogger.info("✅ [PERF] Performance optimizations initialized", category: .general)
+
+        AppLogger.info("✅ [PERF] Performance optimizations initialized (watchdog + MetricKit + FPS monitor)", category: .general)
     }
 }
 

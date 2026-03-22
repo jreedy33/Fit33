@@ -89,6 +89,7 @@ ALTER TABLE private_challenge_daily_progress
 -- H-15: Verify search_users RPC exists (creates if missing)
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS search_users(TEXT, INT);
 CREATE OR REPLACE FUNCTION search_users(search_query TEXT, p_limit INT DEFAULT 20)
 RETURNS TABLE(id UUID, name TEXT, username TEXT, profile_photo_url TEXT)
 LANGUAGE plpgsql SECURITY DEFINER AS $$

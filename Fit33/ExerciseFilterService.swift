@@ -755,33 +755,22 @@ final class ExerciseFilterService {
             let userHasBands = userEquipLower.contains { $0.contains("band") || $0.contains("resistance") }
             
             if nameIndicatesBands && !userHasBands {
-                #if DEBUG
-                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates bands but user doesn't have bands", category: .workout)
-                #endif
                 return false
             }
             
-            // Check for kettlebell keywords
             let kettlebellKeywords = ["kettlebell", "(kettlebell)"]
             let nameIndicatesKettlebell = kettlebellKeywords.contains { name.contains($0) }
             let userHasKettlebell = userEquipLower.contains { $0.contains("kettlebell") }
             
             if nameIndicatesKettlebell && !userHasKettlebell {
-                #if DEBUG
-                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates kettlebell but user doesn't have kettlebell", category: .workout)
-                #endif
                 return false
             }
             
-            // Check for TRX/suspension keywords
             let suspensionKeywords = ["trx", "suspension", "(trx)"]
             let nameIndicatesSuspension = suspensionKeywords.contains { name.contains($0) }
             let userHasSuspension = userEquipLower.contains { $0.contains("trx") || $0.contains("suspension") }
             
             if nameIndicatesSuspension && !userHasSuspension {
-                #if DEBUG
-                AppLogger.debug("   🚫 [NAME CHECK] Excluded '\(exerciseName ?? "")': name indicates suspension trainer but user doesn't have it", category: .workout)
-                #endif
                 return false
             }
         }

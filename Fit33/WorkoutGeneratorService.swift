@@ -95,6 +95,10 @@ struct WorkoutGenerationResponse: Codable {
 class WorkoutGeneratorService: ObservableObject {
     static let shared = WorkoutGeneratorService()
     
+    /// Suppresses per-exercise filter/scoring logs during generation to prevent main thread flooding.
+    /// Over 1000 log calls were firing per generation, each hitting AppLogger on the main thread.
+    static var suppressPerExerciseLogs = false
+    
     /// Get recommended exercise count based on workout duration.
     /// Delegates to the canonical implementation in WorkoutComboRules.
     static func exerciseCountForDuration(_ durationMinutes: Int, equipmentIsMostlyMachines: Bool = false) -> Int {
@@ -157,6 +161,7 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         
+        Self.suppressPerExerciseLogs = true
         let coreDataExercises = await generateFromCoreData(
             allExercisesInput: allExercisesSnapshot,
             targetMuscles: allTargetMuscles,
@@ -165,6 +170,7 @@ class WorkoutGeneratorService: ObservableObject {
             isPrimary: true,
             excludeNames: excludeNames
         )
+        Self.suppressPerExerciseLogs = false
         
         if !coreDataExercises.isEmpty {
             let duration = Date().timeIntervalSince(startTime)
@@ -872,7 +878,7 @@ class WorkoutGeneratorService: ObservableObject {
                 // Log when unusual equipment is missing (for debugging)
                 if exerciseEquipmentRaw.contains("wall") || exerciseEquipmentRaw.contains("rings") || 
                    exerciseEquipmentRaw.contains("partner") || exerciseEquipmentRaw.contains("tire") {
-                    AppLogger.debug("[EQUIPMENT] Excluded '\(exercise.name ?? "")': requires \(exerciseEquipmentRaw)", category: .workout)
+                    if !Self.suppressPerExerciseLogs { AppLogger.debug("[EQUIPMENT] Excluded '\(exercise.name ?? "")': requires \(exerciseEquipmentRaw)", category: .workout) }
                 }
                 #endif
                 return false
@@ -970,7 +976,7 @@ class WorkoutGeneratorService: ObservableObject {
                 }
                 if isLowerBodyExercise {
                     #if DEBUG
-                    AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': lower body exercise in upper body workout", category: .workout)
+                    if !Self.suppressPerExerciseLogs { AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': lower body exercise in upper body workout", category: .workout) }
                     #endif
                     return false
                 }
@@ -983,7 +989,7 @@ class WorkoutGeneratorService: ObservableObject {
                 }
                 if isUpperBodyExercise {
                     #if DEBUG
-                    AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': upper body exercise in lower body workout", category: .workout)
+                    if !Self.suppressPerExerciseLogs { AppLogger.debug("[BODY REGION] Excluding '\(exercise.name ?? "")': upper body exercise in lower body workout", category: .workout) }
                     #endif
                     return false
                 }
@@ -994,7 +1000,7 @@ class WorkoutGeneratorService: ObservableObject {
             if dbPracticalityScore > 0 && dbPracticalityScore < 30 {
                 // Exclude exercises with very low practicality scores (handstands, weird variations, etc.)
                 #if DEBUG
-                AppLogger.debug("[PRACTICALITY] Excluding '\(exercise.name ?? "")': score=\(dbPracticalityScore)", category: .workout)
+                if !Self.suppressPerExerciseLogs { AppLogger.debug("[PRACTICALITY] Excluding '\(exercise.name ?? "")': score=\(dbPracticalityScore)", category: .workout) }
                 #endif
                 return false
             }
@@ -1206,7 +1212,7 @@ class WorkoutGeneratorService: ObservableObject {
             #if DEBUG
             if equipQualityBoost > 0 {
                 let equipType = exercise.equipment ?? "unknown"
-                AppLogger.debug("[EQUIP QUALITY] '\(exercise.name ?? "")' (\(equipType)): +\(Int(equipQualityBoost))", category: .workout)
+                if !Self.suppressPerExerciseLogs { AppLogger.debug("[EQUIP QUALITY] '\(exercise.name ?? "")' (\(equipType)): +\(Int(equipQualityBoost))", category: .workout) }
             }
             #endif
             
@@ -1478,9 +1484,9 @@ class WorkoutGeneratorService: ObservableObject {
                 
                 #if DEBUG
                 if benchScore >= 90 {
-                    AppLogger.debug("[CONTEXT BENCH] '\(exercise.name ?? "")' bench type matches muscle context (+\(Int(benchAdjustment)))", category: .workout)
+                    if !Self.suppressPerExerciseLogs { AppLogger.debug("[CONTEXT BENCH] '\(exercise.name ?? "")' bench type matches muscle context (+\(Int(benchAdjustment)))", category: .workout) }
                 } else if benchScore < 50 {
-                    AppLogger.debug("[SMART BENCH] '\(exercise.name ?? "")' requires specialized bench without context (\(exerciseEquipment)) - score: \(Int(benchAdjustment))", category: .workout)
+                    if !Self.suppressPerExerciseLogs { AppLogger.debug("[SMART BENCH] '\(exercise.name ?? "")' requires specialized bench without context (\(exerciseEquipment)) - score: \(Int(benchAdjustment))", category: .workout) }
                 }
                 #endif
             }
@@ -1627,7 +1633,7 @@ class WorkoutGeneratorService: ObservableObject {
             
             #if DEBUG
             if locationPenalty < -30 {
-                AppLogger.debug("[LOCATION] '\(exercise.name ?? "")' penalized (\(Int(locationPenalty))) - not suitable for \(workoutLocation.displayName)", category: .workout)
+                if !Self.suppressPerExerciseLogs { AppLogger.debug("[LOCATION] '\(exercise.name ?? "")' penalized (\(Int(locationPenalty))) - not suitable for \(workoutLocation.displayName)", category: .workout) }
             }
             #endif
             
@@ -1640,7 +1646,7 @@ class WorkoutGeneratorService: ObservableObject {
                     score -= freshnessPenalty
                     #if DEBUG
                     if freshnessPenalty > 30 {
-                        AppLogger.debug("[COOLDOWN] '\(exercise.name ?? "")' penalty -\(Int(freshnessPenalty)) (done \(daysSince) days ago, cooldown \(cooldown)d)", category: .workout)
+                        if !Self.suppressPerExerciseLogs { AppLogger.debug("[COOLDOWN] '\(exercise.name ?? "")' penalty -\(Int(freshnessPenalty)) (done \(daysSince) days ago, cooldown \(cooldown)d)", category: .workout) }
                     }
                     #endif
                 }

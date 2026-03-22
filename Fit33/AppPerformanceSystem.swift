@@ -115,10 +115,14 @@ final class ProductionFPSMonitor {
                         AppLogger.warning("[FPS] Sustained drop: \(String(format: "%.0f", fps))fps for \(String(format: "%.0f", dropDuration))ms", category: .performance)
                         
                         if AdvancedSessionLogger.isActive {
-                            AdvancedSessionLogger.shared.logPerformance(
-                                "FPS_DROP: \(String(format: "%.0f", fps))fps",
-                                durationMs: Int(dropDuration)
-                            )
+                            let fpsVal = fps
+                            let durVal = Int(dropDuration)
+                            Task { @MainActor in
+                                AdvancedSessionLogger.shared.logPerformance(
+                                    "FPS_DROP: \(String(format: "%.0f", fpsVal))fps",
+                                    durationMs: durVal
+                                )
+                            }
                         }
                         isTrackingLowFPS = false
                     }

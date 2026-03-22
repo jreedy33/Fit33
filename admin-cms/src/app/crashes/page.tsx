@@ -178,6 +178,9 @@ export default function CrashesPage() {
   // Selected crashes for bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  // Date range filter (applies to both crashes and bugs)
+  const [dateRange, setDateRange] = useState('all')
+
   // Auto-refresh
   const [refreshInterval, setRefreshInterval] = useState(0)
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -362,7 +365,7 @@ export default function CrashesPage() {
   // ─── .md Export (selected or all) ────────────────────────
 
   const exportCrashesMD = () => {
-    const allSource = activeTab === 'crashes' ? crashReports : (overview?.recent_reports || [])
+    const allSource = filteredCrashReports
     const source = selectedIds.size > 0 ? allSource.filter(r => selectedIds.has(r.id)) : allSource
     if (source.length === 0) return
 
@@ -489,9 +492,11 @@ export default function CrashesPage() {
   // ─── Claude Analysis & .md Download ─────────────────
 
   const analyzeCrashesWithClaude = async () => {
-    const source = activeTab === 'crashes' ? crashReports : (overview?.recent_reports || [])
-    const bugs = activeTab === 'bugs' ? bugReports : (overview?.bug_reports || [])
-    if (source.length === 0 && bugs.length === 0) { alert('No reports to analyze'); return }
+    const allCrashes = filteredCrashReports
+    const allBugs = filteredBugReports
+    const source = selectedIds.size > 0 ? allCrashes.filter(r => selectedIds.has(r.id)) : allCrashes
+    const bugs = allBugs
+    if (source.length === 0 && bugs.length === 0) { alert('No reports to analyze. Select crashes or adjust the date range.'); return }
 
     setAnalyzing(true)
     try {
@@ -656,6 +661,28 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
     setAnalyzing(false)
   }
 
+  // ─── Date Range Filtering ───────────────────────────
+
+  const DATE_RANGES: { label: string; value: string; ms: number }[] = [
+    { label: 'All Time', value: 'all', ms: 0 },
+    { label: 'Last 1 Hour', value: '1h', ms: 3600000 },
+    { label: 'Last 6 Hours', value: '6h', ms: 21600000 },
+    { label: 'Last 24 Hours', value: '24h', ms: 86400000 },
+    { label: 'Last 7 Days', value: '7d', ms: 604800000 },
+    { label: 'Last 30 Days', value: '30d', ms: 2592000000 },
+  ]
+
+  function filterByDate<T extends { created_at: string }>(items: T[]): T[] {
+    if (dateRange === 'all') return items
+    const range = DATE_RANGES.find(r => r.value === dateRange)
+    if (!range || range.ms === 0) return items
+    const cutoff = new Date(Date.now() - range.ms)
+    return items.filter(item => new Date(item.created_at) >= cutoff)
+  }
+
+  const filteredCrashReports = filterByDate(crashReports)
+  const filteredBugReports = filterByDate(bugReports)
+
   // ─── Render ─────────────────────────────────────────
 
   if (selectedCrash) {
@@ -752,15 +779,27 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
                 <option key={opt.ms} value={opt.ms}>🔄 {opt.label}</option>
               ))}
             </select>
+            {/* Date Range */}
+            <select
+              value={dateRange}
+              onChange={e => { setDateRange(e.target.value); setAnalysisDownloaded(false) }}
+              className="text-sm rounded-lg px-3 py-2"
+              style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+              title="Filter by time range"
+            >
+              {DATE_RANGES.map(r => (
+                <option key={r.value} value={r.value}>🕐 {r.label}</option>
+              ))}
+            </select>
             {/* Analyze with Claude */}
             <button
               onClick={analyzeCrashesWithClaude}
               disabled={analyzing}
               className="text-sm px-3 py-2 rounded-lg"
               style={{ background: analysisDownloaded ? '#4b5563' : '#7c3aed', border: 'none', color: 'white', fontWeight: 600, cursor: analyzing ? 'wait' : 'pointer', opacity: analyzing ? 0.6 : 1 }}
-              title="Analyze crashes with Claude and download .md report"
+              title={selectedIds.size > 0 ? `Analyze ${selectedIds.size} selected with Claude` : 'Analyze all visible crashes with Claude'}
             >
-              {analyzing ? '⏳ Analyzing...' : analysisDownloaded ? '✓ Report Downloaded' : '🧠 Analyze with Claude'}
+              {analyzing ? '⏳ Analyzing...' : analysisDownloaded ? '✓ Report Downloaded' : `🧠 Analyze${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
             {/* Export .md */}
             <button
@@ -837,7 +876,7 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
           />
         ) : activeTab === 'crashes' ? (
           <CrashListTab
-            crashes={crashReports}
+            crashes={filteredCrashReports}
             loading={crashLoading}
             filter={crashFilter}
             onFilterChange={setCrashFilter}
@@ -861,7 +900,7 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
           />
         ) : activeTab === 'bugs' ? (
           <BugListTab
-            bugs={bugReports}
+            bugs={filteredBugReports}
             onViewBug={(bug) => setSelectedBug(bug)}
             onUpdateStatus={updateBugStatus}
             onDelete={(id) => setConfirmDialog({

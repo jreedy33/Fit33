@@ -191,12 +191,28 @@ export default function DevLogsPage() {
 
   function downloadSuggestionsAsMD() {
     const sessionInfo = sessions.find(s => s.session_id === selectedSession)
+    const sessionUser = sessionInfo ? devUsers.find(u => u.user_id === sessionInfo.user_id) : null
+    const di = sessionInfo?.device_info ? (typeof sessionInfo.device_info === 'string' ? (() => { try { return JSON.parse(sessionInfo.device_info as unknown as string) } catch { return sessionInfo.device_info } })() : sessionInfo.device_info) : {}
     const lines = [
       '# Dev Session Log — Claude Analysis Report',
       '',
       `**Session:** ${selectedSession}`,
       `**Date:** ${new Date().toISOString().split('T')[0]}`,
-      `**Device:** ${sessionInfo?.device_info ? JSON.stringify(sessionInfo.device_info) : 'Unknown'}`,
+      '',
+      '## User Profile',
+      '',
+      `- **Name:** ${sessionUser?.user_profiles?.name || 'Unknown'}`,
+      `- **Username:** ${sessionUser?.user_profiles?.username || 'Unknown'}`,
+      `- **Email:** ${sessionUser?.user_profiles?.email || 'Unknown'}`,
+      `- **User ID:** ${sessionInfo?.user_id || 'Unknown'}`,
+      '',
+      '## Device Details',
+      '',
+      `- **Model:** ${di.model || di.name || 'Unknown'}`,
+      `- **iOS Version:** ${di.systemVersion || 'Unknown'}`,
+      `- **App Version:** ${di.appVersion || 'Unknown'} (Build ${di.buildNumber || '?'})`,
+      `- **Screen:** ${di.screenBounds || 'Unknown'} @${di.screenScale || '?'}x`,
+      '',
       `**Total suggestions:** ${suggestions.length}`,
       '',
       '---',

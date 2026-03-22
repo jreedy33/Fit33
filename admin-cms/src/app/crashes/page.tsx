@@ -189,6 +189,10 @@ export default function CrashesPage() {
     onConfirm: () => void
   } | null>(null)
 
+  // Claude analysis
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysisDownloaded, setAnalysisDownloaded] = useState(false)
+
   // ─── Data Loading ─────────────────────────────────────────
 
   const loadOverview = useCallback(async () => {
@@ -387,6 +391,176 @@ export default function CrashesPage() {
     URL.revokeObjectURL(url)
   }
 
+  // ─── Claude Analysis & .md Download ─────────────────
+
+  const analyzeCrashesWithClaude = async () => {
+    const source = activeTab === 'crashes' ? crashReports : (overview?.recent_reports || [])
+    const bugs = activeTab === 'bugs' ? bugReports : (overview?.bug_reports || [])
+    if (source.length === 0 && bugs.length === 0) { alert('No reports to analyze'); return }
+
+    setAnalyzing(true)
+    try {
+      const crashSummary = source.slice(0, 30).map(c => ({
+        id: c.id.slice(0, 8),
+        type: c.report_type,
+        severity: c.severity,
+        status: c.status,
+        error: c.error_message,
+        domain: c.error_domain,
+        screen: c.current_screen,
+        device: c.device_model,
+        os: c.os_version,
+        app_version: c.app_version,
+        user: c.user_name || c.user_email || c.user_id?.slice(0, 8),
+        stack_preview: c.stack_trace?.slice(0, 300) || null,
+        breadcrumbs: c.breadcrumbs?.slice(-5) || null,
+        session_log: c.session_log_snippet?.slice(0, 500) || null,
+        memory_mb: c.memory_usage_mb,
+        session_duration: c.session_duration_seconds,
+        occurred: c.occurred_at,
+      }))
+
+      const bugSummary = bugs.slice(0, 20).map(b => ({
+        id: b.id.slice(0, 8),
+        status: b.status,
+        description: b.description?.slice(0, 300),
+        user: b.user_name || b.user_email || b.user_id?.slice(0, 8),
+        device: b.device_model,
+        app_version: b.app_version,
+        created: b.created_at,
+      }))
+
+      const prompt = `Analyze these crash reports and bug reports from the Fit33 iOS fitness app. For each significant issue:
+1. Identify the root cause from the error message and stack trace
+2. Rate priority (P0-P3) based on severity x frequency x user impact  
+3. Suggest the specific Swift file and fix approach
+4. Map related bug reports to crashes where they describe the same issue
+5. Group related crashes by root cause (not just fingerprint)
+
+Crash Reports (${source.length} total, showing ${crashSummary.length}):
+${JSON.stringify(crashSummary, null, 2)}
+
+Bug Reports (${bugs.length} total, showing ${bugSummary.length}):
+${JSON.stringify(bugSummary, null, 2)}
+
+Respond with structured analysis: prioritized issues, root causes, fix suggestions, and crash-to-bug mappings.`
+
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], fetchData: false }),
+      })
+
+      let analysisText = ''
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value)
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6))
+                if (parsed.text) analysisText += parsed.text
+              } catch { /* skip */ }
+            }
+          }
+        }
+      }
+
+      // Build the .md report
+      const lines = [
+        '# Crash & Bug Report — Claude Analysis',
+        '',
+        `**Date:** ${new Date().toISOString().split('T')[0]}`,
+        `**Crash reports analyzed:** ${source.length}`,
+        `**Bug reports analyzed:** ${bugs.length}`,
+        `**Severity breakdown:** ${Object.entries(overview?.severity_counts || {}).map(([k, v]) => `${k}: ${v}`).join(', ')}`,
+        `**Status breakdown:** ${Object.entries(overview?.status_counts || {}).map(([k, v]) => `${k}: ${v}`).join(', ')}`,
+        '',
+        '---',
+        '',
+        '## Instructions',
+        '',
+        'Drag this file into Cursor and ask: "Fix all the issues in this report."',
+        '',
+        '---',
+        '',
+        '## Claude Analysis',
+        '',
+        analysisText,
+        '',
+        '---',
+        '',
+        '## Raw Crash Data',
+        '',
+      ]
+
+      for (const c of source.slice(0, 20)) {
+        lines.push(`### ${c.report_type.toUpperCase()} — ${c.error_message?.slice(0, 80) || 'Unknown'}`)
+        lines.push('')
+        lines.push(`- **ID:** \`${c.id.slice(0, 8)}\``)
+        lines.push(`- **Severity:** ${c.severity} | **Status:** ${c.status}`)
+        lines.push(`- **Screen:** ${c.current_screen || 'Unknown'} | **Domain:** ${c.error_domain || 'Unknown'}`)
+        lines.push(`- **Device:** ${c.device_model || '?'} | **OS:** ${c.os_version || '?'} | **App:** ${c.app_version || '?'}`)
+        lines.push(`- **User:** ${c.user_name || c.user_email || c.user_id?.slice(0, 8) || 'Anonymous'}`)
+        if (c.memory_usage_mb) lines.push(`- **Memory:** ${c.memory_usage_mb}MB used, ${c.free_memory_mb || '?'}MB free`)
+        if (c.session_duration_seconds) lines.push(`- **Session duration:** ${Math.round(c.session_duration_seconds / 60)}min`)
+        lines.push(`- **Occurred:** ${c.occurred_at}`)
+        lines.push('')
+        if (c.stack_trace) {
+          lines.push('**Stack trace:**')
+          lines.push('```')
+          lines.push(c.stack_trace.slice(0, 1000))
+          lines.push('```')
+          lines.push('')
+        }
+        if (c.breadcrumbs && c.breadcrumbs.length > 0) {
+          lines.push('**Breadcrumbs (last 5):**')
+          for (const b of c.breadcrumbs.slice(-5)) {
+            lines.push(`- \`${b.timestamp}\` [${b.screen}] ${b.action}`)
+          }
+          lines.push('')
+        }
+        if (c.session_log_snippet) {
+          lines.push('**Session log:**')
+          lines.push('```')
+          lines.push(c.session_log_snippet.slice(0, 500))
+          lines.push('```')
+          lines.push('')
+        }
+        lines.push('---')
+        lines.push('')
+      }
+
+      if (bugs.length > 0) {
+        lines.push('## User Bug Reports')
+        lines.push('')
+        for (const b of bugs.slice(0, 15)) {
+          lines.push(`- **\`${b.id.slice(0, 8)}\`** [${b.status}] ${b.description?.slice(0, 150) || 'No description'} — *${b.user_name || b.user_email || 'Anonymous'}* (${b.device_model || '?'}, v${b.app_version || '?'})`)
+        }
+        lines.push('')
+      }
+
+      const content = lines.join('\n')
+      const blob = new Blob([content], { type: 'text/markdown' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `crash-analysis-report-${new Date().toISOString().split('T')[0]}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setAnalysisDownloaded(true)
+    } catch (err) {
+      alert(`Analysis failed: ${err}`)
+    }
+    setAnalyzing(false)
+  }
+
   // ─── Render ─────────────────────────────────────────
 
   if (selectedCrash) {
@@ -483,6 +657,16 @@ export default function CrashesPage() {
                 <option key={opt.ms} value={opt.ms}>🔄 {opt.label}</option>
               ))}
             </select>
+            {/* Analyze with Claude */}
+            <button
+              onClick={analyzeCrashesWithClaude}
+              disabled={analyzing}
+              className="text-sm px-3 py-2 rounded-lg"
+              style={{ background: analysisDownloaded ? '#4b5563' : '#7c3aed', border: 'none', color: 'white', fontWeight: 600, cursor: analyzing ? 'wait' : 'pointer', opacity: analyzing ? 0.6 : 1 }}
+              title="Analyze crashes with Claude and download .md report"
+            >
+              {analyzing ? '⏳ Analyzing...' : analysisDownloaded ? '✓ Report Downloaded' : '🧠 Analyze with Claude'}
+            </button>
             {/* Export CSV */}
             <button
               onClick={exportCrashesCSV}

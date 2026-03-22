@@ -25,6 +25,8 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-RAISE NOTICE 'Fixed user_push_tokens: dropped user_id-only unique, ensured (user_id, device_token) composite unique';
+DO $$ BEGIN
+  RAISE NOTICE 'Fixed user_push_tokens: dropped user_id-only unique, ensured (user_id, device_token) composite unique';
+END $$;
 
 COMMIT;

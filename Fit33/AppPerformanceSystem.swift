@@ -994,6 +994,126 @@ final class MainThreadWatchdog {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MARK: - STARTUP WATERFALL (Consolidated Timeline)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Records every major startup milestone with wall-clock timestamps.
+/// Call `StartupWaterfall.shared.mark("label")` at the start of an operation
+/// and `StartupWaterfall.shared.end("label")` when it finishes.
+/// A formatted waterfall timeline is emitted once `printWaterfall()` is called.
+final class StartupWaterfall {
+    static let shared = StartupWaterfall()
+    
+    private let appLaunch = CACurrentMediaTime()
+    private let lock = NSLock()
+    private var events: [Event] = []
+    private var hasPrinted = false
+    
+    struct Event {
+        let label: String
+        let startOffset: Double
+        var endOffset: Double?
+        let thread: String
+        
+        var durationMs: Double? {
+            guard let end = endOffset else { return nil }
+            return (end - startOffset) * 1000
+        }
+    }
+    
+    private init() {}
+    
+    /// Mark the START of an operation. Returns immediately.
+    func mark(_ label: String) {
+        let offset = CACurrentMediaTime() - appLaunch
+        let thread = Thread.isMainThread ? "main" : "bg"
+        lock.lock()
+        events.append(Event(label: label, startOffset: offset, endOffset: nil, thread: thread))
+        lock.unlock()
+    }
+    
+    /// Mark the END of a previously-started operation.
+    func end(_ label: String) {
+        let offset = CACurrentMediaTime() - appLaunch
+        lock.lock()
+        if let idx = events.lastIndex(where: { $0.label == label && $0.endOffset == nil }) {
+            events[idx].endOffset = offset
+        }
+        lock.unlock()
+    }
+    
+    /// One-shot convenience: times a block and records it.
+    func measure<T>(_ label: String, block: () throws -> T) rethrows -> T {
+        mark(label)
+        let result = try block()
+        end(label)
+        return result
+    }
+    
+    /// Async variant of measure.
+    func measure<T>(_ label: String, block: () async throws -> T) async rethrows -> T {
+        mark(label)
+        let result = try await block()
+        end(label)
+        return result
+    }
+    
+    /// Print the full waterfall timeline (call once after startup completes).
+    func printWaterfall() {
+        guard !hasPrinted else { return }
+        hasPrinted = true
+        
+        lock.lock()
+        let snapshot = events
+        lock.unlock()
+        
+        guard !snapshot.isEmpty else { return }
+        
+        let totalTime = (snapshot.compactMap { $0.endOffset }.max() ?? (CACurrentMediaTime() - appLaunch))
+        
+        var lines: [String] = []
+        lines.append("")
+        lines.append("═══════════════════════════════════════════════════════════════")
+        lines.append("⏱️ STARTUP WATERFALL  (total: \(String(format: "%.1f", totalTime * 1000))ms)")
+        lines.append("═══════════════════════════════════════════════════════════════")
+        lines.append("  TIME     DUR    THR  OPERATION")
+        lines.append("  ──────   ─────  ───  ─────────────────────────────────────")
+        
+        let sorted = snapshot.sorted { $0.startOffset < $1.startOffset }
+        var mainThreadMs: Double = 0
+        
+        for event in sorted {
+            let startMs = event.startOffset * 1000
+            let durStr: String
+            if let dur = event.durationMs {
+                durStr = String(format: "%5.0fms", dur)
+                if event.thread == "main" { mainThreadMs += dur }
+            } else {
+                durStr = "  ···  "
+            }
+            let warn = (event.durationMs ?? 0) > 500 && event.thread == "main" ? " ⚠️" : ""
+            lines.append("  \(String(format: "%6.0f", startMs))ms \(durStr)  [\(event.thread)]  \(event.label)\(warn)")
+        }
+        
+        lines.append("  ──────   ─────  ───  ─────────────────────────────────────")
+        lines.append("  Main thread budget: \(String(format: "%.0f", mainThreadMs))ms")
+        lines.append("═══════════════════════════════════════════════════════════════")
+        
+        for line in lines {
+            AppLogger.debug(line, category: .performance)
+        }
+    }
+    
+    /// Reset for next session (e.g. after background → foreground).
+    func reset() {
+        lock.lock()
+        events.removeAll()
+        hasPrinted = false
+        lock.unlock()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MARK: - 8. FETCH REQUEST OPTIMIZER
 // ═══════════════════════════════════════════════════════════════════════════════
 

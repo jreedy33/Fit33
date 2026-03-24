@@ -239,6 +239,10 @@ class RealtimeService: ObservableObject {
     
     // MARK: - Connection Management
     
+    private var isConnecting = false
+    private var lastConnectTime: Date?
+    private static let connectThrottleInterval: TimeInterval = 10
+    
     /// Start all realtime subscriptions for the current user
     func connect() async {
         guard SupabaseManager.shared.isAuthenticated,
@@ -247,9 +251,19 @@ class RealtimeService: ObservableObject {
             return
         }
         
-        // BUG FIX: Disconnect existing channels BEFORE creating new ones.
-        // Without this, calling connect() twice (e.g. from .task + .active scenePhase)
-        // creates duplicate channels, causing "postgresChange after joining" warnings.
+        // Prevent concurrent or rapid reconnections
+        if isConnecting {
+            AppLogger.debug("⏭️ [REALTIME] Skipping connect — already connecting", category: .network)
+            return
+        }
+        if isConnected, let lastConnect = lastConnectTime,
+           Date().timeIntervalSince(lastConnect) < Self.connectThrottleInterval {
+            AppLogger.debug("⏭️ [REALTIME] Skipping connect — connected \(Int(Date().timeIntervalSince(lastConnect)))s ago", category: .network)
+            return
+        }
+        isConnecting = true
+        defer { isConnecting = false }
+        
         if isConnected || friendshipsChannel != nil {
             AppLogger.debug("Cleaning up existing channels before reconnecting...", category: .network)
             await disconnect()
@@ -273,6 +287,7 @@ class RealtimeService: ObservableObject {
         
         isConnected = true
         connectionError = nil
+        lastConnectTime = Date()
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
                         details: "✅ All 9 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed + auto-tracked refresh timer")

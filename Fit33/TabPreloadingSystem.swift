@@ -624,62 +624,89 @@ final class ExerciseLibraryFilterCache: ObservableObject {
     /// Called by TabPreloader Phase 3. Pre-filters ALL exercises down to the recommended
     /// list, sorted by popularity, so the Exercise Library tab has zero work on appear.
     func precomputeRecommendedList(allExercises: [Exercise]) {
-        // ⚡️ DEDUP: Skip if already ready or already computing
         guard !isReady, !isComputing else { return }
         guard !allExercises.isEmpty else { return }
         isComputing = true
         
+        StartupWaterfall.shared.mark("FilterCache.precompute")
         let startTime = CACurrentMediaTime()
         
-        // ⚡️ FIX: Build a Set of lowercased words from recommended names for O(1) lookup
-        // instead of O(n × m) nested loop with string.contains()
-        let recSet = recommendedExerciseNames  // already a Set<String>
+        // Step 1 (MainActor): Extract ONLY lightweight strings from Core Data objects
+        let exerciseNames: [(index: Int, lowercaseName: String)] = allExercises.enumerated().compactMap { index, exercise in
+            guard let rawName = exercise.name else { return nil }
+            return (index, rawName.lowercased())
+        }
         
-        // Step 1: Filter using fast word-boundary matching
-        var matched: [Exercise] = []
-        matched.reserveCapacity(250)
+        let recSet = recommendedExerciseNames
+        let usageCounts = personalUsageCounts
         
-        for exercise in allExercises {
-            guard let rawName = exercise.name else { continue }
-            let name = rawName.lowercased()
+        // Snapshot popularity data in O(1) — copy the raw dictionaries.
+        // Previously called getPopularityScore() 5501 times on main thread (each with O(n) partial match = 3s freeze)
+        let (popCache, favCache) = ExercisePopularityService.shared.snapshotPopularityData()
+        
+        // Step 2 (Background): ALL heavy work off main thread — matching, scoring, sorting
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var matchedIndices: [(index: Int, name: String)] = []
+            matchedIndices.reserveCapacity(250)
             
-            // Fast check: does the exercise name START WITH any recommended name?
-            // Or does any recommended name appear as a word boundary in the name?
-            var found = false
-            if recSet.contains(name) {
-                found = true
-            } else {
-                // Check if name starts with any rec name (most common match)
-                for rec in recSet {
-                    if name.hasPrefix(rec + " ") || name.hasPrefix(rec + "(") {
-                        found = true
-                        break
+            for (index, name) in exerciseNames {
+                var found = recSet.contains(name)
+                if !found {
+                    for rec in recSet {
+                        if name.hasPrefix(rec + " ") || name.hasPrefix(rec + "(") {
+                            found = true
+                            break
+                        }
                     }
+                }
+                if found {
+                    matchedIndices.append((index, name))
                 }
             }
             
-            if found {
-                matched.append(exercise)
+            // Build per-exercise popularity scores in background (was on main thread causing 3s freeze)
+            var popularityScores: [String: Int] = [:]
+            var communityFavorites: Set<String> = []
+            for (_, name) in matchedIndices {
+                let score = popCache[name] ?? 50
+                if score > 0 { popularityScores[name] = score }
+                if favCache.contains(name) { communityFavorites.insert(name) }
+            }
+            
+            matchedIndices.sort { a, b in
+                let scoreA = Self.blendedScoreStatic(name: a.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
+                let scoreB = Self.blendedScoreStatic(name: b.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
+                if scoreA != scoreB { return scoreA > scoreB }
+                return a.name < b.name
+            }
+            
+            let sortedIndices = matchedIndices.map { $0.index }
+            
+            // Step 3 (MainActor): Assign results using original Exercise objects
+            await MainActor.run {
+                guard let self = self else { return }
+                let matched = sortedIndices.compactMap { idx -> Exercise? in
+                    guard idx < allExercises.count else { return nil }
+                    return allExercises[idx]
+                }
+                self.preFilteredRecommended = matched
+                self.isReady = true
+                self.isComputing = false
+                
+                StartupWaterfall.shared.end("FilterCache.precompute")
+                let elapsed = (CACurrentMediaTime() - startTime) * 1000
+                AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
             }
         }
-        
-        // Step 2: Sort by blended popularity (personal usage + community baseline)
-        let popularity = ExercisePopularityService.shared
-        matched.sort { a, b in
-            let nameA = (a.name ?? "").lowercased()
-            let nameB = (b.name ?? "").lowercased()
-            let scoreA = blendedScore(name: nameA, popularity: popularity)
-            let scoreB = blendedScore(name: nameB, popularity: popularity)
-            if scoreA != scoreB { return scoreA > scoreB }
-            return nameA < nameB // alphabetical tiebreak
-        }
-        
-        preFilteredRecommended = matched
-        isReady = true
-        isComputing = false
-        
-        let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
+    }
+    
+    /// Thread-safe blended score using pre-snapshotted data (pure function, no actor state)
+    nonisolated private static func blendedScoreStatic(name: String, usageCounts: [String: Int], popularityScores: [String: Int], communityFavorites: Set<String>) -> Double {
+        let communityScore = Double(popularityScores[name] ?? 0)
+        let personalCount = Double(usageCounts[name] ?? 0)
+        let personalScore = min(personalCount * 10.0, 100.0)
+        let favoriteBoost: Double = communityFavorites.contains(name) ? 20.0 : 0.0
+        return (communityScore * 0.6) + (personalScore * 0.4) + favoriteBoost
     }
     
     /// Blended score: 60% community popularity + 40% personal usage (normalized)

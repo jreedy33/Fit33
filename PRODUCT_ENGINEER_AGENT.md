@@ -241,10 +241,23 @@ struct MyNewView: View {
 
 ## Performance Guidelines
 
+### v1.29 Startup Architecture
+`Fit33App.init()` is split into critical and deferred blocks:
+- **Critical (synchronous)**: Core Data, BGTaskScheduler, session logging, UI appearance
+- **Deferred (0.5s delay)**: Crash reporter, perf monitors, video engine, gender filter, haptics
+- **Staged pipeline**: StartupCache (0.5s) -> TabPreloader (3s) -> Intelligence (10s+)
+- `StartupWaterfall` logs a consolidated timeline after intelligence init completes
+
+### Tab Transition Rules
+- Nutrition tab uses **two-phase rendering**: core content first, heavy widgets (recipes, hydration, weight tracker, orb background) after 150ms via `showSecondaryWidgets` flag
+- Exercise tab defers `VideoThumbnailService.preGeneratePosterFrames` by 500ms
+- `ExerciseLibraryFilterCache.precomputeRecommendedList` runs on `Task.detached` (NOT MainActor)
+- Challenge syncs are throttled to 15s cooldown across `syncHealthKitDataToChallenges`, `syncAllTrackingToChallenges`, and `recalculateAllChallengeProgress`
+
 ### AnimatedOrbBackground
 - Uses three animated `Circle` views with `RadialGradient` — lightweight but additive
+- On Nutrition tab, deferred behind `showSecondaryWidgets` to avoid blocking first render
 - On older devices (iPhone SE, iPad Air), test scroll performance with orbs active
-- If performance issues arise, the orbs can be conditionally simplified (reduce to 2 orbs) on older hardware
 - The `.ignoresSafeArea()` is critical — without it, the orbs clip at safe area boundaries
 
 ### SleekCard Performance

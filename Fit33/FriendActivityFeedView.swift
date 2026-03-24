@@ -363,6 +363,7 @@ struct FriendActivityCard: View {
                     friendName: activity.displayName,
                     metadata: activity.metadata
                 )
+                .environmentObject(WorkoutManager.shared)
             }
         }
     }

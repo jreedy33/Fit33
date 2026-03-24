@@ -1091,6 +1091,9 @@ struct SimpleMealPlanView: View {
     @State private var showRestaurantSearch = false
     @State private var showShoppingList = false
     
+    // Two-phase rendering: show core content first, heavy widgets after a beat
+    @State private var showSecondaryWidgets = false
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -1168,9 +1171,13 @@ struct SimpleMealPlanView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 20)
                 }
-                .background(
-                    AnimatedOrbBackground.home(colorScheme: colorScheme)
-                )
+                .background {
+                    if showSecondaryWidgets {
+                        AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    } else {
+                        Color.clear
+                    }
+                }
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
                 }
@@ -1633,17 +1640,14 @@ struct SimpleMealPlanView: View {
     // MARK: - Main Comprehensive Nutrition View
     private var comprehensiveNutritionView: some View {
         VStack(spacing: 16) {
-            // 0. "What Should I Eat?" contextual card
+            // Phase 1: Core content (renders immediately)
             WhatToEatDashboardCard()
                 .padding(.horizontal, Spacing.md)
             
-            // 1. Today's Macros + Weekly Progress (swipeable cards)
             nutritionSwipeableCards
             
-            // 2. Track Your Meals - ALL meals visible at once (old design)
             allMealSectionsView
             
-            // 3. Quick Actions - Meal Plan, Import, Restaurant, Shopping (same style as workout buttons)
             MealsQuickActionsView(
                 showMealPlanGenerator: $showMealPlanGenerator,
                 showRecipeImport: $showRecipeImport,
@@ -1651,16 +1655,22 @@ struct SimpleMealPlanView: View {
                 showShoppingList: $showShoppingList
             )
             
-            // 4. Healthy Recipes Carousel - Swipeable recipe cards from Spoonacular
-            HealthyRecipesCarousel()
-            
-            // 5. Weight Tracking - Daily weigh-ins and progress
-            WeightTrackerWidget()
-                .id("weightTracker")
-            
-            // 6. Hydration Tracking
-            HydrationWidget()
-                .id("hydration")
+            // Phase 2: Heavy widgets (deferred by one frame to unblock tab transition)
+            if showSecondaryWidgets {
+                HealthyRecipesCarousel()
+                
+                WeightTrackerWidget()
+                    .id("weightTracker")
+                
+                HydrationWidget()
+                    .id("hydration")
+            }
+        }
+        .task {
+            if !showSecondaryWidgets {
+                try? await Task.sleep(for: .milliseconds(150))
+                showSecondaryWidgets = true
+            }
         }
     }
     

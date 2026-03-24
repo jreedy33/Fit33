@@ -298,62 +298,56 @@ final class ExerciseIntelligenceEngine {
                 exercises = try await SupabaseManager.shared.fetchAllExercises()
             }
             
-            await MainActor.run {
-                for exercise in exercises {
-                    let pattern = determineMovementPattern(
-                        name: exercise.name,
-                        category: exercise.category,
-                        primaryMuscles: exercise.primaryMusclesArray
-                    )
-                    
-                    let isCompound = determineIfCompound(
-                        primaryMuscles: exercise.primaryMusclesArray,
-                        secondaryMuscles: exercise.secondaryMusclesArray
-                    )
-                    
-                    let normalizedEquipment = ExerciseFilterService.normalizeEquipment(exercise.equipment)
-                    
-                    let metadata = ExerciseMetadata(
-                        name: exercise.name,
-                        category: exercise.category,
-                        equipment: normalizedEquipment,
-                        primaryMuscles: exercise.primaryMusclesArray,
-                        secondaryMuscles: exercise.secondaryMusclesArray,
-                        movementPattern: pattern,
-                        isCompound: isCompound,
-                        difficulty: calculateDifficulty(exercise),
-                        videoFilename: exercise.videoFilename
-                    )
-                    
-                    let normalizedName = exercise.name.lowercased()
-                    exerciseCache[normalizedName] = metadata
-                    
-                    // Index by equipment
-                    if equipmentToExercises[normalizedEquipment] == nil {
-                        equipmentToExercises[normalizedEquipment] = []
-                    }
-                    equipmentToExercises[normalizedEquipment]?.insert(normalizedName)
-                    
-                    // Index by primary muscles
-                    for muscle in exercise.primaryMusclesArray {
-                        let normalizedMuscle = muscle.lowercased()
-                        if muscleToExercises[normalizedMuscle] == nil {
-                            muscleToExercises[normalizedMuscle] = []
-                        }
-                        muscleToExercises[normalizedMuscle]?.insert(normalizedName)
-                    }
-                    
-                    // Index by category
-                    let normalizedCategory = exercise.category.lowercased()
-                    if categoryToExercises[normalizedCategory] == nil {
-                        categoryToExercises[normalizedCategory] = []
-                    }
-                    categoryToExercises[normalizedCategory]?.insert(normalizedName)
-                }
+            // Build all indexes on current (background) thread — NO MainActor needed
+            var newCache: [String: ExerciseMetadata] = [:]
+            newCache.reserveCapacity(exercises.count)
+            var newEquipment: [String: Set<String>] = [:]
+            var newMuscle: [String: Set<String>] = [:]
+            var newCategory: [String: Set<String>] = [:]
+            
+            for exercise in exercises {
+                let pattern = determineMovementPattern(
+                    name: exercise.name,
+                    category: exercise.category,
+                    primaryMuscles: exercise.primaryMusclesArray
+                )
                 
-                isInitialized = true
-                AppLogger.info("ExerciseIntelligenceEngine loaded \(exerciseCache.count) exercises, \(equipmentToExercises.keys.count) equipment groups, \(muscleToExercises.keys.count) muscle groups", category: .workout)
+                let isCompound = determineIfCompound(
+                    primaryMuscles: exercise.primaryMusclesArray,
+                    secondaryMuscles: exercise.secondaryMusclesArray
+                )
+                
+                let normalizedEquipment = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                
+                let metadata = ExerciseMetadata(
+                    name: exercise.name,
+                    category: exercise.category,
+                    equipment: normalizedEquipment,
+                    primaryMuscles: exercise.primaryMusclesArray,
+                    secondaryMuscles: exercise.secondaryMusclesArray,
+                    movementPattern: pattern,
+                    isCompound: isCompound,
+                    difficulty: calculateDifficulty(exercise),
+                    videoFilename: exercise.videoFilename
+                )
+                
+                let normalizedName = exercise.name.lowercased()
+                newCache[normalizedName] = metadata
+                newEquipment[normalizedEquipment, default: []].insert(normalizedName)
+                for muscle in exercise.primaryMusclesArray {
+                    newMuscle[muscle.lowercased(), default: []].insert(normalizedName)
+                }
+                newCategory[exercise.category.lowercased(), default: []].insert(normalizedName)
             }
+            
+            // Assign built indexes (this class is not @MainActor, no dispatch needed)
+            exerciseCache = newCache
+            equipmentToExercises = newEquipment
+            muscleToExercises = newMuscle
+            categoryToExercises = newCategory
+            isInitialized = true
+            
+            AppLogger.info("ExerciseIntelligenceEngine loaded \(exerciseCache.count) exercises, \(equipmentToExercises.keys.count) equipment groups, \(muscleToExercises.keys.count) muscle groups", category: .workout)
         } catch {
             AppLogger.error("ExerciseIntelligenceEngine failed to load data: \(error.localizedDescription)", category: .workout)
         }

@@ -347,12 +347,15 @@ final class GenderFilterService: ObservableObject {
             }
             
             DispatchQueue.main.async {
+                let sizeChanged = newCache.count != self.exerciseGenderCache.count
                 self.exerciseGenderCache = newCache
                 self.cacheLoaded = true
                 
-                // 🔄 Clear video caches when gender cache is loaded/refreshed
-                // This ensures videos match the current gender preference
-                VideoPlaybackEngine.shared.clearAllCaches()
+                // Only clear video caches when the cache actually changed size
+                // (avoids clearing preloaded video players on every startup refresh)
+                if sizeChanged {
+                    VideoPlaybackEngine.shared.clearAllCaches()
+                }
                 
                 #if DEBUG
                 let maleOnly = newCache.values.filter { $0.hasMaleVersion && !$0.hasFemaleVersion }.count
@@ -360,7 +363,9 @@ final class GenderFilterService: ObservableObject {
                 let both = newCache.values.filter { $0.hasBothGenders }.count
                 AppLogger.debug("👤 Gender cache loaded: \(newCache.count) exercises (including normalized keys)", category: .workout)
                 AppLogger.debug("   Male only: \(maleOnly), Female only: \(femaleOnly), Both: \(both)", category: .workout)
-                AppLogger.debug("👤 Video caches cleared to match gender preference", category: .workout)
+                if sizeChanged {
+                    AppLogger.debug("👤 Video caches cleared to match gender preference", category: .workout)
+                }
                 #endif
             }
         }

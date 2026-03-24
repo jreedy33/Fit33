@@ -387,7 +387,7 @@ struct SmartProgramExerciseCard: View {
         } else if exerciseName.contains("pull") && (exerciseName.contains("up") || exerciseName.contains("chin")) {
             return "figure.climbing"
         } else if exerciseName.contains("squat") {
-            return "figure.squat"
+            return "figure.strengthtraining.traditional"
         } else if exerciseName.contains("lunge") {
             return "figure.walk"
         } else if exerciseName.contains("thrust") || exerciseName.contains("bridge") {

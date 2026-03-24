@@ -181,13 +181,14 @@ final class HealthKitService: ObservableObject {
     func syncAllData(force: Bool = false) async {
         guard isAuthorized else { return }
         
-        // Throttle
+        // Always prevent concurrent syncs, even when forced
+        if isSyncing {
+            AppLogger.debug("Skipping HealthKit sync - already in progress", category: .health)
+            return
+        }
+        
+        // Time-based throttle (skipped when force = true)
         if !force {
-            if isSyncing {
-                AppLogger.debug("Skipping HealthKit sync - already in progress", category: .health)
-                return
-            }
-            
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
                 AppLogger.debug("Skipping HealthKit sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .health)
@@ -198,7 +199,8 @@ final class HealthKitService: ObservableObject {
         isSyncing = true
         isLoading = true
         
-        // Sync in parallel
+        StartupWaterfall.shared.mark("HealthKit.syncAll")
+        
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.syncTodayStats() }
             group.addTask { await self.syncRecentWorkouts() }
@@ -212,11 +214,10 @@ final class HealthKitService: ObservableObject {
         
         AppLogger.info("HealthKit full sync complete", category: .health)
         
-        // Persist HealthKit workouts & activity to Supabase (cardio_workouts + daily_activity_summary)
-        // This ensures "Sync Now" saves data to the database so it appears in Recent Activity
         await HealthDataService.shared.persistHealthKitDataToSupabase()
         
-        // Sync HealthKit data to active challenges
+        StartupWaterfall.shared.end("HealthKit.syncAll")
+        
         await ChallengeService.shared.syncHealthKitDataToChallenges()
         
         // Update lastSyncDate AFTER persist + challenge sync so UI observers fire with data ready

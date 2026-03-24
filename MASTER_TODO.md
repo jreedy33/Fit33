@@ -1,6 +1,6 @@
 # Fit33 Master TODO
 
-> **Last updated:** March 22, 2026
+> **Last updated:** March 24, 2026 (v1.29)
 > **Source:** Consolidated from 20+ audit/plan files. This is the single source of truth for all remaining work.
 > **Status legend:** `[ ]` = Not started | `[~]` = Partial/In Progress | `[x]` = Done
 
@@ -54,6 +54,13 @@
 | M-2 | [ ] Localization prep (extract all user-facing strings) | Product Engineer | MASTER_TODO |
 | M-3 | [ ] Certificate pinning for Supabase API calls | Infra & Security | MASTER_TODO |
 | M-4 | [ ] Memory/closure retain cycle audit | Quality & Performance | MASTER_TODO |
+| M-28 | [x] Startup freeze elimination (deferred init, background precompute, phased tab rendering) | Quality & Performance | Perf Session 3/24 |
+| M-29 | [x] Challenge sync dedup (15s throttle on all 3 sync methods) | Quality & Performance | Perf Session 3/24 |
+| M-30 | [x] HealthKit triple-sync fix (isSyncing guard always checked even with force:true) | Quality & Performance | Perf Session 3/24 |
+| M-31 | [x] SessionLogManager threading fix (bugReportPending writes on main thread) | Quality & Performance | Perf Session 3/24 |
+| M-32 | [x] SF Symbol fixes (29 invalid symbols replaced) | Quality & Performance | Perf Session 3/24 |
+| M-33 | [x] StartupWaterfall diagnostic logging system | Quality & Performance | Perf Session 3/24 |
+| M-34 | [ ] DB migration: add equipment column to user_similarity_profiles | Data & Backend | Perf Session 3/24 |
 | M-7 | [ ] Fix exercise sync race conditions (parallel Core Data writes) | Data & Backend | MASTER_TODO |
 | M-8 | [ ] API rate limits on client-side (debounce rapid calls) | Quality & Performance | MASTER_TODO |
 | M-9 | [ ] Keyboard dismiss + safe area fixes across all input screens | Product Engineer | MASTER_TODO |

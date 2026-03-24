@@ -460,10 +460,13 @@ struct ExerciseLibraryView: View {
                 // ⚡️ HIGH-PERFORMANCE: Initialize filter cache immediately
                 updateFilteredExercises()
                 
-                // Pre-generate poster frames for visible exercises (background, limited concurrency)
+                // Pre-generate poster frames after a delay so the list renders first
                 let visibleNames = filteredExercises.prefix(20).compactMap { $0.name }
                 if !visibleNames.isEmpty {
-                    VideoThumbnailService.shared.preGeneratePosterFrames(for: visibleNames)
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        VideoThumbnailService.shared.preGeneratePosterFrames(for: visibleNames)
+                    }
                 }
                 
                 // Log screen appearance with unique ID

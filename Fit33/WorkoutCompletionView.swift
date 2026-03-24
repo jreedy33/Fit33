@@ -1038,7 +1038,7 @@ struct CompletionExerciseRow: View {
     private var categoryIcon: String {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs", "quadriceps", "hamstrings", "calves", "glutes": return "figure.walk"
         case "shoulders": return "figure.boxing"
         case "biceps", "triceps", "arms": return "figure.cooldown"

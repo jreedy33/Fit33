@@ -990,7 +990,7 @@ struct SwappableExerciseCard: View {
         } else if exerciseName.contains("cable") {
             return "dot.radiowaves.left.and.right"
         } else if exerciseName.contains("squat") {
-            return "figure.squat"
+            return "figure.strengthtraining.traditional"
         } else if exerciseName.contains("press") {
             return "arrow.up.circle.fill"
         } else if exerciseName.contains("curl") {
@@ -1002,7 +1002,7 @@ struct SwappableExerciseCard: View {
         switch exercise.category.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"
@@ -1168,7 +1168,7 @@ struct SwappableExerciseCardWithActions: View {
         } else if exerciseName.contains("cable") {
             return "dot.radiowaves.left.and.right"
         } else if exerciseName.contains("squat") {
-            return "figure.squat"
+            return "figure.strengthtraining.traditional"
         } else if exerciseName.contains("press") {
             return "arrow.up.circle.fill"
         } else if exerciseName.contains("curl") {
@@ -1180,7 +1180,7 @@ struct SwappableExerciseCardWithActions: View {
         switch exercise.category.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"
@@ -1881,7 +1881,7 @@ struct ExerciseSwapView: View {
     private func iconForCategory(_ category: String) -> String {
         switch category.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs": return "figure.walk"
         case "shoulders": return "figure.arms.open"
         case "arms": return "dumbbell.fill"
@@ -1958,7 +1958,7 @@ struct SwapExerciseCard: View {
         } else if exerciseName.contains("cable") {
             return "dot.radiowaves.left.and.right"
         } else if exerciseName.contains("squat") {
-            return "figure.squat"
+            return "figure.strengthtraining.traditional"
         } else if exerciseName.contains("press") {
             return "arrow.up.circle.fill"
         } else if exerciseName.contains("curl") {
@@ -1970,7 +1970,7 @@ struct SwapExerciseCard: View {
         switch exercise.category.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"

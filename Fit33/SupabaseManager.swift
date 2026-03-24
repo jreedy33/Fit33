@@ -3700,47 +3700,49 @@ class SupabaseManager: ObservableObject {
             HeavyWorkSentinel.shared.endHeavyWork(reason: "Data sync from cloud")
         }
         
+        let wf = StartupWaterfall.shared
+        wf.mark("CloudSync (total)")
         AppLogger.debug("Starting comprehensive data sync from cloud...", category: .network)
         
         do {
-            // FIRST: Sync user profile from cloud to Core Data
-            // This restores the user's profile when they log back in
-            if let cloudProfile = try await fetchUserProfile() {
-                await syncUserProfileToCoreData(profile: cloudProfile)
+            await wf.measure("CloudSync: profile") {
+                if let cloudProfile = try? await fetchUserProfile() {
+                    await syncUserProfileToCoreData(profile: cloudProfile)
+                }
             }
             
-            // 🛡️ Only sync exercises if no workout is active (prevents data loss!)
             if !WorkoutManager.shared.isWorkoutActive {
-                await ExerciseLibraryService.shared.syncExercisesFromCloud()
+                await wf.measure("CloudSync: exercises") {
+                    await ExerciseLibraryService.shared.syncExercisesFromCloud()
+                }
             } else {
                 AppLogger.warning("[SYNC] Skipping exercise sync during active workout", category: .network)
             }
             
-            // Sync exercise favorites (using names for reliable matching)
-            let favoriteNames = try await fetchFavorites()
-            await syncFavoritesToCoreData(favoriteNames: favoriteNames)
+            try await wf.measure("CloudSync: favorites+custom") {
+                let favoriteNames = try await fetchFavorites()
+                await syncFavoritesToCoreData(favoriteNames: favoriteNames)
+                let customExercises = try await fetchCustomExercises()
+                await syncCustomExercisesToCoreData(customExercises: customExercises)
+            }
             
-            // Sync custom exercises
-            let customExercises = try await fetchCustomExercises()
-            await syncCustomExercisesToCoreData(customExercises: customExercises)
+            try await wf.measure("CloudSync: workoutHistory") {
+                let favoriteWorkouts = try await fetchFavoriteWorkouts()
+                await syncFavoriteWorkoutsToCoreData(favoriteWorkouts: favoriteWorkouts)
+                let workoutHistory = try await fetchWorkoutHistory()
+                await syncWorkoutHistoryToCoreData(workouts: workoutHistory)
+            }
             
-            // Sync favorite workouts
-            let favoriteWorkouts = try await fetchFavoriteWorkouts()
-            await syncFavoriteWorkoutsToCoreData(favoriteWorkouts: favoriteWorkouts)
+            try await wf.measure("CloudSync: meals+nicknames") {
+                let mealLogs = try await fetchMealLogs()
+                await syncMealLogsToCoreData(meals: mealLogs)
+                await ExerciseNicknameService.shared.loadNicknames()
+            }
             
-            // Sync workout history from cloud
-            let workoutHistory = try await fetchWorkoutHistory()
-            await syncWorkoutHistoryToCoreData(workouts: workoutHistory)
-            
-            // Sync meal logs from cloud
-            let mealLogs = try await fetchMealLogs()
-            await syncMealLogsToCoreData(meals: mealLogs)
-            
-            // Sync exercise nicknames
-            await ExerciseNicknameService.shared.loadNicknames()
-            
+            wf.end("CloudSync (total)")
             AppLogger.info("Comprehensive data sync completed!", category: .network)
         } catch {
+            wf.end("CloudSync (total)")
             AppLogger.error("Error during comprehensive sync: \(error)", category: .network)
         }
     }

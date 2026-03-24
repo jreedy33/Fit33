@@ -466,7 +466,7 @@ struct SeamlessExerciseSelectionRow: View {
         // Fallback to category-based icons
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs": return "figure.run"
         case "shoulders": return "figure.strengthtraining.functional"
         case "arms": return "dumbbell.fill"
@@ -591,7 +591,7 @@ struct CompactExerciseSelectionRow: View {
         // Fallback to category-based icons
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs": return "figure.run"
         case "shoulders": return "figure.strengthtraining.functional"
         case "arms": return "dumbbell.fill"
@@ -760,7 +760,7 @@ struct ExerciseSelectionCard: View {
             
             // Squat variations
             else if exerciseName.contains("squat") {
-                return "figure.squat"
+                return "figure.strengthtraining.traditional"
             }
             
             // Lunge variations
@@ -846,7 +846,7 @@ struct ExerciseSelectionCard: View {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"

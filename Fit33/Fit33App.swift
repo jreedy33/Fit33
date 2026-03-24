@@ -89,20 +89,15 @@ struct Fit33App: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
-        // 🛡️ FIRST: Initialize crash reporting (signal handlers must be installed ASAP)
-        CrashReportingService.shared.initialize()
+        // ═══════════════════════════════════════════════════════════════
+        // CRITICAL PATH — Must run before first frame
+        // Only the absolute minimum to show UI and satisfy Apple requirements
+        // ═══════════════════════════════════════════════════════════════
         
-        // 🔄 Background challenge sync — HealthKit background delivery + BGTask periodic refresh
-        // Must be called before app finishes launching (BGTaskScheduler requirement)
+        // BGTaskScheduler.register must be called before app finishes launching
         BackgroundChallengeSyncService.shared.setup()
         
-        // 🔧 DEV: Check for crash from previous session
-        #if DEBUG
-        SessionLogManager.shared.checkForCrashLog()
-        #endif
-        
-        // 🔥 FORCE EXERCISE REFRESH - ONE TIME FIX FOR LEVER NAMES
-        // This will clear Core Data and force fresh sync from Supabase
+        // One-time Core Data migration (skip if already done)
         let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
         if needsExerciseRefresh {
             AppLogger.debug("FORCING EXERCISE REFRESH - CLEARING CACHED DATA", category: .general)
@@ -121,51 +116,54 @@ struct Fit33App: App {
             }
         }
         
-        // Start session logging
+        // Session logging
         SessionLogManager.shared.startSession()
         SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
         
-        // 🚀 PERFORMANCE: Initialize performance optimizations (memory monitoring, throttling)
-        initializePerformanceOptimizations()
+        // ═══════════════════════════════════════════════════════════════
+        // DEFERRED PATH — Runs 0.5s after init so the first frame renders fast
+        // Crash reporting, perf monitors, video engine, haptics, etc.
+        // ═══════════════════════════════════════════════════════════════
         
-        // 🌐 Pre-warm CDN connection for instant video playback (1 tiny HEAD request)
-        VideoThumbnailService.shared.prewarmCDNConnection()
-        
-        // ⚡ Pre-warm haptic generators for instant tap feedback
-        HapticManager.shared.prepareAll()
+        Task(priority: .userInitiated) { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            
+            StartupWaterfall.shared.mark("DeferredInit (total)")
+            
+            CrashReportingService.shared.initialize()
+            initializePerformanceOptimizations()
+            VideoThumbnailService.shared.prewarmCDNConnection()
+            HapticManager.shared.prepareAll()
+            _ = GenderFilterService.shared
+            _ = VideoPlaybackEngine.shared
+            
+            #if DEBUG
+            SessionLogManager.shared.checkForCrashLog()
+            #endif
+            
+            StartupWaterfall.shared.end("DeferredInit (total)")
+        }
         
         // ═══════════════════════════════════════════════════════════════
-        // ⚡️ STAGED STARTUP PIPELINE (Senior Engineer Approach)
-        // 
-        // Stage 0 (NOW): Show UI immediately — Core Data, haptics, appearance
+        // STAGED STARTUP PIPELINE
         // Stage 1 (0.5s): StartupCache — lightweight user stats for Dashboard
-        // Stage 2 (3s):   TabPreloader — background data for other tabs  
+        // Stage 2 (3s):   TabPreloader — background data for other tabs
         // Stage 3 (8s):   Intelligence — learning engine, mappings, etc.
-        //
-        // Key principles:
-        //   - ONE coordinated pipeline, not scattered concurrent Tasks
-        //   - Each stage waits for the previous to finish
-        //   - Dashboard data loads via DashboardView.task (not duplicated here)
-        //   - Exercise cloud sync skipped if cache is fresh (<6 hours)
-        //   - Video mapping fetch skipped if cache is fresh (<12 hours)
         // ═══════════════════════════════════════════════════════════════
         
         Task(priority: .userInitiated) {
-            // Stage 1: Warm up StartupCache (user stats for Dashboard)
             let context = PersistenceController.shared.container.viewContext
-            await StartupCache.shared.warmUp(context: context)
             
-            // Stage 2: Tab preloading (lightweight — no exercise faulting)
-            // Delay to let Dashboard render and user data load first
+            await StartupWaterfall.shared.measure("StartupCache.warmUp") {
+                await StartupCache.shared.warmUp(context: context)
+            }
+            
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s
-            await TabPreloader.shared.beginPreloading(context: context)
+            
+            await StartupWaterfall.shared.measure("TabPreloader.beginPreloading") {
+                await TabPreloader.shared.beginPreloading(context: context)
+            }
         }
-        
-        // 👤 Initialize gender filter service (centralized gender management)
-        _ = GenderFilterService.shared
-        
-        // 🚀 Initialize high-performance video engine (pre-warms favorites cache)
-        _ = VideoPlaybackEngine.shared
         
         // Track app version for update detection
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
@@ -320,72 +318,82 @@ struct Fit33App: App {
     
     /// Run intelligence initialization with proper CPU protection
     private func runIntelligenceInit() async {
-        // Signal heavy work starting
         HeavyWorkSentinel.shared.beginHeavyWork(reason: "Intelligence initialization")
         defer { HeavyWorkSentinel.shared.endHeavyWork(reason: "Intelligence initialization") }
         
+        let wf = StartupWaterfall.shared
+        wf.mark("Intelligence (total)")
+        
         AppLogger.debug("Starting background intelligence initialization...", category: .general)
         
-        // Wait for CPU to settle before starting heavy work
         await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
         
-        // Step 1: Load exercise data (light)
-        ExerciseIntelligenceEngine.shared.loadExerciseData()
+        await wf.measure("Intel: loadExerciseData") {
+            ExerciseIntelligenceEngine.shared.loadExerciseData()
+        }
         AppLogger.debug("Intelligence engine data loading started", category: .general)
         
-        // Yield and wait before next heavy operation
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
         
-        // Step 2: Build exercise maps (CPU intensive - staggered)
         if !CPUProtection.shared.isCPUCritical() {
-            await ExerciseMappingService.shared.buildMaps()
+            await wf.measure("Intel: buildMaps") {
+                await ExerciseMappingService.shared.buildMaps()
+            }
             AppLogger.debug("Exercise mapping service initialized", category: .general)
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
         
-        // Step 3: Initialize pairing engine (moderate)
         if !CPUProtection.shared.isCPUCritical() {
-            SmartExercisePairingEngine.shared.initialize()
+            await wf.measure("Intel: pairingEngine") {
+                SmartExercisePairingEngine.shared.initialize()
+            }
             AppLogger.debug("Smart exercise pairing engine initialized", category: .general)
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
         
-        // Step 4: Popularity data (network + light processing)
         if !CPUProtection.shared.isCPUTooHigh() {
-            await ExercisePopularityService.shared.refreshFromServer()
+            await wf.measure("Intel: popularity") {
+                await ExercisePopularityService.shared.refreshFromServer()
+            }
             AppLogger.debug("Exercise popularity data loaded", category: .general)
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
         
-        // Step 5: Collaborative learning (network + moderate processing)
         if !CPUProtection.shared.isCPUTooHigh() {
-            await CollaborativeLearningEngine.shared.syncGlobalData()
+            await wf.measure("Intel: collaborative") {
+                await CollaborativeLearningEngine.shared.syncGlobalData()
+            }
             AppLogger.debug("Collaborative learning engine synced", category: .general)
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
         
-        // Step 6: User behavior analysis (CPU intensive - was taking 5.7 seconds!)
-        // Only run if CPU is settled
         await CPUProtection.shared.waitForCPUSettled(maxWait: 5.0)
         
         if !CPUProtection.shared.isCPUCritical() {
-            let context = PersistenceController.shared.container.viewContext
-            await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
+            await wf.measure("Intel: behaviorAnalysis") {
+                let context = PersistenceController.shared.container.viewContext
+                await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
+            }
             AppLogger.debug("User behavior learning engine initialized", category: .general)
         } else {
             AppLogger.warning("Skipping behavior analysis - CPU too high", category: .general)
         }
         
+        wf.end("Intelligence (total)")
+        
         AppLogger.info("Exercise intelligence systems fully initialized", category: .general)
+        
+        // Print the full waterfall after intelligence (the last heavy phase) completes
+        wf.printWaterfall()
     }
     
     @State private var showCoreDataFatalError = false

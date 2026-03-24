@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreData
 
 struct FriendWorkoutPreviewView: View {
     let workoutId: String
@@ -7,9 +8,13 @@ struct FriendWorkoutPreviewView: View {
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject var workoutManager: WorkoutManager
+    
     @State private var exercises: [WorkoutExerciseDTO] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var showNoExercisesAlert = false
     
     var body: some View {
         NavigationStack {
@@ -18,10 +23,8 @@ struct FriendWorkoutPreviewView: View {
                 
                 ScrollView {
                     VStack(spacing: Spacing.lg) {
-                        // Workout header
                         workoutHeader
                         
-                        // Exercise list
                         if isLoading {
                             ProgressView()
                                 .padding(.top, Spacing.xl)
@@ -32,12 +35,22 @@ struct FriendWorkoutPreviewView: View {
                         } else {
                             exercisesList
                         }
-                        
-                        // Action buttons
-                        actionButtons
                     }
                     .padding(.horizontal, Spacing.md)
-                    .padding(.bottom, 60)
+                    .padding(.bottom, 140)
+                }
+                
+                if !exercises.isEmpty && !isLoading {
+                    VStack {
+                        Spacer()
+                        FloatingGoButton(
+                            action: { startFriendWorkout() },
+                            primaryColor: .cyan,
+                            secondaryColor: .blue,
+                            accessibilityText: "Do this workout"
+                        )
+                        .padding(.bottom, 30)
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -54,6 +67,16 @@ struct FriendWorkoutPreviewView: View {
         .task {
             await loadWorkout()
         }
+        .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
+            if isActive {
+                dismiss()
+            }
+        }
+        .alert("Couldn't Start Workout", isPresented: $showNoExercisesAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("None of the exercises in this workout could be found in your exercise library.")
+        }
     }
     
     // MARK: - Header
@@ -68,7 +91,6 @@ struct FriendWorkoutPreviewView: View {
                 .font(.ds_heading3)
                 .foregroundColor(.secondary)
             
-            // Stats row
             HStack(spacing: Spacing.lg) {
                 statBubble(icon: "clock.fill", value: formatDuration(metadata.durationSeconds ?? 0), color: .blue)
                 statBubble(icon: "figure.strengthtraining.traditional", value: "\(metadata.exerciseCount ?? 0) exercises", color: .green)
@@ -97,34 +119,9 @@ struct FriendWorkoutPreviewView: View {
             SectionHeader(title: "Exercises", icon: "list.bullet", iconColor: .blue)
             
             ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
-                HStack(spacing: Spacing.sm) {
-                    // Exercise number
-                    Text("\(index + 1)")
-                        .font(.ds_labelMedium)
-                        .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            Circle()
-                                .fill(LinearGradient.ds_primaryAccent)
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(exercise.exerciseName)
-                            .font(.ds_bodyLarge)
-                            .foregroundColor(.primary)
-                    }
-                    
-                    Spacer()
-                    
-                    Text("\(exercise.sets.count) sets")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(Color.cardBackground)
+                FriendExerciseCard(
+                    number: index + 1,
+                    exerciseName: exercise.exerciseName
                 )
             }
         }
@@ -155,35 +152,6 @@ struct FriendWorkoutPreviewView: View {
         .padding(.vertical, Spacing.xl)
     }
     
-    // MARK: - Action Buttons
-    
-    private var actionButtons: some View {
-        VStack(spacing: Spacing.sm) {
-            if !exercises.isEmpty {
-                Button {
-                    HapticManager.notification(.success)
-                    // Save exercises as a new custom workout template
-                    saveWorkoutForLater()
-                    dismiss()
-                } label: {
-                    HStack {
-                        Image(systemName: "bookmark.fill")
-                        Text("Save for Later")
-                    }
-                    .font(.ds_labelLarge)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.sm)
-                    .background(
-                        LinearGradient.ds_primaryAccent
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
-                    )
-                }
-            }
-        }
-    }
-    
     // MARK: - Data Loading
     
     private func loadWorkout() async {
@@ -207,14 +175,154 @@ struct FriendWorkoutPreviewView: View {
         }
     }
     
-    private func saveWorkoutForLater() {
-        // Placeholder — would save the exercise list as a favorite routine template
-        AppLogger.info("✅ Workout saved for later: \(workoutId)", category: .workout)
+    // MARK: - Start Workout
+    
+    private func startFriendWorkout() {
+        var resolvedExercises: [Exercise] = []
+        
+        for dto in exercises {
+            if let exercise = ExerciseLibraryService.shared.getExercise(byName: dto.exerciseName) {
+                resolvedExercises.append(exercise)
+            } else {
+                AppLogger.warning("Could not resolve friend exercise: \(dto.exerciseName)", category: .workout)
+            }
+        }
+        
+        guard !resolvedExercises.isEmpty else {
+            showNoExercisesAlert = true
+            return
+        }
+        
+        AppLogger.info("Starting friend workout with \(resolvedExercises.count)/\(exercises.count) exercises", category: .workout)
+        
+        let newWorkout = Workout(context: viewContext)
+        newWorkout.id = UUID()
+        newWorkout.name = metadata.workoutName ?? "\(friendName)'s Workout"
+        newWorkout.date = Date()
+        newWorkout.isCompleted = false
+        
+        HapticManager.notification(.success)
+        workoutManager.startWorkout(workout: newWorkout, exercises: resolvedExercises)
     }
     
     private func formatDuration(_ seconds: Int) -> String {
         let mins = seconds / 60
         if mins < 60 { return "\(mins)m" }
         return "\(mins / 60)h \(mins % 60)m"
+    }
+}
+
+// MARK: - Friend Exercise Card
+
+private struct FriendExerciseCard: View {
+    let number: Int
+    let exerciseName: String
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var libraryExercise: Exercise? {
+        ExerciseLibraryService.shared.getExercise(byName: exerciseName)
+    }
+    
+    private var categoryGradient: [Color] {
+        switch libraryExercise?.category?.lowercased() {
+        case "chest": return [.purple, .pink]
+        case "back": return [.blue, .cyan]
+        case "legs": return [.green, .teal]
+        case "shoulders": return [.orange, .yellow]
+        case "arms": return [.purple, .indigo]
+        case "core": return [.yellow, .orange]
+        default: return [.cyan, .blue]
+        }
+    }
+    
+    private var categoryIcon: String {
+        switch libraryExercise?.category?.lowercased() {
+        case "chest": return "figure.strengthtraining.traditional"
+        case "back": return "figure.strengthtraining.traditional"
+        case "legs": return "figure.walk"
+        case "shoulders": return "figure.arms.open"
+        case "arms": return "figure.arms.open"
+        case "core": return "figure.core.training"
+        default: return "dumbbell.fill"
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: categoryGradient,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
+                
+                Image(systemName: categoryIcon)
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(exerciseName)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                if let category = libraryExercise?.category {
+                    HStack(spacing: 6) {
+                        Text(category)
+                            .font(.caption)
+                            .foregroundColor(categoryGradient[0])
+                            .fontWeight(.medium)
+                        
+                        if let equipment = libraryExercise?.equipment {
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(equipment)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.15), Color.cardBackground]
+                                : [Color.white, Color.white.opacity(0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                categoryGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
+                                categoryGradient[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.05), radius: 6, x: 0, y: 3)
     }
 }

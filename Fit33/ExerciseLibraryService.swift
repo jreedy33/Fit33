@@ -52,34 +52,50 @@ class ExerciseLibraryService: ObservableObject {
         preWarmCache()
     }
     
-    /// Pre-warm the exercise cache in background
-    /// Call this early (e.g., at app startup) so lookups are instant later
+    /// Pre-warm the exercise cache, doing the Core Data fetch on a background context
+    /// to avoid blocking the main thread at startup
     func preWarmCache() {
         guard !isPreWarming && cachedExercisesByName == nil else { return }
         isPreWarming = true
         
-        // Run on main thread (Core Data requirement) but async so it doesn't block
-        DispatchQueue.main.async { [weak self] in
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
+        
+        Task.detached(priority: .userInitiated) { [weak self] in
+            await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
             let startTime = CFAbsoluteTimeGetCurrent()
-            let exercises = self?.getAllExercises() ?? []
-            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            AppLogger.debug("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms", category: .data)
-            self?.isPreWarming = false
             
-            // Mark as ready if we have valid exercises (with names)
-            let validCount = exercises.filter { !($0.name ?? "").isEmpty }.count
-            if validCount > 100 {
-                self?.isExercisesReady = true
-                AppLogger.debug("✅ [ExerciseLibrary] Exercises ready: \(validCount) valid exercises", category: .data)
+            // Fetch exercise names on background context (avoids blocking main thread)
+            let nameList: [String] = await bgContext.perform {
+                let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
+                request.propertiesToFetch = ["name"]
+                let exercises = (try? bgContext.fetch(request)) ?? []
+                return exercises.compactMap { $0.name }
+            }
+            
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            
+            // Now do the lightweight main-thread work: build cache using viewContext
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                AppLogger.debug("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms", category: .data)
+                StartupWaterfall.shared.end("ExerciseLibrary.preWarmCache")
+                self.isPreWarming = false
                 
-                // ⚡️ Also pre-compute the recommended list for instant Exercise tab loading
-                // This is a safety net — TabPreloader also does this, but whichever runs first wins
-                let filterCache = ExerciseLibraryFilterCache.shared
-                if !filterCache.isReady {
-                    filterCache.precomputeRecommendedList(allExercises: exercises)
+                if nameList.count > 100 {
+                    self.isExercisesReady = true
+                    AppLogger.debug("✅ [ExerciseLibrary] Exercises ready: \(nameList.count) valid exercises", category: .data)
+                    
+                    // Trigger filter cache precomputation (also runs mostly in background)
+                    let allExercises = self.getAllExercises()
+                    let filterCache = ExerciseLibraryFilterCache.shared
+                    if !filterCache.isReady {
+                        filterCache.precomputeRecommendedList(allExercises: allExercises)
+                    }
+                } else {
+                    AppLogger.warning("⚠️ [ExerciseLibrary] Only \(nameList.count) valid exercises - waiting for sync", category: .network)
                 }
-            } else {
-                AppLogger.warning("⚠️ [ExerciseLibrary] Only \(validCount) valid exercises - waiting for sync", category: .network)
             }
         }
     }

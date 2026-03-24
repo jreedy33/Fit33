@@ -886,7 +886,7 @@ struct ReceivedExerciseCard: View {
            let category = exercise.category?.lowercased() {
             switch category {
             case "chest": return "figure.strengthtraining.traditional"
-            case "back": return "figure.rowing"
+            case "back": return "figure.rower"
             case "legs": return "figure.run"
             case "shoulders": return "figure.arms.open"
             case "arms": return "dumbbell.fill"

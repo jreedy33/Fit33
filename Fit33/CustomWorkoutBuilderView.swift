@@ -1418,7 +1418,7 @@ struct CustomWorkoutExerciseRow: View {
             } else if exerciseName.contains("pull") && (exerciseName.contains("up") || exerciseName.contains("chin")) {
                 return "figure.climbing"
             } else if exerciseName.contains("squat") {
-                return "figure.squat"
+                return "figure.strengthtraining.traditional"
             } else if exerciseName.contains("lunge") {
                 return "figure.walk"
             }
@@ -1427,7 +1427,7 @@ struct CustomWorkoutExerciseRow: View {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"
@@ -1473,7 +1473,7 @@ struct AddCustomExerciseView: View {
     
     private let commonIcons = [
         "dumbbell.fill", "figure.strengthtraining.traditional", "figure.climbing",
-        "figure.squat", "arrow.up.circle.fill", "figure.core.training",
+        "figure.strengthtraining.traditional", "arrow.up.circle.fill", "figure.core.training",
         "figure.mixed.cardio", "figure.run", "figure.walk", "flame.fill",
         "bolt.fill", "star.fill", "heart.fill", "plus.circle.fill",
         "checkmark.circle.fill", "target", "scope"
@@ -1822,7 +1822,7 @@ struct IconPickerView: View {
     
     private let commonIcons = [
         "dumbbell.fill", "figure.strengthtraining.traditional", "figure.climbing",
-        "figure.squat", "arrow.up.circle.fill", "figure.core.training",
+        "figure.strengthtraining.traditional", "arrow.up.circle.fill", "figure.core.training",
         "figure.mixed.cardio", "figure.run", "figure.walk", "flame.fill",
         "bolt.fill", "star.fill", "heart.fill", "plus.circle.fill",
         "checkmark.circle.fill", "target", "scope", "moon.fill",

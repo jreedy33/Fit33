@@ -176,7 +176,7 @@ struct ExerciseCardRow: View {
             if name.contains("cable") { return "dot.radiowaves.left.and.right" }
             if name.contains("push") && name.contains("up") { return "figure.strengthtraining.traditional" }
             if name.contains("pull") && (name.contains("up") || name.contains("chin")) { return "figure.climbing" }
-            if name.contains("squat") { return "figure.squat" }
+            if name.contains("squat") { return "figure.strengthtraining.traditional" }
             if name.contains("lunge") { return "figure.walk" }
             if name.contains("thrust") || name.contains("bridge") { return "figure.strengthtraining.functional" }
             if name.contains("deadlift") { return "figure.strengthtraining.functional" }
@@ -205,7 +205,7 @@ struct ExerciseCardRow: View {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
         case "back": return "figure.climbing"
-        case "legs": return "figure.squat"
+        case "legs": return "figure.strengthtraining.traditional"
         case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"

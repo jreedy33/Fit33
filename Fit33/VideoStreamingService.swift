@@ -59,7 +59,7 @@ class VideoStreamingService: ObservableObject {
     }
     
     /// Structure to hold both male and female video filenames for an exercise
-    struct GenderVideoInfo {
+    struct GenderVideoInfo: Codable {
         var maleFilename: String?
         var femaleFilename: String?
         
@@ -106,19 +106,69 @@ class VideoStreamingService: ObservableObject {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("exercise_videos")
     }
     
+    private static let diskCacheFile = "video_gender_cache.json"
+    
     private init() {
-        // Load legacy mapping as fallback
         self.videoMapping = createExerciseVideoMapping()
         createCacheDirectoryIfNeeded()
-        
-        // Load user's gender preference
         loadGenderPreference()
         
-        // Load video mappings from database (primary source)
+        // Load cached video mappings from disk FIRST (instant, avoids 7 network calls)
+        loadGenderCacheFromDisk()
+        
+        // Then refresh from network only if stale
         loadVideoMappingsFromDatabase()
         
-        // Configure AVPlayer for fast startup
         configureAudioSession()
+    }
+    
+    private func genderCacheDiskURL() -> URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(Self.diskCacheFile)
+    }
+    
+    private func loadGenderCacheFromDisk() {
+        guard let url = genderCacheDiskURL(),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        
+        let preferred = preferredVideoGender
+        
+        // File I/O + JSON decode on background thread to avoid blocking init
+        Task.detached(priority: .userInitiated) {
+            do {
+                let data = try Data(contentsOf: url)
+                let decoded = try JSONDecoder().decode([String: GenderVideoInfo].self, from: data)
+                guard !decoded.isEmpty else { return }
+                
+                var filenames: [String: String] = [:]
+                for (key, info) in decoded {
+                    if let fn = info.filenameWithFallback(preferred: preferred) {
+                        filenames[key] = fn
+                    }
+                }
+                
+                await MainActor.run {
+                    self.genderVideoCache = decoded
+                    self.videoFilenameCache = filenames
+                    self.videosLoaded = true
+                    AppLogger.debug("⚡️ [VIDEO] Restored \(decoded.count) video mappings from disk cache", category: .general)
+                }
+            } catch {
+                AppLogger.debug("[VIDEO] Disk cache load failed: \(error.localizedDescription)", category: .general)
+            }
+        }
+    }
+    
+    private func saveGenderCacheToDisk() {
+        guard let url = genderCacheDiskURL(), !genderVideoCache.isEmpty else { return }
+        Task.detached(priority: .utility) { [cache = self.genderVideoCache] in
+            do {
+                let data = try JSONEncoder().encode(cache)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                AppLogger.debug("[VIDEO] Disk cache save failed: \(error.localizedDescription)", category: .general)
+            }
+        }
     }
     
     // MARK: - Gender Preference Management
@@ -208,6 +258,7 @@ class VideoStreamingService: ObservableObject {
             var offset = 0
             var hasMoreData = true
             
+            StartupWaterfall.shared.mark("VideoMappings.fetch")
             AppLogger.debug("Starting paginated fetch of video mappings", category: .general)
             
             while hasMoreData {
@@ -283,9 +334,12 @@ class VideoStreamingService: ObservableObject {
                 
                 AppLogger.info("Loaded \(mappings.count) video mappings from database, \(self.genderVideoCache.count) gender-aware, \(self.genderVideoCache.values.filter { $0.hasBothGenders }.count) with both genders", category: .general)
                 
+                self.saveGenderCacheToDisk()
+                StartupWaterfall.shared.end("VideoMappings.fetch")
                 GenderFilterService.shared.refreshCache()
             }
         } catch {
+            StartupWaterfall.shared.end("VideoMappings.fetch")
             AppLogger.warning("Failed to load video mappings from database: \(error.localizedDescription)", category: .general)
             await MainActor.run {
                 self.videosLoaded = true

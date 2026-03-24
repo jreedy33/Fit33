@@ -148,6 +148,22 @@ class ChallengeService: ObservableObject {
     // Track last known invite IDs for detecting new invites
     private var lastCheckedInviteIds: Set<UUID> = []
     
+    // MARK: - Challenge Sync Throttling
+    private var lastChallengeSyncDate: Date?
+    private var isChallengeSyncing = false
+    private static let challengeSyncThrottleInterval: TimeInterval = 30
+    
+    #if DEBUG
+    private var syncAttemptCount = 0
+    private var syncThrottledCount = 0
+    private var syncCompletedCount = 0
+    
+    /// Call to print a summary of sync attempts vs throttled vs completed
+    func printSyncAudit() {
+        AppLogger.debug("📊 [CHALLENGE SYNC AUDIT] attempts: \(syncAttemptCount), throttled: \(syncThrottledCount), completed: \(syncCompletedCount)", category: .social)
+    }
+    #endif
+    
     private init() {
         // Load cached challenges immediately on init for instant display
         loadCachedChallenges()
@@ -1725,10 +1741,34 @@ class ChallengeService: ObservableObject {
             return
         }
         
-        // ⚠️ CRITICAL: Ensure MealService has today's data.
-        // This function reads todaysMeals for protein/calorie challenges.
-        // Without this, a background HealthKit update on a new day would
-        // push stale yesterday protein/calories as today's progress.
+        #if DEBUG
+        syncAttemptCount += 1
+        #endif
+        if isChallengeSyncing {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping HK sync — already in progress", category: .social)
+            return
+        }
+        if let lastSync = lastChallengeSyncDate,
+           Date().timeIntervalSince(lastSync) < Self.challengeSyncThrottleInterval {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping HK sync — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
+            return
+        }
+        isChallengeSyncing = true
+        defer {
+            isChallengeSyncing = false
+            lastChallengeSyncDate = Date()
+            #if DEBUG
+            syncCompletedCount += 1
+            printSyncAudit()
+            #endif
+        }
+        
         MealService.shared.ensureFreshForToday()
         
         let healthKit = HealthKitService.shared
@@ -1879,8 +1919,34 @@ class ChallengeService: ObservableObject {
     func syncAllTrackingToChallenges() async {
         guard !activeChallenges.isEmpty || !activeGroupChallenges.isEmpty else { return }
         
-        // ⚠️ CRITICAL: Ensure MealService has today's data, not stale yesterday meals.
-        // Without this, a new-day sync can push yesterday's protein/calories as today's.
+        #if DEBUG
+        syncAttemptCount += 1
+        #endif
+        if isChallengeSyncing {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping universal sync — already in progress", category: .social)
+            return
+        }
+        if let lastSync = lastChallengeSyncDate,
+           Date().timeIntervalSince(lastSync) < Self.challengeSyncThrottleInterval {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping universal sync — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
+            return
+        }
+        isChallengeSyncing = true
+        defer {
+            isChallengeSyncing = false
+            lastChallengeSyncDate = Date()
+            #if DEBUG
+            syncCompletedCount += 1
+            printSyncAudit()
+            #endif
+        }
+        
         MealService.shared.ensureFreshForToday()
         
         AppLogger.debug("Universal sync: pushing all tracking data to challenges...", category: .social)
@@ -2220,7 +2286,34 @@ class ChallengeService: ObservableObject {
     func recalculateAllChallengeProgress() async {
         guard !activeChallenges.isEmpty else { return }
         
-        // Ensure meals are fresh for protein/calorie challenges
+        #if DEBUG
+        syncAttemptCount += 1
+        #endif
+        if isChallengeSyncing {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping recalculate — sync in progress", category: .social)
+            return
+        }
+        if let lastSync = lastChallengeSyncDate,
+           Date().timeIntervalSince(lastSync) < Self.challengeSyncThrottleInterval {
+            #if DEBUG
+            syncThrottledCount += 1
+            #endif
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping recalculate — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
+            return
+        }
+        isChallengeSyncing = true
+        defer {
+            isChallengeSyncing = false
+            lastChallengeSyncDate = Date()
+            #if DEBUG
+            syncCompletedCount += 1
+            printSyncAudit()
+            #endif
+        }
+        
         MealService.shared.ensureFreshForToday()
         
         AppLogger.debug("Recalculating progress for \(activeChallenges.count) challenges...", category: .social)

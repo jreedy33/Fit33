@@ -130,20 +130,40 @@ final class ExercisePopularityService {
     func getPopularityScore(for exerciseName: String) -> Int {
         let key = exerciseName.lowercased()
         
-        // Check exact match first
         if let score = popularityCache[key] {
             return score
         }
         
-        // Check partial matches for variations
-        for (name, score) in popularityCache {
-            if key.contains(name) || name.contains(key) {
-                return score
-            }
+        if let score = partialMatchCache[key] {
+            return score
         }
         
-        // Default score for unknown exercises
         return 50
+    }
+    
+    /// Pre-built index for partial matches. Built once on first access, avoids O(n) scan per lookup.
+    private lazy var partialMatchCache: [String: Int] = {
+        buildPartialMatchCache()
+    }()
+    
+    /// Snapshot the full popularity data for background thread use (avoids @MainActor requirements)
+    func snapshotPopularityData() -> (cache: [String: Int], favorites: Set<String>) {
+        return (popularityCache, favoritedCache)
+    }
+    
+    private func buildPartialMatchCache() -> [String: Int] {
+        var cache: [String: Int] = [:]
+        let allKeys = Array(popularityCache.keys)
+        for baseKey in allKeys {
+            let baseScore = popularityCache[baseKey] ?? 50
+            for suffix in ["(barbell)", "(dumbbell)", "(cable)", "(machine)", "(smith machine)", "(ez bar)", "(kettlebell)", "(bodyweight)", "(band)", "(plate)"] {
+                let variation = baseKey + " " + suffix
+                if cache[variation] == nil {
+                    cache[variation] = baseScore
+                }
+            }
+        }
+        return cache
     }
     
     /// Check if an exercise is in the top tier (90+)

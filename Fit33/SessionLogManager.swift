@@ -955,7 +955,9 @@ final class SessionLogManager: ObservableObject {
         ])
         
         // Force save logs immediately for crash
-        bugReportPending = true
+        DispatchQueue.main.async { [weak self] in
+            self?.bugReportPending = true
+        }
     }
     
     deinit {
@@ -1138,8 +1140,8 @@ final class SessionLogManager: ObservableObject {
     func clearLogs() {
         logQueue.async { [weak self] in
             self?.sessionLog = []
-            self?.bugReportPending = false
             DispatchQueue.main.async {
+                self?.bugReportPending = false
                 self?.logCount = 0
             }
         }
@@ -2734,7 +2736,11 @@ final class SessionLogManager: ObservableObject {
     
     /// Generate a bug report with all session logs
     func generateBugReport(userDescription: String, category: BugCategory) -> SessionBugReport {
-        bugReportPending = true
+        if Thread.isMainThread {
+            bugReportPending = true
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.bugReportPending = true }
+        }
         
         let report = SessionBugReport(
             id: UUID().uuidString,

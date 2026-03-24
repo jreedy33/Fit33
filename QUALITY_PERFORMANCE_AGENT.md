@@ -47,13 +47,51 @@
 | In-app diagnostics | `CriticalPathTests.swift`, `LimitationFilterTests.swift` |
 | CI | `.github/workflows/` — iOS build check, iOS unit tests, iOS syntax check, admin CMS CI |
 
-### Performance
-| Metric | Status | Target |
-|--------|--------|--------|
-| `DispatchQueue.main.asyncAfter` | 60+ instances (41 in NewOnboardingView alone) | Replace with `Task.sleep` or proper animation APIs |
+### Performance (v1.29 — March 2026 Optimization Pass)
+
+**Startup:**
+| Metric | Before (v1.28) | After (v1.29) |
+|--------|---------------|---------------|
+| Startup freeze | 3.9s CRITICAL | Eliminated (0 freezes) |
+| FilterCache precompute | 2950ms (main thread) | 216ms (background thread) |
+| Tab preload total | 2864ms | 279ms |
+| Deferred init block | N/A (all in init) | 250ms (runs 0.5s after first frame) |
+| Main thread budget | 33,117ms | 17,809ms |
+
+**Tab transitions (first visit):**
+| Tab | Before | After |
+|-----|--------|-------|
+| Exercises | 949ms | 220ms |
+| Workout | 618ms | 157ms |
+| Nutrition | 1,317ms | 166ms |
+| Friends | 580ms | 163ms |
+| All revisits | 274-504ms | 35-103ms |
+
+**FPS:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Worst sustained drop | 2fps for 1.8s | 51fps for 1s |
+| Challenge sync dupes | 3-4x per startup | 1x (throttled) |
+| HealthKit sync dupes | 3x concurrent | 1x (isSyncing guard) |
+
+**Key systems added/changed:**
+- `StartupWaterfall` — consolidated timeline log printed after intelligence init
+- `DeferredInit` block — crash reporter, perf monitors, video engine, gender filter deferred 0.5s
+- `ExerciseLibraryFilterCache.precomputeRecommendedList` — moved to `Task.detached`
+- `SimpleMealPlanView` — two-phase rendering (core content first, widgets after 150ms)
+- `VideoStreamingService.loadGenderCacheFromDisk` — JSON decode moved to background
+- `ChallengeService` — 15s throttle on `syncHealthKitDataToChallenges`, `syncAllTrackingToChallenges`, `recalculateAllChallengeProgress`
+- `HealthKitService.syncAllData` — `isSyncing` guard always checked (even with `force: true`)
+- `ExerciseLibraryView` — thumbnail generation deferred 500ms after list render
+- `SessionLogManager` — `bugReportPending` writes moved to main thread (threading fix)
+- SF Symbols — replaced 29 invalid `figure.squat`/`figure.rowing` with valid alternatives
+
+**Remaining known items:**
+| Metric | Status | Notes |
+|--------|--------|-------|
+| `DispatchQueue.main.asyncAfter` | 60+ instances (41 in NewOnboardingView) | Replace with `Task.sleep` or animation APIs |
 | `.ignoresSafeArea()` | 136 instances across 87 files | Audit — keep on backgrounds only |
 | Large files | ContentView ~3000+ lines, SupabaseManager ~2500+ lines | Split into focused components |
-| `print()` statements | 3000+ | Migrate to `AppLogger` |
 
 ### Memory
 | Risk | File | Issue |

@@ -286,7 +286,7 @@ struct GeneratedExerciseCard: View {
     private var categoryIcon: String {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs": return "figure.run"
         case "shoulders": return "figure.arms.open"
         case "arms": return "dumbbell.fill"
@@ -370,7 +370,7 @@ struct CustomExerciseCard: View {
     private var categoryIcon: String {
         switch exercise.category?.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rowing"
+        case "back": return "figure.rower"
         case "legs": return "figure.run"
         case "shoulders": return "figure.arms.open"
         case "arms": return "dumbbell.fill"

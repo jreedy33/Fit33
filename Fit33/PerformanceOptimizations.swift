@@ -755,30 +755,39 @@ final class StartupCoordinator {
         completedPhases.contains(phase)
     }
     
-    /// Run the coordinated startup sequence
+    /// Event-driven startup: phases fire based on actual completion, not hardcoded timers.
+    /// - critical: marked by Fit33App.task after auth + limitations load
+    /// - essential: marked by Fit33App.task after syncAllDataFromCloud completes
+    /// - intelligence: auto-fires when essential completes + CPU settles
+    /// - background: auto-fires when intelligence completes
+    ///
+    /// Fallback timers ensure phases eventually fire even if events are missed.
     func beginStartupSequence() {
-        // Phase 0: Critical (immediate)
-        Task { @MainActor in
-            // Critical path - just mark complete, UI is already loading
-            markPhaseComplete(.critical)
+        // Intelligence fires when essential completes (event-driven)
+        onPhaseComplete(.essential) {
+            Task { @MainActor in
+                // Wait for CPU to settle before starting heavy intelligence work
+                await CPUProtection.shared.waitForCPUSettled(maxWait: 5.0)
+                self.markPhaseComplete(.intelligence)
+            }
         }
         
-        // Phase 1: Essential (after 2 seconds - let UI settle)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            markPhaseComplete(.essential)
+        // Background fires when intelligence completes (event-driven)
+        onPhaseComplete(.intelligence) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                self.markPhaseComplete(.background)
+            }
         }
         
-        // Phase 2: Intelligence (after essential + 8 seconds)
+        // Safety fallback: if essential never fires (e.g. no auth, offline),
+        // mark it after 8 seconds so intelligence isn't blocked forever
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            markPhaseComplete(.intelligence)
-        }
-        
-        // Phase 3: Background (after intelligence + 5 seconds)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            markPhaseComplete(.background)
+            try? await Task.sleep(for: .seconds(8))
+            if !self.isPhaseComplete(.essential) {
+                AppLogger.warning("[STARTUP] Essential phase fallback timer fired (sync may be slow)", category: .performance)
+                self.markPhaseComplete(.essential)
+            }
         }
     }
 }

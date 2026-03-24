@@ -312,12 +312,15 @@ struct MyNewView: View {
 
 ## Performance Guidelines
 
-### v1.29–v1.30 Startup Architecture
+### v1.30 Startup Architecture (Event-Driven)
 `Fit33App.init()` is split into critical and deferred blocks:
 - **Critical (synchronous)**: Core Data, BGTaskScheduler, session logging, UI appearance
 - **Deferred (0.5s delay)**: Crash reporter, perf monitors, video engine, gender filter, haptics
-- **Staged pipeline**: StartupCache (0.5s) -> TabPreloader (3s) -> Intelligence (10s+)
+- **Auth-only fast path**: `checkAuthOnly()` verifies session in <200ms, UI renders from Core Data cache
+- **Deferred sync (3s delay)**: `syncAllDataFromCloud()` refreshes data after UI is interactive
+- **Event-driven phases**: `StartupCoordinator` phases fire on actual completion events, not hardcoded timers
 - `StartupWaterfall` logs a consolidated timeline after intelligence init completes
+- **Workout generation**: Runs on background thread via `nonisolated` + `Task.detached` (was 5.2s main thread freeze)
 
 ### Tab Transition Rules
 - Nutrition tab uses **two-phase rendering**: core content first, heavy widgets (recipes, hydration, weight tracker, orb background) after 150ms via `showSecondaryWidgets` flag

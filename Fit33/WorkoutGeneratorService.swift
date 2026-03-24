@@ -115,8 +115,8 @@ class WorkoutGeneratorService: ObservableObject {
     static let shared = WorkoutGeneratorService()
     
     /// Suppresses per-exercise filter/scoring logs during generation to prevent main thread flooding.
-    /// Over 1000 log calls were firing per generation, each hitting AppLogger on the main thread.
-    static var suppressPerExerciseLogs = false
+    /// nonisolated(unsafe) because it's a simple flag toggled at generation boundaries, safe for concurrent read.
+    nonisolated(unsafe) static var suppressPerExerciseLogs = false
     
     /// Get recommended exercise count based on workout duration.
     /// Delegates to the canonical implementation in WorkoutComboRules.
@@ -3761,7 +3761,7 @@ class WorkoutGeneratorService: ObservableObject {
     ///           2) Isolation movements after
     ///           3) Spread similar exercises apart (no two dips back-to-back)
     ///           4) Core/abs at the very end
-    private func sortExercisesStrategically(_ exercises: [GeneratedExercise]) -> [GeneratedExercise] {
+    nonisolated private func sortExercisesStrategically(_ exercises: [GeneratedExercise]) -> [GeneratedExercise] {
         guard exercises.count > 1 else { return exercises }
         
         // Helper to determine if exercise is compound (multi-joint) or isolation
@@ -3879,7 +3879,7 @@ class WorkoutGeneratorService: ObservableObject {
     // MARK: - Helper Functions
     
     /// Normalize muscle name to a standard group for diversity tracking
-    private func normalizeMuscleName(_ muscle: String) -> String {
+    nonisolated private func normalizeMuscleName(_ muscle: String) -> String {
         let m = muscle.lowercased()
         if m.contains("bicep") { return "biceps" }
         if m.contains("tricep") { return "triceps" }
@@ -3899,7 +3899,7 @@ class WorkoutGeneratorService: ObservableObject {
     /// Get normalized equipment type from equipment string
     /// Get equipment type category from exercise equipment string
     /// Updated to handle new database format (Cable Machine, Lever Machine, etc.)
-    private func getEquipmentType(_ equipment: String) -> String {
+    nonisolated private func getEquipmentType(_ equipment: String) -> String {
         let e = equipment.lowercased()
         
         // Check specific types first (order matters)
@@ -3917,13 +3917,13 @@ class WorkoutGeneratorService: ObservableObject {
         return "other"
     }
     
-    private func isCompoundExercise(name: String) -> Bool {
+    nonisolated private func isCompoundExercise(name: String) -> Bool {
         let compoundKeywords = ["squat", "deadlift", "press", "bench", "row", "pull-up", "pullup", 
                                 "chin-up", "chinup", "lunge", "dip", "clean", "snatch", "thruster"]
         return compoundKeywords.contains { name.contains($0) }
     }
     
-    private func estimateExerciseDifficulty(name: String) -> Int {
+    nonisolated private func estimateExerciseDifficulty(name: String) -> Int {
         let name = name.lowercased()
         if name.contains("olympic") || name.contains("snatch") || name.contains("clean") { return 9 }
         if name.contains("pistol") || name.contains("muscle-up") || name.contains("muscle up") { return 8 }

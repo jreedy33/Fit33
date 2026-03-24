@@ -335,13 +335,16 @@ struct Fit33App: App {
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: buildMaps") {
-                await ExerciseMappingService.shared.buildMaps()
+                // Reuse exercises already fetched by syncAllDataFromCloud() instead of
+                // re-fetching 6428 exercises from Supabase (saves ~2.5s network + parsing)
+                let cachedDTOs = try? await SupabaseManager.shared.fetchAllExercisesDeduped()
+                await ExerciseMappingService.shared.buildMaps(prefetchedExercises: cachedDTOs)
             }
             AppLogger.debug("Exercise mapping service initialized", category: .general)
         }
         
         await Task.yield()
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(500))
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: pairingEngine") {
@@ -351,7 +354,7 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(500))
         
         if !CPUProtection.shared.isCPUTooHigh() {
             await wf.measure("Intel: popularity") {
@@ -361,7 +364,7 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(500))
         
         if !CPUProtection.shared.isCPUTooHigh() {
             await wf.measure("Intel: collaborative") {
@@ -371,9 +374,9 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .seconds(1))
         
-        await CPUProtection.shared.waitForCPUSettled(maxWait: 2.0)
+        await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: behaviorAnalysis") {
@@ -433,60 +436,68 @@ struct Fit33App: App {
                         showCoreDataFatalError = true
                     }
                     
-                    // checkAuth() calls syncAllDataFromCloud() for authenticated users,
-                    // which seamlessly restores all data if the store was reset during init.
-                    // The user never sees anything — data just reappears.
-                    await supabaseManager.checkAuth()
+                    // FAST AUTH: Verify session only (<200ms). Dashboard renders from cached Core Data.
+                    // Cloud sync is deferred so the UI is interactive immediately.
+                    await supabaseManager.checkAuthOnly()
                     
-                    // Silent cleanup: if store was reset, the sync above already restored everything.
-                    // Clean up the backup files and clear the flag — no user notification needed.
-                    if PersistenceController.storeWasReset {
-                        PersistenceController.storeWasReset = false
-                        persistenceController.cleanupStoreBackup()
-                        AppLogger.info("Store reset auto-recovered via cloud sync — user unaffected", category: .general)
-                    }
-
-                    // Load user limitations for safety filtering
+                    // UI-critical post-auth work (fast, needs auth state)
                     if supabaseManager.isAuthenticated {
                         await LimitationsService.shared.fetchUserLimitations()
                         AppLogger.debug("User limitations loaded", category: .general)
                         
-                        // Update session log with user info
                         SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
                             "user_id": supabaseManager.currentUser?.id ?? "unknown"
                         ])
                         
-                        // Register for push notifications (after auth so we can save token)
                         await pushNotificationService.registerForPushNotifications()
-                        
-                        // 🔄 Connect to Supabase Realtime for instant social updates
-                        // This enables instant notifications for: friend requests, shared workouts, challenges
-                        realtimeService.setupDefaultCallbacks()
-                        await realtimeService.connect()
-                        
-                        // Track activity: Update last login timestamp
-                        await supabaseManager.updateLastLogin()
-                        
-                        // Track activity: Sync integration connection statuses
-                        Task.detached(priority: .background) {
-                            await SupabaseManager.shared.syncAllIntegrationStatuses()
-                        }
-                        
-                        // Check if this user has advanced dev logging enabled
-                        await AdvancedSessionLogger.shared.checkIfEnabled()
                     }
                     
-                    // Check notification authorization and schedule if authorized
                     notificationManager.checkAuthorizationStatus()
                     if notificationManager.isAuthorized {
                         notificationManager.scheduleAllNotifications()
                     }
                     
-                    // Check for comeback reminder (if user hasn't worked out in a while)
+                    // Mark critical path complete — UI is now interactive
+                    StartupCoordinator.shared.markPhaseComplete(.critical)
+                    
+                    // DEFERRED CLOUD SYNC: Runs after UI is interactive.
+                    // Core Data already has cached data from previous sessions.
+                    if supabaseManager.isAuthenticated {
+                        Task {
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled else { return }
+                            
+                            await supabaseManager.syncAllDataFromCloud()
+                            
+                            if PersistenceController.storeWasReset {
+                                PersistenceController.storeWasReset = false
+                                persistenceController.cleanupStoreBackup()
+                                AppLogger.info("Store reset auto-recovered via cloud sync — user unaffected", category: .general)
+                            }
+                            
+                            await MainActor.run {
+                                StartupCoordinator.shared.markPhaseComplete(.essential)
+                            }
+                        }
+                        
+                        // Non-blocking post-auth services (don't hold up the task chain)
+                        Task {
+                            realtimeService.setupDefaultCallbacks()
+                            await realtimeService.connect()
+                            await supabaseManager.updateLastLogin()
+                            await AdvancedSessionLogger.shared.checkIfEnabled()
+                        }
+                        
+                        Task.detached(priority: .background) {
+                            await SupabaseManager.shared.syncAllIntegrationStatuses()
+                        }
+                    } else {
+                        // No auth — no sync needed, mark essential immediately
+                        StartupCoordinator.shared.markPhaseComplete(.essential)
+                    }
+                    
                     await checkForComebackReminder()
                     
-                    // Refresh community insights in background (non-blocking)
-                    // Only if stale (> 1 hour old)
                     #if DEBUG
                     if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
                         if SmartRecommendationEngine.shared.communityInsights.needsRefresh {

@@ -119,12 +119,13 @@ class SupabaseManager: ObservableObject {
     
     // MARK: - Authentication
     
-    func checkAuth() async {
+    /// Verify session and set isAuthenticated WITHOUT triggering cloud sync.
+    /// Returns quickly (<200ms) so the UI can render from cached Core Data.
+    /// Cloud sync should be scheduled separately after the UI is interactive.
+    func checkAuthOnly() async {
         do {
             let session = try await client.auth.session
             
-            // IMPORTANT: Verify the user actually exists in the database
-            // This handles the case where user was deleted from Supabase but session still exists
             let userExists = await verifyUserExists(userId: session.user.id)
             
             if !userExists {
@@ -133,7 +134,6 @@ class SupabaseManager: ObservableObject {
                 await MainActor.run {
                     currentUser = nil
                     isAuthenticated = false
-                    // Clear all local data since user no longer exists
                     PersistenceController.shared.clearAllUserData()
                 }
                 return
@@ -144,17 +144,6 @@ class SupabaseManager: ObservableObject {
                 isAuthenticated = true
             }
             AppLogger.info("User already signed in: \(session.user.email ?? "unknown")", category: .auth)
-            
-            // Sync all data from cloud (skipped in fast startup mode for dev)
-            #if DEBUG
-            if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
-            await syncAllDataFromCloud()
-            } else {
-                AppLogger.debug("[FAST STARTUP] Skipping cloud sync - using cached data", category: .network)
-            }
-            #else
-            await syncAllDataFromCloud()
-            #endif
         } catch {
             await MainActor.run {
                 isAuthenticated = false
@@ -162,6 +151,24 @@ class SupabaseManager: ObservableObject {
             }
             AppLogger.info("No active session", category: .auth)
         }
+    }
+    
+    /// Full auth check that also syncs all data from cloud (legacy entry point).
+    /// Prefer checkAuthOnly() + deferred syncAllDataFromCloud() for faster startup.
+    func checkAuth() async {
+        await checkAuthOnly()
+        
+        guard isAuthenticated else { return }
+        
+        #if DEBUG
+        if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
+            await syncAllDataFromCloud()
+        } else {
+            AppLogger.debug("[FAST STARTUP] Skipping cloud sync - using cached data", category: .network)
+        }
+        #else
+        await syncAllDataFromCloud()
+        #endif
     }
     
     /// Verifies that a user actually exists in the database (not just has a session)

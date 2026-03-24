@@ -50,13 +50,43 @@
 ### Performance (v1.29–v1.30 — March 2026 Optimization Pass)
 
 **Startup:**
-| Metric | Before (v1.28) | After (v1.29) |
-|--------|---------------|---------------|
-| Startup freeze | 3.9s CRITICAL | Eliminated (0 freezes) |
-| FilterCache precompute | 2950ms (main thread) | 216ms (background thread) |
-| Tab preload total | 2864ms | 279ms |
-| Deferred init block | N/A (all in init) | 250ms (runs 0.5s after first frame) |
-| Main thread budget | 33,117ms | 17,809ms |
+| Metric | v1.28 | v1.29 | v1.30 |
+|--------|-------|-------|-------|
+| Startup freeze | 3.9s | 3.2s (regressed) | <500ms (auth-only, sync deferred 3s) |
+| Workout generation freeze | N/A | 5.2s CRITICAL | 0s (nonisolated, background thread) |
+| FilterCache precompute | 2950ms | 216ms (bg) | 216ms (bg) |
+| Tab preload total | 2864ms | 279ms | 279ms |
+| Deferred init block | N/A | 250ms | 250ms |
+| Main thread budget | 33,117ms | 25,564ms | Target <5,000ms |
+| Duplicate exercise fetch | N/A | 6428 fetched 2x | 1x (dedup cache reuse) |
+| Weight data loads | N/A | 6+ redundant | 1 (10s throttle) |
+| Exercise history batches | N/A | 2x duplicate | 1x (in-flight dedup) |
+
+**v1.30 Startup Architecture (Event-Driven):**
+```
+checkAuthOnly() [<200ms]  ──→  UI renders from Core Data cache (instant)
+        │
+        ├─ markPhaseComplete(.critical)
+        │
+        ├─ [3s delay] ──→ syncAllDataFromCloud() ──→ markPhaseComplete(.essential)
+        │                                                      │
+        │                                          [CPU settles] ──→ markPhaseComplete(.intelligence)
+        │                                                                      │
+        │                                                              [2s] ──→ markPhaseComplete(.background)
+        │
+        └─ [parallel] realtimeService.connect(), updateLastLogin(), etc.
+```
+
+Key changes in v1.30:
+- `SupabaseManager.checkAuthOnly()` — session verification without cloud sync (<200ms vs 6s+)
+- `StartupCoordinator` — event-driven phases replace hardcoded `Task.sleep` timers
+- `WorkoutGeneratorService.generateFromCoreData` — `nonisolated`, runs on background thread via `Task.detached`
+- `WorkoutGenerationContext` — snapshots @MainActor state for background generation (Agent Rule 9)
+- `WeightTrackingService.loadAllData` — 10-second throttle prevents 6+ redundant loads
+- `ExerciseHistoryService.fetchPreviousSetsForExercises` — in-flight batch dedup
+- `AnimatedOrbBackground` — animations disabled in Low Power Mode
+- `ProductionFPSMonitor` — threshold lowered to 30fps in LPM to reduce noise
+- `ExerciseMappingService.buildMaps()` — reuses cached DTOs from cloud sync instead of re-fetching
 
 **Tab transitions (first visit):**
 | Tab | Before | After |

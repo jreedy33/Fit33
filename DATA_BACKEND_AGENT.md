@@ -12,6 +12,8 @@
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 6. **UUID type safety**: NEVER use `?? ""` as a fallback for `currentUser?.id.uuidString` in Supabase queries. Always use `guard let userId = currentUser?.id else { return }`. Passing an empty string to a UUID column causes Postgres `operator does not exist: uuid = text`.
+7. **Cloud sync pagination**: All Supabase fetch queries MUST include `.limit()`. `fetchWorkoutHistory()` caps at 200, `fetchMealLogs()` caps at 100. Never fetch unbounded result sets -- causes memory spikes and slow syncs proportional to user history size.
+8. **No duplicate foreground fetches**: Foreground refresh is centralized in `Fit33App.swift` scenePhase handler. DashboardView only handles dashboard-specific work (meals, hydration, quests). NEVER duplicate social/challenge/health fetches between App and Dashboard.
 
 ---
 

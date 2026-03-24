@@ -188,10 +188,9 @@ struct DashboardView: View {
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
         predicate: NSPredicate(format: "isCompleted == true"),
-        animation: .none)  // Disable animation for faster updates
+        animation: .none)
     private var recentWorkouts: FetchedResults<Workout>
     
-    // Only show recent workouts for performance
     private var displayedWorkouts: [Workout] {
         Array(recentWorkouts.prefix(10))
     }
@@ -603,44 +602,31 @@ struct DashboardView: View {
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
             
-            // Load friend data — only if authenticated (avoids "Not authenticated" crashes)
             guard SupabaseManager.shared.isAuthenticated else { return }
-            await FriendService.shared.loadPendingRequests()
-            await FriendService.shared.loadReceivedWorkouts()
-            await FriendService.shared.fetchFriends()
             
-            // Pre-fetch contact suggestions so friend icons are ready before tapping Friends tab
-            await ContactsService.shared.refreshSuggestions()
-            await ActivityFeedService.shared.fetchFeed()
+            // Batch 1: Fast social data (parallel)
+            async let friends: () = FriendService.shared.fetchFriends()
+            async let pending: () = FriendService.shared.loadPendingRequests()
+            async let received: () = FriendService.shared.loadReceivedWorkouts()
+            async let feed: () = ActivityFeedService.shared.fetchFeed()
+            async let ranked: () = FriendRankingService.shared.fetchRankedFriends()
+            _ = await (friends, pending, received, feed, ranked)
             
-            // Load active challenges, pending invites, and pending sent challenges
-            await ChallengeService.shared.fetchActiveChallenges()
-            await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenges (3+ people)
-            await ChallengeService.shared.fetchPendingInvites()
-            await ChallengeService.shared.fetchPendingSentChallenges()
+            // Batch 2: Challenges (parallel)
+            async let active: () = ChallengeService.shared.fetchActiveChallenges()
+            async let group: () = ChallengeService.shared.fetchActiveGroupChallenges()
+            async let invites: () = ChallengeService.shared.fetchPendingInvites()
+            async let sent: () = ChallengeService.shared.fetchPendingSentChallenges()
+            async let priv: () = PrivateChallengeService.shared.refreshAll()
+            _ = await (active, group, invites, sent, priv)
             
-            // Load private challenge data (invites + active challenges) + real-time subscriptions
-            await PrivateChallengeService.shared.refreshAll()
-            await PrivateChallengeService.shared.subscribeToRealtimeUpdates()
+            // Batch 3: Remaining (parallel)
+            async let rt: () = PrivateChallengeService.shared.subscribeToRealtimeUpdates()
+            async let quests: () = dailyQuestService.fetchDailyQuests()
+            async let contacts: () = ContactsService.shared.refreshSuggestions()
+            async let photo: () = loadProfilePhoto()
+            _ = await (rt, quests, contacts, photo)
             
-            // Load daily quests (must be after auth-dependent calls above so currentUser is available)
-            await dailyQuestService.fetchDailyQuests()
-            
-            // Pre-fetch ranked friends for Friends tab (caches to disk)
-            await FriendRankingService.shared.fetchRankedFriends()
-            
-            // Load profile photo for home icon
-            await loadProfilePhoto()
-            
-            // 🚀 COLD START FIX: Push current HealthKit data to all challenges
-            // On cold start the Fit33App.scenePhase handler may fire before auth
-            // is ready, so this ensures health data reaches the server ASAP.
-            // HealthDataService.syncAllHealthData() handles HealthKit fetch + push
-            // to 1v1 AND community challenges in one pass (with internal throttling).
-            // ⚡️ Use force: false so the internal throttle prevents a double-sync
-            // if Fit33App's scenePhase handler already triggered syncAllHealthData().
-            // Using force: true was causing 40+ concurrent requests to flood URLSession,
-            // leading to mass NSURLErrorDomain -999 cancellations of challenge RPCs.
             await HealthDataService.shared.syncAllHealthData(force: false)
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
@@ -655,7 +641,6 @@ struct DashboardView: View {
             // Only refresh when coming from background (not from inactive which happens during navigation)
             // This prevents refresh from interfering with navigation
             if oldPhase == .background && newPhase == .active {
-                // Re-check streak shield risk when returning from background
                 if let user = userManager.currentUser {
                     streakShieldService.checkStreakRisk(
                         lastWorkoutDate: user.lastWorkoutDate,
@@ -663,54 +648,19 @@ struct DashboardView: View {
                     )
                 }
                 
+                // Dashboard-specific foreground work only (social/health handled by Fit33App)
                 Task {
-                    // 🌙 MIDNIGHT AUTO-SYNC: Check if the day has changed
                     let calendar = Calendar.current
-                    let lastRefreshDay = calendar.startOfDay(for: lastChallengeRefreshDate)
-                    let today = calendar.startOfDay(for: Date())
-                    let dayChanged = lastRefreshDay < today
+                    let dayChanged = calendar.startOfDay(for: lastChallengeRefreshDate) < calendar.startOfDay(for: Date())
                     
-                    if dayChanged {
-                        AppLogger.debug("[CHALLENGES] Day changed! Auto-refreshing for new day...", category: .ui)
-                    }
-                    
-                    // ⚠️ Reload hydration + meal data BEFORE HealthKit sync.
-                    // syncAllData() internally calls syncHealthKitDataToChallenges()
-                    // which reads todaysMeals — if we don't refresh first, stale
-                    // yesterday data gets pushed as today's progress on new days.
                     MealService.shared.loadTodaysMeals()
                     await HydrationService.shared.loadTodayData()
                     
-                    // Sync HealthKit (this also syncs to challenges internally)
-                    await HealthKitService.shared.syncAllData(force: true)
-                    
-                    // ⚡ Universal sync: push ALL tracking data (hydration, meals, HealthKit) to ALL challenge types
-                    AppLogger.debug("[DASHBOARD] Universal challenge sync on foreground...", category: .ui)
-                    async let challengeSync: () = ChallengeService.shared.syncAllTrackingToChallenges()
-                    async let communitySync: () = CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
-                    async let privateSync: () = PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
-                    _ = await (challengeSync, communitySync, privateSync)
-                    
-                    // Also refresh pending/sent/group/private lists (all in parallel)
-                    async let p1: () = ChallengeService.shared.fetchPendingInvites()
-                    async let p2: () = ChallengeService.shared.fetchPendingSentChallenges()
-                    async let p3: () = ChallengeService.shared.fetchActiveGroupChallenges()
-                    async let p4: () = CommunityChallengeService.shared.refreshAll(force: false)
-                    async let p5: () = PrivateChallengeService.shared.refreshAll(force: false)
-                    _ = await (p1, p2, p3, p4, p5)
-                    AppLogger.info("[DASHBOARD] All challenge data refreshed (1v1 + community + private)", category: .ui)
-                    
-                    // Update last refresh date
-                    lastChallengeRefreshDate = Date()
-                    
                     if dayChanged {
-                        AppLogger.info("[CHALLENGES] Midnight sync complete - today's progress reset to 0", category: .ui)
+                        await dailyQuestService.fetchDailyQuests(force: true)
+                        lastChallengeRefreshDate = Date()
                     }
                     
-                    // Refresh daily quests (force on day change to get new quests)
-                    await dailyQuestService.fetchDailyQuests(force: dayChanged)
-                    
-                    // Refresh friend data
                     await FriendService.shared.refreshHomeScreenData()
                 }
             }

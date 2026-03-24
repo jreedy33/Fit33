@@ -19,6 +19,10 @@
    - `MainThreadWatchdog` — semaphore ping every 0.5s, reports freezes > 1.5s
    - `ScrollPerformanceTracker` + `trackScrollJank(screen:)` — logs fast-scroll events via `SessionLogManager.logScroll`
    - Crash reports now include `thermal_state` in `additional_context`
+   - `PerformanceBenchmarkView` — DEBUG-only dashboard in Settings with pass/fail metrics
+9. **Sorting/filtering 1000+ items MUST run off main thread**: Use `Task.detached` or background Core Data context. The workout generator, swap graph, and filter cache all run 5000+ exercise iterations — these must NEVER block the main thread.
+10. **Suppress per-item debug logging during bulk operations**: Use `WorkoutGeneratorService.suppressPerExerciseLogs` pattern. Logging 1000+ items on the main thread was the #1 cause of generation freezes.
+11. **Tab switch handlers must be minimal**: Only critical state updates (tab selection, button hide) should be synchronous. All logging and analytics should use the single summary log at the end, not per-step logs.
 
 ---
 

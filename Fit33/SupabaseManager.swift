@@ -3956,6 +3956,7 @@ class SupabaseManager: ObservableObject {
             .select()
             .eq("user_id", value: userId.uuidString)
             .order("date", ascending: false)
+            .limit(200)
             .execute()
             .value
         
@@ -4149,6 +4150,7 @@ class SupabaseManager: ObservableObject {
             .select()
             .eq("user_id", value: userId.uuidString)
             .order("date", ascending: false)
+            .limit(100)
             .execute()
             .value
         

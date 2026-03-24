@@ -171,13 +171,10 @@ struct ContentView: View {
             lastKnownOnboardingState = newValue
         }
         .task {
-            // Wait for UserManager to fully initialize
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            // Wait briefly for UserManager init (reduced from 500ms)
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
             
             await MainActor.run {
-                // Record the initial state AFTER UserManager has loaded
-                // If user is already onboarded, we won't show tutorial (returning user)
-                // If user is not onboarded, we'll show tutorial when they complete it
                 AppLogger.debug("[TUTORIAL] Initial state captured: hasCompletedOnboarding = \(userManager.hasCompletedOnboarding)", category: .ui)
                 lastKnownOnboardingState = userManager.hasCompletedOnboarding
             }
@@ -660,17 +657,9 @@ struct MainTabView: View {
             if oldValue != newValue {
                 let switchStartTime = CACurrentMediaTime()
                 
-                // 🔍 FREEZE DEBUG: Step-by-step logging to find where tab switch hangs
-                AppLogger.debug("[TAB FREEZE] onChange START: tab \(oldValue)→\(newValue)", category: .ui)
                 MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
-                
-                // ⚡️ INSTANT TAB SWITCHING: When tabs are preloaded, transition is instant
                 let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
-                AppLogger.debug("[TAB FREEZE] step 1: isInstantSwitch=\(isInstantSwitch) (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
-                
-                // ⚡️ PERFORMANCE: Start optimized tab transition
                 tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
-                AppLogger.debug("[TAB FREEZE] step 2: beginTransition done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // Mark tab as visited for lazy loading
                 if let tab = LazyTabManager.Tab(rawValue: newValue) {
@@ -680,7 +669,7 @@ struct MainTabView: View {
                         SmartPrefetch.shared.prefetchForTab(tab)
                     }
                 }
-                AppLogger.debug("[TAB FREEZE] step 3: markVisited+prefetch done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
+                
                 
                 // Log tab switch with screen IDs
                 let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
@@ -698,12 +687,11 @@ struct MainTabView: View {
                     "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
                     "is_instant": isInstantSwitch
                 ])
-                AppLogger.debug("[TAB FREEZE] step 4: session logging done (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
+                
 
                 scrollToTopTrigger = UUID()
                 // Immediately hide GO button when switching tabs
                 GoButtonState.shared.hide(reason: "tab_switch")
-                AppLogger.debug("[TAB FREEZE] step 5: GoButton hidden (\(String(format: "%.1f", (CACurrentMediaTime() - switchStartTime) * 1000))ms)", category: .ui)
                 
                 // Always pop to root when switching to Home tab
                 // This prevents stale navigation states from showing unexpected views
@@ -717,20 +705,21 @@ struct MainTabView: View {
                     workoutManager.autoGenCameFromHomeTab = false
                 }
                 
-                let onChangeElapsed = (CACurrentMediaTime() - switchStartTime) * 1000
-                AppLogger.debug("[TAB FREEZE] step 6: onChange handler COMPLETE (\(String(format: "%.1f", onChangeElapsed))ms)", category: .ui)
-                if onChangeElapsed > 100 {
-                    AppLogger.warning("[TAB FREEZE] onChange handler took \(String(format: "%.0f", onChangeElapsed))ms — may cause jank", category: .ui)
-                }
+                
                 
                 // ⚡️ End transition tracking (async to not block)
                 DispatchQueue.main.async { [self] in
                     let endTime = CACurrentMediaTime()
                     let totalMs = (endTime - switchStartTime) * 1000
-                    AppLogger.debug("[TAB FREEZE] step 7: endTransition callback fired (\(String(format: "%.1f", totalMs))ms since start)", category: .ui)
                     tabSwitchOptimizer.endTransition()
                     MainThreadWatchdog.shared.clearContext()
-                    AppLogger.debug("[TAB FREEZE] onChange FULLY DONE: tab \(oldValue)→\(newValue) (\(String(format: "%.1f", totalMs))ms)", category: .ui)
+                    if totalMs > 300 {
+                        AppLogger.warning("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
+                    } else if totalMs > 150 {
+                        AppLogger.debug("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
+                    } else {
+                        AppLogger.debug("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
+                    }
                 }
             }
             if newValue == 0 && HealthKitManager.shared.isAuthorized {

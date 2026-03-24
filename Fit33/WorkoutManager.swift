@@ -910,12 +910,11 @@ class WorkoutManager: ObservableObject {
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
         
-        // Pre-compute swap suggestions for all exercises (eliminates per-shuffle latency)
         let exercisesForCache = exercises
-        Task { @MainActor in
-            let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
-            let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
-            ExerciseSwapService.shared.precomputeSwapGraph(
+        let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
+        let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
+        Task.detached(priority: .utility) {
+            await ExerciseSwapService.shared.precomputeSwapGraph(
                 for: exercisesForCache,
                 userGoal: userGoal,
                 userEquipment: userEquipment

@@ -109,6 +109,12 @@ class MealService: ObservableObject {
                     await DailyQuestService.shared.onHighProteinMealLogged()
                 }
                 
+                // Update protein goal progress with total today's protein
+                let todayProtein = self.todaysMeals.reduce(0) { $0 + $1.protein }
+                if todayProtein > 0 {
+                    await DailyQuestService.shared.onProteinProgress(totalGrams: todayProtein)
+                }
+                
                 // Award league points for meal logging (+10 pts)
                 await WeeklyLeagueService.shared.addPoints(source: .mealLogged)
             }

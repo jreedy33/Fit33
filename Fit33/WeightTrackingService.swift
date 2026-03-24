@@ -316,16 +316,32 @@ class WeightTrackingService: ObservableObject {
     
     // MARK: - Load Data
     
+    // ⚡️ PERF: Throttle to prevent 6+ redundant loads during startup
+    private var lastLoadTime: Date?
+    private var isLoadInFlight = false
+    private static let loadThrottleInterval: TimeInterval = 10
+    
     @MainActor
-    func loadAllData() async {
+    func loadAllData(force: Bool = false) async {
         guard supabase.isAuthenticated, let userId = supabase.currentUser?.id else {
-            // Load from local storage if offline
             loadLocalData()
             return
         }
         
+        if !force, let lastLoad = lastLoadTime,
+           Date().timeIntervalSince(lastLoad) < Self.loadThrottleInterval {
+            return
+        }
+        
+        guard !isLoadInFlight else { return }
+        isLoadInFlight = true
+        
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            isLoadInFlight = false
+            lastLoadTime = Date()
+        }
         
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadRecentLogs(userId: userId) }
@@ -334,7 +350,6 @@ class WeightTrackingService: ObservableObject {
             group.addTask { await self.loadWeightGoal(userId: userId) }
         }
         
-        // Calculate trends from loaded data
         calculateTrends()
     }
     

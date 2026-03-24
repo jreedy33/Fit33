@@ -13,6 +13,10 @@ import SwiftUI
 struct DailyQuestsWidget: View {
     @ObservedObject var questService: DailyQuestService
     @ObservedObject private var adManager = AdManager.shared
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
+    @ObservedObject private var healthKitService = HealthKitService.shared
+    @ObservedObject private var mealService = MealService.shared
+    @ObservedObject private var hydrationService = HydrationService.shared
     @Environment(\.colorScheme) private var colorScheme
     
     private let accentGradient: [Color] = [
@@ -149,7 +153,91 @@ struct DailyQuestsWidget: View {
         }
     }
     
-    // Overall progress is now shown via individual quest rings + bonus row
+    // MARK: - Live Progress (client-side real-time values from local data sources)
+    
+    /// Returns the live current value for a quest using local data (HealthKit, meals, hydration)
+    /// rather than the server-side currentValue which may lag behind.
+    private func liveCurrentValue(for quest: DailyQuest) -> Int {
+        guard !quest.isCompleted else { return quest.currentValue }
+        guard let key = QuestKey(rawValue: quest.questKey) else { return quest.currentValue }
+        
+        switch key {
+        // Step quests — use live HealthKit step count
+        case .walk3kSteps, .walk5kSteps, .walk7500Steps, .walk10kSteps:
+            let liveSteps = max(healthKitManager.todaySteps, healthKitService.todaySteps)
+            return min(liveSteps, quest.targetValue)
+        case .hitStepGoal:
+            let liveSteps = max(healthKitManager.todaySteps, healthKitService.todaySteps)
+            return liveSteps >= healthKitManager.stepGoal ? 1 : 0
+            
+        // Water quests — use live hydration data
+        case .logWater3, .logWater8, .logWater:
+            let glasses = hydrationService.todaySummary?.entryCount ?? 0
+            return max(glasses, quest.currentValue)
+            
+        // Meal count quests — use live meal data
+        case .log3Meals:
+            let mealCount = mealService.todaysMeals.count
+            return max(mealCount, quest.currentValue)
+            
+        // Protein quest — use live meal protein total
+        case .hitProteinGoal:
+            let todayProtein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+            return max(todayProtein, quest.currentValue)
+            
+        // Active calories quest
+        case .burn300Calories:
+            let liveCals = healthKitService.todayCalories
+            return max(liveCals, quest.currentValue)
+            
+        // Active minutes quest
+        case .activeMinutes30:
+            let liveMinutes = healthKitService.todayActiveMinutes
+            return max(liveMinutes, quest.currentValue)
+            
+        default:
+            return quest.currentValue
+        }
+    }
+    
+    /// Computes live progress (0.0–1.0) using client-side data
+    private func liveProgress(for quest: DailyQuest) -> Double {
+        guard quest.targetValue > 0 else { return 0 }
+        let current = liveCurrentValue(for: quest)
+        return min(Double(current) / Double(quest.targetValue), 1.0)
+    }
+    
+    /// Formats progress label using live client-side data
+    private func liveProgressLabel(for quest: DailyQuest) -> String {
+        let current = liveCurrentValue(for: quest)
+        let unit = quest.targetUnit
+        switch unit {
+        case "steps":
+            if quest.targetValue >= 1000 {
+                let currentK = Double(current) / 1000.0
+                let targetK = Double(current >= 1000 ? quest.targetValue : quest.targetValue) / 1000.0
+                if current >= 1000 {
+                    return String(format: "%.1fk / %.0fk steps", currentK, targetK)
+                }
+                return String(format: "%d / %.0fk steps", current, targetK)
+            }
+            return "\(current)/\(quest.targetValue) steps"
+        case "glasses":
+            return "\(current)/\(quest.targetValue) glasses"
+        case "sets":
+            return "\(current)/\(quest.targetValue) sets"
+        case "meals", "meal":
+            return "\(current)/\(quest.targetValue) \(quest.targetValue == 1 ? "meal" : "meals")"
+        case "workouts", "workout":
+            return "\(current)/\(quest.targetValue) \(quest.targetValue == 1 ? "workout" : "workouts")"
+        case "minutes":
+            return "\(current)/\(quest.targetValue) min"
+        case "goal":
+            return current >= quest.targetValue ? "Goal hit!" : "Not yet"
+        default:
+            return "\(current)/\(quest.targetValue) \(unit)"
+        }
+    }
     
     // MARK: - Compact Quest Row (exercise-library-card style with emoji progress ring)
     
@@ -188,14 +276,14 @@ struct DailyQuestsWidget: View {
                         .frame(width: 40, height: 40)
                     
                     Circle()
-                        .trim(from: 0, to: quest.progress)
+                        .trim(from: 0, to: liveProgress(for: quest))
                         .stroke(
                             quest.categoryColor,
                             style: StrokeStyle(lineWidth: 3, lineCap: .round)
                         )
                         .frame(width: 40, height: 40)
                         .rotationEffect(.degrees(-90))
-                        .animation(.spring(response: 0.5), value: quest.progress)
+                        .animation(.spring(response: 0.5), value: liveProgress(for: quest))
                     
                     Text(quest.categoryEmoji)
                         .font(.ds_heading3)
@@ -243,13 +331,13 @@ struct DailyQuestsWidget: View {
                                 
                                 RoundedRectangle(cornerRadius: 2.5)
                                     .fill(quest.categoryColor)
-                                    .frame(width: max(0, geo.size.width * quest.progress), height: 4)
-                                    .animation(.spring(response: 0.4), value: quest.progress)
+                                    .frame(width: max(0, geo.size.width * liveProgress(for: quest)), height: 4)
+                                    .animation(.spring(response: 0.4), value: liveProgress(for: quest))
                             }
                         }
                         .frame(height: 4)
                         
-                        Text(progressLabel(quest: quest))
+                        Text(liveProgressLabel(for: quest))
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .foregroundColor(.secondary)
                             .frame(minWidth: 50, alignment: .trailing)

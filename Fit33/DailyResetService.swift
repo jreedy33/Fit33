@@ -258,7 +258,7 @@ class DailyResetService: ObservableObject {
         logStep("⚖️ Refreshing weight tracking for new day...")
         
         // Reload today's weight status
-        await WeightTrackingService.shared.loadAllData()
+        await WeightTrackingService.shared.loadAllData(force: true)
         
         let hasLoggedToday = WeightTrackingService.shared.hasLoggedToday
         logStep("✅ Weight tracking refreshed - logged today: \(hasLoggedToday)")

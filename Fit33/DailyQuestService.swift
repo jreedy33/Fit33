@@ -697,22 +697,21 @@ class DailyQuestService: ObservableObject {
         await reportProgress(questKey: .logWater)
     }
     
-    /// Call when step count updates (pass total steps for today)
+    /// Call when step count updates (pass total steps for today).
+    /// Reports incremental progress for all active step quests regardless of threshold.
     func onStepsUpdated(todaySteps: Int) async {
         let delta = todaySteps - lastReportedSteps
         guard delta > 0 else { return }
         
-        if todaySteps >= 3000 {
-            await reportProgress(questKey: .walk3kSteps, increment: delta)
-        }
-        if todaySteps >= 5000 {
-            await reportProgress(questKey: .walk5kSteps, increment: delta)
-        }
-        if todaySteps >= 7500 {
-            await reportProgress(questKey: .walk7500Steps, increment: delta)
-        }
-        if todaySteps >= 10000 {
-            await reportProgress(questKey: .walk10kSteps, increment: delta)
+        // Report progress for ALL step quests — the server caps at target_value
+        await reportProgress(questKey: .walk3kSteps, increment: delta)
+        await reportProgress(questKey: .walk5kSteps, increment: delta)
+        await reportProgress(questKey: .walk7500Steps, increment: delta)
+        await reportProgress(questKey: .walk10kSteps, increment: delta)
+        
+        // Check if step goal was just hit
+        if todaySteps >= HealthKitManager.shared.stepGoal && lastReportedSteps < HealthKitManager.shared.stepGoal {
+            await reportProgress(questKey: .hitStepGoal)
         }
         
         lastReportedSteps = todaySteps
@@ -786,6 +785,17 @@ class DailyQuestService: ObservableObject {
         await reportProgress(questKey: .hitProteinGoal)
     }
     
+    /// Call with total protein grams eaten today for incremental progress
+    func onProteinProgress(totalGrams: Int) async {
+        guard hasQuest(.hitProteinGoal),
+              let idx = quests.firstIndex(where: { $0.questKey == QuestKey.hitProteinGoal.rawValue }) else { return }
+        let quest = quests[idx]
+        let needed = totalGrams - quest.currentValue
+        if needed > 0 {
+            await reportProgress(questKey: .hitProteinGoal, increment: needed)
+        }
+    }
+    
     /// Check and report "perfect day" (workout + 3 meals + step goal)
     func checkPerfectDay(hasWorkout: Bool, mealCount: Int, stepGoalHit: Bool) async {
         var actions = 0
@@ -805,15 +815,11 @@ class DailyQuestService: ObservableObject {
     }
     
     func onActiveMinutesUpdated(minutes: Int) async {
-        if minutes >= 30 {
-            await reportProgress(questKey: .activeMinutes30, increment: minutes)
-        }
+        await reportProgress(questKey: .activeMinutes30, increment: minutes)
     }
     
     func onCaloriesBurned(kcal: Int) async {
-        if kcal >= 300 {
-            await reportProgress(questKey: .burn300Calories, increment: kcal)
-        }
+        await reportProgress(questKey: .burn300Calories, increment: kcal)
     }
     
     func onSleepLogged(hours: Double) async {

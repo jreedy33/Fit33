@@ -252,6 +252,11 @@ final class HealthKitService: ObservableObject {
         }
         
         AppLogger.info("HealthKit today: \(todaySteps) steps, \(todayCalories) cal, \(String(format: "%.1f", todayDistance/1000)) km", category: .health)
+        
+        // Update daily quest progress for HealthKit-tracked quests
+        if todayCalories > 0 {
+            await DailyQuestService.shared.onCaloriesBurned(kcal: todayCalories)
+        }
     }
     
     // MARK: - Sync Recent Workouts

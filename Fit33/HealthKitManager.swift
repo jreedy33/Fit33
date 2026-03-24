@@ -452,6 +452,9 @@ class HealthKitManager: ObservableObject {
                     self.isLoading = false
                 }
                 
+                // Update daily quest progress with latest step count
+                await DailyQuestService.shared.onStepsUpdated(todaySteps: steps)
+                
                 // Sync to cloud
                 await self.syncTodayStepsToCloud()
             }

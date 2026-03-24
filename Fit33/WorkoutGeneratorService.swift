@@ -91,6 +91,25 @@ struct WorkoutGenerationResponse: Codable {
     }
 }
 
+// ⚡️ PERF: Pre-snapshotted @MainActor data for background generation (Agent Rule 9)
+struct WorkoutGenerationContext: @unchecked Sendable {
+    let safeExercises: [Exercise]
+    let userWorkoutCount: Int
+    let restrictToFoundational: Bool
+    let currentTier: String
+    let varietyPercentage: Double
+    let hasLowerBackIssue: Bool
+    let hasLearnedPreferences: Bool
+    let userLevel: String
+    let userGoal: String
+    let userGender: String
+    let userEnvironment: String
+    let userWeight: Double
+    let userAge: Int
+    let favorites: Set<String>
+    let genderVideoCache: [String: VideoStreamingService.GenderVideoInfo]
+}
+
 @MainActor
 class WorkoutGeneratorService: ObservableObject {
     static let shared = WorkoutGeneratorService()
@@ -162,14 +181,26 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         Self.suppressPerExerciseLogs = true
-        let coreDataExercises = await generateFromCoreData(
-            allExercisesInput: allExercisesSnapshot,
-            targetMuscles: allTargetMuscles,
-            equipment: equipment,
-            count: count,
-            isPrimary: true,
-            excludeNames: excludeNames
-        )
+        
+        // ⚡️ PERF: Snapshot @MainActor state on main thread, then generate on background
+        // generateFromCoreData iterates 5500+ exercises — MUST NOT block main (Agent Rule 9)
+        let context = buildGenerationContext(exercises: allExercisesSnapshot)
+        let targetMusclesCopy = allTargetMuscles
+        let equipmentCopy = equipment
+        let countCopy = count
+        let excludeNamesCopy = excludeNames
+        
+        let coreDataExercises: [GeneratedExercise] = await Task.detached(priority: .userInitiated) { [self] in
+            await self.generateFromCoreData(
+                context: context,
+                targetMuscles: targetMusclesCopy,
+                equipment: equipmentCopy,
+                count: countCopy,
+                isPrimary: true,
+                excludeNames: excludeNamesCopy
+            )
+        }.value
+        
         Self.suppressPerExerciseLogs = false
         
         if !coreDataExercises.isEmpty {
@@ -236,6 +267,36 @@ class WorkoutGeneratorService: ObservableObject {
             self.error = "Failed to generate workout: \(error.localizedDescription)"
             throw error
         }
+    }
+    
+    // MARK: - Generation Context Builder
+    
+    /// Snapshots all @MainActor service state needed for generation.
+    /// Called on main thread before dispatching heavy generation to background.
+    private func buildGenerationContext(exercises: [Exercise]) -> WorkoutGenerationContext {
+        let safeExercises = LimitationsService.shared.filterSafeExercises(exercises)
+        let progressiveUnlock = ProgressiveExerciseUnlockService.shared
+        let learningEngine = UserBehaviorLearningEngine.shared
+        let user = UserManager.shared.currentUser
+        let favorites = Set(safeExercises.filter { $0.isFavorite }.compactMap { $0.name?.lowercased() })
+        
+        return WorkoutGenerationContext(
+            safeExercises: safeExercises,
+            userWorkoutCount: progressiveUnlock.workoutCount,
+            restrictToFoundational: progressiveUnlock.shouldRestrictToFoundational,
+            currentTier: progressiveUnlock.currentTier.displayName,
+            varietyPercentage: progressiveUnlock.varietyPercentage,
+            hasLowerBackIssue: LimitationsService.shared.hasLowerBackLimitation,
+            hasLearnedPreferences: learningEngine.userPreferences != nil,
+            userLevel: user?.experienceLevel ?? "Intermediate",
+            userGoal: user?.fitnessGoal ?? "Build Muscle",
+            userGender: (user?.gender ?? "male").lowercased(),
+            userEnvironment: user?.workoutEnvironment ?? "Hybrid",
+            userWeight: Double(user?.weight ?? 170),
+            userAge: Int(user?.age ?? 30),
+            favorites: favorites,
+            genderVideoCache: VideoStreamingService.shared.genderVideoCache
+        )
     }
     
     // MARK: - Local Workout Generation
@@ -528,12 +589,21 @@ class WorkoutGeneratorService: ObservableObject {
         AppLogger.debug("Surprise workout (Goal-Optimized): goal=\(userGoal), level=\(userLevel), split=\(selectedSplit.name), muscles=\(selectedSplit.muscles), equipment=\(userEquipment)", category: .workout)
         #endif
         
-        // Use the smart generation with user context
-        let coreDataExercises = await generateFromCoreData(
-            targetMuscles: selectedSplit.muscles,
-            equipment: userEquipment,
-            count: count
-        )
+        // ⚡️ PERF: Snapshot then generate on background (Agent Rule 9)
+        let allExercises = ExerciseLibraryService.shared.getAllExercises()
+        let surpriseContext = buildGenerationContext(exercises: allExercises)
+        let muscles = selectedSplit.muscles
+        let equip = userEquipment
+        let cnt = count
+        
+        let coreDataExercises: [GeneratedExercise] = await Task.detached(priority: .userInitiated) { [self] in
+            await self.generateFromCoreData(
+                context: surpriseContext,
+                targetMuscles: muscles,
+                equipment: equip,
+                count: cnt
+            )
+        }.value
         
         if !coreDataExercises.isEmpty {
             generatedExercises = coreDataExercises
@@ -551,8 +621,10 @@ class WorkoutGeneratorService: ObservableObject {
     
     // MARK: - Smart Exercise Generation from 7000+ Library
     
-    private func generateFromCoreData(
-        allExercisesInput: [Exercise]? = nil,
+    // ⚡️ PERF: nonisolated — runs on background thread via Task.detached (Agent Rule 9)
+    // All @MainActor state is pre-snapshotted in WorkoutGenerationContext
+    nonisolated private func generateFromCoreData(
+        context: WorkoutGenerationContext,
         targetMuscles: [String],
         equipment: [String],
         count: Int,
@@ -560,7 +632,7 @@ class WorkoutGeneratorService: ObservableObject {
         excludeNames: Set<String> = [],
         workoutLocation: ExerciseFilterService.WorkoutLocation = .gym
     ) async -> [GeneratedExercise] {
-        var allExercises = allExercisesInput ?? ExerciseLibraryService.shared.getAllExercises()
+        var allExercises = context.safeExercises
         
         // Filter out already selected exercises
         if !excludeNames.isEmpty {
@@ -570,26 +642,15 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         
-        // 🛡️ CRITICAL: Filter exercises based on user's injuries/limitations
-        let preFilterCount = allExercises.count
-        allExercises = LimitationsService.shared.filterSafeExercises(allExercises)
-        let filteredForSafety = preFilterCount - allExercises.count
+        // Safety filtering already applied via context.safeExercises
+        AppLogger.debug("🛡️ [LIMITATIONS] \(context.hasLowerBackIssue ? "Lower back limitation active" : "No active limitations") - all exercises safe", category: .workout)
         
-        #if DEBUG
-        if filteredForSafety > 0 {
-            AppLogger.info("[SAFETY] Filtered out \(filteredForSafety) exercises due to user limitations", category: .workout)
-        }
-        #endif
+        // Use pre-snapshotted progressive unlock data
+        let userWorkoutCount = context.userWorkoutCount
+        let restrictToFoundational = context.restrictToFoundational
         
-        // 🌟 Get progressive unlock status early for pre-filtering
-        let progressiveUnlock = await ProgressiveExerciseUnlockService.shared
-        let userWorkoutCount = progressiveUnlock.workoutCount
-        let restrictToFoundational = progressiveUnlock.shouldRestrictToFoundational
-        
-        // 🚫 PRE-FILTER: Remove risky exercises for foundational users
-        // This mirrors the Python script's risky exercise filtering
         let foundationalDB = FoundationalExerciseDatabase.shared
-        let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
+        let hasLowerBackIssue = context.hasLowerBackIssue
         
         if restrictToFoundational || userWorkoutCount < 10 {
             let beforeRiskyFilter = allExercises.count
@@ -694,34 +755,29 @@ class WorkoutGeneratorService: ObservableObject {
             return []
         }
         
-        // Get user's favorites for prioritization
-        let favorites = Set(allExercises.filter { $0.isFavorite }.compactMap { $0.name?.lowercased() })
+        let favorites = context.favorites
         
-        // 🧠 Get learned user preferences
-        let learningEngine = await UserBehaviorLearningEngine.shared
-        let hasLearnedPreferences = await learningEngine.userPreferences != nil
+        let learningEngine = UserBehaviorLearningEngine.shared
+        let hasLearnedPreferences = context.hasLearnedPreferences
         
-        // 🌟 Get progressive unlock status for foundational exercise prioritization
-        // (progressiveUnlock, userWorkoutCount, restrictToFoundational already declared earlier for pre-filtering)
-        let currentTier = progressiveUnlock.currentTier
-        let varietyPercentage = progressiveUnlock.varietyPercentage
+        let currentTierName = context.currentTier
+        let varietyPercentage = context.varietyPercentage
         
         #if DEBUG
         if hasLearnedPreferences {
             AppLogger.debug("[SMART GEN] Using learned user preferences for personalized selection", category: .workout)
         }
-        AppLogger.debug("[PROGRESSIVE UNLOCK] User workout count: \(userWorkoutCount), Tier: \(currentTier.displayName)", category: .workout)
+        AppLogger.debug("[PROGRESSIVE UNLOCK] User workout count: \(userWorkoutCount), Tier: \(currentTierName)", category: .workout)
         AppLogger.debug("[PROGRESSIVE UNLOCK] Restrict to foundational: \(restrictToFoundational), Variety: \(Int(varietyPercentage * 100))%", category: .workout)
         #endif
         
-        // Get FULL user profile for smart filtering
-        let userLevel = UserManager.shared.currentUser?.experienceLevel ?? "Intermediate"
-        let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
-        let userGender = UserManager.shared.currentUser?.gender?.lowercased() ?? "male"
+        let userLevel = context.userLevel
+        let userGoal = context.userGoal
+        let userGender = context.userGender
         let preferredGender = userGender.contains("female") ? "female" : "male"
-        let userEnvironment = UserManager.shared.currentUser?.workoutEnvironment ?? "Hybrid"
-        let userWeight = Double(UserManager.shared.currentUser?.weight ?? 170)  // in lbs or kg
-        let userAge = Int(UserManager.shared.currentUser?.age ?? 30)
+        let userEnvironment = context.userEnvironment
+        let userWeight = context.userWeight
+        let userAge = context.userAge
         
         // Convert weight to lbs if needed (assuming kg if < 100)
         let userWeightLbs: Double = userWeight < 100.0 ? userWeight * 2.2 : userWeight
@@ -833,7 +889,7 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         // Get the gender video cache for gender-based filtering
-        let genderVideoCache = VideoStreamingService.shared.genderVideoCache
+        let genderVideoCache = context.genderVideoCache
         let preferredVideoGender: VideoStreamingService.VideoGender = preferredGender == "female" ? .female : .male
         
         // STRICT filtering - use ACTUAL database fields, not name matching
@@ -1157,10 +1213,7 @@ class WorkoutGeneratorService: ObservableObject {
                 #endif
             }
             
-            // 🚫 RISKY EXERCISE PENALTY - Block complex/dangerous exercises for foundational users
-            // Mirrors the Python script's RISKY_EXERCISES filtering
             let foundationalDB = FoundationalExerciseDatabase.shared
-            let hasLowerBackIssue = LimitationsService.shared.hasLowerBackLimitation
             
             let riskyPenalty = foundationalDB.getRiskyExercisePenalty(
                 exerciseName: name,

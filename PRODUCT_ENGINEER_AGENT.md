@@ -312,7 +312,7 @@ struct MyNewView: View {
 
 ## Performance Guidelines
 
-### v1.29 Startup Architecture
+### v1.29–v1.30 Startup Architecture
 `Fit33App.init()` is split into critical and deferred blocks:
 - **Critical (synchronous)**: Core Data, BGTaskScheduler, session logging, UI appearance
 - **Deferred (0.5s delay)**: Crash reporter, perf monitors, video engine, gender filter, haptics
@@ -768,6 +768,71 @@ User Types → onChange(of: searchText)
 - `FitnessEquipmentView.swift` — `autoSuggestBanner()`, `reconnectBanner()`, updated `DiscoveredDeviceCard` with `isClosest`/`isLastUsed` badges, proximity labels
 
 **RSSI reference ranges**: >= -50 dBm = "Very close" (4 bars), -50 to -65 = "Nearby" (2-3 bars), < -65 = "Far" (1 bar)
+
+### 2026-03-24: Calories Burned on All Workout Cards
+
+**Architecture**: Calories burned now display on every workout in Recent Activity — strength, cardio, and third-party (Apple Watch, Strava, Nike).
+
+**Core Data change**: Added `caloriesBurned` (Double, default 0.0) to `Workout` entity. Existing workouts show "--" until completed again.
+
+**Calorie calculation flow** (strength workouts):
+```
+User finishes workout → finishWorkout()
+  → saveWorkoutData() [Core Data, no calories yet]
+  → saveWorkoutToAppleHealth() [ASYNC TASK]
+    → buildExerciseCalorieData() [exercise MET values]
+    → HealthKitManager.calculateDetailedCalories() [MET * weight * duration]
+    → workout.caloriesBurned = result [Core Data save]
+    → saveWorkoutToCloud() [re-upsert with calories to Supabase]
+    → HealthKit save [if authorized]
+```
+
+**Key design decision**: Calories are ALWAYS calculated and saved locally, even if HealthKit sync is disabled. The Apple Health save is optional but calorie persistence is not.
+
+**UI changes**:
+- `RecentWorkoutCard` (strength): Replaced XP column with Calories (flame icon, orange)
+- `RecentCardioWorkoutCard` (cardio): Already showed calories — no change
+- `WorkoutCompletionView`: Stats row shows Calories instead of XP, polls for async value
+- `WorkoutHistoryDetailView`: Replaced Volume column with Calories
+- `WorkoutHistoryFullView`: Stats header shows total Calories across all workout types
+
+**Cloud sync**: `WorkoutHistoryDTO` now includes `caloriesBurned` field (maps to `calories_burned` column). Supabase migration: `20260324_workout_history_calories.sql`.
+
+**Third-party workouts**: Already synced with calories from HealthKit via `HealthDataService.saveHealthKitWorkout()` → `CardioWorkoutDTO.caloriesBurned`. No changes needed.
+
+### 2026-03-24: Real-Time Daily Quest Progress Bars
+
+**Problem**: Quest progress bars showed stale server-side `currentValue` because:
+1. Step quests: `onStepsUpdated()` existed but was NEVER called from HealthKit
+2. Step reporting gated on threshold (wouldn't show 700/3000 until hitting 3000)
+3. Protein quests were binary (hit/not hit), no gradual progress
+4. No live client-side progress overlay
+
+**Solution — Two Layers**:
+
+**Layer 1: Instant visual feedback (client-side)**
+`DailyQuestsWidget` now observes `HealthKitManager`, `HealthKitService`, `MealService`, and `HydrationService` via `@ObservedObject`. A `liveCurrentValue(for:)` function returns real-time progress:
+
+| Quest Type | Live Data Source |
+|---|---|
+| Walk 3K/5K/7.5K/10K steps | `HealthKitManager.todaySteps` |
+| Hit step goal | `HealthKitManager.todaySteps >= stepGoal` |
+| Eat Xg protein | `MealService.todaysMeals` protein sum |
+| Log 3 meals | `MealService.todaysMeals.count` |
+| Log 3/8 waters | `HydrationService.todaySummary.entryCount` |
+| Burn 300 calories | `HealthKitService.todayCalories` |
+| 30 active minutes | `HealthKitService.todayActiveMinutes` |
+
+Progress ring, bar, and label all use `liveProgress(for:)` — instant response without server round-trip.
+
+**Layer 2: Server persistence (background sync)**
+- `HealthKitManager.fetchTodaySteps()` → `DailyQuestService.onStepsUpdated()`
+- `HealthKitService.syncTodayStats()` → `DailyQuestService.onCaloriesBurned()`
+- `MealService.addMealEntry()` → `DailyQuestService.onProteinProgress(totalGrams:)`
+- `onStepsUpdated()` fixed: reports ALL step quests regardless of threshold (server caps at target_value)
+- `onActiveMinutesUpdated()` and `onCaloriesBurned()` fixed: no longer gate on thresholds
+
+**Files changed**: `DailyQuestViews.swift`, `DailyQuestService.swift`, `HealthKitManager.swift`, `HealthKitService.swift`, `MealService.swift`
 
 ### 2026-03-21: Notification System Audit — Bug Fixes & Enhancements
 

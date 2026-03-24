@@ -47,7 +47,7 @@
 | In-app diagnostics | `CriticalPathTests.swift`, `LimitationFilterTests.swift` |
 | CI | `.github/workflows/` — iOS build check, iOS unit tests, iOS syntax check, admin CMS CI |
 
-### Performance (v1.29 — March 2026 Optimization Pass)
+### Performance (v1.29–v1.30 — March 2026 Optimization Pass)
 
 **Startup:**
 | Metric | Before (v1.28) | After (v1.29) |
@@ -519,6 +519,20 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 
 **Memory thresholds** (current in PerformanceOptimizations.swift):
 - Warning: 550 MB, Critical: 700 MB, Emergency: 850 MB
+
+### 2026-03-24: Daily Quest Live Progress — Performance Notes
+
+**Observer count in DailyQuestsWidget**: Now observes 5 `ObservableObject`s: `questService`, `adManager`, `healthKitManager`, `healthKitService`, `mealService`, `hydrationService`. Each `@Published` property change on any of these triggers a view re-evaluation.
+
+**Why this is acceptable**:
+- The widget is only on screen when the dashboard is visible (not in background tabs)
+- `liveCurrentValue(for:)` and `liveProgress(for:)` are O(1) computed properties (dictionary lookups, array reduces on small arrays — `todaysMeals` is typically 0-10 items)
+- SwiftUI diffing means only the affected quest row re-renders (progress bar width change, label text change)
+- `HealthKitManager.todaySteps` updates infrequently (step observer fires when HealthKit aggregates new data, not per-step)
+
+**Potential concern**: If `MealService.todaysMeals` or `HydrationService.todaySummary` publish changes frequently, the quest widget will re-evaluate. Monitor via Instruments Time Profiler if dashboard scrolling degrades after this change.
+
+**Calorie calculation timing**: `saveWorkoutToAppleHealth()` runs as an async Task after `saveWorkoutData()`. The `WorkoutCompletionView` polls `workout.caloriesBurned` every 0.5s for up to 5s. The MET-based calorie calculation is CPU-only (no network), typically completes in <50ms. The Core Data save after calculation triggers a context notification.
 
 ### 2026-03-21: USDA Food Search — Test Scenarios & Degradation Path
 

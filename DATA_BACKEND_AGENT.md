@@ -263,6 +263,32 @@ USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns
 
 **Migration**: `supabase/20260321_food_search_integrity.sql` — deployed March 2026
 
+### 2026-03-24: Calories Burned — Schema & Sync Changes
+
+**Core Data**: Added `caloriesBurned` (Double, default 0.0) to `Workout` entity in `DataModel.xcdatamodel`. Lightweight migration — no versioning required (new optional attribute with default).
+
+**Supabase**: Migration `20260324_workout_history_calories.sql` adds `calories_burned DOUBLE PRECISION DEFAULT NULL` to `workout_history` table with partial index on non-null values.
+
+**DTO change**: `WorkoutHistoryDTO` in `SupabaseDTOs.swift` now includes `caloriesBurned: Double?` (CodingKey: `calories_burned`). The `saveWorkoutToCloud()` method in `SupabaseManager.swift` passes `workout.caloriesBurned > 0 ? workout.caloriesBurned : nil`.
+
+**Calorie write path**: `ActiveWorkoutView+Persistence.saveWorkoutToAppleHealth()` calculates calories via `HealthKitManager.calculateDetailedCalories()`, saves to `workout.caloriesBurned` on Core Data, then re-upserts to Supabase with the calorie value. This runs as an async Task after `saveWorkoutData()`.
+
+**Third-party workouts**: Calories for HealthKit-sourced workouts already stored via `HealthDataService.saveHealthKitWorkout()` → `cardio_workouts.calories_burned` (from `HKWorkout.totalEnergyBurned`). No changes needed.
+
+### 2026-03-24: Daily Quest Progress — New Server Hooks
+
+**New method**: `DailyQuestService.onProteinProgress(totalGrams:)` — computes the delta between server-side `currentValue` and today's total protein from meals, then calls `reportProgress` with the difference.
+
+**Fixed methods**:
+- `onStepsUpdated()`: No longer gates on step threshold — always reports delta for all step quest keys. Server RPC `update_quest_progress` handles capping at `target_value`.
+- `onActiveMinutesUpdated()`: Removed `>= 30` gate — always reports.
+- `onCaloriesBurned()`: Removed `>= 300` gate — always reports.
+
+**New call sites**:
+- `HealthKitManager.fetchTodaySteps()` → `DailyQuestService.shared.onStepsUpdated(todaySteps:)`
+- `HealthKitService.syncTodayStats()` → `DailyQuestService.shared.onCaloriesBurned(kcal:)`
+- `MealService.addMealEntry()` → `DailyQuestService.shared.onProteinProgress(totalGrams:)`
+
 ### 2026-03-21: Notification System — Server-Side Preference Enforcement
 
 **Edge Function**: `supabase/functions/send-push-notification/index.ts`

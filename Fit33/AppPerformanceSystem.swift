@@ -77,8 +77,12 @@ final class ProductionFPSMonitor {
     private var frameCount: Int = 0
     private var lowFPSStartTime: CFTimeInterval = 0
     private var isTrackingLowFPS = false
-    private let lowFPSThreshold: Double = 55.0
     private let reportAfterMs: Double = 500.0
+    
+    /// In Low Power Mode, iOS throttles GPU to ~30-45fps — use lower threshold to avoid log spam
+    private var lowFPSThreshold: Double {
+        ProcessInfo.processInfo.isLowPowerModeEnabled ? 30.0 : 55.0
+    }
     
     func start() {
         guard displayLink == nil else { return }

@@ -215,7 +215,11 @@ class ExerciseHistoryService: ObservableObject {
     
     @Published var previousSetsCache: [String: [PreviousSetInfo]] = [:]
     @Published var personalRecordsCache: [String: ExercisePersonalRecord] = [:]
-    
+
+    // ⚡️ PERF: Deduplicate concurrent batch fetches (warmup + preview fire simultaneously)
+    private var inFlightBatchTask: Task<[String: [PreviousSetInfo]], Never>?
+    private var inFlightBatchKey: Set<String>?
+
     private init() {}
     
     // MARK: - Fetch Previous Sets
@@ -320,57 +324,74 @@ class ExerciseHistoryService: ObservableObject {
     }
     
     /// Fetch previous sets for multiple exercises at once (batch load)
+    /// Deduplicates concurrent calls for the same exercise set (warmup + preview fire simultaneously)
     func fetchPreviousSetsForExercises(_ exerciseNames: [String]) async -> [String: [PreviousSetInfo]] {
-        #if DEBUG
-        let startTime = CFAbsoluteTimeGetCurrent()
-        var cacheHits = 0
-        var networkFetches = 0
-        #endif
+        let requestedSet = Set(exerciseNames)
         
-        var results: [String: [PreviousSetInfo]] = [:]
-        var namesToFetch: [String] = []
-        
-        // First, collect cached results and identify what needs network fetch
-        for name in exerciseNames {
-            if let cached = previousSetsCache[name] {
-                results[name] = cached
-                #if DEBUG
-                cacheHits += 1
-                #endif
-            } else {
-                namesToFetch.append(name)
-            }
+        // If an identical batch is already in flight, reuse it
+        if let existingTask = inFlightBatchTask, let existingKey = inFlightBatchKey, existingKey == requestedSet {
+            AppLogger.debug("📦 [ExerciseHistory] Reusing in-flight batch for \(exerciseNames.count) exercises", category: .workout)
+            return await existingTask.value
         }
         
-        #if DEBUG
-        AppLogger.debug("📦 [ExerciseHistory] Batch: \(cacheHits) cache hits, \(namesToFetch.count) need fetch", category: .workout)
-        #endif
-        
-        // Fetch remaining in parallel (only if needed)
-        if !namesToFetch.isEmpty {
-            await withTaskGroup(of: (String, [PreviousSetInfo]).self) { group in
-                for name in namesToFetch {
-                    group.addTask {
-                        let sets = await self.fetchPreviousSets(for: name)
-                        return (name, sets)
+        let task = Task<[String: [PreviousSetInfo]], Never> { [weak self] in
+            guard let self = self else { return [:] }
+            
+            #if DEBUG
+            let startTime = CFAbsoluteTimeGetCurrent()
+            var cacheHits = 0
+            #endif
+
+            var results: [String: [PreviousSetInfo]] = [:]
+            var namesToFetch: [String] = []
+
+            for name in exerciseNames {
+                if let cached = self.previousSetsCache[name] {
+                    results[name] = cached
+                    #if DEBUG
+                    cacheHits += 1
+                    #endif
+                } else {
+                    namesToFetch.append(name)
+                }
+            }
+            
+            #if DEBUG
+            AppLogger.debug("📦 [ExerciseHistory] Batch: \(cacheHits) cache hits, \(namesToFetch.count) need fetch", category: .workout)
+            #endif
+            
+            if !namesToFetch.isEmpty {
+                await withTaskGroup(of: (String, [PreviousSetInfo]).self) { group in
+                    for name in namesToFetch {
+                        group.addTask {
+                            let sets = await self.fetchPreviousSets(for: name)
+                            return (name, sets)
+                        }
+                    }
+                    
+                    for await (name, sets) in group {
+                        results[name] = sets
                     }
                 }
-                
-                for await (name, sets) in group {
-                    results[name] = sets
-                    #if DEBUG
-                    networkFetches += 1
-                    #endif
-                }
             }
+            
+            #if DEBUG
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            AppLogger.debug("📦 [ExerciseHistory] Batch complete: \(results.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .workout)
+            #endif
+            
+            return results
         }
         
-        #if DEBUG
-        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        AppLogger.debug("📦 [ExerciseHistory] Batch complete: \(results.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .workout)
-        #endif
+        inFlightBatchTask = task
+        inFlightBatchKey = requestedSet
         
-        return results
+        let result = await task.value
+        
+        inFlightBatchTask = nil
+        inFlightBatchKey = nil
+        
+        return result
     }
     
     // MARK: - Save Exercise Performance

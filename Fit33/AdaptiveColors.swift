@@ -362,6 +362,12 @@ struct AnimatedOrbBackground: View {
     @State private var animatePulse = false
     @Environment(\.colorScheme) private var colorScheme
     
+    /// In Low Power Mode, disable orb animations to save battery and prevent FPS drops.
+    /// The orbs render once in their resting position — still looks good, just static.
+    private var isLowPowerMode: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+    
     // Convenience initializers for each tab
     static func home(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
@@ -452,7 +458,7 @@ struct AnimatedOrbBackground: View {
                         )
                         .frame(width: 400, height: 400)
                         .offset(x: animatePulse ? -50 : -100, y: animatePulse ? -150 : -180)
-                        .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: animatePulse)
+                        .animation(isLowPowerMode ? nil : .easeInOut(duration: 4).repeatForever(autoreverses: true), value: animatePulse)
                     
                     // Bottom secondary orb
                     Circle()
@@ -469,7 +475,7 @@ struct AnimatedOrbBackground: View {
                         )
                         .frame(width: 500, height: 500)
                         .offset(x: animatePulse ? 150 : 100, y: animatePulse ? geometry.size.height * 0.4 : geometry.size.height * 0.5)
-                        .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: animatePulse)
+                        .animation(isLowPowerMode ? nil : .easeInOut(duration: 5).repeatForever(autoreverses: true), value: animatePulse)
                     
                     // Accent orb (smaller, faster)
                     Circle()
@@ -486,7 +492,7 @@ struct AnimatedOrbBackground: View {
                         )
                         .frame(width: 240, height: 240)
                         .offset(x: animatePulse ? geometry.size.width * 0.6 : geometry.size.width * 0.7, y: animatePulse ? geometry.size.height * 0.2 : geometry.size.height * 0.15)
-                        .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: animatePulse)
+                        .animation(isLowPowerMode ? nil : .easeInOut(duration: 3).repeatForever(autoreverses: true), value: animatePulse)
                 }
             }
             .drawingGroup()
@@ -494,7 +500,9 @@ struct AnimatedOrbBackground: View {
         .ignoresSafeArea()
         .accessibilityHidden(true)
         .onAppear {
-            animatePulse = true
+            if !isLowPowerMode {
+                animatePulse = true
+            }
         }
     }
 }
